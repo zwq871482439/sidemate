@@ -38,21 +38,95 @@ MAX_TOOL_HISTORY_CHARS = 60000  # 工具历史最大字符数（约 40000 token�
 class AgentLoop:
     """ReAct Agent 循环 — 在线模式专用"""
 
-    def __init__(self, cloud_engine, search_engine, kb=None):
+    def __init__(self, cloud_engine, search_engine, kb=None, chat_id=None):
         """
         Args:
             cloud_engine: CloudEngine 实例
             search_engine: SearchEngine 实例
             kb: KB 管理器实例（可选）
+            chat_id: 会话 ID（文件夹名）— Patch4 修复 1/2：文档状态化 + 上下文注入
         """
         self.cloud_engine = cloud_engine
         self.search_engine = search_engine
         self.kb = kb
+        self.chat_id = chat_id or ""
         self._doc_sections = []  # 文档模式的章节收集器
+        # Patch4 修复 1：DocSession（懒加载，第一次 write_section 时创建）
+        self._doc_session = None
+        self._doc_id = None
 
     def get_doc_sections(self):
         """获取文档模式收集的章节列表"""
         return self._doc_sections
+
+    def _ensure_doc_session(self, topic=""):
+        """Patch4 修复 1：懒加载 DocSession。
+
+        - 首次调用时生成 doc_id 并创建 DocSession
+        - 如果 chat_id 下已有 ongoing 的文档，复用它（支持续写）
+        - 否则创建新文档（status=ongoing）
+
+        Args:
+            topic: 文档主题（首次创建时用）
+
+        Returns:
+            DocSession 实例
+        """
+        if self._doc_session is not None:
+            return self._doc_session
+
+        from core.doc_session import DocSession, gen_doc_id, list_docs_in_chat
+
+        # 优先复用已有的 ongoing 文档（支持"继续"续写场景）
+        existing_doc_id = None
+        existing_topic = ""
+        if self.chat_id:
+            try:
+                docs = list_docs_in_chat(self.chat_id)
+                for d in docs:
+                    if d.get("status") == "ongoing":
+                        existing_doc_id = d.get("doc_id")
+                        existing_topic = d.get("topic", "")
+                        break
+            except Exception as e:
+                log.warning("[AGENT] 查找 ongoing 文档失败: %s", str(e)[:100])
+
+        if existing_doc_id:
+            self._doc_id = existing_doc_id
+            ds = DocSession(self.chat_id, existing_doc_id, topic=existing_topic or topic)
+            ds.load()
+            # 同步内存中的章节（用于本轮统计）
+            stored = ds.to_dict()
+            if stored["sections"] and not self._doc_sections:
+                self._doc_sections = [
+                    {"heading": s.get("heading", ""), "content": s.get("content", "")}
+                    for s in stored["sections"]
+                ]
+            log.info("[AGENT] 复用 ongoing 文档: doc_id=%s, 已有 %d 章节",
+                     self._doc_id, len(self._doc_sections))
+        else:
+            self._doc_id = gen_doc_id()
+            ds = DocSession(self.chat_id, self._doc_id, topic=topic)
+            ds.load()  # 确保目录存在 / 加载已有
+            ds.save()  # 立即落盘初始状态
+            log.info("[AGENT] 新建文档: doc_id=%s, topic=%s", self._doc_id, topic[:30])
+
+        self._doc_session = ds
+        return ds
+
+    def _workspace_error(self, tool_name, err):
+        """workspace 工具的通用错误返回。"""
+        log.error("[AGENT] %s 执行失败: %s", tool_name, str(err)[:120])
+        return {
+            "success": False,
+            "tool": tool_name,
+            "error": "execution_error",
+            "message": "工作区操作失败: %s" % str(err)[:100],
+        }
+
+    def get_doc_id(self):
+        """获取当前文档 ID（供 pipeline 在末尾兜底用）。"""
+        return self._doc_id
 
     def run(self, message, mode="chat", history=None, context_cache=None, template=None):
         """Agent 主循环 — yield (phase, content)
@@ -70,6 +144,9 @@ class AgentLoop:
         from core.agent_tools import get_tools_and_prompt, get_status_event, get_tool_def
 
         self._doc_sections = []
+        # Patch4 修复 1：重置 DocSession（每次 run 独立）
+        self._doc_session = None
+        self._doc_id = None
 
         # ===== 读取 KB 权限配置 =====
         kb_permission = "full"
@@ -80,8 +157,10 @@ class AgentLoop:
             pass
 
         # ===== 1. 动态组装工具 + system prompt =====
+        # Patch4 修复 2：传入 chat_id 和 history 用于会话上下文注入
         tools, system_prompt = get_tools_and_prompt(
-            mode=mode, kb=self.kb, template=template, kb_permission=kb_permission
+            mode=mode, kb=self.kb, template=template, kb_permission=kb_permission,
+            chat_id=self.chat_id, history=history,
         )
 
         # ===== 2. 构建 messages =====
@@ -340,6 +419,17 @@ class AgentLoop:
                     "content": content,
                 })
                 stats["docs"] += 1
+
+                # Patch4 修复 1：立即落盘到 DocSession
+                persist_msg = ""
+                try:
+                    ds = self._ensure_doc_session(topic=heading)
+                    info = ds.add_section(heading, content)
+                    persist_msg = "已落盘（doc_id=%s）" % self._doc_id
+                except Exception as e:
+                    log.warning("[AGENT] write_section 落盘失败: %s", str(e)[:120])
+                    persist_msg = "落盘失败: %s" % str(e)[:60]
+
                 return {
                     "success": True,
                     "tool": "write_section",
@@ -347,8 +437,147 @@ class AgentLoop:
                         "heading": heading,
                         "length": len(content),
                         "total_sections": len(self._doc_sections),
+                        "doc_id": self._doc_id,
+                        "persist": persist_msg,
                     },
                 }
+
+            elif tool_name == "set_doc_status":
+                # Patch4 修复 1：模型自主标记文档状态
+                status = args.get("status", "ongoing")
+                if status not in ("ongoing", "completed"):
+                    return {
+                        "success": False,
+                        "tool": "set_doc_status",
+                        "error": "invalid_status",
+                        "message": "status 必须是 ongoing 或 completed",
+                    }
+                try:
+                    ds = self._ensure_doc_session()
+                    result = ds.set_status(status)
+                    log.info("[AGENT] set_doc_status: doc_id=%s status=%s",
+                             self._doc_id, status)
+                    return {
+                        "success": True,
+                        "tool": "set_doc_status",
+                        "data": {
+                            "doc_id": result["doc_id"],
+                            "status": result["status"],
+                            "total_sections": len(self._doc_sections),
+                        },
+                    }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "tool": "set_doc_status",
+                        "error": "execution_error",
+                        "message": "状态更新失败: %s" % str(e)[:100],
+                    }
+
+            elif tool_name == "list_workspace":
+                # Patch4 修复 1：列出 workspace 文件
+                from core.doc_session import list_workspace_files
+                try:
+                    files = list_workspace_files(self.chat_id)
+                    return {
+                        "success": True,
+                        "tool": "list_workspace",
+                        "data": {
+                            "files": files,
+                            "count": len(files),
+                        },
+                    }
+                except Exception as e:
+                    return self._workspace_error("list_workspace", e)
+
+            elif tool_name == "read_workspace":
+                # Patch4 修复 1：读取 workspace 文件
+                from core.doc_session import read_workspace_file
+                path = args.get("path", "")
+                try:
+                    f = read_workspace_file(self.chat_id, path)
+                    return {
+                        "success": True,
+                        "tool": "read_workspace",
+                        "data": {
+                            "name": f["name"],
+                            "content": f["content"],
+                            "size": f["size"],
+                        },
+                    }
+                except ValueError as e:
+                    # 路径越界
+                    return {
+                        "success": False,
+                        "tool": "read_workspace",
+                        "error": "path_violation",
+                        "message": str(e)[:120],
+                    }
+                except FileNotFoundError as e:
+                    return {
+                        "success": False,
+                        "tool": "read_workspace",
+                        "error": "not_found",
+                        "message": str(e)[:120],
+                    }
+                except Exception as e:
+                    return self._workspace_error("read_workspace", e)
+
+            elif tool_name == "write_workspace":
+                # Patch4 修复 1：写入 workspace 文件
+                from core.doc_session import write_workspace_file
+                path = args.get("path", "")
+                content = args.get("content", "")
+                try:
+                    f = write_workspace_file(self.chat_id, path, content)
+                    return {
+                        "success": True,
+                        "tool": "write_workspace",
+                        "data": {
+                            "name": f["name"],
+                            "size": f["size"],
+                        },
+                    }
+                except ValueError as e:
+                    return {
+                        "success": False,
+                        "tool": "write_workspace",
+                        "error": "path_violation",
+                        "message": str(e)[:120],
+                    }
+                except Exception as e:
+                    return self._workspace_error("write_workspace", e)
+
+            elif tool_name == "delete_workspace":
+                # Patch4 修复 1：删除 workspace 文件
+                from core.doc_session import delete_workspace_file
+                path = args.get("path", "")
+                try:
+                    f = delete_workspace_file(self.chat_id, path)
+                    return {
+                        "success": True,
+                        "tool": "delete_workspace",
+                        "data": {
+                            "name": f["name"],
+                            "deleted": True,
+                        },
+                    }
+                except ValueError as e:
+                    return {
+                        "success": False,
+                        "tool": "delete_workspace",
+                        "error": "path_violation",
+                        "message": str(e)[:120],
+                    }
+                except FileNotFoundError as e:
+                    return {
+                        "success": False,
+                        "tool": "delete_workspace",
+                        "error": "not_found",
+                        "message": str(e)[:120],
+                    }
+                except Exception as e:
+                    return self._workspace_error("delete_workspace", e)
 
             else:
                 return {
@@ -398,7 +627,12 @@ class AgentLoop:
         elif tool_name == "search_kb":
             return get_status_event(tool_name, "start", query=args.get("query", ""))
         elif tool_name == "write_section":
-            return get_status_event(tool_name, "start")
+            return get_status_event(tool_name, "start", heading=args.get("heading", "")[:30])
+        elif tool_name == "set_doc_status":
+            return get_status_event(tool_name, "start", status=args.get("status", ""))
+        elif tool_name in ("list_workspace", "read_workspace", "write_workspace", "delete_workspace"):
+            path = args.get("path", "")
+            return get_status_event(tool_name, "start", path=path[:50] if path else "")
         else:
             return {"status": "thinking"}
 
@@ -418,6 +652,12 @@ class AgentLoop:
         elif tool_name == "write_section":
             return get_status_event(tool_name, "done",
                                     count=data.get("total_sections", 0))
+        elif tool_name == "set_doc_status":
+            return get_status_event(tool_name, "done", status=data.get("status", ""))
+        elif tool_name == "list_workspace":
+            return get_status_event(tool_name, "done", count=data.get("count", 0))
+        elif tool_name in ("read_workspace", "write_workspace", "delete_workspace"):
+            return get_status_event(tool_name, "done", name=data.get("name", ""))
         else:
             return {"status": "done"}
 

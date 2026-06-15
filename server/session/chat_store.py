@@ -31,6 +31,9 @@ from routers.deps import (
 
 log = logging.getLogger(__name__)
 
+# Patch4 修复 1：会话需要管理的子目录（文档状态 + 模型工作区）
+_CHAT_SUBDIRS = ("docs", "workspace", "assets")
+
 # ===== 对话保存并发保护 =====
 _chat_save_lock = threading.Lock()
 # P1-02: 新建对话文件的并发保护
@@ -138,6 +141,9 @@ def new_chat_file():
         os.makedirs(folder_path, exist_ok=True)
         assets_dir = os.path.join(folder_path, "assets")
         os.makedirs(assets_dir, exist_ok=True)
+        # Patch4 修复 1：一并创建 docs / workspace 子目录
+        for _sub in ("docs", "workspace"):
+            os.makedirs(os.path.join(folder_path, _sub), exist_ok=True)
 
         # 写入 meta.json
         meta = {
@@ -160,6 +166,45 @@ def new_chat_file():
         set_current_chat(folder_path)
         log.info("[CHAT] new session: %s (format=v3 folder)", folder_name)
         return folder_path
+
+
+def ensure_chat_subdirs(chat_id):
+    """Patch4 修复 1：确保会话的子目录存在（docs / workspace / assets）。
+
+    在 doc_session 写入或 workspace 操作前调用，保证目录就位。
+    支持传入 chat_id（文件夹名）或 chat_file 完整路径。
+
+    Args:
+        chat_id: 会话 ID（如 "2026-06-15_001"）或完整路径
+
+    Returns:
+        str: 会话根目录的绝对路径；chat_id 为空或非法时返回 ""
+    """
+    if not chat_id:
+        return ""
+
+    # 如果传的是完整路径（含分隔符或盘符），直接用；否则拼到 CHAT_DIR
+    if os.path.isabs(chat_id) or os.sep in chat_id or "/" in chat_id or "\\" in chat_id:
+        chat_path = os.path.normpath(chat_id)
+        # 如果指向 messages.json / meta.json 等文件，取其所在目录
+        if os.path.isfile(chat_path):
+            chat_path = os.path.dirname(chat_path)
+    else:
+        chat_path = os.path.join(CHAT_DIR, chat_id)
+
+    if not chat_path or not os.path.isdir(chat_path):
+        # 会话根目录不存在，不强制创建（避免误创孤儿目录）
+        return ""
+
+    for sub in _CHAT_SUBDIRS:
+        sub_path = os.path.join(chat_path, sub)
+        if not os.path.isdir(sub_path):
+            try:
+                os.makedirs(sub_path, exist_ok=True)
+            except OSError as e:
+                log.warning("[CHAT_STORE] 创建子目录失败 %s: %s", sub_path, str(e)[:80])
+
+    return chat_path
 
 
 def save_chat(filepath, messages, context_cache=None):
