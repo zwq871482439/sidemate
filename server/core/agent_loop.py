@@ -31,8 +31,20 @@ import logging
 log = logging.getLogger(__name__)
 
 # ===== 常量 =====
-MAX_ROUNDS = 10
+# Patch4 修复 3：MAX_ROUNDS 从 10 提到 20，支持长文档（>10 章）
+MAX_ROUNDS = 20
 MAX_TOOL_HISTORY_CHARS = 60000  # 工具历史最大字符数（约 40000 token）
+
+# Patch4 修复 3：子类硬限制（防死循环 + 防 token 爆炸）
+# 未列出的工具（write_section / set_doc_status / workspace 工具）不限制
+TOOL_LIMITS = {
+    "search_web": 3,   # 互联网搜索最多 3 次
+    "search_kb": 2,    # 知识库搜索最多 2 次
+    "fetch_url": 5,    # 网页阅读最多 5 次
+}
+
+# 剩余轮次预警阈值（剩 N 轮时开始注入 hint 促收尾）
+LOW_ROUNDS_WARN = 5
 
 
 class AgentLoop:
@@ -181,6 +193,8 @@ class AgentLoop:
         has_tools = len(tools) > 0
         final_text = ""
         rounds = 0
+        # Patch4 修复 3：累计每种工具的调用次数（用于子类硬限制）
+        tool_counts = {}
 
         if not has_tools:
             # 无工具可用（不应该发生，在线模式有网），直接纯对话
@@ -191,6 +205,32 @@ class AgentLoop:
         while rounds < MAX_ROUNDS:
             rounds += 1
             log.info("[AGENT] === 第 %d 轮 === tools=%d", rounds, len(messages))
+
+            # Patch4 修复 3：子类硬限制——每轮调用前移除已达上限的工具
+            # （硬移除：不是 prompt 建议，模型这一轮直接看不到该工具）
+            if tool_counts:
+                removed = []
+                new_tools = []
+                for t in tools:
+                    tname = t.get("function", {}).get("name", "")
+                    limit = TOOL_LIMITS.get(tname)
+                    if limit is not None and tool_counts.get(tname, 0) >= limit:
+                        removed.append(tname)
+                        continue  # 跳过，不加入 new_tools
+                    new_tools.append(t)
+                if removed:
+                    tools = new_tools
+                    log.info("[AGENT] 子类超限，移除工具: %s", removed)
+                    yield ("agent_status", {
+                        "status": "tool_limited",
+                        "removed": removed,
+                        "rounds_left": MAX_ROUNDS - rounds,
+                    })
+                # 如果所有工具都被移除（极端情况），提前结束循环
+                if not tools:
+                    log.warning("[AGENT] 所有可限制工具已达上限且无其他工具可用，结束循环")
+                    yield ("agent_status", {"status": "budget_exceeded"})
+                    break
 
             # 发送思考状态
             yield ("agent_status", {"status": "thinking"})
@@ -284,6 +324,22 @@ class AgentLoop:
 
                 # 执行工具
                 result = self._execute_tool(tool_name, args, stats)
+
+                # Patch4 修复 3：累计工具调用次数（用于子类硬限制）
+                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+
+                # Patch4 修复 3：剩 N 轮时注入预警 hint
+                # （通过 result 的 hint 字段附加到 tool_result 消息内容）
+                rounds_left = MAX_ROUNDS - rounds
+                if rounds_left <= LOW_ROUNDS_WARN:
+                    warn_hint = (
+                        "⚠️ 你还剩 %d 轮预算，请尽快完成剩余章节或调用 "
+                        "set_doc_status('completed')。" % rounds_left
+                    )
+                    if isinstance(result, dict):
+                        existing_hint = result.get("hint", "")
+                        result["hint"] = (existing_hint + "\n" + warn_hint).strip() \
+                            if existing_hint else warn_hint
 
                 # 发送完成状态
                 done_status = self._make_done_status(tool_name, result)
