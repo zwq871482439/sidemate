@@ -337,7 +337,12 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
 
     # 创建并运行 AgentLoop
     from core.agent_loop import AgentLoop
-    agent = AgentLoop(cloud_engine, search_engine, kb=kb)
+    # Patch4 修复 1：从 chat_file 推导 chat_id（用于 workspace + 文档状态化）
+    _chat_id = ""
+    if chat_file:
+        from core.doc_session import chat_id_from_path
+        _chat_id = chat_id_from_path(chat_file)
+    agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id)
 
     # 决定模式
     agent_mode = "doc" if action_mode == "doc" else "chat"
