@@ -217,6 +217,34 @@ P4 已修复 `num_predict=4096` 等硬编码，P5 需系统排查同类问题：
 - 或在 setup.iss 确保根目录 `logo.ico` 被打包
 - 配合 Batch 1 品牌视觉一起做（多尺寸 favicon）
 
+#### 5.8 云端模式 drift 检测重构（来自 P4 灰度测试）
+
+**来源**：P4 灰度测试 `server.log` 反复出现 drift 误判：
+```
+[DRIFT] result={'drift': True, 'overlap': 0.0} — 用户重发同一句"给我总结一份关于兵棋推演方面的文档"
+[DRIFT] result={'drift': True, 'overlap': 0.0} — "写完了吗"
+[DRIFT] result={'drift': True, 'overlap': 0.0} — "继续"
+```
+
+**根因**：drift 检测（词重叠率统计）是给本地小模型（4B，16K 窗口）设计的，强加给云端大模型（128K+ 窗口）是架构错配。大模型记得清清楚楚，根本不需要这种统计判断。
+
+**问题表现**：
+- "继续"/"写完了吗" 被误判为新话题
+- drift=True 触发"建议新建对话"，但代码没阻断 → 又开新一轮 doc 任务从零重写
+
+**方案**：云端模式砍掉 drift 检测，改成上下文压缩 + 模型自主决策：
+1. 云端模式不做 drift 检测（大模型自己知道话题变没变）
+2. 上下文超 75% 时触发压缩（已有逻辑），压缩指令交给大模型决定
+3. 本地模式保留 drift 检测（小模型真的需要）
+
+| 文件 | 改动 |
+|------|------|
+| `session/context_cache.py` | drift 检测增加 ai_mode 判断，云端模式跳过 |
+| `pipelines/cloud_pipeline.py` | 云端模式不读 drift 结果，直接走 agent loop |
+| `routers/chat.py` | `_compress_cloud_history` 压缩指令交给大模型（prompt 化） |
+
+**关联**：P4 文档Agent修复的"会话上下文注入"已能缓解此问题（模型看到 ongoing 文档自己判断）。本节是彻底根治。
+
 ---
 
 ## 三、不做的事
