@@ -9,7 +9,7 @@ build_full.py — Sidemate 全量打包构建脚本
   3. 生成构建报告（体积、包列表、版本）
 
 使用方法：
-  cd C:\\tmp\\_Sidemate_0.9_patch1
+  cd C:\\Sidemate
   python build_full.py
 
 前置条件：
