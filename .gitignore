@@ -1,0 +1,51 @@
+# ====================================================================
+# Sidemate .gitignore — 源码进 git，运行时资产排除
+# ====================================================================
+
+# ====== 运行时资产（~5GB，固定一份不进 git）======
+python/
+models/
+ollama.exe
+Sidemate.exe
+
+# ====== 用户数据（运行时生成）======
+# 主数据目录
+server/data/
+# KB 知识库数据
+server/knowledge/data/
+# 录音数据
+server/recorder_pkg/data/
+# 用户配置
+server/settings.json
+
+# ====== Python 缓存 ======
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# ====== Go 编译产物 ======
+launcher/*.exe
+
+# ====== 打包输出 ======
+output/
+dist/
+
+# ====== IDE / 编辑器 ======
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ====== 系统文件 ======
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ====== 临时文件 ======
+*.tmp
+*.bak
+*.log

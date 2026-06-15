@@ -1,0 +1,93 @@
+; ====================================================================
+; Sidemate 安装脚本 (Inno Setup)
+; 版本: 0.9.4.0
+; ====================================================================
+
+#define MyAppName "桌伴 Sidemate"
+#define MyAppVersion "0.9.4.0"
+#define MyAppPublisher "Sidemate Team"
+#define MyAppURL "https://sidemate.app"
+#define MyAppExeName "Sidemate.exe"
+
+[Setup]
+; 应用基本信息
+AppId={{B7E3F2A1-8C9D-4E5F-A6B0-1D2E3F4A5B6C}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppVerName=Sidemate v0.9 Patch 4
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+DefaultDirName={localappdata}\Sidemate
+DefaultGroupName={#MyAppName}
+UninstallDisplayName={#MyAppName}
+UninstallDisplayIcon={app}\{#MyAppExeName}
+DisableDirPage=yes
+
+; 输出设置
+OutputDir=output
+OutputBaseFilename=Sidemate_Setup_v0.9.4
+SetupIconFile=installer\setup.ico
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+
+; 权限（安装到用户目录，无需管理员权限）
+PrivilegesRequired=lowest
+
+; EULA 页（展示 LICENSE 文件，编码由 BOM 自动检测）
+InfoBeforeFile=LICENSE
+
+; 品牌图（可选，如不存在会使用默认图）
+; 取消注释以下两行当品牌图准备好后:
+; WizardImageFile=installer\wizard_image.bmp
+; WizardSmallImageFile=installer\wizard_small.bmp
+
+; 版本信息
+VersionInfoVersion=0.9.4.0
+VersionInfoCompany=Sidemate Team
+VersionInfoProductName=桌伴 Sidemate
+VersionInfoProductVersion=0.9.4.0
+
+; 禁用程序组页（桌面应用不需要）
+DisableProgramGroupPage=yes
+
+[Tasks]
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"
+
+[Files]
+; Go Launcher
+Source: "launcher\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+
+; Ollama 引擎
+Source: "ollama.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+; Python 嵌入式环境
+Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
+
+; Server 源码（排除用户数据和测试注册）
+Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\deps_manifest.json,settings.json,extensions\*.json"
+
+; LICENSE 和第三方许可
+Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "THIRD-PARTY-NOTICES"; DestDir: "{app}"; Flags: ignoreversion
+
+; 安装工具脚本
+Source: "installer\make_snapshot.py"; DestDir: "{app}\installer"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+[Run]
+; 安装完成后自动压缩 site-packages 备份
+Filename: "{app}\python\python.exe"; Parameters: "-u ""{app}\installer\make_snapshot.py"" ""{app}"""; Flags: runhidden; StatusMsg: "正在生成环境备份..."
+; 启动应用（用户勾选时）
+Filename: "{app}\{#MyAppExeName}"; Description: "启动 桌伴 Sidemate"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; 清理 cache 和 logs（非用户数据）
+Type: filesandordirs; Name: "{app}\server\data\cache"
+Type: filesandordirs; Name: "{app}\server\data\logs"
+Type: filesandordirs; Name: "{app}\backup"
+; 注意：不删除 {app}\server\data\chats, kb, kbsession, recordings（用户数据）

@@ -1,0 +1,59 @@
+# Sidemate v0.9 Patch 4 - 依赖版本锁定
+# 安装: pip install -r requirements.txt
+# 更新日期: 2026-06-10
+# Python: 3.14 (Windows, 嵌入式)
+
+# ===== 核心运行时 =====
+fastapi==0.136.3
+uvicorn==0.48.0
+sse-starlette==3.4.4
+starlette==1.2.1
+python-multipart==0.0.30
+pydantic==2.13.4
+pydantic-settings==2.14.0
+pydantic_core==2.46.4
+
+# ===== Ollama HTTP 客户端 =====
+httpx>=0.28.0
+
+# ===== NLP / 嵌入 =====
+sentence-transformers==5.5.1
+transformers==5.9.0
+tokenizers==0.22.2
+huggingface_hub==1.17.0
+safetensors==0.7.0
+accelerate==1.13.0
+scikit-learn==1.8.0
+scipy==1.17.1
+
+# ===== 知识库依赖（扩展包）=====
+rank-bm25==0.2.2
+jieba==0.42.1
+faiss-cpu>=1.7.0
+
+# ===== 云端 AI =====
+openai>=1.0.0
+
+# ===== 语音转写（扩展包）=====
+# faster-whisper 和 ctranslate2 由 Whisper 扩展包安装
+
+# ===== PDF/文档 =====
+pdfplumber==0.11.9
+pypdf==6.10.2
+python-docx==1.2.0
+python-pptx==1.0.2
+openpyxl==3.1.5
+mammoth==1.11.0
+
+# ===== 工具 =====
+numpy==2.4.6
+pandas==3.0.0
+pillow==12.2.0
+psutil==7.2.2
+beautifulsoup4==4.14.3
+lxml==6.1.1
+readability-lxml>=0.4.0
+Markdown==3.10.2
+colorama==0.4.6
+tqdm==4.67.3
+pywin32==311

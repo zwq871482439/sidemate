@@ -1,0 +1,11 @@
+{
+  "id": "knowledge",
+  "version": "1.0.0",
+  "name": "BGE-base-zh + Reranker",
+  "models": {
+    "embedding": "models/embedding",
+    "reranker": "models/reranker"
+  },
+  "installed_at": "2026-06-12T00:00:00",
+  "preinstalled": true
+}
