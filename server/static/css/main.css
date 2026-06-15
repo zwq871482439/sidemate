@@ -909,3 +909,81 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 
 /* ===== Patch2: Toast 样式补充 ===== */
 .toast.info{background:var(--info-color);color:var(--text-on-accent,#fff)}
+
+/* ===== Patch4 修复 5: 文档进度面板（DocProgressTracker） ===== */
+/* 未激活时完全不占位 */
+.doc-progress-panel{
+  max-height:0;
+  overflow:hidden;
+  opacity:0;
+  margin:0;
+  padding:0;
+  border:0;
+  transition:max-height .3s ease, opacity .25s ease, margin .25s ease;
+}
+/* 激活：展开 */
+.doc-progress-panel.active{
+  max-height:600px;
+  opacity:1;
+  margin:8px 0;
+  padding:10px 12px;
+  background:var(--bg-secondary);
+  border:1px solid var(--border-color);
+  border-radius:10px;
+  font-size:.85em;
+  box-shadow:0 1px 3px var(--shadow-color);
+}
+/* 完成态：绿色背景 */
+.doc-progress-panel.completed{
+  background:color-mix(in srgb, var(--success-color) 12%, var(--bg-secondary));
+  border-color:var(--success-color);
+}
+.doc-progress-header{
+  display:flex;align-items:center;gap:8px;
+  font-weight:600;color:var(--text-primary);
+  margin-bottom:8px;
+}
+.doc-progress-header .doc-progress-title{flex:1}
+.doc-progress-header .doc-progress-timer{
+  font-size:.78em;color:var(--text-muted);font-weight:500;
+  font-variant-numeric:tabular-nums;
+}
+.doc-progress-sections{
+  display:flex;flex-direction:column;gap:3px;
+  margin-bottom:6px;
+}
+.doc-progress-sec{
+  display:flex;align-items:center;gap:6px;
+  padding:3px 6px;border-radius:4px;
+  font-size:.82em;color:var(--text-secondary);
+  transition:background .2s;
+}
+.doc-progress-sec.done{color:var(--text-primary)}
+.doc-progress-sec.current{
+  background:color-mix(in srgb, var(--accent-color) 10%, transparent);
+  color:var(--text-primary);
+}
+.doc-progress-sec .sec-icon{
+  display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.doc-progress-sec.done .sec-icon{color:var(--success-color)}
+.doc-progress-sec.current .sec-icon{color:var(--accent-color)}
+.doc-progress-sec.pending .sec-icon{color:var(--text-muted)}
+.doc-progress-sec .sec-heading{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-progress-sec .sec-time{
+  font-size:.72em;color:var(--text-muted);
+  font-variant-numeric:tabular-nums;
+}
+/* 完成时的下载按钮（绿色） */
+.doc-progress-panel.completed .doc-progress-download{
+  margin-top:8px;display:flex;justify-content:flex-start;
+}
+.doc-progress-panel.completed .doc-progress-download a{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 14px;border-radius:6px;
+  background:var(--success-color);color:#fff;
+  text-decoration:none;font-size:.82em;font-weight:600;
+  transition:opacity .15s, transform .15s;
+}
+.doc-progress-panel.completed .doc-progress-download a:hover{opacity:.88;transform:translateY(-1px)}

@@ -363,6 +363,42 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     think_len = 0
     agent_summary = None
 
+    # Patch4 修复 5：UI 状态机 + 进度可视化
+    # 在 _run_agent_loop 层派生 doc_started / section_done / doc_complete 事件，
+    # 并给转发的 agent_status 增加 phase / ts / elapsed_ms 字段。
+    # 关键状态串（来自 agent_tools.TOOL_REGISTRY 的 status_map）：
+    #   write_section:   writing → writing_done
+    #   set_doc_status:  doc_status_updating → doc_status_done
+    _doc_started_sent = False
+    _doc_complete_sent = False
+    _doc_topic = (message or "")[:60] if message else "文档"
+    _doc_id_for_events = None
+    _section_count_for_events = 0
+    _pipeline_start_ts = t0  # 用于 elapsed_ms 计算
+    _last_tool_start_ts = {}  # tool_name → 开始时间戳，用于计算单步耗时
+    _STATUS_DONE_SUFFIXES = ("_done", "_listed", "_deleted", "_read_done", "_write_done")
+
+    def _status_phase(s):
+        """从 status 字符串推断 phase（start/done）"""
+        if not s:
+            return "start"
+        # 已知的 "完成" 状态
+        if s in ("doc_status_done", "workspace_listed", "workspace_read_done",
+                 "workspace_write_done", "workspace_deleted"):
+            return "done"
+        # thinking 是 start 类
+        if s in ("thinking", "searching", "fetching", "kb_searching", "writing",
+                 "fetching", "doc_status_updating", "workspace_listing",
+                 "workspace_reading", "workspace_writing", "workspace_deleting"):
+            return "start"
+        # 后缀匹配
+        if any(s.endswith(suffix) for suffix in _STATUS_DONE_SUFFIXES):
+            return "done"
+        # 其它像 search_done / fetch_done / kb_done / writing_done / budget_exceeded / error 等
+        if s.endswith("_done") or s in ("budget_exceeded", "tool_limited"):
+            return "done"
+        return "start"
+
     try:
         for phase, content in agent.run(
             message=message,
@@ -386,8 +422,76 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                     think_len = len(think_text)
 
             elif phase == "agent_status":
-                # 实时状态
-                yield sse_event("agent_status", content)
+                # Patch4 修复 5：派生 doc_started / section_done / doc_complete + 加 phase/ts
+                status_val = content.get("status", "") if isinstance(content, dict) else ""
+                now_ts = int(time.time() * 1000)
+                elapsed_ms = now_ts - int(_pipeline_start_ts * 1000)
+
+                if isinstance(content, dict):
+                    # 5.1 doc_started：第一次 write_section 开始
+                    if status_val == "writing" and not _doc_started_sent:
+                        _doc_started_sent = True
+                        # 试图拿 doc_id（从 agent 实例）
+                        try:
+                            _doc_id_for_events = agent.get_doc_id()
+                        except Exception:
+                            _doc_id_for_events = None
+                        yield sse_event("doc_started", {
+                            "topic": _doc_topic,
+                            "doc_id": _doc_id_for_events or "",
+                            "ts": now_ts,
+                        })
+
+                    # 5.2 section_done：每个 write_section 完成
+                    if status_val == "writing_done":
+                        _section_count_for_events += 1
+                        # 推断当前章节标题：取本会话已写入的最后一节
+                        heading = ""
+                        try:
+                            secs = agent.get_doc_sections()
+                            if secs:
+                                heading = secs[-1].get("heading", "")
+                        except Exception:
+                            pass
+                        yield sse_event("section_done", {
+                            "heading": heading,
+                            "index": _section_count_for_events,
+                            "total_so_far": _section_count_for_events,
+                            "ts": now_ts,
+                        })
+
+                    # 5.3 doc_complete：set_doc_status("completed") 完成
+                    # 注意：get_status_event 的 status_map 字段名 "status" 与 kwarg "status" 同名，
+                    # 导致 set_doc_status 的 status_map 失效，content 实际为 {"status": "completed"}。
+                    # 这里同时兼容两种情况（直接看 status 值是否为 completed）
+                    if status_val == "doc_status_done" or status_val == "completed":
+                        doc_st = content.get("status", "")
+                        # 只在 status_val == "completed" 或 status_val == "doc_status_done" 且 doc_st=="completed" 时触发
+                        is_completed = (status_val == "completed") or (doc_st == "completed")
+                        if is_completed and not _doc_complete_sent:
+                            _doc_complete_sent = True
+                            secs = []
+                            try:
+                                secs = agent.get_doc_sections()
+                            except Exception:
+                                pass
+                            yield sse_event("doc_complete", {
+                                "sections": len(secs),
+                                "doc_url": None,  # 此时 docx 尚未生成，下面兜底会再发一次
+                                "filename": None,
+                                "total_time": max(0.0, time.time() - _pipeline_start_ts),
+                                "ts": now_ts,
+                            })
+
+                    # 给转发出去的 agent_status 追加 phase / ts / elapsed_ms
+                    enriched = dict(content)
+                    enriched.setdefault("phase", _status_phase(status_val))
+                    enriched.setdefault("ts", now_ts)
+                    if enriched.get("phase") == "done":
+                        enriched.setdefault("elapsed_ms", elapsed_ms)
+                    yield sse_event("agent_status", enriched)
+                else:
+                    yield sse_event("agent_status", content)
 
             elif phase == "agent_summary":
                 # 统计摘要
@@ -473,9 +577,43 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 "filename": doc_filename,
             })
             log.info("[CLOUD-AGENT] DOC 生成完成: %s", doc_filename)
+
+            # Patch4 修复 5：doc_complete 兜底（含 doc_url）
+            # 模型可能已经调过 set_doc_status("completed") 发过一次（那时还没 doc_url），
+            # 这里再发一次（带 doc_url），前端用最后一个为准。
+            secs_cnt = 0
+            try:
+                secs_cnt = len(agent.get_doc_sections())
+            except Exception:
+                pass
+            yield sse_event("doc_complete", {
+                "sections": secs_cnt,
+                "doc_url": doc_url,
+                "filename": doc_filename,
+                "total_time": max(0.0, time.time() - _pipeline_start_ts),
+                "ts": int(time.time() * 1000),
+            })
+            _doc_complete_sent = True
         except Exception as e:
             log.error("[CLOUD-AGENT] DOC 生成失败: %s", str(e)[:100])
             yield sse_event("doc_error", {"message": "文档生成失败: %s" % str(e)[:80]})
+
+    # Patch4 修复 5：doc 模式 + 模型未调 set_doc_status 的兜底
+    # （已生成章节但没标 completed → pipeline 末尾兜底发 doc_complete）
+    if agent_mode == "doc" and _doc_started_sent and not _doc_complete_sent:
+        try:
+            secs_cnt = len(agent.get_doc_sections())
+        except Exception:
+            secs_cnt = _section_count_for_events
+        yield sse_event("doc_complete", {
+            "sections": secs_cnt,
+            "doc_url": doc_url,  # 可能为 None（docx 生成失败的情况）
+            "filename": doc_filename,
+            "total_time": max(0.0, time.time() - _pipeline_start_ts),
+            "ts": int(time.time() * 1000),
+            "fallback": True,  # 标记这是兜底发的
+        })
+        _doc_complete_sent = True
 
     # ====== 保存对话 ======
     elapsed = time.time() - ctx.__dict__.get('_t0', time.time())

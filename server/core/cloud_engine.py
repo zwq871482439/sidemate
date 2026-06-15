@@ -23,6 +23,28 @@ log = logging.getLogger(__name__)
 log_scan = logging.getLogger("local-ai")
 
 
+# ===== Patch4 修复 8：云端 API 超时重试 =====
+# 灰度测试发现 GLM 云端偶发 "read operation timed out" / "connection reset" / 503，
+# 单次失败会中断整个 agent 任务。这里在 stream 调用外层包一层重试。
+MAX_RETRIES = 2
+# 仅重试网络类瞬时错误（业务错误如 401/400/429 不重试）
+RETRYABLE_ERRORS = (
+    "read operation timed out",
+    "read timeout",
+    "connection reset",
+    "connection aborted",
+    "connection broken",
+    "503",  # service unavailable
+    "502",  # bad gateway（部分代理/网关层瞬时故障）
+)
+
+
+def _is_retryable(error) -> bool:
+    """判断异常是否属于可重试的瞬时网络错误"""
+    err_lower = str(error).lower()
+    return any(e in err_lower for e in RETRYABLE_ERRORS)
+
+
 # ===== 友好错误翻译 =====
 
 def _translate_cloud_error(exc: Exception) -> dict:
@@ -495,58 +517,95 @@ class CloudEngine:
             log_scan.info("[CLOUD] 开始流式请求: model=%s, messages=%d条, max_tokens=%d, base_url=%s, api_key_set=%s" % (
                 cloud_model, len(messages), max_tokens, base_url[:50] if base_url else "(empty)", api_key_set))
 
-            stream = client.chat.completions.create(
-                model=cloud_model,
-                messages=messages,
-                max_tokens=max_tokens,
-                stream=True,
-                temperature=0.7,
-            )
-
-            _reasoning_started = False  # 是否已发送 think_start
+            # Patch4 修复 8：在 stream 调用外层包一层重试
+            # 约束：只要已经开始向下游 yield token/think_token，就不再重试（避免重复输出）
             _last_usage = None  # 最后一个 chunk 的 usage 字段
+            _stream_done = False
+            for _attempt in range(MAX_RETRIES + 1):
+                _reasoning_started = False  # 是否已发送 think_start
+                _yielded_any = False  # 本轮是否已向下游 yield 任何 token
+                try:
+                    stream = client.chat.completions.create(
+                        model=cloud_model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        stream=True,
+                        temperature=0.7,
+                    )
 
-            for chunk in stream:
-                if mm.stop_requested:
-                    log_scan.info("[CLOUD] 用户停止，中断流式读取")
+                    for chunk in stream:
+                        if mm.stop_requested:
+                            log_scan.info("[CLOUD] 用户停止，中断流式读取")
+                            break
+
+                        # 提取 usage（最后一个有效 chunk 的 usage 即为最终统计）
+                        if hasattr(chunk, 'usage') and chunk.usage:
+                            _last_usage = chunk.usage
+
+                        if chunk.choices and chunk.choices[0].delta:
+                            delta = chunk.choices[0].delta
+
+                            # 1) 推理模型的 reasoning_content（如 GLM-5.1, DeepSeek-R1 等）
+                            #    逐条推送，前端实时渲染（流式思考效果）
+                            reasoning = getattr(delta, 'reasoning_content', None) or ""
+                            if reasoning:
+                                if not _reasoning_started:
+                                    yield ("think_start", "")
+                                    _reasoning_started = True
+                                total_chars += len(reasoning)
+                                _yielded_any = True
+                                yield ("think_token", reasoning)
+
+                            # 2) 正文 content
+                            content = delta.content or ""
+                            if content:
+                                # 如果之前有推理内容，先关闭思考区
+                                if _reasoning_started:
+                                    yield ("think_end", "")
+                                    _reasoning_started = False
+                                full_output += content
+                                total_chars += len(content)
+                                _yielded_any = True
+                                yield ("text", content)
+
+                            # 检查结束原因
+                            finish_reason = chunk.choices[0].finish_reason
+                            if finish_reason == "stop":
+                                # 如果结束时还在思考，关闭思考区
+                                if _reasoning_started:
+                                    yield ("think_end", "")
+                                    _reasoning_started = False
+                                break
+
+                    # for 循环正常结束（或用户停止），本轮视为完成
+                    _stream_done = True
                     break
 
-                # 提取 usage（最后一个有效 chunk 的 usage 即为最终统计）
-                if hasattr(chunk, 'usage') and chunk.usage:
-                    _last_usage = chunk.usage
-
-                if chunk.choices and chunk.choices[0].delta:
-                    delta = chunk.choices[0].delta
-
-                    # 1) 推理模型的 reasoning_content（如 GLM-5.1, DeepSeek-R1 等）
-                    #    逐条推送，前端实时渲染（流式思考效果）
-                    reasoning = getattr(delta, 'reasoning_content', None) or ""
-                    if reasoning:
-                        if not _reasoning_started:
-                            yield ("think_start", "")
-                            _reasoning_started = True
-                        total_chars += len(reasoning)
-                        yield ("think_token", reasoning)
-
-                    # 2) 正文 content
-                    content = delta.content or ""
-                    if content:
-                        # 如果之前有推理内容，先关闭思考区
-                        if _reasoning_started:
+                except Exception as stream_err:
+                    # 关闭可能未关的思考区（best effort）
+                    if _reasoning_started:
+                        try:
                             yield ("think_end", "")
-                            _reasoning_started = False
-                        full_output += content
-                        total_chars += len(content)
-                        yield ("text", content)
+                        except Exception:
+                            pass
+                        _reasoning_started = False
 
-                    # 检查结束原因
-                    finish_reason = chunk.choices[0].finish_reason
-                    if finish_reason == "stop":
-                        # 如果结束时还在思考，关闭思考区
-                        if _reasoning_started:
-                            yield ("think_end", "")
-                            _reasoning_started = False
-                        break
+                    # 已开始向下游 yield token → 不重试，直接抛出
+                    if _yielded_any:
+                        raise
+                    # 已是最后一次尝试 → 抛出由外层 except 捕获
+                    if _attempt >= MAX_RETRIES or not _is_retryable(stream_err):
+                        raise
+                    # 重试：简单退避
+                    _backoff = 1.0 * (_attempt + 1)
+                    log_scan.warning("[CLOUD] 第 %d 次重试（%s），%.1fs 后重试",
+                                     _attempt + 1, str(stream_err)[:80], _backoff)
+                    time.sleep(_backoff)
+                    # 回退本轮已累积的输出（避免重复拼接）
+                    # 注意：full_output/total_chars 在重试场景下应为 0（_yielded_any=False），
+                    # 这里仍然清零，保险
+                    full_output = ""
+                    continue
 
             # for 循环正常结束后，如果还在思考区，关闭
             if _reasoning_started:
@@ -648,85 +707,118 @@ class CloudEngine:
             if tools:
                 create_kwargs["tools"] = tools
 
-            stream = client.chat.completions.create(**create_kwargs)
-
-            _reasoning_started = False
-
-            # 累积 tool_calls delta
+            # Patch4 修复 8：stream 调用外层包一层重试
+            # 约束：已向下游 yield 任何 token/think_token/tool_calls 后不再重试
             _tc_buffers = {}  # index → {id, name, arguments}
             _last_usage_wt = None  # 最后一个 chunk 的 usage 字段
+            finish_reason = None
+            for _attempt_wt in range(MAX_RETRIES + 1):
+                _reasoning_started = False
+                _yielded_any = False
+                _tc_buffers = {}  # 每次重试重置 tool_calls 累积器
+                finish_reason = None
+                try:
+                    stream = client.chat.completions.create(**create_kwargs)
 
-            for chunk in stream:
-                if mm.stop_requested:
-                    log_scan.info("[CLOUD-WT] 用户停止，中断流式读取")
+                    for chunk in stream:
+                        if mm.stop_requested:
+                            log_scan.info("[CLOUD-WT] 用户停止，中断流式读取")
+                            break
+
+                        if not chunk.choices:
+                            continue
+
+                        # 提取 usage
+                        if hasattr(chunk, 'usage') and chunk.usage:
+                            _last_usage_wt = chunk.usage
+
+                        choice = chunk.choices[0]
+                        delta = choice.delta
+
+                        # 1) 推理内容
+                        reasoning = getattr(delta, 'reasoning_content', None) or ""
+                        if reasoning:
+                            if not _reasoning_started:
+                                yield ("think_start", "")
+                                _reasoning_started = True
+                            _yielded_any = True
+                            yield ("think_token", reasoning)
+
+                        # 2) FC 工具调用（增量拼接）
+                        if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index
+                                if idx not in _tc_buffers:
+                                    _tc_buffers[idx] = {
+                                        "id": tc.id or "",
+                                        "type": "function",
+                                        "function": {
+                                            "name": (tc.function.name or "") if tc.function else "",
+                                            "arguments": ""
+                                        }
+                                    }
+                                # 累积 id / name / arguments delta
+                                if tc.id:
+                                    _tc_buffers[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        _tc_buffers[idx]["function"]["name"] = tc.function.name
+                                    if tc.function.arguments:
+                                        _tc_buffers[idx]["function"]["arguments"] += tc.function.arguments
+
+                        # 3) 正文 content
+                        content = delta.content or ""
+                        if content:
+                            if _reasoning_started:
+                                yield ("think_end", "")
+                                _reasoning_started = False
+                            _yielded_any = True
+                            yield ("text", content)
+
+                        # 4) 流结束检查
+                        finish_reason = choice.finish_reason
+                        if finish_reason == "tool_calls":
+                            # FC 调用完成，关闭思考区（如果还在）
+                            if _reasoning_started:
+                                yield ("think_end", "")
+                                _reasoning_started = False
+                            # 解析并返回完整的 tool_calls 列表
+                            tc_list = []
+                            for idx_key in sorted(_tc_buffers.keys()):
+                                tc_list.append(_tc_buffers[idx_key])
+                            _yielded_any = True
+                            yield ("tool_calls", tc_list)
+                            break
+                        elif finish_reason == "stop":
+                            if _reasoning_started:
+                                yield ("think_end", "")
+                                _reasoning_started = False
+                            break
+
+                    # 本轮 stream 正常结束
                     break
 
-                if not chunk.choices:
+                except Exception as stream_err_wt:
+                    # 关闭可能未关的思考区
+                    if _reasoning_started:
+                        try:
+                            yield ("think_end", "")
+                        except Exception:
+                            pass
+                        _reasoning_started = False
+
+                    # 已开始向下游 yield → 不重试
+                    if _yielded_any:
+                        raise
+                    # 已是最后一次尝试 → 抛出
+                    if _attempt_wt >= MAX_RETRIES or not _is_retryable(stream_err_wt):
+                        raise
+                    # 重试
+                    _backoff_wt = 1.0 * (_attempt_wt + 1)
+                    log_scan.warning("[CLOUD-WT] 第 %d 次重试（%s），%.1fs 后重试",
+                                     _attempt_wt + 1, str(stream_err_wt)[:80], _backoff_wt)
+                    time.sleep(_backoff_wt)
                     continue
-
-                # 提取 usage
-                if hasattr(chunk, 'usage') and chunk.usage:
-                    _last_usage_wt = chunk.usage
-
-                choice = chunk.choices[0]
-                delta = choice.delta
-
-                # 1) 推理内容
-                reasoning = getattr(delta, 'reasoning_content', None) or ""
-                if reasoning:
-                    if not _reasoning_started:
-                        yield ("think_start", "")
-                        _reasoning_started = True
-                    yield ("think_token", reasoning)
-
-                # 2) FC 工具调用（增量拼接）
-                if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in _tc_buffers:
-                            _tc_buffers[idx] = {
-                                "id": tc.id or "",
-                                "type": "function",
-                                "function": {
-                                    "name": (tc.function.name or "") if tc.function else "",
-                                    "arguments": ""
-                                }
-                            }
-                        # 累积 id / name / arguments delta
-                        if tc.id:
-                            _tc_buffers[idx]["id"] = tc.id
-                        if tc.function:
-                            if tc.function.name:
-                                _tc_buffers[idx]["function"]["name"] = tc.function.name
-                            if tc.function.arguments:
-                                _tc_buffers[idx]["function"]["arguments"] += tc.function.arguments
-
-                # 3) 正文 content
-                content = delta.content or ""
-                if content:
-                    if _reasoning_started:
-                        yield ("think_end", "")
-                        _reasoning_started = False
-                    yield ("text", content)
-
-                # 4) 流结束检查
-                finish_reason = choice.finish_reason
-                if finish_reason == "tool_calls":
-                    # FC 调用完成，关闭思考区（如果还在）
-                    if _reasoning_started:
-                        yield ("think_end", "")
-                        _reasoning_started = False
-                    # 解析并返回完整的 tool_calls 列表
-                    tc_list = []
-                    for idx_key in sorted(_tc_buffers.keys()):
-                        tc_list.append(_tc_buffers[idx_key])
-                    yield ("tool_calls", tc_list)
-                    break
-                elif finish_reason == "stop":
-                    if _reasoning_started:
-                        yield ("think_end", "")
-                        _reasoning_started = False
-                    break
 
             # for 循环结束后，如果还在思考区，关闭
             if _reasoning_started:

@@ -402,6 +402,8 @@ async function sendMessage() {
   _cloudThinkText = '';     // 重置全局变量
   _agentTimelineEl = null;  // 重置 Agent 时间线容器
   _agentTimelineData = [];  // 重置时间线数据收集
+  // Patch4 修复 5：重置文档进度面板
+  if (typeof _resetDocProgress === 'function') _resetDocProgress();
   var thinkingPhase = false;
   var currentTaskType = '';
   var localMaxPromptTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 0;
@@ -809,6 +811,15 @@ async function sendMessage() {
           // ===== Cloud Agent 新事件（agent_status / agent_summary / agent_think）=====
           } else if (d.type === 'agent_status') {
             _handleAgentStatus(d);
+            // Patch4 修复 5：识别 write_section 写作中状态，激活进度面板当前章节
+            if (d.status === 'writing' && typeof _handleDocProgressEvent === 'function') {
+              // heading 可能在 d.heading 里（来自 agent_tools.get_status_event 的 kwargs）
+              _handleDocProgressEvent('doc_started', {topic: '', doc_id: ''});
+              var tracker = (typeof _docProgressTracker !== 'undefined') ? _docProgressTracker : null;
+              if (tracker && tracker.activate) {
+                tracker.setCurrentSection(d.heading || '');
+              }
+            }
           } else if (d.type === 'agent_summary') {
             _handleAgentSummary(d);
           } else if (d.type === 'agent_think') {
@@ -934,6 +945,22 @@ async function sendMessage() {
               streamEl.appendChild(docBar);
             }
             showToast(iconSvg('doc','14') + ' 文档撰写完成', 'success');
+          // ===== Patch4 修复 5: 文档进度事件 =====
+          } else if (d.type === 'doc_started') {
+            // 第一次 write_section 前/时发出 → 激活进度面板
+            if (typeof _handleDocProgressEvent === 'function') {
+              _handleDocProgressEvent('doc_started', {topic: d.topic || '', doc_id: d.doc_id || ''});
+            }
+          } else if (d.type === 'section_done') {
+            // 每个 write_section 完成 → 章节加到列表
+            if (typeof _handleDocProgressEvent === 'function') {
+              _handleDocProgressEvent('section_done', d);
+            }
+          } else if (d.type === 'doc_complete') {
+            // 文档完成 → 进度面板变绿 + 下载按钮
+            if (typeof _handleDocProgressEvent === 'function') {
+              _handleDocProgressEvent('doc_complete', d);
+            }
           } else if (d.type === 'doc_error') {
             showToast(d.message || '文档撰写失败', 'error');
           }
@@ -1337,3 +1364,168 @@ function cancelDocOutline() {
 
 window.confirmDocOutline = confirmDocOutline;
 window.cancelDocOutline = cancelDocOutline;
+
+// ===== Patch4 修复 5: DocProgressTracker — 文档进度面板（UI 状态机） =====
+// 监听 4 个 SSE 事件：
+//   - doc_started   → 首次激活进度面板
+//   - section_done  → 实时显示章节（已完成 ✅、当前 🔄、未来 ⬜）
+//   - agent_status  → 工具调用历史带耗时显示
+//   - doc_complete  → 进度面板变绿 + 下载按钮
+var _docProgressTracker = null;  // 全局单例（每次 sendMessage 重置）
+
+function _resetDocProgress() {
+  _docProgressTracker = null;
+  var oldPanel = document.getElementById('doc-progress-panel');
+  if (oldPanel) oldPanel.remove();
+}
+
+function _getDocProgressTracker(streamEl) {
+  if (!_docProgressTracker) {
+    _docProgressTracker = new DocProgressTracker(streamEl);
+  } else if (streamEl && !_docProgressTracker.panelEl.parentNode) {
+    // 重建挂载（如 streamEl 已被重新创建）
+    streamEl.insertBefore(_docProgressTracker.panelEl, streamEl.firstChild);
+  }
+  return _docProgressTracker;
+}
+
+function DocProgressTracker(streamEl) {
+  this.active = false;
+  this.completed = false;
+  this.topic = '';
+  this.docId = '';
+  this.sections = [];         // [{heading, status: 'done'|'current'|'pending', ts, elapsed_ms}]
+  this.startTime = null;
+  this.totalTime = null;
+  this.docUrl = null;
+  this.filename = null;
+  this._timerInterval = null;
+
+  // 创建 DOM
+  this.panelEl = document.createElement('div');
+  this.panelEl.className = 'doc-progress-panel';
+  this.panelEl.id = 'doc-progress-panel';
+  this.panelEl.innerHTML =
+    '<div class="doc-progress-header">' +
+      '<span class="doc-progress-title"></span>' +
+      '<span class="doc-progress-timer"></span>' +
+    '</div>' +
+    '<div class="doc-progress-sections"></div>' +
+    '<div class="doc-progress-download"></div>';
+
+  if (streamEl) {
+    streamEl.insertBefore(this.panelEl, streamEl.firstChild);
+  }
+}
+
+DocProgressTracker.prototype.activate = function(topic, docId) {
+  if (this.active) return;
+  this.active = true;
+  this.topic = topic || '文档';
+  this.docId = docId || '';
+  this.startTime = Date.now();
+  this.panelEl.classList.add('active');
+  this.panelEl.querySelector('.doc-progress-title').innerHTML =
+    iconSvg('doc', '14') + ' ' + _esc(this.topic);
+  // 启动计时器
+  var self = this;
+  this._timerInterval = setInterval(function() {
+    if (self.completed) return;
+    var elapsed = Math.floor((Date.now() - self.startTime) / 1000);
+    var mm = Math.floor(elapsed / 60);
+    var ss = elapsed % 60;
+    var timerEl = self.panelEl.querySelector('.doc-progress-timer');
+    if (timerEl) timerEl.textContent = '⏱ ' + mm + '\'' + (ss < 10 ? '0' : '') + ss + '\"';
+  }, 1000);
+};
+
+DocProgressTracker.prototype.addSectionDone = function(data) {
+  if (!this.active) this.activate(this.topic, this.docId);
+  var heading = data.heading || ('第 ' + ((data.index || 0) + 1) + ' 章');
+  // 之前的 current → done
+  for (var i = 0; i < this.sections.length; i++) {
+    if (this.sections[i].status === 'current') this.sections[i].status = 'done';
+  }
+  this.sections.push({
+    heading: heading,
+    status: 'done',
+    ts: data.ts || Date.now(),
+    elapsed_ms: data.elapsed_ms || null,
+  });
+  this._renderSections();
+};
+
+DocProgressTracker.prototype.setCurrentSection = function(heading) {
+  if (!this.active) this.activate(this.topic, this.docId);
+  for (var i = 0; i < this.sections.length; i++) {
+    if (this.sections[i].status === 'current') this.sections[i].status = 'done';
+  }
+  this.sections.push({heading: heading || '...', status: 'current', ts: Date.now()});
+  this._renderSections();
+};
+
+DocProgressTracker.prototype._renderSections = function() {
+  var box = this.panelEl.querySelector('.doc-progress-sections');
+  if (!box) return;
+  var html = '';
+  for (var i = 0; i < this.sections.length; i++) {
+    var s = this.sections[i];
+    var icon = '';
+    if (s.status === 'done') icon = '<span class="sec-icon">' + iconSvg('check', '14') + '</span>';
+    else if (s.status === 'current') icon = '<span class="sec-icon">' + iconSvg('spin', '14') + '</span>';
+    else icon = '<span class="sec-icon">⬜</span>';
+    var timeStr = '';
+    if (s.elapsed_ms != null) timeStr = '<span class="sec-time">(' + (s.elapsed_ms / 1000).toFixed(1) + 's)</span>';
+    html += '<div class="doc-progress-sec ' + s.status + '">' +
+      icon + '<span class="sec-heading">' + _esc(s.heading) + '</span>' + timeStr +
+      '</div>';
+  }
+  box.innerHTML = html;
+};
+
+DocProgressTracker.prototype.markComplete = function(data) {
+  this.completed = true;
+  this.totalTime = data.total_time || null;
+  if (data.doc_url) this.docUrl = data.doc_url;
+  if (data.filename) this.filename = data.filename;
+  // 把任何 current 标记为 done
+  for (var i = 0; i < this.sections.length; i++) {
+    if (this.sections[i].status === 'current') this.sections[i].status = 'done';
+  }
+  this.panelEl.classList.add('completed');
+  this._renderSections();
+  // 停止计时器
+  if (this._timerInterval) { clearInterval(this._timerInterval); this._timerInterval = null; }
+  var timerEl = this.panelEl.querySelector('.doc-progress-timer');
+  if (timerEl && this.totalTime != null) {
+    var t = Math.floor(this.totalTime);
+    var mm = Math.floor(t / 60), ss = t % 60;
+    timerEl.textContent = '✅ ' + mm + '\'' + (ss < 10 ? '0' : '') + ss + '\"';
+  }
+  // 下载按钮
+  var dlBox = this.panelEl.querySelector('.doc-progress-download');
+  if (dlBox && this.docUrl) {
+    var apiBase = (typeof API !== 'undefined' ? API : '');
+    var fullUrl = this.docUrl.indexOf('http') === 0 ? this.docUrl : (apiBase + this.docUrl);
+    var fname = this.filename || 'document.docx';
+    dlBox.innerHTML = '<a href="' + _esc(fullUrl) + '" download="' + _esc(fname) + '" target="_blank">' +
+      iconSvg('doc', '14') + ' 下载文档 (' + _esc(fname) + ')</a>';
+  }
+};
+
+// 全局调度入口（从 SSE 事件分发处调用）
+function _handleDocProgressEvent(eventType, data) {
+  var streamEl = document.getElementById('stream-msg');
+  if (!streamEl) return;
+  var tracker = _getDocProgressTracker(streamEl);
+  if (!tracker) return;
+  if (eventType === 'doc_started') {
+    tracker.activate(data.topic || '文档', data.doc_id || '');
+  } else if (eventType === 'section_done') {
+    tracker.addSectionDone(data);
+  } else if (eventType === 'doc_complete') {
+    tracker.markComplete(data);
+  }
+}
+window._handleDocProgressEvent = _handleDocProgressEvent;
+window._resetDocProgress = _resetDocProgress;
