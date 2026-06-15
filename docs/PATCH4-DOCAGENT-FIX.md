@@ -1,7 +1,8 @@
-# Patch4 文档 Agent 修复方案 v2（最终定稿）
+# Patch4 文档 Agent 修复方案 v2.1（最终定稿）
 
 > 2026-06-15 多轮讨论后定稿。基于 P4 灰度测试数据分析 + 架构讨论。
 > v1 → v2 核心变化：引入 workspace 工作区、双入口同工具集、UI 状态机、消除后端续写识别。
+> v2 → v2.1 变化：补充灰度测试发现的稳定性问题（KB 索引原子写入 + 云端 API 超时重试）。
 
 ## 背景
 
@@ -358,6 +359,66 @@ class DocProgressTracker {
 5. 目标长度：不超过 max(本地, 云端) × 1.2 倍
 ```
 
+### 修复 7：KB 向量索引原子写入（B 层，来自灰度测试漏 2）
+
+**来源**：P4 灰度测试 `server.log` 出现：
+```
+[KB] 清理残留临时文件: kb_vec_ajil1me1.tmp.npz (×4 个)
+[KB] 向量索引文件异常（0 字节），视为损坏并删除
+```
+
+**根因**：KB 向量索引写入时被进程退出/重启打断，留下 0 字节文件和 .tmp.npz 残留。当前代码有"检测损坏就删除"的兜底，但没有**原子写入保护**。
+
+**改动**（`knowledge/search.py` 的索引保存函数）：
+```python
+def save_vector_index(vectors, path):
+    """原子写入：写到临时文件 → rename 到目标路径"""
+    tmp_path = path + ".tmp"
+    np.savez(tmp_path, vectors=vectors)
+    # Windows 下 os.replace 是原子的（跨文件系统也能用）
+    os.replace(tmp_path, path)
+```
+
+**附带**：启动时清理所有 `.tmp.npz` 残留（已有逻辑，确认生效）。
+
+**影响范围小**：只改 1 个函数。
+
+### 修复 8：云端 API 超时重试（B 层，来自灰度测试漏 4）
+
+**来源**：P4 灰度测试 `server.log` 出现：
+```
+[ERROR] [CLOUD-WT] 异常: The read operation timed out
+```
+
+**根因**：GLM 云端 API 偶发超时，当前代码超时就直接中断整个 agent 任务，没有重试。配合修复 1（文档落盘）后可以从断点续写，但单次超时就失败的体验仍然不好。
+
+**改动**（`core/cloud_engine.py` 的 `run_with_tools()` 和 `run()`）：
+```python
+MAX_RETRIES = 2
+RETRYABLE_ERRORS = ("read operation timed out", "connection reset", "503")
+
+def _is_retryable(error):
+    err_lower = str(error).lower()
+    return any(e in err_lower for e in RETRYABLE_ERRORS)
+
+# 在 stream 调用外层包一层重试
+for attempt in range(MAX_RETRIES + 1):
+    try:
+        yield from self._stream_once(...)
+        return
+    except Exception as e:
+        if attempt < MAX_RETRIES and _is_retryable(e):
+            log.warning("[CLOUD] 第 %d 次重试（%s）", attempt + 1, str(e)[:80])
+            time.sleep(1.0 * (attempt + 1))  # 简单退避
+            continue
+        raise  # 非重试错误或重试用完，抛出
+```
+
+**重试策略**：
+- 只重试网络类错误（timeout / connection reset / 503）
+- 最多重试 2 次，退避 1s/2s
+- 业务错误（401/400/429）不重试
+
 ---
 
 ## 与原 7 点方案的差异
@@ -373,13 +434,15 @@ class DocProgressTracker {
 
 ---
 
-## 文件改动清单（9 个）
+## 文件改动清单（11 个）
 
 | 文件 | 改动类型 | 归属修复 | 关键改动 |
 |------|---------|---------|---------|
 | `core/doc_session.py` | **新增** | 1 | 文档状态管理 + workspace 路径安全 + 文件操作函数 |
 | `core/agent_tools.py` | 改 | 1,4 | 新增 set_doc_status + 4 个 workspace 工具 + write_section 改无条件 + 两套 prompt 重写 |
 | `core/agent_loop.py` | 改 | 1,2,3 | workspace 工具执行 + 轮次护栏 + 子类计数 + 上下文注入 + doc_started/section_done 事件 |
+| `core/cloud_engine.py` | 改 | 8 | run_with_tools / run 加重试逻辑（网络错误重试 2 次） |
+| `knowledge/search.py` | 改（小） | 7 | 向量索引保存改原子写入（tmp + rename） |
 | `pipelines/cloud_pipeline.py` | 改 | 1,5 | doc 模式初始化 doc_session + 末尾兜底 + doc_complete 事件 |
 | `prompts.py` | 改 | 6 | MERGE_FUSION_PROMPT 重写 |
 | `static/js/chat.js` | 改 | 5 | DocProgressTracker + UI 状态机 |
@@ -387,13 +450,13 @@ class DocProgressTracker {
 | `routers/files.py` | 改 | 1 | 文档下载 API 加 chat_id + workspace 文件 API |
 | `session/chat_store.py` | 改（小） | 1 | docs/ + workspace/ 子目录管理 |
 
-**1 新增 + 8 改动**。
+**1 新增 + 10 改动**。
 
 ---
 
 ## 实施顺序建议
 
-按依赖关系分 3 批：
+按依赖关系分 4 批：
 
 **Batch 1（A 层基础设施）**：修复 1 + 修复 2
 - 新建 `doc_session.py`
@@ -406,7 +469,11 @@ class DocProgressTracker {
 - 改 `agent_loop.py`（轮次护栏 + 子类计数）
 - prompt 文字定稿（已在修复 4 方案里）
 
-**Batch 3（C 层体验）**：修复 5 + 修复 6
+**Batch 3（稳定性补丁）**：修复 7 + 修复 8
+- 改 `knowledge/search.py`（向量索引原子写入）
+- 改 `core/cloud_engine.py`（超时重试）
+
+**Batch 4（C 层体验）**：修复 5 + 修复 6
 - 改 `cloud_pipeline.py`（SSE 事件）
 - 改 `chat.js` + `main.css`（UI 状态机）
 - 改 `prompts.py`（融合去重）

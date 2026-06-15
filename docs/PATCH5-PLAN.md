@@ -83,7 +83,7 @@ Go Launcher 启动 → FastAPI 就绪 → 前端 init() →
 
 **目标**：消除 Patch2-Patch4 迭代积累的技术债务，统一配置体系，减少混淆和硬编码。
 
-> 来源：Patch4 Prompt 全量盘点发现的问题 + 同类排查。
+> 来源：Patch4 Prompt 全量盘点发现的问题 + 同类排查 + P4 灰度测试暴露。
 
 #### 5.1 V1/V2 双套策略配置合并
 
@@ -160,15 +160,7 @@ P4 已修复 `num_predict=4096` 等硬编码，P5 需系统排查同类问题：
 
 ##### 5.5.2 融合去重而非求全（P0）
 
-`MERGE_FUSION_PROMPT` 从"综合所有信息"改为"择优去重"：
-
-```
-本地和云端分别给出了回答。请生成一个精简融合版：
-1. 核心事实以本地为准（有出处[1][2]）
-2. 云端用于补充本地未覆盖的视角（如果有）
-3. 两边都覆盖的内容只保留一份，优先本地
-4. 如果两边信息本质相同，不要强行拼接
-```
+> 注：本节已提前到 Patch4 文档Agent修复中实现（见 `PATCH4-DOCAGENT-FIX.md` 修复 6）。P5 不再重复。
 
 ##### 5.5.3 表格触发条件（P1）
 
@@ -181,11 +173,49 @@ P4 已修复 `num_predict=4096` 等硬编码，P5 需系统排查同类问题：
 
 | 文件 | 改动 |
 |------|------|
-| `prompts.py` | `CLOUD_KB_SYSTEM_PROMPT` 表格触发条件；`MERGE_FUSION_PROMPT` 去重逻辑；`SYSTEM_PROMPT_V2` 深度信号注入 |
+| `prompts.py` | `CLOUD_KB_SYSTEM_PROMPT` 表格触发条件；`SYSTEM_PROMPT_V2` 深度信号注入 |
 | `intelligence/task_classifier.py` | 扩展输出字段 + `question_depth` |
 | `core/prompt_builder.py` | 从 StreamContext 读取 depth，动态注入 token/length 约束 |
 | `pipelines/compare_pipeline.py` | 传递 depth 信号给融合阶段 |
 | `core/cloud_engine.py` | `_build_messages` 接受 depth 信号 |
+
+#### 5.6 网络抓取 TLS 指纹伪装（来自 P4 灰度测试）
+
+**来源**：P4 灰度测试日志 `D:/新建文件夹 (4)/data/logs/server.log` 反复出现：
+```
+[WARNING] [SEARCH] curl_cffi 不可用，搜索将使用 httpx（无 TLS 指纹伪装，部分网站可能拦截）
+[WARNING] [SEARCH] httpx 返回 403 — zhihu.com
+[WARNING] [SEARCH] httpx 返回 403 — collinsdictionary.com
+```
+
+**问题**：`fetch_url` 用 httpx 直请求，知乎/词典站等识别出不是真浏览器，返回 403。导致 Agent 无法读取搜索结果正文，只能靠模型自身知识写文档。
+
+**方案**：
+- 升级 `curl_cffi` 依赖（模拟 Chrome TLS 指纹）
+- `core/search_engine.py` 的 `fetch()` 优先用 curl_cffi，降级用 httpx
+- 更新 `deps_check.py` + `build_full.py`
+
+| 文件 | 改动 |
+|------|------|
+| `core/search_engine.py` | fetch() 改用 curl_cffi |
+| `server/requirements.txt` | 加 curl_cffi |
+| `core/deps_check.py` | 加 curl_cffi 检查 |
+| `build_full.py` | 加 curl_cffi 到打包清单 |
+
+#### 5.7 Splash 启动画面 logo.ico 加载失败（来自 P4 灰度测试）
+
+**来源**：P4 灰度测试 launcher.log 反复出现：
+```
+[Splash] logo.ico 加载失败
+[Tray] 使用 logo.ico 图标: ...\server\static\img\logo.ico（托盘正常）
+```
+
+**问题**：Splash 用的路径 `appDir\logo.ico`（根目录），打包后未正确包含；托盘用的 `server\static\img\logo.ico` 正常。
+
+**方案**：
+- 统一 Splash 和 Tray 的图标路径（都用 `server\static\img\logo.ico`）
+- 或在 setup.iss 确保根目录 `logo.ico` 被打包
+- 配合 Batch 1 品牌视觉一起做（多尺寸 favicon）
 
 ---
 
