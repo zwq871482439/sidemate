@@ -55,6 +55,7 @@ REM [3/4] 建运行时符号链接
 echo [3/4] 创建运行时符号链接...
 mklink /J "%DST%\python" "%SRC%python" >nul 2>&1
 mklink /J "%DST%\server\models" "%SRC%server\models" >nul 2>&1
+mklink /J "%DST%\lib" "%SRC%lib" >nul 2>&1
 copy /y "%SRC%ollama.exe" "%DST%\" >nul 2>&1
 copy /y "%SRC%Sidemate.exe" "%DST%\" >nul 2>&1
 
@@ -67,6 +68,7 @@ set "OK=1"
 if not exist "%DST%\server\server.py" ( echo   [X] server\server.py 缺失 & set "OK=0" )
 if not exist "%DST%\python\python.exe" ( echo   [X] python\python.exe 缺失 & set "OK=0" )
 if not exist "%DST%\ollama.exe" ( echo   [X] ollama.exe 缺失 & set "OK=0" )
+if not exist "%DST%\lib\ollama\ggml-vulkan.dll" ( echo   [X] lib\ollama\ggml-vulkan.dll 缺失 & set "OK=0" )
 if not exist "%DST%\setup.iss" ( echo   [X] setup.iss 缺失 & set "OK=0" )
 if exist "%DST%\server\models\blobs" ( echo   [OK] server\models\blobs ) else ( echo   [X] server\models\blobs 缺失 & set "OK=0" )
 

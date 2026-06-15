@@ -5,6 +5,7 @@
 # ====== 运行时资产（~5GB，固定一份不进 git）======
 python/
 models/
+lib/
 ollama.exe
 Sidemate.exe
 

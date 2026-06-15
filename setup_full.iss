@@ -61,6 +61,9 @@ Source: "launcher\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; ====== Ollama 引擎 ======
 Source: "ollama.exe"; DestDir: "{app}"; Flags: ignoreversion
 
+; ====== Ollama 运行时依赖库（Vulkan/CPU DLL）======
+Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs
+
 ; ====== Python 嵌入式环境 ======
 Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
 

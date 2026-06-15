@@ -24,7 +24,8 @@ C:\Sidemate\           ← git 仓库 = 工作区 = 测试环境
 │   ====== 以下不进 git（运行时资产，真身在本目录） ======
 ├── python/             ← 嵌入式 Python + site-packages（~1.3GB）
 ├── models/             ← 模型文件（LLM+Embedding+Reranker，~4.4GB）
-├── server/models → Junction → models/（ISS 打包路径兼容）
+├── lib/                ← Ollama 运行时 DLL（Vulkan/CPU，~133MB）
+├── server/models → Junction → models/（代码路径兼容）
 ├── ollama.exe          ← Ollama 引擎（~35MB）
 ├── Sidemate.exe        ← Go 编译产物（~6.5MB）
 ├── backup/             ← site_packages.zip 等环境快照
