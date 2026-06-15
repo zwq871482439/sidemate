@@ -131,8 +131,8 @@ def new_chat_file():
         folder_name = "%s_%03d" % (today, idx)
         folder_path = os.path.join(CHAT_DIR, folder_name)
 
-        # 防止文件夹已被其他线程创建
-        while os.path.exists(folder_path):
+        # 防止文件夹或同名 .json 已被其他线程/旧格式创建
+        while os.path.exists(folder_path) or os.path.exists(folder_path + ".json"):
             idx += 1
             folder_name = "%s_%03d" % (today, idx)
             folder_path = os.path.join(CHAT_DIR, folder_name)
@@ -393,17 +393,22 @@ def load_chat_cache(filepath):
 
 
 def list_chats():
-    """列出所有对话（文件夹格式 + 旧 .json 格式，P1-A8: 只读 meta 信息）"""
+    """列出所有对话（文件夹格式 + 旧 .json 格式，P1-A8: 只读 meta 信息）
+
+    Patch4 修复：同名文件夹和 .json 共存时只列文件夹版本（v3 优先）。
+    """
     _ensure_migrated()
 
     current_file = get_current_chat()
     result = []
 
-    # 扫描文件夹格式
+    # 第一遍：扫描文件夹格式，记录哪些名字已被占用
+    folder_names = set()
     for entry in os.listdir(CHAT_DIR):
         entry_path = os.path.join(CHAT_DIR, entry)
 
         if os.path.isdir(entry_path):
+            folder_names.add(entry)  # 标记这个名字已被文件夹占用
             # 文件夹格式
             name = entry
             msg_count = 0
@@ -434,12 +439,17 @@ def list_chats():
                 "current": (entry_path == current_file),
                 "msg_count": msg_count,
             })
-            continue
+
+    # 第二遍：扫描旧 .json 格式，跳过已被同名文件夹占用的
+    for entry in os.listdir(CHAT_DIR):
+        entry_path = os.path.join(CHAT_DIR, entry)
 
         if entry.endswith(".json") and not entry.endswith(".tmp"):
-            # 旧 .json 格式
-            filepath = entry_path
             name = entry.replace(".json", "")
+            # Patch4 修复：同名文件夹已存在时跳过（v3 文件夹优先）
+            if name in folder_names:
+                continue
+            filepath = entry_path
             msg_count = 0
             has_cache = False
             try:
