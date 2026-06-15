@@ -21,10 +21,10 @@ C:\Sidemate\           ← git 仓库 = 工作区 = 测试环境
 ├── requirements_gen.txt← 依赖生成脚本
 ├── logo.ico            ← 应用图标
 │
-│   ====== 以下不进 git（运行时资产） ======
-├── python/       → Junction → 运行时嵌入式 Python（~1.4GB）
-├── models/       → Junction → 模型文件（~4.4GB）
-├── server/models → Junction → 同上（ISS 打包路径兼容）
+│   ====== 以下不进 git（运行时资产，真身在本目录） ======
+├── python/             ← 嵌入式 Python + site-packages（~1.3GB）
+├── models/             ← 模型文件（LLM+Embedding+Reranker，~4.4GB）
+├── server/models → Junction → models/（ISS 打包路径兼容）
 ├── ollama.exe          ← Ollama 引擎（~35MB）
 ├── Sidemate.exe        ← Go 编译产物（~6.5MB）
 ├── backup/             ← site_packages.zip 等环境快照
