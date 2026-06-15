@@ -555,16 +555,39 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             return
 
     # ====== 文档模式：生成 docx ======
+    # Patch4：doc 模式 OR chat 模式但有章节（双入口统一）
     doc_url = None
     doc_filename = None
-    if agent_mode == "doc" and full_text.strip():
-        # 尝试用 Agent 收集的章节生成 docx
-        sections = agent.get_doc_sections()
+    sections = agent.get_doc_sections() if agent else []
+    _should_gen_docx = (agent_mode == "doc" or bool(sections)) and full_text.strip()
+
+    if _should_gen_docx:
         try:
             from pipelines.doc_action import generate_docx
-            doc_filename = "doc_%s.docx" % time.strftime("%Y%m%d_%H%M%S")
-            from config import DOCS_DIR
-            doc_path = os.path.join(DOCS_DIR, doc_filename)
+            # Patch4：docx 产物跟 chat 走（data/chats/{chat_id}/docs/{doc_id}.docx）
+            _doc_id_for_file = ""
+            try:
+                _doc_id_for_file = agent.get_doc_id() or ""
+            except Exception:
+                pass
+            if not _doc_id_for_file:
+                _doc_id_for_file = "doc_" + time.strftime("%Y%m%d_%H%M%S")
+            doc_filename = "%s.docx" % _doc_id_for_file
+
+            # 解析 chat_id 用于产物路径
+            _doc_chat_id = _chat_id or ""
+            if _doc_chat_id:
+                from core.doc_session import _docs_root
+                _docs_dir = _docs_root(_doc_chat_id)
+                os.makedirs(_docs_dir, exist_ok=True)
+                doc_path = os.path.join(_docs_dir, doc_filename)
+                doc_url = "/api/chat/%s/doc/%s/download" % (_doc_chat_id, _doc_id_for_file)
+            else:
+                # 兜底：无 chat_id（异常情况）走全局 DOCS_DIR
+                from config import DOCS_DIR
+                doc_path = os.path.join(DOCS_DIR, doc_filename)
+                doc_url = "/api/doc/download/%s" % doc_filename
+
             if sections:
                 # 用章节生成
                 _docx_content = "# %s\n\n" % (message[:50] if message else "文档")
@@ -576,21 +599,15 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 # fallback: 用正文生成
                 generate_docx(full_text, doc_path,
                               title=message[:50] if message else "文档")
-            doc_url = "/api/doc/download/%s" % doc_filename
             yield sse_event("doc_ready", {
                 "url": doc_url,
                 "filename": doc_filename,
             })
-            log.info("[CLOUD-AGENT] DOC 生成完成: %s", doc_filename)
+            log.info("[CLOUD-AGENT] DOC 生成完成: %s (chat=%s, doc_id=%s, mode=%s)",
+                     doc_filename, _doc_chat_id or "?", _doc_id_for_file, agent_mode)
 
             # Patch4 修复 5：doc_complete 兜底（含 doc_url）
-            # 模型可能已经调过 set_doc_status("completed") 发过一次（那时还没 doc_url），
-            # 这里再发一次（带 doc_url），前端用最后一个为准。
-            secs_cnt = 0
-            try:
-                secs_cnt = len(agent.get_doc_sections())
-            except Exception:
-                pass
+            secs_cnt = len(sections)
             yield sse_event("doc_complete", {
                 "sections": secs_cnt,
                 "doc_url": doc_url,
@@ -605,7 +622,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
 
     # Patch4 修复 5：doc 模式 + 模型未调 set_doc_status 的兜底
     # （已生成章节但没标 completed → pipeline 末尾兜底发 doc_complete）
-    if agent_mode == "doc" and _doc_started_sent and not _doc_complete_sent:
+    if (agent_mode == "doc" or bool(sections)) and _doc_started_sent and not _doc_complete_sent:
         try:
             secs_cnt = len(agent.get_doc_sections())
         except Exception:
@@ -760,16 +777,25 @@ def _save_and_done(ctx, response_text, raw_text, think_content, think_folded,
             })
         save_chat(chat_file, save_messages)
 
-    # 文档模式 docx 生成
+    # 文档模式 docx 生成（fallback 分支：非 AgentLoop 的旧路径）
     if _doc_mode and not _doc_outline_only and final_response.strip():
         try:
             from pipelines.doc_action import generate_docx
             doc_filename = "doc_%s.docx" % time.strftime("%Y%m%d_%H%M%S")
-            from config import DOCS_DIR
-            doc_path = os.path.join(DOCS_DIR, doc_filename)
+            # Patch4：优先跟 chat 走
+            _fb_chat_id = _chat_id or ""
+            if _fb_chat_id:
+                from core.doc_session import _docs_root
+                _fb_docs_dir = _docs_root(_fb_chat_id)
+                os.makedirs(_fb_docs_dir, exist_ok=True)
+                doc_path = os.path.join(_fb_docs_dir, doc_filename)
+                download_url = "/api/chat/%s/doc/%s/download" % (_fb_chat_id, doc_filename[:-5])
+            else:
+                from config import DOCS_DIR
+                doc_path = os.path.join(DOCS_DIR, doc_filename)
+                download_url = "/api/doc/download/%s" % doc_filename
             generate_docx(final_response, doc_path,
                           title=message[:50] if message else "文档")
-            download_url = "/api/doc/download/%s" % doc_filename
             yield sse_event("doc_ready", {
                 "url": download_url,
                 "filename": doc_filename,
