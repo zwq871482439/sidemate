@@ -15,11 +15,18 @@ from session.chat_store import today_str
 
 
 def get_latest_chat():
-    """获取当天最新的对话文件"""
+    """获取当天最新的对话文件（优先 v3 文件夹格式，兼容旧 .json）"""
     today = today_str()
+    # 优先查文件夹格式
+    folders = sorted(_glob.glob(os.path.join(CHAT_DIR, "%s_*" % today)), reverse=True)
+    for f in folders:
+        if os.path.isdir(f):
+            return f
+    # 兼容：旧 .json 文件
     files = sorted(_glob.glob(os.path.join(CHAT_DIR, "%s_*.json" % today)), reverse=True)
-    if files:
-        return files[0]
+    for f in files:
+        if os.path.isfile(f):
+            return f
     return None
 
 
