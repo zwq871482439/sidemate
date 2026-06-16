@@ -62,9 +62,13 @@ _DOC_BASE_PROMPT = (
     "- 不要分多次调用——直接写完整篇 Markdown 到一个 .md 文件\n"
     "- 不要在每次 write_workspace 后主动调 set_doc_status completed——保持 drafting 让用户能追加\n"
     "- 只有用户明确说\"写完了/可以了/不要更多了\"时才调 set_doc_status completed\n"
-    "- 如果用户说\"继续/追加/再加一章\"，先 read_workspace 读回旧文档，再 write_workspace 覆盖更新\n"
+    "- 续写策略（按场景选最省 token 的）：\n"
+    "  * 加新章节：用 append_workspace（不用 read 回原文）\n"
+    "  * 改某段内容：用 edit_workspace（精准替换，不重写全文）\n"
+    "  * 大改或重写：用 read_workspace 读回，再 write_workspace 覆盖\n"
     "- 你能看到[会话上下文]，包括之前搜过的关键词——不要重复搜索\n"
     "- 禁止只搜索不阅读（fetch_url）就开始写作\n"
+    "- 用户上传的文件也在 workspace 里，可以用 read_workspace 读取参考\n"
 )
 
 
@@ -294,6 +298,68 @@ TOOL_REGISTRY = {
         "status_map": {
             "start": "workspace_deleting",
             "done": "workspace_deleted",
+        },
+        "condition": None,
+    },
+    "append_workspace": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "append_workspace",
+                "description": "向已有文件追加内容（不覆盖原文）。续写长文档时用这个，不用 read+write 整文件。文件不存在时自动创建。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "相对工作区根目录的文件路径"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "要追加的内容"
+                        }
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "workspace_appending",
+            "done": "workspace_appended",
+        },
+        "condition": None,
+    },
+    "edit_workspace": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "edit_workspace",
+                "description": "对已有文件做精准文本替换（不重写全文）。适合修改文档的某一段，old_text 必须在文件中精确匹配。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "相对工作区根目录的文件路径"
+                        },
+                        "old_text": {
+                            "type": "string",
+                            "description": "要替换的原文（必须在文件中精确存在）"
+                        },
+                        "new_text": {
+                            "type": "string",
+                            "description": "替换后的新内容"
+                        }
+                    },
+                    "required": ["path", "old_text", "new_text"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "workspace_editing",
+            "done": "workspace_edited",
         },
         "condition": None,
     },

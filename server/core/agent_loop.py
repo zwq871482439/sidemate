@@ -621,6 +621,60 @@ class AgentLoop:
                 except Exception as e:
                     return self._workspace_error("delete_workspace", e)
 
+            elif tool_name == "append_workspace":
+                # Patch4 v3.1：追加内容到 workspace 文件（不覆盖）
+                from core.doc_session import append_workspace_file
+                path = args.get("path", "")
+                content = args.get("content", "")
+                try:
+                    f = append_workspace_file(self.chat_id, path, content)
+                    return {
+                        "success": True,
+                        "tool": "append_workspace",
+                        "data": {
+                            "name": f["name"],
+                            "size": f["size"],
+                            "appended": f["appended"],
+                        },
+                    }
+                except ValueError as e:
+                    return {
+                        "success": False,
+                        "tool": "append_workspace",
+                        "error": "path_violation",
+                        "message": str(e)[:120],
+                    }
+                except Exception as e:
+                    return self._workspace_error("append_workspace", e)
+
+            elif tool_name == "edit_workspace":
+                # Patch4 v3.1：精准替换 workspace 文件内容
+                from core.doc_session import edit_workspace_file
+                path = args.get("path", "")
+                old_text = args.get("old_text", "")
+                new_text = args.get("new_text", "")
+                try:
+                    f = edit_workspace_file(self.chat_id, path, old_text, new_text)
+                    return {
+                        "success": True,
+                        "tool": "edit_workspace",
+                        "data": {
+                            "name": f["name"],
+                            "size": f["size"],
+                            "replaced": f["replaced"],
+                        },
+                    }
+                except ValueError as e:
+                    err_msg = str(e)[:120]
+                    return {
+                        "success": False,
+                        "tool": "edit_workspace",
+                        "error": "not_found" if "未找到" in err_msg else "path_violation",
+                        "message": err_msg,
+                    }
+                except Exception as e:
+                    return self._workspace_error("edit_workspace", e)
+
             else:
                 return {
                     "success": False,
@@ -674,7 +728,8 @@ class AgentLoop:
                                     status=args.get("status", ""))
         elif tool_name == "list_docs":
             return get_status_event(tool_name, "start")
-        elif tool_name in ("list_workspace", "read_workspace", "write_workspace", "delete_workspace"):
+        elif tool_name in ("list_workspace", "read_workspace", "write_workspace", "delete_workspace",
+                           "append_workspace", "edit_workspace"):
             path = args.get("path", "")
             return get_status_event(tool_name, "start", path=path[:50] if path else "")
         else:
@@ -713,6 +768,20 @@ class AgentLoop:
                                     name=data.get("name", ""),
                                     size=_size,
                                     words=_words)
+        elif tool_name == "append_workspace":
+            # Patch4 v3.1：append done 带总 size + 本次追加字节数
+            _words = len(args.get("content", "")) if args.get("content") else 0
+            return get_status_event(tool_name, "done",
+                                    name=data.get("name", ""),
+                                    size=data.get("size", 0),
+                                    appended=data.get("appended", 0),
+                                    words=_words)
+        elif tool_name == "edit_workspace":
+            # Patch4 v3.1：edit done 带替换次数
+            return get_status_event(tool_name, "done",
+                                    name=data.get("name", ""),
+                                    replaced=data.get("replaced", 0),
+                                    size=data.get("size", 0))
         else:
             return {"status": "done"}
 

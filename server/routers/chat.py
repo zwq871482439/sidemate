@@ -92,6 +92,16 @@ def _safe_filename(filename: str) -> str:
     return filename
 
 
+def _is_safe_chat_id(chat_id: str) -> bool:
+    """Patch4 v3.1：校验 chat_id 格式（YYYY-MM-DD_NNN 或 YYYY-MM-DD_NNN.json）"""
+    if not chat_id:
+        return False
+    # 允许 .json 后缀
+    cid = chat_id.replace(".json", "")
+    # 格式：YYYY-MM-DD_NNN（日期-编号）
+    return bool(re.match(r'^\d{4}-\d{2}-\d{2}_\d{3}$', cid))
+
+
 def _sanitize_output(text: str) -> str:
     """轻量排版清理（不删正文内容，只做格式修整）
 
@@ -820,22 +830,44 @@ async def api_qa_ask(request: Request):
 # ============================================================
 
 @router.post("/api/file_upload")
-async def api_file_upload(file: UploadFile = File(...)):
-    """上传文件到临时目录"""
+async def api_file_upload(file: UploadFile = File(...), chat_id: str = ""):
+    """上传文件。
+
+    Patch4 v3.1：如果有 chat_id，存到 data/chats/{chat_id}/workspace/（session 级隔离）。
+    没有 chat_id 时降级到全局 UPLOAD_DIR（兼容旧调用）。
+    """
     from config import get as _cfg_get
     _UPLOAD_MAX_SIZE = _cfg_get("upload_max_size")
     if not file.filename:
         return JSONResponse({"error": "未选择文件"}, status_code=400)
-    upload_dir = UPLOAD_DIR
-    os.makedirs(upload_dir, exist_ok=True)
+
     safe_name = _safe_filename(file.filename)
-    save_path = os.path.join(upload_dir, safe_name)
     content = await file.read()
     if len(content) > _UPLOAD_MAX_SIZE:
         return JSONResponse({"error": "文件过大（最大50MB）"}, status_code=400)
+
+    # Patch4 v3.1：优先存到 session workspace
+    if chat_id and chat_id.replace(".json", ""):
+        _cid = chat_id.replace(".json", "")
+        # 安全校验：chat_id 只允许 YYYY-MM-DD_NNN 格式
+        if not _is_safe_chat_id(_cid):
+            return JSONResponse({"error": "非法 chat_id"}, status_code=400)
+        from config import CHAT_DIR
+        from session.chat_store import ensure_chat_subdirs
+        ensure_chat_subdirs(_cid)
+        ws_dir = os.path.join(CHAT_DIR, _cid, "workspace")
+        os.makedirs(ws_dir, exist_ok=True)
+        save_path = os.path.join(ws_dir, safe_name)
+    else:
+        # 降级：全局 UPLOAD_DIR
+        upload_dir = UPLOAD_DIR
+        os.makedirs(upload_dir, exist_ok=True)
+        save_path = os.path.join(upload_dir, safe_name)
+
     with open(save_path, "wb") as f:
         f.write(content)
-    return {"path": save_path, "filename": safe_name, "size": len(content)}
+    return {"path": save_path, "filename": safe_name, "size": len(content),
+            "in_workspace": bool(chat_id)}
 
 
 # ============================================================

@@ -32,7 +32,7 @@ from routers.deps import (
 log = logging.getLogger(__name__)
 
 # Patch4 修复 1：会话需要管理的子目录（文档状态 + 模型工作区）
-_CHAT_SUBDIRS = ("docs", "workspace", "assets")
+_CHAT_SUBDIRS = ("docs", "workspace")
 
 # ===== 对话保存并发保护 =====
 _chat_save_lock = threading.Lock()
@@ -139,9 +139,8 @@ def new_chat_file():
 
         # 创建文件夹结构
         os.makedirs(folder_path, exist_ok=True)
-        assets_dir = os.path.join(folder_path, "assets")
-        os.makedirs(assets_dir, exist_ok=True)
-        # Patch4 修复 1：一并创建 docs / workspace 子目录
+        # Patch4 v3.1：统一 workspace（用户上传 + 模型产出都在这里）
+        # 不再单独建 assets/ 子目录——上传直接进 workspace/
         for _sub in ("docs", "workspace"):
             os.makedirs(os.path.join(folder_path, _sub), exist_ok=True)
 
@@ -169,10 +168,11 @@ def new_chat_file():
 
 
 def ensure_chat_subdirs(chat_id):
-    """Patch4 修复 1：确保会话的子目录存在（docs / workspace / assets）。
+    """Patch4 v3.1：确保会话的子目录存在（docs / workspace）。
 
     在 doc_session 写入或 workspace 操作前调用，保证目录就位。
     支持传入 chat_id（文件夹名）或 chat_file 完整路径。
+    Patch4 v3.1：assets 已并入 workspace，不再单独创建。
 
     Args:
         chat_id: 会话 ID（如 "2026-06-15_001"）或完整路径

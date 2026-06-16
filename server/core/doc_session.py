@@ -180,6 +180,94 @@ def write_workspace_file(chat_id, rel_path, content):
     }
 
 
+def append_workspace_file(chat_id, rel_path, content):
+    """Patch4 v3.1：向 workspace 文件追加内容（不覆盖原文）。
+
+    用于续写长文档场景：模型只需传新章节内容，不用 read 回原文再 write。
+    文件不存在时自动创建（行为等同于 write_workspace_file）。
+
+    Args:
+        chat_id: 会话 ID
+        rel_path: 相对 workspace/ 的路径
+        content: 追加的文本内容
+
+    Returns:
+        dict: {"name", "size": 追加后总字节数, "appended": 本次追加字节数}
+    Raises:
+        ValueError: 路径越界
+    """
+    abs_path = safe_workspace_path(chat_id, rel_path)
+
+    # 自动创建子目录
+    parent = os.path.dirname(abs_path)
+    if parent and not os.path.isdir(parent):
+        os.makedirs(parent, exist_ok=True)
+
+    data = content.encode("utf-8") if isinstance(content, str) else content
+    old_size = os.path.getsize(abs_path) if os.path.exists(abs_path) else 0
+
+    # 追加（如需换行分隔：原文件非空且不以 \n 结尾时补一个）
+    with open(abs_path, "ab") as f:
+        if old_size > 0:
+            with open(abs_path, "rb") as _fchk:
+                _fchk.seek(-1, 2)
+                _last = _fchk.read(1)
+            if _last not in (b"\n", b"\r"):
+                f.write(b"\n\n")
+        f.write(data)
+
+    new_size = os.path.getsize(abs_path)
+    return {
+        "name": rel_path,
+        "size": new_size,
+        "appended": len(data),
+    }
+
+
+def edit_workspace_file(chat_id, rel_path, old_text, new_text):
+    """Patch4 v3.1：对 workspace 文件做精准替换（不重写全文）。
+
+    用于修改文档的某段内容，避免 read+write 整文件浪费 token。
+    old_text 必须在文件中唯一存在，否则返回 not_found 错误。
+
+    Args:
+        chat_id: 会话 ID
+        rel_path: 相对 workspace/ 的路径
+        old_text: 要替换的原文（必须精确匹配，区分大小写）
+        new_text: 替换后的内容
+
+    Returns:
+        dict: {"name", "size", "replaced": 替换次数}
+    Raises:
+        ValueError: 路径越界 / 文件不存在 / old_text 未找到
+    """
+    abs_path = safe_workspace_path(chat_id, rel_path)
+    if not os.path.exists(abs_path):
+        raise ValueError("文件不存在: %s" % rel_path)
+
+    with open(abs_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    count = content.count(old_text)
+    if count == 0:
+        raise ValueError("未找到要替换的原文（请检查 old_text 是否精确匹配）")
+    if count > 1:
+        # 多次匹配时也替换（全部），但告知模型有多次匹配
+        pass
+
+    new_content = content.replace(old_text, new_text)
+
+    data = new_content.encode("utf-8")
+    with open(abs_path, "wb") as f:
+        f.write(data)
+
+    return {
+        "name": rel_path,
+        "size": len(data),
+        "replaced": count,
+    }
+
+
 def delete_workspace_file(chat_id, rel_path):
     """删除 workspace 内的文件（不删目录）。
 

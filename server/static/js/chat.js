@@ -411,7 +411,14 @@ async function sendMessage() {
     try {
       var fd2 = new FormData();
       fd2.append('file', pendingFile);
-      var fileResp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/file_upload', {method: 'POST', body: fd2});
+      // Patch4 v3.1：传 chat_id 让后端把文件存到 session workspace/
+      var _uploadChatId = '';
+      if (typeof currentChatFile !== 'undefined' && currentChatFile) {
+        _uploadChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
+      }
+      var _uploadUrl = (typeof API !== 'undefined' ? API : '') + '/api/file_upload';
+      if (_uploadChatId) _uploadUrl += '?chat_id=' + encodeURIComponent(_uploadChatId);
+      var fileResp = await fetch(_uploadUrl, {method: 'POST', body: fd2});
       var fileData = await fileResp.json();
       if (fileData.path) {
         userMsg.content += '\n\n[用户上传了文件: ' + pendingFile.name + '，请读取并参考]';
