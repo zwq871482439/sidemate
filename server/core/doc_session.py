@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-core/doc_session.py — 文档状态化 + Session Workspace
-=====================================================
+core/doc_session.py — Session Workspace + Completed 文档标记（Patch4 v3）
+=========================================================================
 
-Patch4 修复 1（A 层基础设施）。
+Patch4 v3：Workspace 统一改造。
+- workspace 是模型的舞台，文档只是 workspace 里的一种 .md 文件。
+- 文档状态通过 `.md 文件存在性 + .completed.json 标记列表` 推断，不再有独立 DocSession。
+- set_doc_status("xxx.md", "completed") 触发后端读 .md + 生成 .docx。
 
 职责：
-  1. DocSession：管理单个文档的状态（章节、状态、时间戳），持久化到
-     `data/chats/{chat_id}/docs/{doc_id}.json`
-  2. workspace 路径安全：`safe_workspace_path()` 防止模型用 `../` 或绝对路径
+  1. workspace 路径安全：`safe_workspace_path()` 防止模型用 `../` 或绝对路径
      跳出 workspace 子目录
-  3. workspace 文件操作：list / read / write / delete
+  2. workspace 文件操作：list / read / write / delete
+  3. completed 文档标记：`mark_doc_completed` / `is_doc_completed` / `list_completed_docs`
+     持久化到 `data/chats/{chat_id}/docs/.completed.json`（轻量级）
 
 ⚠️ workspace 安全边界（铁律）：
   - 模型只能在 `data/chats/{chat_id}/workspace/` 子目录内操作
@@ -194,187 +197,97 @@ def delete_workspace_file(chat_id, rel_path):
 
 
 # ============================================================
-#  DocSession — 单个文档的状态管理
+#  Completed 文档标记（轻量级持久化）
 # ============================================================
+# Patch4 v3：替代旧的 DocSession。文档状态由
+#   - workspace 里的 .md 文件存在性
+#   - .completed.json 标记列表
+# 推断。.completed.json 仅记录已完结的文件名 + 时间，不存正文。
 
-class DocSession:
-    """管理单个文档的状态：章节列表 + 状态 + 时间戳。
-
-    持久化到 `data/chats/{chat_id}/docs/{doc_id}.json`。
-
-    线程安全：每个实例有自己的锁。
-    """
-
-    def __init__(self, chat_id, doc_id, topic=""):
-        self.chat_id = chat_id
-        self.doc_id = doc_id
-        self.topic = topic
-        self._lock = threading.Lock()
-        self._data = {
-            "doc_id": doc_id,
-            "topic": topic,
-            "status": "ongoing",
-            "sections": [],
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        self._loaded = False
-
-    # ---------- 路径 ----------
-    def _json_path(self):
-        return os.path.join(_docs_root(self.chat_id), "%s.json" % self.doc_id)
-
-    def _ensure_docs_dir(self):
-        docs_dir = _docs_root(self.chat_id)
-        if not os.path.isdir(docs_dir):
-            os.makedirs(docs_dir, exist_ok=True)
-
-    # ---------- 持久化 ----------
-    def load(self):
-        """从磁盘加载状态（如果存在）。不存在则保留初始状态。"""
-        with self._lock:
-            path = self._json_path()
-            if os.path.isfile(path):
-                try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict):
-                        # 合并已知字段
-                        self._data["topic"] = data.get("topic", self.topic)
-                        self._data["status"] = data.get("status", "ongoing")
-                        self._data["sections"] = list(data.get("sections", []))
-                        self._data["created_at"] = data.get(
-                            "created_at", self._data["created_at"])
-                        self._data["updated_at"] = data.get(
-                            "updated_at", self._data["updated_at"])
-                        if self.topic:
-                            # 实例显式指定的 topic 优先
-                            self._data["topic"] = self.topic
-                except Exception as e:
-                    log.warning("[DOC_SESSION] 加载失败 %s: %s", self.doc_id, str(e)[:100])
-            self._loaded = True
-        return self
-
-    def save(self):
-        """落盘（原子写入）。"""
-        with self._lock:
-            self._ensure_docs_dir()
-            self._data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            path = self._json_path()
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=2)
-                f.flush()
-                try:
-                    os.fsync(f.fileno())
-                except OSError:
-                    pass
-            os.replace(tmp, path)
-
-    # ---------- 章节操作 ----------
-    def add_section(self, heading, content):
-        """追加一个章节并立即落盘。
-
-        Returns:
-            dict: 当前章节信息 + 总章节数
-        """
-        section = {
-            "heading": heading,
-            "content": content,
-            "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        with self._lock:
-            self._data["sections"].append(section)
-        self.save()
-        return {
-            "heading": heading,
-            "index": len(self._data["sections"]),
-            "total_sections": len(self._data["sections"]),
-        }
-
-    def list_sections(self):
-        """返回章节列表（仅 heading + 长度，不含正文，避免注入泄漏）。"""
-        with self._lock:
-            return [
-                {
-                    "heading": s.get("heading", ""),
-                    "length": len(s.get("content", "")),
-                }
-                for s in self._data["sections"]
-            ]
-
-    # ---------- 状态 ----------
-    def set_status(self, status):
-        """更新文档状态。status 必须是 ongoing / completed。"""
-        if status not in ("ongoing", "completed"):
-            raise ValueError("非法状态: %s" % status)
-        with self._lock:
-            self._data["status"] = status
-        self.save()
-        return {"doc_id": self.doc_id, "status": status}
-
-    def get_status(self):
-        with self._lock:
-            return self._data["status"]
-
-    def get_topic(self):
-        with self._lock:
-            return self._data.get("topic", "")
-
-    def to_dict(self):
-        with self._lock:
-            # 返回浅拷贝，避免外部修改内部状态
-            return {
-                "doc_id": self._data["doc_id"],
-                "topic": self._data["topic"],
-                "status": self._data["status"],
-                "sections": list(self._data["sections"]),
-                "created_at": self._data["created_at"],
-                "updated_at": self._data["updated_at"],
-            }
+_COMPLETED_LOCK = threading.Lock()
 
 
-# ============================================================
-#  会话级工具：列出所有文档（用于上下文注入）
-# ============================================================
+def _completed_json_path(chat_id):
+    """completed 标记文件路径：data/chats/{chat_id}/docs/.completed.json"""
+    return os.path.join(_docs_root(chat_id), ".completed.json")
 
-def list_docs_in_chat(chat_id):
-    """列出某个会话下的所有文档状态（用于上下文注入）。
 
-    只返回概览信息（标题 + 章节数 + 状态），不返回正文。
+def _load_completed(chat_id):
+    """读取 .completed.json，返回 dict（不存在则空 dict）。"""
+    path = _completed_json_path(chat_id)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception as e:
+        log.warning("[DOC_SESSION] 加载 .completed.json 失败: %s", str(e)[:100])
+    return {}
 
-    Returns:
-        list[dict]: [{"doc_id", "topic", "sections", "status"}, ...]
-    """
+
+def _save_completed(chat_id, data):
+    """原子写入 .completed.json。"""
     docs_dir = _docs_root(chat_id)
     if not os.path.isdir(docs_dir):
-        return []
-
-    result = []
-    for fname in os.listdir(docs_dir):
-        if not fname.endswith(".json"):
-            continue
-        path = os.path.join(docs_dir, fname)
+        os.makedirs(docs_dir, exist_ok=True)
+    path = _completed_json_path(chat_id)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                continue
-            result.append({
-                "doc_id": data.get("doc_id", fname[:-5]),
-                "topic": data.get("topic", ""),
-                "sections": len(data.get("sections", [])),
-                "status": data.get("status", "ongoing"),
-            })
-        except Exception:
-            continue
-
-    return result
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+    os.replace(tmp, path)
 
 
-def gen_doc_id():
-    """生成文档 ID：doc_YYYYMMDD_HHMMSS"""
-    return "doc_" + time.strftime("%Y%m%d_%H%M%S")
+def mark_doc_completed(chat_id, filename):
+    """把某个 .md 文档标记为 completed（同时记录 docx_generated=True）。
+
+    Args:
+        chat_id: 会话 ID
+        filename: workspace 里的 .md 文件名（如 "团队协作.md"）
+
+    Returns:
+        dict: 该文档的标记信息
+    """
+    if not chat_id or not filename:
+        return {}
+    with _COMPLETED_LOCK:
+        data = _load_completed(chat_id)
+        entry = {
+            "completed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "docx_generated": True,
+        }
+        data[filename] = entry
+        _save_completed(chat_id, data)
+    log.info("[DOC_SESSION] mark_doc_completed: chat=%s file=%s", chat_id, filename)
+    return entry
+
+
+def is_doc_completed(chat_id, filename):
+    """查询某个 .md 文档是否已 completed。"""
+    if not chat_id or not filename:
+        return False
+    with _COMPLETED_LOCK:
+        data = _load_completed(chat_id)
+    return filename in data
+
+
+def list_completed_docs(chat_id):
+    """列出该会话所有已 completed 的 .md 文档（仅文件名列表）。
+
+    Returns:
+        list[str]: 已 completed 的文件名（如 ["团队协作.md", "会议纪要.md"]）
+    """
+    if not chat_id:
+        return []
+    with _COMPLETED_LOCK:
+        data = _load_completed(chat_id)
+    return list(data.keys())
 
 
 def chat_id_from_path(chat_file):

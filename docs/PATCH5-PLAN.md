@@ -245,6 +245,45 @@ P4 已修复 `num_predict=4096` 等硬编码，P5 需系统排查同类问题：
 
 **关联**：P4 文档Agent修复的"会话上下文注入"已能缓解此问题（模型看到 ongoing 文档自己判断）。本节是彻底根治。
 
+#### 5.9 docx 转换器专业化（来自 P4 workspace 统一改造）
+
+**来源**：P4 末尾讨论"workspace 统一设计"时发现，当前 `pipelines/doc_action.py:generate_docx()` 用自实现的 `_parse_markdown_to_sections()` 解析 Markdown，是个玩具实现：
+
+- 只处理 `#` 和 `##`，不处理 `###`、`####`
+- 不处理 `**粗体**`、`*斜体*`、`~~删除线~~` 内联格式
+- 不处理列表（有序/无序/嵌套）
+- 不处理代码块（```）
+- 不处理表格、引用块、链接
+
+导致模型写的复杂 Markdown（含 `### 4.1`、列表项、表格）被当作纯文本塞进 docx。
+
+**问题表现**：用户看到的 docx 里直接出现 `### 4.1 异步优先` 这种 Markdown 源码，列表项没有 bullet 样式。
+
+**方案**：引入专业 Markdown→DOCX 转换器替换自实现解析器：
+
+| 候选库 | GitHub | 特点 | 评估 |
+|--------|--------|------|------|
+| **cnkang/markdown2docx** | https://github.com/cnkang/markdown2docx | 2025 年活跃维护，支持 H1-H6 + 内联格式 + 列表 + 表格 + 代码块 + 引用块 + 模板 | ⭐ 首选 |
+| mddocx (PyPI) | https://pypi.org/project/mddocx/ | 命令行工具 + 批量转换 | 备选 |
+| Pandoc | https://pandoc.org/ | 最强但需独立二进制（~100MB） | ❌ 离线打包负担重 |
+
+**实施步骤**：
+
+1. 评估 `markdown2docx` 依赖树（确认离线可打包）
+2. 加入 `requirements.txt` + `deps_check.py`
+3. 改 `pipelines/doc_action.py:generate_docx()` 用新库替换 `_parse_markdown_to_sections()`
+4. 字体/字号/段距通过模板统一配置
+5. ISS 打包加进去（`build_full.py` 依赖清单更新）
+
+| 文件 | 改动 |
+|------|------|
+| `server/requirements.txt` | 加 markdown2docx |
+| `server/core/deps_check.py` | 加 markdown2docx 检查 |
+| `server/pipelines/doc_action.py` | `generate_docx()` 用新库替换 |
+| `build_full.py` | 加 markdown2docx 到打包清单 |
+
+**关联**：P4 workspace 统一改造后，模型用 `write_workspace` 写完整 Markdown，docx 质量完全依赖转换器。本节提供"最后一公里"保障。
+
 ---
 
 ## 三、不做的事

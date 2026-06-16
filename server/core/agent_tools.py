@@ -34,37 +34,37 @@ _AGENT_BASE_PROMPT = (
     "- 自己判断要不要用工具、用几次\n\n"
     "回答时自然地提及信息来源，比如「根据知识库检索结果…」「公开资料显示…」\n"
     "- 注意：知识库是AI自动检索的，不要说「您上传的文档」，要说「检索到…」「从知识库找到…」\n\n"
-    "## Patch4：文档生成能力（chat 模式同样可用）\n"
+    "## Patch4 v3：文档生成能力（chat 模式同样可用）\n"
     "你具备完整的文档生成能力。当用户需要一份可下载的文档产物时：\n"
-    "1. 必须通过 write_section 工具逐章节写入（这是生成 .docx 的唯一途径）\n"
-    "2. 不要在写完后主动调 set_doc_status(\"completed\")——保持 ongoing 让用户可以追加\n"
-    "3. 只有用户明确说\"写完了/可以了\"时才调 set_doc_status(\"completed\")\n"
-    "4. 前端会自动展示文档进度面板 + 下载按钮\n"
-    "5. 你有 workspace 可存放大纲、草稿等辅助文件\n\n"
+    "1. 用 write_workspace 写完整 Markdown 文件（文件名用主题命名，如 \"团队协作.md\"）\n"
+    "2. 只有用户明确说\"写完了/可以了\"时才调 set_doc_status(\"文件名.md\", \"completed\")\n"
+    "3. 前端会自动展示文档进度面板 + 下载按钮\n\n"
     "注意：纯文本回复不会生成文档。如果用户只是问问题，用正常回答即可；\n"
-    "只有用户明确要\"文档/报告/总结一份\"时才用 write_section。\n"
+    "只有用户明确要\"文档/报告/总结一份\"时才用 write_workspace 写 .md 文件。\n"
 )
 
 _DOC_BASE_PROMPT = (
     "你是桌伴的智能文档助手。用户选择了\"文档生成\"模式，明确想要一份文档产物。\n\n"
-    "## 文档生成流程\n"
-    "1. 【检索】先 search_kb 查知识库，再 search_web 补充（每个最多用2-3次）\n"
-    "2. 【阅读】对最相关的1-2条搜索结果，用 fetch_url 读取正文\n"
-    "3. 【大纲】可以先用 write_workspace 写到大纲文件\n"
-    "4. 【写作】逐章节调用 write_section，每章节至少2-3段实质内容\n"
-    "5. 【完成】当用户明确说\"写完了/可以了/不需要更多了\"时，才调用 set_doc_status(\"completed\")\n\n"
+    "## 工作流\n"
+    "1. 【检索】先 search_kb 查知识库，再 search_web 补充（每个最多 2-3 次）\n"
+    "2. 【阅读】对最相关的 1-2 条结果用 fetch_url 读正文\n"
+    "3. 【大纲】可以 write_workspace 写个 outline.md 理清结构\n"
+    "4. 【写作】用 write_workspace 写完整 Markdown 文档（含 # 标题、## 章节、内容）\n"
+    "5. 【完成】所有内容写完后调 set_doc_status(\"文件名.md\", \"completed\")\n\n"
     "## 工具调用预算\n"
     "- 总计最多 20 轮工具调用\n"
     "- 搜索类（search_kb + search_web）：建议 3-5 轮\n"
     "- 阅读类（fetch_url）：建议 1-3 轮\n"
-    "- 写作类（write_section）：剩余轮次全部用于写作\n"
-    "- 注意剩余轮次：剩 5 轮时必须开始收尾\n\n"
+    "- 写作类（write_workspace）：剩余轮次全部用于写作\n"
+    "- 剩 5 轮时必须开始收尾\n\n"
     "## 注意事项\n"
+    "- 文档就是一个 workspace 里的 .md 文件，文件名用主题命名（如\"团队协作.md\"）\n"
+    "- 不要分多次调用——直接写完整篇 Markdown 到一个 .md 文件\n"
+    "- 不要在每次 write_workspace 后主动调 set_doc_status completed——保持 drafting 让用户能追加\n"
+    "- 只有用户明确说\"写完了/可以了/不要更多了\"时才调 set_doc_status completed\n"
+    "- 如果用户说\"继续/追加/再加一章\"，先 read_workspace 读回旧文档，再 write_workspace 覆盖更新\n"
     "- 你能看到[会话上下文]，包括之前搜过的关键词——不要重复搜索\n"
-    "- 如果看到有 ongoing 状态的文档，且用户意图是继续/增加/补充，请从下一章节接着写到同一个文档\n"
-    "- 不要在每轮写作后主动调用 set_doc_status(\"completed\")——保持 ongoing 让用户可以追加\n"
     "- 禁止只搜索不阅读（fetch_url）就开始写作\n"
-    "- 你有工作区（workspace），可以写大纲、草稿、笔记等辅助文件\n"
 )
 
 
@@ -147,53 +147,27 @@ TOOL_REGISTRY = {
         },
         "stat_key": "fetches",
     },
-    "write_section": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "write_section",
-                "description": "写入文档的一个章节。逐章节构建完整文档。每次调用会立即落盘，可以多轮调用续写。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "heading": {
-                            "type": "string",
-                            "description": "章节标题"
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "章节正文内容（Markdown 格式）"
-                        }
-                    },
-                    "required": ["heading", "content"]
-                }
-            }
-        },
-        "handler": None,  # 不需要外部执行器，AgentLoop 内部处理
-        "status_map": {
-            "start": "writing",
-            "done": "writing_done",
-        },
-        "stat_key": "docs",
-        "condition": None,  # Patch4: 双模式都可用（chat 模式也能写文档）
-    },
-    # ===== Patch4 修复 1：set_doc_status + workspace 工具集（双模式可用）=====
+    # ===== Patch4 v3：set_doc_status（接收 filename）+ list_docs + workspace 工具集 =====
     "set_doc_status": {
         "schema": {
             "type": "function",
             "function": {
                 "name": "set_doc_status",
-                "description": "更新当前文档状态。所有章节写完后调用 status='completed'，告知系统文档已完结。如果文档还在进行中，保持 status='ongoing'。",
+                "description": "标记 workspace 里的 .md 文档状态。当用户明确说\"写完了\"时，调用 status='completed' 触发生成可下载的 .docx 文件。",
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "workspace 里的 .md 文件名（如 \"团队协作.md\"）"
+                        },
                         "status": {
                             "type": "string",
-                            "enum": ["ongoing", "completed"],
-                            "description": "文档状态：ongoing=写作中，completed=已完成"
+                            "enum": ["completed"],
+                            "description": "目标状态。目前只支持 \"completed\"（标记文档完成并生成 docx）"
                         }
                     },
-                    "required": ["status"]
+                    "required": ["filename", "status"]
                 }
             }
         },
@@ -201,6 +175,26 @@ TOOL_REGISTRY = {
         "status_map": {
             "start": "doc_status_updating",
             "done": "doc_status_done",
+        },
+        "condition": None,
+    },
+    "list_docs": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "list_docs",
+                "description": "列出当前会话 workspace 里的所有 .md 文档（含已完成和写作中），便于你选择续写目标。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "docs_listing",
+            "done": "docs_listed",
         },
         "condition": None,
     },
@@ -520,23 +514,29 @@ def _collect_assets_block(chat_path):
 
 
 def _collect_docs_block(chat_id):
-    """收集 docs/ 下的文档列表（标题+章节数+状态）。"""
-    from core.doc_session import list_docs_in_chat
+    """收集 workspace 里的 .md 文档列表 + completed 标记（Patch4 v3）。"""
+    from core.doc_session import list_workspace_files, list_completed_docs
     try:
-        docs = list_docs_in_chat(chat_id)
+        files = list_workspace_files(chat_id)
     except Exception:
         return ""
 
-    if not docs:
+    md_files = [f for f in files if f.get("name", "").endswith(".md")]
+    if not md_files:
         return ""
 
+    try:
+        completed = list_completed_docs(chat_id)
+    except Exception:
+        completed = []
+
     lines = []
-    for d in docs:
-        topic = d.get("topic") or "未命名文档"
-        sections = d.get("sections", 0)
-        status = d.get("status", "ongoing")
-        status_label = "已完成" if status == "completed" else "写作中"
-        lines.append("- 《%s》（%d章，%s）" % (topic, sections, status_label))
+    for f in md_files[:20]:  # 最多 20 个
+        name = f.get("name", "")
+        size = f.get("size", 0)
+        is_done = name in completed
+        status_label = "已完成" if is_done else "写作中"
+        lines.append("- %s（%s，%s）" % (name, _format_size(size), status_label))
 
     return "📄 文档状态：\n" + "\n".join(lines)
 
@@ -557,7 +557,7 @@ def _collect_tool_history_block(history):
     search_web_queries = []
     fetch_summaries = []
     search_kb_queries = []
-    has_writing = False
+    write_workspace_names = []  # Patch4 v3：write_workspace 写过的文件名
 
     for msg in history:
         if not isinstance(msg, dict):
@@ -581,10 +581,13 @@ def _collect_tool_history_block(history):
                 q = item.get("query", "")
                 if q:
                     search_kb_queries.append(q)
-            elif status == "writing":
-                has_writing = True
+            elif status in ("workspace_writing", "workspace_write_done"):
+                # Patch4 v3：write_workspace 调用（item.name 或 item.path 是文件名）
+                fname = item.get("name") or item.get("path") or ""
+                if fname:
+                    write_workspace_names.append(fname)
 
-    if not (search_web_queries or fetch_summaries or search_kb_queries or has_writing):
+    if not (search_web_queries or fetch_summaries or search_kb_queries or write_workspace_names):
         return ""
 
     lines = []
@@ -609,8 +612,15 @@ def _collect_tool_history_block(history):
                 uniq.append(q)
         kw = ", ".join('"%s"' % q for q in uniq[:5])
         lines.append("- search_kb: %s（%d次）" % (kw, len(search_kb_queries)))
-    if has_writing:
-        lines.append("- write_section: 已有章节写入")
+    if write_workspace_names:
+        seen = set()
+        uniq = []
+        for n in write_workspace_names:
+            if n not in seen:
+                seen.add(n)
+                uniq.append(n)
+        kw = ", ".join('"%s"' % n for n in uniq[:5])
+        lines.append("- write_workspace: %s（%d次）" % (kw, len(write_workspace_names)))
 
     if not lines:
         return ""

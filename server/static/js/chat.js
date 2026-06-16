@@ -5,6 +5,8 @@ var _cloudThinkText = '';       // 云端推理模型的思考内容（全局，
 var _cloudThinking = false;     // 是否正在云端推理中
 var _agentTimelineEl = null;    // Agent 工具时间线容器 DOM（全局，跨函数共享）
 var _agentTimelineData = [];    // Agent 时间线数据收集（用于持久化到消息对象）
+var _agentCurrentStepEl = null; // Patch4 v3：当前进行中的步骤 DOM（新步骤开始时它变 done，治闪烁）
+var _agentCurrentStepStartTs = 0; // 当前步骤开始时间戳（用于计算 elapsed）
 
 // ===== 统一渲染器：消息体 HTML 生成 =====
 // 流式阶段和最终渲染共用，保证视觉一致
@@ -111,11 +113,36 @@ function _buildAgentTimelineHtml(timelineData) {
       case 'kb_done':
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">找到 ' + (item.count || 0) + ' 篇相关文档</span>';
         break;
-      case 'writing':
-        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('write','14') + '</span> <span class="agent-label">正在写入文档章节...</span>';
+      // Patch4 v3：workspace / docs 工具（历史回放，统一 done 样式）
+      case 'workspace_writing':
+      case 'workspace_write_done':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('write','14') + '</span> <span class="agent-label">写入 ' + _esc(item.name || item.path || '') + '</span>';
+        break;
+      case 'workspace_reading':
+      case 'workspace_read_done':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('doc','14') + '</span> <span class="agent-label">读取 ' + _esc(item.name || item.path || '') + '</span>';
+        break;
+      case 'workspace_listing':
+      case 'workspace_listed':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('doc','14') + '</span> <span class="agent-label">列出工作区文件（' + (item.count || 0) + '）</span>';
+        break;
+      case 'workspace_deleting':
+      case 'workspace_deleted':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('trash','14') + '</span> <span class="agent-label">删除 ' + _esc(item.name || item.path || '') + '</span>';
+        break;
+      case 'docs_listing':
+      case 'docs_listed':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('doc','14') + '</span> <span class="agent-label">列出文档（' + (item.count || 0) + '）</span>';
+        break;
+      case 'doc_status_updating':
+      case 'doc_status_done':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">生成 ' + _esc(item.docx_path || item.filename || '') + '</span>';
         break;
       case 'budget_exceeded':
         stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">工具调用已达上限，正在整理回答...</span>';
+        break;
+      case 'tool_limited':
+        stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">部分工具已达上限</span>';
         break;
       case 'error':
         stepHtml = '<span class="agent-icon agent-error">' + iconSvg('cross','14') + '</span> <span class="agent-label">工具执行失败' + (item.tool ? ' (' + _esc(item.tool) + ')' : '') + '</span>';
@@ -427,6 +454,8 @@ async function sendMessage() {
   _cloudThinkText = '';     // 重置全局变量
   _agentTimelineEl = null;  // 重置 Agent 时间线容器
   _agentTimelineData = [];  // 重置时间线数据收集
+  _agentCurrentStepEl = null;  // Patch4 v3：重置当前步骤
+  _agentCurrentStepStartTs = 0;
   // Patch4 修复 5：重置文档进度面板
   if (typeof _resetDocProgress === 'function') _resetDocProgress();
   var thinkingPhase = false;
@@ -836,13 +865,12 @@ async function sendMessage() {
           // ===== Cloud Agent 新事件（agent_status / agent_summary / agent_think）=====
           } else if (d.type === 'agent_status') {
             _handleAgentStatus(d);
-            // Patch4 修复 5：识别 write_section 写作中状态，激活进度面板当前章节
-            if (d.status === 'writing' && typeof _handleDocProgressEvent === 'function') {
-              // heading 可能在 d.heading 里（来自 agent_tools.get_status_event 的 kwargs）
-              _handleDocProgressEvent('doc_started', {topic: '', doc_id: ''});
-              var tracker = (typeof _docProgressTracker !== 'undefined') ? _docProgressTracker : null;
-              if (tracker && tracker.activate) {
-                tracker.setCurrentSection(d.heading || '');
+            // Patch4 v3：write_workspace 写入 .md 文件 → 进度面板显示"写作中"
+            if (d.status === 'workspace_write_done' && typeof _handleDocProgressEvent === 'function') {
+              var _wwName = d.name || d.path || '';
+              if (_wwName && _wwName.toLowerCase().endsWith('.md')) {
+                // 字数从后端 done status 传来
+                _handleDocProgressEvent('write_workspace_md', {filename: _wwName, words: d.words || d.size || 0});
               }
             }
           } else if (d.type === 'agent_summary') {
@@ -933,7 +961,7 @@ async function sendMessage() {
                 srcBar.innerHTML = srcHtml;
                 streamEl.insertBefore(srcBar, streamEl.firstChild);
               }
-              showToast(iconSvg('books','14') + ' 已检索到 ' + sources.length + ' 条相关文档', 'success');
+            showToast('已检索到 ' + sources.length + ' 条相关文档', 'success');
             }
           } else if (d.type === 'kb_no_reference') {
             showToast('未找到相关文库内容', 'info');
@@ -969,20 +997,11 @@ async function sendMessage() {
               docBar.innerHTML = '<a href="' + esc(downloadUrl) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(d.filename || 'document.docx') + ')</a>';
               streamEl.appendChild(docBar);
             }
-            showToast(iconSvg('doc','14') + ' 文档撰写完成', 'success');
-          // ===== Patch4 修复 5: 文档进度事件 =====
-          } else if (d.type === 'doc_started') {
-            // 第一次 write_section 前/时发出 → 激活进度面板
-            if (typeof _handleDocProgressEvent === 'function') {
-              _handleDocProgressEvent('doc_started', {topic: d.topic || '', doc_id: d.doc_id || ''});
-            }
-          } else if (d.type === 'section_done') {
-            // 每个 write_section 完成 → 章节加到列表
-            if (typeof _handleDocProgressEvent === 'function') {
-              _handleDocProgressEvent('section_done', d);
-            }
+            showToast('文档撰写完成', 'success');
+          // ===== Patch4 v3: 文档完成事件（doc_started / section_done 已废弃）=====
           } else if (d.type === 'doc_complete') {
-            // 文档完成 → 进度面板变绿 + 下载按钮
+            // set_doc_status completed 完成 → 进度面板标记完成 + 下载按钮
+            // 新数据结构（来自 cloud_pipeline）: {filename, doc_url, md_filename, total_time, ts}
             if (typeof _handleDocProgressEvent === 'function') {
               _handleDocProgressEvent('doc_complete', d);
             }
@@ -1261,50 +1280,129 @@ function _handleAgentStatus(data) {
     if (streamEl) streamEl.insertBefore(_agentTimelineEl, streamEl.firstChild);
   }
 
-  // 每个状态变更追加一个步骤节点
+  // Patch4 v3：每个状态有 phase（start/done）。
+  //   - 新步骤进来时（无论 start 还是 done），前一个 current 步骤自动变 done（治闪烁）
+  //   - 同一轮内连续 thinking 合并（不重复 push）
+  var nowTs = Date.now();
+  var isStart = _agentStatusIsStart(data.status);
+  var isThinking = (data.status === 'thinking');
+
+  // 思考合并：如果上一步已是 thinking 且本次也是 thinking，不重复 push
+  if (isThinking && _agentCurrentStepEl && _agentCurrentStepEl.getAttribute('data-kind') === 'thinking') {
+    return; // 已在思考中，不重复
+  }
+
+  // 新步骤进来前，把前一个 current 标记为 done（治闪烁的关键）
+  if (_agentCurrentStepEl) {
+    _finalizeCurrentStep(nowTs);
+  }
+
+  // 创建新步骤节点
   var step = document.createElement("div");
   step.className = "agent-step agent-step-" + (data.status || "default");
-  var html = "";
-  switch (data.status) {
-    case "thinking":
-      html = '<span class="agent-icon agent-spin">' + iconSvg('spin','14') + '</span> <span class="agent-label">思考中...</span>';
-      break;
-    case "searching":
-      html = '<span class="agent-icon agent-spin">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(data.query || '') + '」</span>';
-      break;
-    case "search_done":
-      html = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">搜索完成 — ' + (data.count || 0) + ' 条结果</span>';
-      break;
-    case "fetching":
-      html = '<span class="agent-icon agent-spin">' + iconSvg('idea','14') + '</span> <span class="agent-label">正在阅读 ' + _esc(data.url || '') + '</span>';
-      break;
-    case "fetch_done":
-      html = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">获取 ' + (data.length || 0) + ' 字内容</span>';
-      break;
-    case "kb_searching":
-      html = '<span class="agent-icon agent-spin">' + iconSvg('books','14') + '</span> <span class="agent-label">检索知识库「' + _esc(data.query || '') + '」</span>';
-      break;
-    case "kb_done":
-      html = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">找到 ' + (data.count || 0) + ' 篇相关文档</span>';
-      break;
-    case "writing":
-      html = '<span class="agent-icon agent-spin">' + iconSvg('write','14') + '</span> <span class="agent-label">正在写入文档章节...</span>';
-      break;
-    case "budget_exceeded":
-      html = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">工具调用已达上限，正在整理回答...</span>';
-      break;
-    case "error":
-      html = '<span class="agent-icon agent-error">' + iconSvg('cross','14') + '</span> <span class="agent-label">工具执行失败' + (data.tool ? ' (' + _esc(data.tool) + ')' : '') + '</span>';
-      break;
-    default:
-      html = '<span class="agent-icon agent-spin">' + iconSvg('spin','14') + '</span> <span class="agent-label">处理中...</span>';
+  if (isStart) {
+    step.className += " agent-step-current";
+    step.setAttribute('data-kind', isThinking ? 'thinking' : (data.status || ''));
   }
+  var html = _agentStepHtml(data);
   step.innerHTML = html;
   _agentTimelineEl.appendChild(step);
+
+  // 记录当前步骤（用于下次切换时 finalize）
+  if (isStart) {
+    _agentCurrentStepEl = step;
+    _agentCurrentStepStartTs = nowTs;
+  } else {
+    // done 类步骤本身就是终态，不作为 current
+    _agentCurrentStepEl = null;
+    _agentCurrentStepStartTs = 0;
+  }
 
   // 滚底
   var msgEl = document.getElementById('messages');
   if (msgEl && _lastScrollBottom) msgEl.scrollTop = msgEl.scrollHeight;
+}
+
+// Patch4 v3：判断 status 是否是 start 类（开启新步骤）
+function _agentStatusIsStart(status) {
+  if (!status) return true;
+  var starts = ['thinking', 'searching', 'fetching', 'kb_searching',
+                'workspace_listing', 'workspace_reading', 'workspace_writing', 'workspace_deleting',
+                'docs_listing', 'doc_status_updating'];
+  if (starts.indexOf(status) >= 0) return true;
+  // 其余（*_done / budget_exceeded / tool_limited / error）视为 done 类
+  return false;
+}
+
+// Patch4 v3：把当前 current 步骤转为 done（追加耗时）
+function _finalizeCurrentStep(nowTs) {
+  if (!_agentCurrentStepEl) return;
+  _agentCurrentStepEl.classList.remove('agent-step-current');
+  _agentCurrentStepEl.classList.add('agent-step-done');
+  var elapsedMs = _agentCurrentStepStartTs ? (nowTs - _agentCurrentStepStartTs) : 0;
+  if (elapsedMs > 0) {
+    var elapsedSec = (elapsedMs / 1000).toFixed(1);
+    var labelEl = _agentCurrentStepEl.querySelector('.agent-label');
+    if (labelEl && labelEl.getAttribute('data-has-time') !== '1') {
+      labelEl.setAttribute('data-has-time', '1');
+      // 追加耗时到文案末尾
+      labelEl.textContent = labelEl.textContent + ' (' + elapsedSec + 's)';
+    }
+  }
+}
+
+// Patch4 v3：生成单个步骤的 HTML（按 §6 工具→图标映射，无 emoji）
+function _agentStepHtml(data) {
+  switch (data.status) {
+    case 'thinking':
+      return '<span class="agent-icon agent-spin">' + iconSvg('spin','14') + '</span> <span class="agent-label">思考中...</span>';
+    case 'searching':
+      return '<span class="agent-icon agent-spin">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(data.query || '') + '」</span>';
+    case 'search_done':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">搜索完成 — ' + (data.count || 0) + ' 条结果</span>';
+    case 'fetching':
+      return '<span class="agent-icon agent-spin">' + iconSvg('idea','14') + '</span> <span class="agent-label">正在阅读 ' + _esc(data.url || '') + '</span>';
+    case 'fetch_done':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">获取 ' + (data.length || 0) + ' 字内容</span>';
+    case 'kb_searching':
+      return '<span class="agent-icon agent-spin">' + iconSvg('books','14') + '</span> <span class="agent-label">检索知识库「' + _esc(data.query || '') + '」</span>';
+    case 'kb_done':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">找到 ' + (data.count || 0) + ' 篇相关文档</span>';
+    // Patch4 v3：workspace 工具
+    case 'workspace_writing':
+      return '<span class="agent-icon agent-spin">' + iconSvg('write','14') + '</span> <span class="agent-label">正在写入 ' + _esc(data.path || data.name || '') + '</span>';
+    case 'workspace_write_done':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">已写入 ' + _esc(data.name || '') + '</span>';
+    case 'workspace_reading':
+      return '<span class="agent-icon agent-spin">' + iconSvg('doc','14') + '</span> <span class="agent-label">正在读取 ' + _esc(data.path || '') + '</span>';
+    case 'workspace_read_done':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">已读取 ' + _esc(data.name || '') + '</span>';
+    case 'workspace_listing':
+      return '<span class="agent-icon agent-spin">' + iconSvg('doc','14') + '</span> <span class="agent-label">正在列出工作区文件</span>';
+    case 'workspace_listed':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">工作区有 ' + (data.count || 0) + ' 个文件</span>';
+    case 'workspace_deleting':
+      return '<span class="agent-icon agent-spin">' + iconSvg('trash','14') + '</span> <span class="agent-label">正在删除 ' + _esc(data.path || '') + '</span>';
+    case 'workspace_deleted':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">已删除 ' + _esc(data.name || '') + '</span>';
+    // Patch4 v3：list_docs / set_doc_status
+    case 'docs_listing':
+      return '<span class="agent-icon agent-spin">' + iconSvg('doc','14') + '</span> <span class="agent-label">正在列出文档</span>';
+    case 'docs_listed':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">工作区有 ' + (data.count || 0) + ' 个文档</span>';
+    case 'doc_status_updating':
+      return '<span class="agent-icon agent-spin">' + iconSvg('check','14') + '</span> <span class="agent-label">正在标记 ' + _esc(data.filename || '') + ' 完成...</span>';
+    case 'doc_status_done':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">已生成 ' + _esc(data.docx_path || data.filename || '') + '</span>';
+    case 'budget_exceeded':
+      return '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">工具调用已达上限，正在整理回答...</span>';
+    case 'tool_limited':
+      return '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">部分工具已达上限</span>';
+    case 'error':
+      return '<span class="agent-icon agent-error">' + iconSvg('cross','14') + '</span> <span class="agent-label">工具执行失败' + (data.tool ? ' (' + _esc(data.tool) + ')' : '') + '</span>';
+    default:
+      return '<span class="agent-icon agent-spin">' + iconSvg('spin','14') + '</span> <span class="agent-label">处理中...</span>';
+  }
 }
 
 function _handleAgentSummary(data) {
@@ -1390,12 +1488,11 @@ function cancelDocOutline() {
 window.confirmDocOutline = confirmDocOutline;
 window.cancelDocOutline = cancelDocOutline;
 
-// ===== Patch4 修复 5: DocProgressTracker — 文档进度面板（UI 状态机） =====
-// 监听 4 个 SSE 事件：
-//   - doc_started   → 首次激活进度面板
-//   - section_done  → 实时显示章节（已完成 ✅、当前 🔄、未来 ⬜）
-//   - agent_status  → 工具调用历史带耗时显示
-//   - doc_complete  → 进度面板变绿 + 下载按钮
+// ===== Patch4 v3: DocProgressTracker — 文档进度面板（基于文件 + 字数） =====
+// 不再有"章节"概念，只有"文件 + 字数 + 状态（drafting/completed）"。
+// 触发源：
+//   - agent_status(workspace_write_done) + 文件名以 .md 结尾 → addWriteWorkspace
+//   - doc_complete → markCompleted（进度面板变绿 + 下载按钮）
 var _docProgressTracker = null;  // 全局单例（每次 sendMessage 重置）
 
 function _resetDocProgress() {
@@ -1416,14 +1513,10 @@ function _getDocProgressTracker(streamEl) {
 
 function DocProgressTracker(streamEl) {
   this.active = false;
-  this.completed = false;
-  this.topic = '';
-  this.docId = '';
-  this.sections = [];         // [{heading, status: 'done'|'current'|'pending', ts, elapsed_ms}]
   this.startTime = null;
   this.totalTime = null;
-  this.docUrl = null;
-  this.filename = null;
+  // files: [{filename, status: 'drafting'|'completed', words, lastWriteTs}]
+  this.files = [];
   this._timerInterval = null;
 
   // 创建 DOM
@@ -1435,7 +1528,7 @@ function DocProgressTracker(streamEl) {
       '<span class="doc-progress-title"></span>' +
       '<span class="doc-progress-timer"></span>' +
     '</div>' +
-    '<div class="doc-progress-sections"></div>' +
+    '<div class="doc-progress-files"></div>' +
     '<div class="doc-progress-download"></div>';
 
   if (streamEl) {
@@ -1443,116 +1536,120 @@ function DocProgressTracker(streamEl) {
   }
 }
 
-DocProgressTracker.prototype.activate = function(topic, docId) {
+DocProgressTracker.prototype._activate = function() {
   if (this.active) return;
   this.active = true;
-  this.topic = topic || '文档';
-  this.docId = docId || '';
   this.startTime = Date.now();
   this.panelEl.classList.add('active');
   this.panelEl.querySelector('.doc-progress-title').innerHTML =
-    iconSvg('doc', '14') + ' ' + _esc(this.topic);
+    iconSvg('doc', '14') + ' 文档生成中';
   // 启动计时器
   var self = this;
   this._timerInterval = setInterval(function() {
-    if (self.completed) return;
+    // 所有文件都 completed 时停止更新
+    var allDone = self.files.length > 0 && self.files.every(function(f) { return f.status === 'completed'; });
+    if (allDone) return;
     var elapsed = Math.floor((Date.now() - self.startTime) / 1000);
     var mm = Math.floor(elapsed / 60);
     var ss = elapsed % 60;
     var timerEl = self.panelEl.querySelector('.doc-progress-timer');
-    if (timerEl) timerEl.textContent = '⏱ ' + mm + '\'' + (ss < 10 ? '0' : '') + ss + '\"';
+    if (timerEl) timerEl.textContent = mm + '\'' + (ss < 10 ? '0' : '') + ss + '\"';
   }, 1000);
 };
 
-DocProgressTracker.prototype.addSectionDone = function(data) {
-  if (!this.active) this.activate(this.topic, this.docId);
-  var heading = data.heading || ('第 ' + ((data.index || 0) + 1) + ' 章');
-  // Patch4 修复：去重——如果 heading 已在列表里（setCurrentSection 先加过），不重复添加
-  for (var i = 0; i < this.sections.length; i++) {
-    if (this.sections[i].heading === heading) {
-      // 已存在，只更新状态为 done + 补充耗时
-      this.sections[i].status = 'done';
-      if (data.elapsed_ms != null) this.sections[i].elapsed_ms = data.elapsed_ms;
-      this._renderSections();
-      return;
-    }
+// write_workspace 写了 .md 文件 → 记录/累加字数（drafting 状态）
+DocProgressTracker.prototype.addWriteWorkspace = function(filename, words) {
+  this._activate();
+  // 找已有条目
+  var entry = null;
+  for (var i = 0; i < this.files.length; i++) {
+    if (this.files[i].filename === filename) { entry = this.files[i]; break; }
   }
-  // 之前的 current → done
-  for (var i = 0; i < this.sections.length; i++) {
-    if (this.sections[i].status === 'current') this.sections[i].status = 'done';
+  if (!entry) {
+    entry = {
+      filename: filename,
+      status: 'drafting',
+      words: 0,
+      lastWriteTs: Date.now(),
+    };
+    this.files.push(entry);
   }
-  this.sections.push({
-    heading: heading,
-    status: 'done',
-    ts: data.ts || Date.now(),
-    elapsed_ms: data.elapsed_ms || null,
-  });
-  this._renderSections();
+  // 累加字数（同一文件多次 write_workspace 覆盖更新；words 为本次增量）
+  if (words && words > 0) entry.words += words;
+  entry.lastWriteTs = Date.now();
+  this._renderFiles();
 };
 
-DocProgressTracker.prototype.setCurrentSection = function(heading) {
-  if (!this.active) this.activate(this.topic, this.docId);
-  // Patch4 修复：去重——如果 heading 已在列表里，只更新状态为 current，不重复添加
-  for (var i = 0; i < this.sections.length; i++) {
-    if (this.sections[i].heading === heading) {
-      return;  // 已存在，不重复
-    }
+// set_doc_status completed → 标记某文件完成
+DocProgressTracker.prototype.markCompleted = function(filename, docxPath, docUrl) {
+  this._activate();
+  var entry = null;
+  for (var i = 0; i < this.files.length; i++) {
+    if (this.files[i].filename === filename) { entry = this.files[i]; break; }
   }
-  // 之前的 current → done
-  for (var i = 0; i < this.sections.length; i++) {
-    if (this.sections[i].status === 'current') this.sections[i].status = 'done';
+  if (!entry) {
+    // 模型可能直接 set_doc_status 而没经过 addWriteWorkspace（如续写场景）
+    entry = {filename: filename, status: 'drafting', words: 0, lastWriteTs: Date.now()};
+    this.files.push(entry);
   }
-  this.sections.push({heading: heading || '...', status: 'current', ts: Date.now()});
-  this._renderSections();
+  entry.status = 'completed';
+  this._renderFiles();
+
+  // 下载按钮（每个完成的文件一个）
+  this._renderDownloads(docUrl, docxPath);
 };
 
-DocProgressTracker.prototype._renderSections = function() {
-  var box = this.panelEl.querySelector('.doc-progress-sections');
+DocProgressTracker.prototype._renderFiles = function() {
+  var box = this.panelEl.querySelector('.doc-progress-files');
   if (!box) return;
   var html = '';
-  for (var i = 0; i < this.sections.length; i++) {
-    var s = this.sections[i];
+  for (var i = 0; i < this.files.length; i++) {
+    var f = this.files[i];
     var icon = '';
-    if (s.status === 'done') icon = '<span class="sec-icon">' + iconSvg('check', '14') + '</span>';
-    else if (s.status === 'current') icon = '<span class="sec-icon">' + iconSvg('spin', '14') + '</span>';
-    else icon = '<span class="sec-icon">⬜</span>';
-    var timeStr = '';
-    if (s.elapsed_ms != null) timeStr = '<span class="sec-time">(' + (s.elapsed_ms / 1000).toFixed(1) + 's)</span>';
-    html += '<div class="doc-progress-sec ' + s.status + '">' +
-      icon + '<span class="sec-heading">' + _esc(s.heading) + '</span>' + timeStr +
+    var cls = '';
+    if (f.status === 'completed') {
+      icon = '<span class="doc-file-icon done">' + iconSvg('check', '14') + '</span>';
+      cls = 'completed';
+    } else {
+      icon = '<span class="doc-file-icon drafting">' + iconSvg('write', '14') + '</span>';
+      cls = 'drafting';
+    }
+    var wordsStr = f.words > 0 ? ('<span class="doc-file-words">' + f.words + ' 字</span>') : '';
+    html += '<div class="doc-progress-file ' + cls + '">' +
+      icon + '<span class="doc-file-name">' + _esc(f.filename) + '</span>' +
+      '<span class="doc-file-status">' + (f.status === 'completed' ? '已完成' : '写作中') + '</span>' +
+      wordsStr +
       '</div>';
   }
   box.innerHTML = html;
 };
 
-DocProgressTracker.prototype.markComplete = function(data) {
-  this.completed = true;
-  this.totalTime = data.total_time || null;
-  if (data.doc_url) this.docUrl = data.doc_url;
-  if (data.filename) this.filename = data.filename;
-  // 把任何 current 标记为 done
-  for (var i = 0; i < this.sections.length; i++) {
-    if (this.sections[i].status === 'current') this.sections[i].status = 'done';
-  }
-  this.panelEl.classList.add('completed');
-  this._renderSections();
-  // 停止计时器
-  if (this._timerInterval) { clearInterval(this._timerInterval); this._timerInterval = null; }
-  var timerEl = this.panelEl.querySelector('.doc-progress-timer');
-  if (timerEl && this.totalTime != null) {
-    var t = Math.floor(this.totalTime);
-    var mm = Math.floor(t / 60), ss = t % 60;
-    timerEl.textContent = '✅ ' + mm + '\'' + (ss < 10 ? '0' : '') + ss + '\"';
-  }
-  // 下载按钮
+DocProgressTracker.prototype._renderDownloads = function(docUrl, docxPath) {
   var dlBox = this.panelEl.querySelector('.doc-progress-download');
-  if (dlBox && this.docUrl) {
-    var apiBase = (typeof API !== 'undefined' ? API : '');
-    var fullUrl = this.docUrl.indexOf('http') === 0 ? this.docUrl : (apiBase + this.docUrl);
-    var fname = this.filename || 'document.docx';
-    dlBox.innerHTML = '<a href="' + _esc(fullUrl) + '" download="' + _esc(fname) + '" target="_blank">' +
-      iconSvg('doc', '14') + ' 下载文档 (' + _esc(fname) + ')</a>';
+  if (!dlBox) return;
+  var apiBase = (typeof API !== 'undefined' ? API : '');
+  // docUrl 来自后端（/api/chat/{chat_id}/doc/{key}/download）
+  var fullUrl = docUrl ? (docUrl.indexOf('http') === 0 ? docUrl : (apiBase + docUrl)) : '';
+  if (!fullUrl) return;
+  var fname = docxPath || 'document.docx';
+  // 已完成文件数（用于下载按钮文案）
+  var doneCount = 0;
+  for (var i = 0; i < this.files.length; i++) {
+    if (this.files[i].status === 'completed') doneCount++;
   }
+  // 标记面板整体已完成（全部完成时）
+  if (doneCount === this.files.length && this.files.length > 0) {
+    this.panelEl.classList.add('completed');
+    if (this._timerInterval) { clearInterval(this._timerInterval); this._timerInterval = null; }
+    var timerEl = this.panelEl.querySelector('.doc-progress-timer');
+    if (timerEl && this.totalTime != null) {
+      var t = Math.floor(this.totalTime);
+      var mm2 = Math.floor(t / 60), ss2 = t % 60;
+      timerEl.textContent = mm2 + '\'' + (ss2 < 10 ? '0' : '') + ss2 + '\"';
+    }
+  }
+  dlBox.innerHTML = '<a href="' + _esc(fullUrl) + '" download="' + _esc(fname) + '" target="_blank">' +
+    iconSvg('doc', '14') + ' 下载文档 (' + _esc(fname) + ')</a>';
 };
 
 // 全局调度入口（从 SSE 事件分发处调用）
@@ -1561,12 +1658,17 @@ function _handleDocProgressEvent(eventType, data) {
   if (!streamEl) return;
   var tracker = _getDocProgressTracker(streamEl);
   if (!tracker) return;
-  if (eventType === 'doc_started') {
-    tracker.activate(data.topic || '文档', data.doc_id || '');
-  } else if (eventType === 'section_done') {
-    tracker.addSectionDone(data);
+  data = data || {};
+  if (eventType === 'write_workspace_md') {
+    // agent_status workspace_write_done 写了 .md 文件
+    tracker.addWriteWorkspace(data.filename || '', data.words || 0);
   } else if (eventType === 'doc_complete') {
-    tracker.markComplete(data);
+    // set_doc_status completed 完成
+    // 新数据结构: {filename(docx), doc_url, md_filename, total_time, ts}
+    tracker.totalTime = data.total_time || null;
+    var mdName = data.md_filename || '';
+    var docxFname = data.filename || 'document.docx';
+    tracker.markCompleted(mdName, docxFname, data.doc_url || '');
   }
 }
 window._handleDocProgressEvent = _handleDocProgressEvent;
