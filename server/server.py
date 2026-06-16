@@ -352,49 +352,37 @@ log.info("默认模型: %s (可用: %s)" % (DEFAULT_LLM, _available_llms))
 # 当前对话文件（可变引用）
 import glob as _glob
 os.makedirs(CHAT_DIR, exist_ok=True)
+
+# Patch4：启动时不再主动创建旧 .json 格式文件，改为委托 new_chat_file() 创建 v3 文件夹
+# 旧逻辑（server.py:360-398）会在启动时创建 "2026-06-16_001.json" 文件，
+# 后续 save_chat 走 v3 文件夹路径时会把 .json 文件名当成文件夹名创建，
+# 导致出现 "2026-06-16_001.json/" 这种带 .json 后缀的怪异文件夹。
 _current_chat_file = [None]
 
 def _today_str():
     return datetime.now().strftime("%Y-%m-%d")
 
 def _get_latest_chat():
+    """查找最近的会话（优先 v3 文件夹格式，兼容旧 .json 格式）"""
     today = _today_str()
+    # 优先查文件夹格式
+    folders = sorted(_glob.glob(os.path.join(CHAT_DIR, "%s_*" % today)), reverse=True)
+    for f in folders:
+        if os.path.isdir(f):
+            return f
+    # 兼容：旧 .json 文件格式
     files = sorted(_glob.glob(os.path.join(CHAT_DIR, "%s_*.json" % today)), reverse=True)
-    if files:
-        return files[0]
+    for f in files:
+        if os.path.isfile(f):
+            return f
     return None
 
+# Patch4：启动初始化改为只查找不创建（避免旧 .json 格式污染 v3 文件夹路径）
+# 会话创建由前端 newChat() → /api/chats/new → new_chat_file() 统一处理
 _latest = _get_latest_chat()
 if _latest:
     _current_chat_file[0] = _latest
-else:
-    # P2-01: 查找今天所有已有对话文件，优先复用空文件而非创建新文件
-    today = _today_str()
-    existing = _glob.glob(os.path.join(CHAT_DIR, "%s_*.json" % today))
-    # 先尝试找一个空文件复用
-    for f in existing:
-        try:
-            with open(f, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            msgs = data.get("messages", []) if isinstance(data, dict) else data
-            if not msgs:
-                _current_chat_file[0] = f
-                break
-        except Exception:
-            continue
-    if not _current_chat_file[0]:
-        max_idx = 0
-        for f in existing:
-            try:
-                idx = int(os.path.basename(f).split("_")[1].split(".")[0])
-                max_idx = max(max_idx, idx)
-            except (ValueError, IndexError):
-                pass
-        idx = max_idx + 1
-        filepath = os.path.join(CHAT_DIR, "%s_%03d.json" % (today, idx))
-        _current_chat_file[0] = filepath
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump({"version": 2, "messages": []}, f, ensure_ascii=False)
+# 不再主动创建 .json 文件——前端首次发消息时会调 new_chat_file() 创建 v3 文件夹
 
 # ===== 注册所有 Router =====
 _report_startup("routers", 55, "注册 API 路由...")
