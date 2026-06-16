@@ -242,12 +242,17 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
     doc_title, sections = _parse_markdown_to_sections(content)
     doc = Document()
 
-    # 设置默认中文字体（等线 — Windows 10+ 自带，覆盖最广）
-    _FONT_CN = 'DengXian'
+    # Patch4：统一字体（正文和标题都用同一套）
+    _FONT_CN = '等线'
     _FONT_EN = 'Calibri'
+    _FONT_SIZE = Pt(11)
+
+    # 设置 Normal 样式
     style = doc.styles['Normal']
     style.font.name = _FONT_EN
+    style.font.size = _FONT_SIZE
     style.element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
+    # 设置 Heading 样式
     for level in range(1, 5):
         hstyle = doc.styles['Heading %d' % level]
         hstyle.font.name = _FONT_EN

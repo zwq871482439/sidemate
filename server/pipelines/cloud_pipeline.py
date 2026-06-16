@@ -589,12 +589,19 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 doc_url = "/api/doc/download/%s" % doc_filename
 
             if sections:
-                # 用章节生成
-                _docx_content = "# %s\n\n" % (message[:50] if message else "文档")
+                # Patch4：docx 标题从 doc_session 的 topic 取（不是用户原始问题）
+                _doc_title = ""
+                try:
+                    _doc_title = agent.get_doc_session_topic() or ""
+                except Exception:
+                    pass
+                if not _doc_title:
+                    _doc_title = message[:50] if message else "文档"
+                _docx_content = "# %s\n\n" % _doc_title
                 for sec in sections:
                     _docx_content += "## %s\n\n%s\n\n" % (sec.get("heading", ""), sec.get("content", ""))
                 generate_docx(_docx_content, doc_path,
-                              title=message[:50] if message else "文档")
+                              title=_doc_title)
             else:
                 # fallback: 用正文生成
                 generate_docx(full_text, doc_path,

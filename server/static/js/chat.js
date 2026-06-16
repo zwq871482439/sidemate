@@ -206,6 +206,14 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     preservedTimeline = _agentTimelineEl;
   }
 
+  // Patch4：保留进度面板 DOM（避免被 innerHTML 覆盖）
+  var preservedDocPanel = null;
+  if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
+    if (_docProgressTracker.panelEl.parentNode === streamEl) {
+      preservedDocPanel = _docProgressTracker.panelEl;
+    }
+  }
+
   var html = '';
   if (isThinking) {
     html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
@@ -229,6 +237,11 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     streamEl.insertBefore(_agentTimelineEl, streamEl.firstChild);
   }
 
+  // Patch4：恢复进度面板
+  if (preservedDocPanel) {
+    streamEl.insertBefore(preservedDocPanel, streamEl.firstChild);
+  }
+
   if (!userScrolledUp) {
     el.scrollTop = el.scrollHeight;
   }
@@ -250,8 +263,16 @@ function _renderCloudThink(text, mainText) {
     preservedTimeline = _agentTimelineEl;
   }
 
+  // Patch4：保留进度面板 DOM（避免被 innerHTML 覆盖）
+  var preservedDocPanel = null;
+  if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
+    if (_docProgressTracker.panelEl.parentNode === streamEl) {
+      preservedDocPanel = _docProgressTracker.panelEl;
+    }
+  }
+
   if (len >= 20) {
-    html += '<details open class="think-details"><summary>' + iconSvg('spin','14') + ' 思考中... (' + len + '字)</summary><div class="think-content">' + md(text, false) + '</div></details>';
+    html += '<details open class="think-details"><summary>' + iconSvg('spin','14') + ' 思考中 (' + len + '字)</summary><div class="think-content">' + md(text, false) + '</div></details>';
   } else {
     html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
   }
@@ -261,6 +282,10 @@ function _renderCloudThink(text, mainText) {
   // 恢复 Agent 时间线
   if (preservedTimeline && _agentTimelineEl) {
     streamEl.insertBefore(_agentTimelineEl, streamEl.firstChild);
+  }
+  // Patch4：恢复进度面板
+  if (preservedDocPanel) {
+    streamEl.insertBefore(preservedDocPanel, streamEl.firstChild);
   }
 
   // 自动滚底
@@ -1442,6 +1467,16 @@ DocProgressTracker.prototype.activate = function(topic, docId) {
 DocProgressTracker.prototype.addSectionDone = function(data) {
   if (!this.active) this.activate(this.topic, this.docId);
   var heading = data.heading || ('第 ' + ((data.index || 0) + 1) + ' 章');
+  // Patch4 修复：去重——如果 heading 已在列表里（setCurrentSection 先加过），不重复添加
+  for (var i = 0; i < this.sections.length; i++) {
+    if (this.sections[i].heading === heading) {
+      // 已存在，只更新状态为 done + 补充耗时
+      this.sections[i].status = 'done';
+      if (data.elapsed_ms != null) this.sections[i].elapsed_ms = data.elapsed_ms;
+      this._renderSections();
+      return;
+    }
+  }
   // 之前的 current → done
   for (var i = 0; i < this.sections.length; i++) {
     if (this.sections[i].status === 'current') this.sections[i].status = 'done';
@@ -1457,6 +1492,13 @@ DocProgressTracker.prototype.addSectionDone = function(data) {
 
 DocProgressTracker.prototype.setCurrentSection = function(heading) {
   if (!this.active) this.activate(this.topic, this.docId);
+  // Patch4 修复：去重——如果 heading 已在列表里，只更新状态为 current，不重复添加
+  for (var i = 0; i < this.sections.length; i++) {
+    if (this.sections[i].heading === heading) {
+      return;  // 已存在，不重复
+    }
+  }
+  // 之前的 current → done
   for (var i = 0; i < this.sections.length; i++) {
     if (this.sections[i].status === 'current') this.sections[i].status = 'done';
   }

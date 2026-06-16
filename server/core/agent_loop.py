@@ -140,6 +140,15 @@ class AgentLoop:
         """获取当前文档 ID（供 pipeline 在末尾兜底用）。"""
         return self._doc_id
 
+    def get_doc_session_topic(self):
+        """获取当前文档主题（供 pipeline 用作 docx 标题，Patch4 修复）。"""
+        if self._doc_session:
+            try:
+                return self._doc_session.get_topic() or ""
+            except Exception:
+                return ""
+        return ""
+
     def run(self, message, mode="chat", history=None, context_cache=None, template=None):
         """Agent 主循环 — yield (phase, content)
 
