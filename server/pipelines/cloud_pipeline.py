@@ -367,6 +367,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     think_text = ""
     think_len = 0
     agent_summary = None
+    _agent_timeline_buf = []  # Patch4 v3.1 BUG#7：收集 agent_status 用于持久化到 messages.json
 
     # Patch4 v3：UI 状态机 + 进度可视化（精简版）
     # 不再有 doc_started / section_done / docx 兜底生成。
@@ -463,6 +464,18 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                     enriched.setdefault("ts", now_ts)
                     if enriched.get("phase") == "done":
                         enriched.setdefault("elapsed_ms", elapsed_ms)
+                    # Patch4 v3.1 BUG#7：收集 done 状态到 timeline 缓冲（用于持久化到 messages.json）
+                    if enriched.get("phase") == "done" and status_val not in ("thinking",):
+                        _agent_timeline_buf.append({
+                            "status": status_val,
+                            "name": enriched.get("name") or enriched.get("filename") or "",
+                            "query": enriched.get("query") or "",
+                            "url": enriched.get("url") or "",
+                            "count": enriched.get("count") or 0,
+                            "length": enriched.get("length") or 0,
+                            "elapsed_ms": enriched.get("elapsed_ms") or 0,
+                            "ts": now_ts,
+                        })
                     yield sse_event("agent_status", enriched)
                 else:
                     yield sse_event("agent_status", content)
@@ -577,6 +590,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         }
         if agent_summary:
             assistant_msg["agent_summary"] = agent_summary
+        # Patch4 v3.1 BUG#7：保存工具调用时间线到 messages.json（刷新页面后历史可见）
+        if _agent_timeline_buf:
+            assistant_msg["agent_timeline"] = _agent_timeline_buf
         if _collect.get("token_stats"):
             assistant_msg["token_stats"] = _collect["token_stats"]
         if doc_url:
