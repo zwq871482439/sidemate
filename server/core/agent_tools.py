@@ -493,32 +493,28 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
         if not _os.path.isdir(chat_path):
             return base_prompt
 
-        # ===== 收集 5 类信息 =====
+        # ===== 收集 4 类信息（Patch4 v3.1 BUG#4+5：删除 assets_block，已由 workspace_block 覆盖）=====
 
-        # 1) 上传文件清单（assets/）
-        files_block = _collect_assets_block(chat_path)
-
-        # 2) 已生成文档列表（docs/）
+        # 1) 已生成文档列表（workspace 里的 .md + completed 标记）
         docs_block = _collect_docs_block(chat_id)
 
-        # 3) 工具调用历史（从 history 的 agent_timeline 提取）
+        # 2) 工具调用历史（从 history 的 agent_timeline 提取）
         tools_block = _collect_tool_history_block(history)
 
-        # 4) KB 标签概览
+        # 3) KB 标签概览
         kb_block = ""
         if kb is not None and kb_tag_str:
             kb_block = "📚 KB 标签概览：" + kb_tag_str
 
-        # 5) workspace 文件清单
+        # 4) workspace 文件清单（含用户上传的文件）
         workspace_block = _collect_workspace_block(chat_id)
 
         # ===== 拼接 + token 预算裁剪 =====
         # 优先级（裁剪顺序，先丢优先级低的）：
-        # KB 标签 → workspace 清单 → 文件清单 → 文档列表 → 工具历史
+        # KB 标签 → workspace 清单 → 文档列表 → 工具历史
         blocks = [
             ("kb", kb_block),
             ("workspace", workspace_block),
-            ("files", files_block),
             ("docs", docs_block),
             ("tools", tools_block),
         ]

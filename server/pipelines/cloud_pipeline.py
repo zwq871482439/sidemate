@@ -384,12 +384,15 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             return "start"
         # 已知的 "完成" 状态
         if s in ("doc_status_done", "workspace_listed", "workspace_read_done",
-                 "workspace_write_done", "workspace_deleted", "docs_listed"):
+                 "workspace_write_done", "workspace_deleted",
+                 "workspace_appended", "workspace_edited",
+                 "docs_listed"):
             return "done"
         # thinking 是 start 类
         if s in ("thinking", "searching", "fetching", "kb_searching",
                  "doc_status_updating", "workspace_listing",
                  "workspace_reading", "workspace_writing", "workspace_deleting",
+                 "workspace_appending", "workspace_editing",
                  "docs_listing"):
             return "start"
         # 后缀匹配

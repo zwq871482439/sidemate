@@ -130,6 +130,15 @@ function _buildAgentTimelineHtml(timelineData) {
       case 'workspace_deleted':
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('trash','14') + '</span> <span class="agent-label">删除 ' + _esc(item.name || item.path || '') + '</span>';
         break;
+      // Patch4 v3.1 BUG#3 修复：append/edit workspace 状态映射
+      case 'workspace_appending':
+      case 'workspace_appended':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('write','14') + '</span> <span class="agent-label">追加 ' + _esc(item.name || item.path || '') + '</span>';
+        break;
+      case 'workspace_editing':
+      case 'workspace_edited':
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('write','14') + '</span> <span class="agent-label">编辑 ' + _esc(item.name || item.path || '') + '</span>';
+        break;
       case 'docs_listing':
       case 'docs_listed':
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('doc','14') + '</span> <span class="agent-label">列出文档（' + (item.count || 0) + '）</span>';
@@ -1392,6 +1401,15 @@ function _agentStepHtml(data) {
       return '<span class="agent-icon agent-spin">' + iconSvg('trash','14') + '</span> <span class="agent-label">正在删除 ' + _esc(data.path || '') + '</span>';
     case 'workspace_deleted':
       return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">已删除 ' + _esc(data.name || '') + '</span>';
+    // Patch4 v3.1 BUG#3 修复：append/edit workspace 实时状态
+    case 'workspace_appending':
+      return '<span class="agent-icon agent-spin">' + iconSvg('write','14') + '</span> <span class="agent-label">正在追加 ' + _esc(data.path || data.name || '') + '</span>';
+    case 'workspace_appended':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">已追加 ' + _esc(data.name || '') + ' (+' + (data.appended || 0) + ' 字节)</span>';
+    case 'workspace_editing':
+      return '<span class="agent-icon agent-spin">' + iconSvg('write','14') + '</span> <span class="agent-label">正在编辑 ' + _esc(data.path || data.name || '') + '</span>';
+    case 'workspace_edited':
+      return '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">已编辑 ' + _esc(data.name || '') + ' (' + (data.replaced || 0) + ' 处替换)</span>';
     // Patch4 v3：list_docs / set_doc_status
     case 'docs_listing':
       return '<span class="agent-icon agent-spin">' + iconSvg('doc','14') + '</span> <span class="agent-label">正在列出文档</span>';

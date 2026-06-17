@@ -853,6 +853,16 @@ class AgentLoop:
         elif tool == "write_workspace":
             name = data.get("data", {}).get("name", "")
             return "写入了工作区文件: %s" % name
+        elif tool == "append_workspace":
+            # Patch4 v3.1 BUG#1 修复
+            name = data.get("data", {}).get("name", "")
+            appended = data.get("data", {}).get("appended", 0)
+            return "追加了 %s（+%d 字节）" % (name, appended)
+        elif tool == "edit_workspace":
+            # Patch4 v3.1 BUG#1 修复
+            name = data.get("data", {}).get("name", "")
+            replaced = data.get("data", {}).get("replaced", 0)
+            return "编辑了 %s（替换 %d 处）" % (name, replaced)
         elif tool == "set_doc_status":
             fname = data.get("data", {}).get("filename", "")
             return "标记文档完成: %s" % fname
