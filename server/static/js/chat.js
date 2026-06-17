@@ -258,13 +258,18 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
 
   var html = '';
   if (isThinking) {
-    // Patch4 v3.1 BUG#10 彻底根治：appendStreamingMsg 在 thinking 时什么都不显示
-    // 思考状态完全交给 AgentTimeline（"思考中..."）+ _renderCloudThink（think-details）
-    // 这里如果再显示 thinking-indicator 就会和 AgentTimeline 重复
+    // Patch4 v3.1 BUG#10 终版：
+    // - 云端模式（AgentTimeline 已激活）→ 不显示 thinking-indicator（AgentTimeline 负责）
+    // - 本地模式（无 AgentTimeline）→ 显示 thinking-indicator（这是本地模式唯一的思考提示）
+    var _hasAgentTimeline = (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl);
+    var _isCloudMode = (typeof _cloudThinking !== 'undefined' && _cloudThinking);
+    if (!_hasAgentTimeline && !_isCloudMode) {
+      // 本地模式：显示 thinking-indicator
+      html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
+    }
     if (content) {
       html += '<div style="color:var(--text-muted);font-style:italic;font-size:.85em">' + md(content, false) + '</div>';
     }
-    // 注意：isThinking=true 且 content 为空时，html 为空字符串，appendStreamingMsg 不显示任何内容
   } else {
     html += _renderMsgBody(content, {sanitize: false});
   }
