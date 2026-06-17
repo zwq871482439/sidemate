@@ -258,12 +258,15 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
 
   var html = '';
   if (isThinking) {
-    // Patch4 v3.1 BUG#10 终版：
-    // - 云端模式（AgentTimeline 已激活）→ 不显示 thinking-indicator（AgentTimeline 负责）
-    // - 本地模式（无 AgentTimeline）→ 显示 thinking-indicator（这是本地模式唯一的思考提示）
+    // Patch4 v3.1 BUG#10 终版2：
+    // 三重判断：只要任何一个为真就视为云端模式，不显示 thinking-indicator
+    // 1. task_type === 'agent'（云端 agent 模式）
+    // 2. _cloudThinking === true（云端推理进行中）
+    // 3. AgentTimeline 已激活
+    var _isCloudAgent = (typeof currentTaskType !== 'undefined' && currentTaskType === 'agent');
     var _hasAgentTimeline = (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl);
-    var _isCloudMode = (typeof _cloudThinking !== 'undefined' && _cloudThinking);
-    if (!_hasAgentTimeline && !_isCloudMode) {
+    var _isCloudThinking = (typeof _cloudThinking !== 'undefined' && _cloudThinking);
+    if (!_isCloudAgent && !_hasAgentTimeline && !_isCloudThinking) {
       // 本地模式：显示 thinking-indicator
       html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
     }
@@ -295,6 +298,18 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   // Patch4 v3.1 BUG#13：恢复独立下载栏（追加到末尾，正文之后）
   if (preservedDocDlBar) {
     streamEl.appendChild(preservedDocDlBar);
+  }
+  // Patch4 v3.1 BUG#13 加固：如果下载栏没保留住但 _docDownloadInfo 还在，重建一个
+  if (!preservedDocDlBar && window._docDownloadInfo && window._docDownloadInfo.url) {
+    var _rebuildDlBar = document.createElement('div');
+    _rebuildDlBar.className = 'doc-download-bar';
+    _rebuildDlBar.setAttribute('data-doc-complete', '1');
+    var _rebuildUrl = window._docDownloadInfo.url;
+    if (_rebuildUrl.indexOf('http') !== 0) {
+      _rebuildUrl = (typeof API !== 'undefined' ? API : '') + _rebuildUrl;
+    }
+    _rebuildDlBar.innerHTML = '<a href="' + esc(_rebuildUrl) + '" download="' + esc(window._docDownloadInfo.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(window._docDownloadInfo.filename || 'document.docx') + ')</a>';
+    streamEl.appendChild(_rebuildDlBar);
   }
 
   if (!userScrolledUp) {
@@ -1411,8 +1426,8 @@ function _finalizeCurrentStep(nowTs) {
 function _agentStepHtml(data) {
   switch (data.status) {
     case 'thinking':
-      // Patch4 v3.1 BUG#10：思考中用 think 图标（非旋转 spin），避免一直转个不停
-      return '<span class="agent-icon agent-spin">' + iconSvg('think','14') + '</span> <span class="agent-label">思考中...</span>';
+      // Patch4 v3.1 BUG#10：思考中用 spin 旋转圈（与"正在思考"旁的图标一致）
+      return '<span class="agent-icon agent-spin">' + iconSvg('spin','14') + '</span> <span class="agent-label">思考中...</span>';
     case 'searching':
       return '<span class="agent-icon agent-spin">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(data.query || '') + '」</span>';
     case 'search_done':

@@ -158,8 +158,8 @@ def download_chat_doc(chat_id: str, doc_id: str, fmt: str = "docx"):
     if not chat_path:
         return JSONResponse({"error": "非法或不存在会话"}, status_code=404)
 
-    # doc_id 白名单
-    if not doc_id or not re.match(r'^[a-zA-Z0-9_\-]+$', doc_id):
+    # doc_id 白名单（Patch4 v3.1 BUG#15：允许中文字符，因为文档名可能是中文）
+    if not doc_id or not re.match(r'^[\u4e00-\u9fff\w\-]+$', doc_id):
         return JSONResponse({"error": "非法 doc_id"}, status_code=400)
 
     docs_dir = os.path.join(chat_path, "docs")
