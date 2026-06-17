@@ -290,9 +290,13 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     streamEl.insertBefore(_agentTimelineEl, streamEl.firstChild);
   }
 
-  // Patch4：恢复进度面板
-  if (preservedDocPanel) {
-    streamEl.insertBefore(preservedDocPanel, streamEl.firstChild);
+  // Patch4 v3.1 BUG#13+17：恢复进度面板（强制重新插入，确保 done 后不消失）
+  // 每次重写 innerHTML 后都重新插回，不要只依赖 preserved 判断
+  if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
+    // 如果面板不在 streamEl 里（被 innerHTML 清掉了），重新插回
+    if (_docProgressTracker.panelEl.parentNode !== streamEl) {
+      streamEl.insertBefore(_docProgressTracker.panelEl, streamEl.firstChild);
+    }
   }
 
   // Patch4 v3.1 BUG#13：恢复独立下载栏（追加到末尾，正文之后）

@@ -252,6 +252,10 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
     style.font.name = _FONT_EN
     style.font.size = _FONT_SIZE
     style.element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
+    # Patch4 v3.1 BUG#16：Title 样式也设字体（否则标题用 Word 默认字体，不统一）
+    _title_style = doc.styles['Title']
+    _title_style.font.name = _FONT_EN
+    _title_style.element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
     # 设置 Heading 样式
     for level in range(1, 5):
         hstyle = doc.styles['Heading %d' % level]
