@@ -100,7 +100,7 @@ function _renderChatSidebar(chats, currentPath) {
     var isActive = c.path === currentPath || c.current;
     // 使用 data-idx 索引而非内联路径字符串（避免 Windows 反斜杠被 JS 解释为转义字符）
     html += '<div class="chat-sidebar-item' + (isActive ? ' active' : '') + '" data-idx="' + idx + '" title="' + escAttr(c.label) + '">';
-    html += '<span class="si-icon">' + iconSvg('think','12') + '</span>';
+    // Patch4 v3.1 BUG#11：移除会话项的图标（think 图标视觉像两个环形，且 Tab 已有标识）
     html += '<span class="si-name">' + esc(c.label) + '</span>';
     if (c.msg_count != null) {
       html += '<span class="si-count">' + c.msg_count + '</span>';

@@ -6,7 +6,7 @@ Sidemate Patch4 v3 自动化测试
 import sys, os, json, time, urllib.request, urllib.error
 
 BASE = "http://127.0.0.1:8976"
-CHAT_ID = "2026-06-17_005"
+CHAT_ID = "2026-06-17_006"
 CHAT_FILE = "C:\\Sidemate\\server\\data\\chats\\%s" % CHAT_ID
 TIMEOUT = 180  # 单次请求最多 3 分钟
 

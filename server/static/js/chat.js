@@ -242,17 +242,20 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     preservedTimeline = _agentTimelineEl;
   }
 
-  // Patch4：保留进度面板 DOM（避免被 innerHTML 覆盖）
+  // Patch4 v3.1：保留进度面板 DOM（避免被 innerHTML 覆盖）
+  // 加固：即使面板已不在 streamEl 里（被前一次重写清掉），只要 tracker 还活着就重新插回
   var preservedDocPanel = null;
   if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
-    if (_docProgressTracker.panelEl.parentNode === streamEl) {
-      preservedDocPanel = _docProgressTracker.panelEl;
-    }
+    preservedDocPanel = _docProgressTracker.panelEl;  // 不限 parentNode，强制保留
   }
 
   var html = '';
   if (isThinking) {
-    html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
+    // Patch4 v3.1 BUG#10：AgentTimeline 已在显示思考时，不重复显示 thinking-indicator
+    var timelineShowing = (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl);
+    if (!timelineShowing) {
+      html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
+    }
     if (content) {
       html += '<div style="color:var(--text-muted);font-style:italic;font-size:.85em">' + md(content, false) + '</div>';
     }
@@ -299,17 +302,18 @@ function _renderCloudThink(text, mainText) {
     preservedTimeline = _agentTimelineEl;
   }
 
-  // Patch4：保留进度面板 DOM（避免被 innerHTML 覆盖）
+  // Patch4 v3.1：保留进度面板 DOM（加固，不限 parentNode）
   var preservedDocPanel = null;
   if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
-    if (_docProgressTracker.panelEl.parentNode === streamEl) {
-      preservedDocPanel = _docProgressTracker.panelEl;
-    }
+    preservedDocPanel = _docProgressTracker.panelEl;
   }
 
+  // Patch4 v3.1 BUG#10：AgentTimeline 已在显示思考时，不再追加重复的 thinking-indicator
+  var timelineShowing = (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl);
   if (len >= 20) {
     html += '<details open class="think-details"><summary>' + iconSvg('spin','14') + ' 思考中 (' + len + '字)</summary><div class="think-content">' + md(text, false) + '</div></details>';
-  } else {
+  } else if (!timelineShowing) {
+    // AgentTimeline 没在显示思考，才用 thinking-indicator 兜底
     html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
   }
   if (mainText) html += _renderMsgBody(mainText, {sanitize: false});
@@ -697,9 +701,13 @@ async function sendMessage() {
               finalStats = formatStats(d.model, d.chars, d.think_chars || 0, d.time, d.speed);
               thinkingPhase = false;
               _cloudThinking = false;
+              // Patch4 v3.1 BUG#10：done 事件最终渲染时，清空 thinkText 避免 appendStreamingMsg
+              // 又把 think-details 重新塞回去（导致完成后仍显示"思考中"）
+              var _finalThink = '';
+              var _finalThinkLen = 0;
               // doc_outline 模式：不覆盖 stream-msg（保留确认按钮）
               if (!window._docOutlinePending) {
-                appendStreamingMsg(fullText, thinkText, thinkLen, finalStats);
+                appendStreamingMsg(fullText, _finalThink, _finalThinkLen, finalStats);
               }
             }
           } else if (d.type === 'model_reload') {
