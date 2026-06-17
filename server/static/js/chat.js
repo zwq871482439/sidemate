@@ -93,7 +93,7 @@ function _buildAgentTimelineHtml(timelineData) {
     var stepHtml = '';
     switch (item.status) {
       case 'thinking':
-        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('spin','14') + '</span> <span class="agent-label">思考中...</span>';
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('think','14') + '</span> <span class="agent-label">思考完成</span>';
         break;
       case 'searching':
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(item.query || '') + '」</span>';
@@ -308,14 +308,13 @@ function _renderCloudThink(text, mainText) {
     preservedDocPanel = _docProgressTracker.panelEl;
   }
 
-  // Patch4 v3.1 BUG#10：AgentTimeline 已在显示思考时，不再追加重复的 thinking-indicator
-  var timelineShowing = (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl);
+  // Patch4 v3.1 BUG#10 根治：完全不再用 thinking-indicator（"正在思考"）
+  // AgentTimeline 已负责"思考中..."状态展示，这里只显示 think-details（思考内容详情，可折叠）
+  // 字数>=20 才显示 think-details，字数少时什么都不显示（避免空 details）
   if (len >= 20) {
     html += '<details open class="think-details"><summary>' + iconSvg('spin','14') + ' 思考中 (' + len + '字)</summary><div class="think-content">' + md(text, false) + '</div></details>';
-  } else if (!timelineShowing) {
-    // AgentTimeline 没在显示思考，才用 thinking-indicator 兜底
-    html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
   }
+  // len < 20 时不显示任何思考 UI（AgentTimeline 的"思考中..."已经够了）
   if (mainText) html += _renderMsgBody(mainText, {sanitize: false});
   streamEl.innerHTML = html;
 
@@ -1352,9 +1351,10 @@ function _agentStatusIsStart(status) {
   if (!status) return true;
   var starts = ['thinking', 'searching', 'fetching', 'kb_searching',
                 'workspace_listing', 'workspace_reading', 'workspace_writing', 'workspace_deleting',
+                'workspace_appending', 'workspace_editing',
                 'docs_listing', 'doc_status_updating'];
   if (starts.indexOf(status) >= 0) return true;
-  // 其余（*_done / budget_exceeded / tool_limited / error）视为 done 类
+  // 其余（*_done / *_appended / *_edited / budget_exceeded / tool_limited / error / completed）视为 done 类
   return false;
 }
 
@@ -1379,7 +1379,8 @@ function _finalizeCurrentStep(nowTs) {
 function _agentStepHtml(data) {
   switch (data.status) {
     case 'thinking':
-      return '<span class="agent-icon agent-spin">' + iconSvg('spin','14') + '</span> <span class="agent-label">思考中...</span>';
+      // Patch4 v3.1 BUG#10：思考中用 think 图标（非旋转 spin），避免一直转个不停
+      return '<span class="agent-icon agent-spin">' + iconSvg('think','14') + '</span> <span class="agent-label">思考中...</span>';
     case 'searching':
       return '<span class="agent-icon agent-spin">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(data.query || '') + '」</span>';
     case 'search_done':
