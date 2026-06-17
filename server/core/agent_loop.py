@@ -288,7 +288,7 @@ class AgentLoop:
                             if existing_hint else warn_hint
 
                 # 发送完成状态
-                done_status = self._make_done_status(tool_name, result)
+                done_status = self._make_done_status(tool_name, result, args)
                 yield ("agent_status", done_status)
 
                 # 追加 tool 结果到 messages
@@ -735,8 +735,9 @@ class AgentLoop:
         else:
             return {"status": "thinking"}
 
-    def _make_done_status(self, tool_name, result):
+    def _make_done_status(self, tool_name, result, args=None):
         """生成工具执行完成的状态事件"""
+        args = args or {}
         from core.agent_tools import get_status_event
         if not result.get("success"):
             return {"status": "error", "tool": tool_name}
