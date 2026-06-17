@@ -447,9 +447,6 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             and _filename
                             and _docx_path):
                         _doc_complete_sent = True
-                        # Patch4 v3.1 BUG#18：保存到本地变量，供消息持久化使用
-                        _doc_complete_url = _doc_url
-                        _doc_complete_filename = _docx_path
                         # 拼 doc_url（与 routers/files.py 的下载路由对齐）
                         _docx_basename = _docx_path
                         # 去掉路径前缀和 .docx 扩展名，作为 download 路由的 key
@@ -457,6 +454,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             _docx_basename = _docx_basename.rsplit("/", 1)[-1]
                         _doc_key = _docx_basename[:-5] if _docx_basename.endswith(".docx") else _docx_basename
                         _doc_url = "/api/chat/%s/doc/%s/download" % (_chat_id, _doc_key)
+                        # Patch4 v3.1 BUG#18：保存到模块作用域变量，供消息持久化使用
+                        _doc_complete_url = _doc_url
+                        _doc_complete_filename = _docx_path
                         yield sse_event("doc_complete", {
                             "filename": _docx_path,
                             "doc_url": _doc_url,
