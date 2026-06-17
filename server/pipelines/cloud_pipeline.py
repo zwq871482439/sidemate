@@ -435,28 +435,30 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
 
                 if isinstance(content, dict):
                     # 派生 doc_complete：set_doc_status completed 完成
-                    if status_val == "doc_status_done" and not _doc_complete_sent:
-                        doc_st = content.get("status", "")
-                        # agent_loop 的 _make_done_status 会带 filename / docx_path / status
-                        _filename = content.get("filename", "")
-                        _docx_path = content.get("docx_path", "")
-                        _doc_st = doc_st or "completed"
-                        if _doc_st == "completed" and _filename and _docx_path:
-                            _doc_complete_sent = True
-                            # 拼 doc_url（与 routers/files.py 的下载路由对齐）
-                            _docx_basename = _docx_path
-                            # 去掉路径前缀和 .docx 扩展名，作为 download 路由的 key
-                            if "/" in _docx_basename:
-                                _docx_basename = _docx_basename.rsplit("/", 1)[-1]
-                            _doc_key = _docx_basename[:-5] if _docx_basename.endswith(".docx") else _docx_basename
-                            _doc_url = "/api/chat/%s/doc/%s/download" % (_chat_id, _doc_key)
-                            yield sse_event("doc_complete", {
-                                "filename": _docx_path,
-                                "doc_url": _doc_url,
-                                "md_filename": _filename,
-                                "total_time": max(0.0, time.time() - _pipeline_start_ts),
-                                "ts": now_ts,
-                            })
+                    # Patch4 v3.1 BUG#9：get_status_event 的 **kwargs 展开会让 status='completed'
+                    # 覆盖 status_map 的 'doc_status_done'，所以实际 content['status']='completed'
+                    # 这里同时识别 'doc_status_done'（旧路径）和 'completed'（实际值）
+                    _filename = content.get("filename", "")
+                    _docx_path = content.get("docx_path", "")
+                    if (status_val in ("doc_status_done", "completed")
+                            and not _doc_complete_sent
+                            and _filename
+                            and _docx_path):
+                        _doc_complete_sent = True
+                        # 拼 doc_url（与 routers/files.py 的下载路由对齐）
+                        _docx_basename = _docx_path
+                        # 去掉路径前缀和 .docx 扩展名，作为 download 路由的 key
+                        if "/" in _docx_basename:
+                            _docx_basename = _docx_basename.rsplit("/", 1)[-1]
+                        _doc_key = _docx_basename[:-5] if _docx_basename.endswith(".docx") else _docx_basename
+                        _doc_url = "/api/chat/%s/doc/%s/download" % (_chat_id, _doc_key)
+                        yield sse_event("doc_complete", {
+                            "filename": _docx_path,
+                            "doc_url": _doc_url,
+                            "md_filename": _filename,
+                            "total_time": max(0.0, time.time() - _pipeline_start_ts),
+                            "ts": now_ts,
+                        })
 
                     # 给转发出去的 agent_status 追加 phase / ts / elapsed_ms
                     enriched = dict(content)
