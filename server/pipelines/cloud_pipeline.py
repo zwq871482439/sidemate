@@ -376,6 +376,8 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     #   set_doc_status:  doc_status_updating → doc_status_done（completed → 派生 doc_complete）
     #   list_docs:       docs_listing → docs_listed
     _doc_complete_sent = False
+    _doc_complete_url = None        # Patch4 v3.1 BUG#18：保存 doc_url 供消息持久化
+    _doc_complete_filename = None   # Patch4 v3.1 BUG#18：保存 docx 文件名
     _pipeline_start_ts = t0  # 用于 elapsed_ms 计算
     _STATUS_DONE_SUFFIXES = ("_done", "_listed", "_deleted", "_read_done", "_write_done")
 
@@ -445,6 +447,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             and _filename
                             and _docx_path):
                         _doc_complete_sent = True
+                        # Patch4 v3.1 BUG#18：保存到本地变量，供消息持久化使用
+                        _doc_complete_url = _doc_url
+                        _doc_complete_filename = _docx_path
                         # 拼 doc_url（与 routers/files.py 的下载路由对齐）
                         _docx_basename = _docx_path
                         # 去掉路径前缀和 .docx 扩展名，作为 download 路由的 key
@@ -601,22 +606,11 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             assistant_msg["doc_url"] = doc_url
             assistant_msg["doc_filename"] = doc_filename
         # Patch4 v3.1 BUG#18：从 doc_complete 事件派生的 doc_url 也要持久化
-        # （_doc_complete_sent 时记录的 doc_url 没回流到 doc_url 变量）
-        if not doc_url and _doc_complete_sent:
-            # 从 _agent_timeline_buf 找 set_doc_status 的 docx_path
-            for _tl in _agent_timeline_buf:
-                if _tl.get("status") in ("completed", "doc_status_done"):
-                    _docx_name = _tl.get("name", "")  # 这里 name 存的是 md 文件名
-                    if _docx_name.endswith(".md"):
-                        _docx_filename = _docx_name[:-3] + ".docx"
-                        _doc_url = "/api/chat/%s/doc/%s/download" % (
-                            os.path.basename(chat_file).replace(".json", ""),
-                            _docx_filename[:-5],  # 去 .docx
-                        )
-                        assistant_msg["doc_url"] = _doc_url
-                        assistant_msg["doc_filename"] = _docx_filename
-                        log.info("[SAVE] BUG#18 回填 doc_url=%s from agent_timeline", _doc_url)
-                    break
+        # 用 _doc_complete_url（在 doc_complete 派生时保存的），不再依赖 agent_timeline 回查
+        if not doc_url and _doc_complete_sent and _doc_complete_url:
+            assistant_msg["doc_url"] = _doc_complete_url
+            assistant_msg["doc_filename"] = _doc_complete_filename or "document.docx"
+            log.info("[SAVE] BUG#18 回填 doc_url=%s", _doc_complete_url)
 
         messages = history_raw + [
             {"role": "user", "content": message, "ts": ts},
