@@ -170,10 +170,17 @@ function _renderSingleMsg(m, idx) {
   var ts = m.ts ? '<div class="ts">' + esc(m.ts) + '</div>' : '';
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
-  return '<div class="msg-copy-wrap">'
-    + _buildAgentTimelineHtml(m.agent_timeline) + ts + bodyHtml
-    + _buildFileTag(m) + _buildStats(m) + _buildDocDownload(m) + _buildKbSources(m) + _buildCopyBtn()
-    + '</div>';
+  var html = '<div class="msg-copy-wrap">'
+    + _buildAgentTimelineHtml(m.agent_timeline) + ts + bodyHtml;
+  // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
+  if (m.doc_url) {
+    var _dlUrl = m.doc_url;
+    if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
+    html += '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(m.doc_filename || 'document.docx') + ')</a></div>';
+  }
+  html += _buildFileTag(m) + _buildStats(m) + _buildDocDownload(m) + _buildKbSources(m) + _buildCopyBtn();
+  html += '</div>';
+  return html;
 }
 
 function renderMsg(m) {
@@ -258,15 +265,12 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
 
   var html = '';
   if (isThinking) {
-    // Patch4 v3.1 BUG#10 终版2：
-    // 三重判断：只要任何一个为真就视为云端模式，不显示 thinking-indicator
-    // 1. task_type === 'agent'（云端 agent 模式）
-    // 2. _cloudThinking === true（云端推理进行中）
-    // 3. AgentTimeline 已激活
-    var _isCloudAgent = (typeof currentTaskType !== 'undefined' && currentTaskType === 'agent');
-    var _hasAgentTimeline = (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl);
-    var _isCloudThinking = (typeof _cloudThinking !== 'undefined' && _cloudThinking);
-    if (!_isCloudAgent && !_hasAgentTimeline && !_isCloudThinking) {
+    // Patch4 v3.1 BUG#10 终极根治：
+    // 用全局 _currentMode 判断（task_type 可能还没到，_cloudThinking 时序不稳）
+    // 云端模式 → 不显示 thinking-indicator（AgentTimeline 负责）
+    // 本地模式 → 显示 thinking-indicator
+    var _isCloudMode = (typeof _currentMode !== 'undefined' && _currentMode === 'cloud');
+    if (!_isCloudMode) {
       // 本地模式：显示 thinking-indicator
       html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
     }

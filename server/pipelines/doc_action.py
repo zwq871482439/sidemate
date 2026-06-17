@@ -247,6 +247,33 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
     _FONT_EN = 'Calibri'
     _FONT_SIZE = Pt(11)
 
+    # Patch4 v3.1 BUG#16 根治：覆盖 docDefaults 的 theme 字体
+    # Word 默认 docDefaults 用 minorEastAsia 主题（映射到 MS Gothic 等日文字体）
+    # 必须直接改 docDefaults，否则没显式设字体的段落（如 Title）会用默认日文字体
+    from lxml import etree
+    _W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    _doc_defaults = doc.styles.element.find('{%s}docDefaults' % _W_NS)
+    if _doc_defaults is not None:
+        _rpr_default = _doc_defaults.find('{%s}rPrDefault' % _W_NS)
+        if _rpr_default is None:
+            _rpr_default = etree.SubElement(_doc_defaults, '{%s}rPrDefault' % _W_NS)
+        _rpr = _rpr_default.find('{%s}rPr' % _W_NS)
+        if _rpr is None:
+            _rpr = etree.SubElement(_rpr_default, '{%s}rPr' % _W_NS)
+        _rfonts = _rpr.find('{%s}rFonts' % _W_NS)
+        if _rfonts is None:
+            _rfonts = etree.SubElement(_rpr, '{%s}rFonts' % _W_NS)
+        # 覆盖 theme 引用为显式字体名
+        _rfonts.set('{%s}ascii' % _W_NS, _FONT_EN)
+        _rfonts.set('{%s}hAnsi' % _W_NS, _FONT_EN)
+        _rfonts.set('{%s}eastAsia' % _W_NS, _FONT_CN)
+        _rfonts.set('{%s}cs' % _W_NS, _FONT_EN)
+        # 删除 theme 属性
+        for _attr in ['asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme']:
+            _full = '{%s}%s' % (_W_NS, _attr)
+            if _full in _rfonts.attrib:
+                del _rfonts.attrib[_full]
+
     # 设置 Normal 样式
     style = doc.styles['Normal']
     style.font.name = _FONT_EN
