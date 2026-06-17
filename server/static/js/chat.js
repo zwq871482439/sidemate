@@ -93,7 +93,7 @@ function _buildAgentTimelineHtml(timelineData) {
     var stepHtml = '';
     switch (item.status) {
       case 'thinking':
-        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('think','14') + '</span> <span class="agent-label">思考完成</span>';
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('idea','14') + '</span> <span class="agent-label">思考完成</span>';
         break;
       case 'searching':
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(item.query || '') + '」</span>';
