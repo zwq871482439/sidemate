@@ -81,15 +81,19 @@ function pickKbFile() {
   if (!picker) return;
 
   // 动态获取文库文件列表
-  fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/files')
+  // Patch4 v3.1 BUG#14：API 路径修正 /api/kb/files → /api/kb/documents
+  // 返回是数组（不是 {files: [...]}），字段名也不同（doc_id/filename/chunk_count）
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      var files = data.files || [];
+      // /api/kb/documents 直接返回数组，每项含 doc_id/filename/chunk_count/status
+      var files = Array.isArray(data) ? data : (data.files || []);
       picker.innerHTML = '';
       files.forEach(function(f) {
         var opt = document.createElement('option');
-        opt.value = f.path || f.name;
-        opt.textContent = f.name + (f.chunks ? ' (' + f.chunks + '段)' : '');
+        // 用 doc_id 作为引用值（后端按 doc_id 查文档全文）
+        opt.value = f.doc_id || f.path || f.name;
+        opt.textContent = (f.filename || f.name) + (f.chunk_count ? ' (' + f.chunk_count + '段)' : '');
         picker.appendChild(opt);
       });
 
@@ -106,12 +110,15 @@ function pickKbFile() {
       var handler = function() {
         var selected = picker.value;
         if (!selected) return;
-        var selFile = files.find(function(f) { return (f.path || f.name) === selected; });
+        // Patch4 v3.1 BUG#14：用 doc_id 匹配，filename 显示
+        var selFile = files.find(function(f) { return (f.doc_id || f.path || f.name) === selected; });
         if (selFile) {
-          if (typeof _refFilePath !== 'undefined') _refFilePath = selFile.path || selFile.name;
-          showFileIndicator(selFile.name, 'kb');
-          if (typeof pendingFile !== 'undefined') pendingFile = {name: selFile.name, path: selFile.path || selFile.name, source: 'kb'};
-          if (typeof showToast === 'function') showToast('已引用文库: ' + selFile.name, 'success');
+          var _docId = selFile.doc_id || selFile.path || selFile.name;
+          var _fname = selFile.filename || selFile.name;
+          if (typeof _refFilePath !== 'undefined') _refFilePath = _docId;
+          showFileIndicator(_fname, 'kb');
+          if (typeof pendingFile !== 'undefined') pendingFile = {name: _fname, path: _docId, source: 'kb'};
+          if (typeof showToast === 'function') showToast('已引用文库: ' + _fname, 'success');
         }
         picker.removeEventListener('change', handler);
       };
