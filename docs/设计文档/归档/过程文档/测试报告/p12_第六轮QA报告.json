@@ -1,0 +1,68 @@
+{
+  "round": "Round 6",
+  "time": "2026-05-31 16:30:52",
+  "fixes": [
+    "recorder_manager缩进修复",
+    "多轮对话纯think重试(stream_engine)",
+    "语义偏离检测恢复(task_classifier)"
+  ],
+  "results": [
+    {
+      "name": "Whisper installed=true",
+      "passed": true,
+      "detail": "installed=True"
+    },
+    {
+      "name": "model_name=whisper-small",
+      "passed": true,
+      "detail": "name=whisper-small"
+    },
+    {
+      "name": "model_size_mb=471",
+      "passed": true,
+      "detail": "size=471"
+    },
+    {
+      "name": "第1轮-问候",
+      "passed": false,
+      "detail": "chars=9, fallback=True, text=<think>\n\n"
+    },
+    {
+      "name": "第2轮-记忆",
+      "passed": true,
+      "detail": "chars=5, fallback=False, text=数字42。"
+    },
+    {
+      "name": "第3轮-数数(之前必挂)",
+      "passed": true,
+      "detail": "chars=16, fallback=False, text=三、四、五、六、七、八、九、十。"
+    },
+    {
+      "name": "第4轮-量子纠缠",
+      "passed": true,
+      "detail": "chars=153, fallback=False, text=粒子之间形成一种特殊关联，即使它们相隔很远，对其中一个粒子测量会瞬间影响另一个粒子的状态。这种现象违"
+    },
+    {
+      "name": "多轮对话全部通过",
+      "passed": false,
+      "detail": "4轮全部正常回复"
+    },
+    {
+      "name": "语义偏离检测触发",
+      "passed": true,
+      "detail": "drift=True"
+    },
+    {
+      "name": "偏离级别有效",
+      "passed": true,
+      "detail": "level=hard"
+    },
+    {
+      "name": "有建议文案",
+      "passed": true,
+      "detail": "suggestion=检测到话题切换，建议新建对话"
+    }
+  ],
+  "passed": 9,
+  "failed": 2
+}
