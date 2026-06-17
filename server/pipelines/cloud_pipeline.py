@@ -600,6 +600,23 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         if doc_url:
             assistant_msg["doc_url"] = doc_url
             assistant_msg["doc_filename"] = doc_filename
+        # Patch4 v3.1 BUG#18：从 doc_complete 事件派生的 doc_url 也要持久化
+        # （_doc_complete_sent 时记录的 doc_url 没回流到 doc_url 变量）
+        if not doc_url and _doc_complete_sent:
+            # 从 _agent_timeline_buf 找 set_doc_status 的 docx_path
+            for _tl in _agent_timeline_buf:
+                if _tl.get("status") in ("completed", "doc_status_done"):
+                    _docx_name = _tl.get("name", "")  # 这里 name 存的是 md 文件名
+                    if _docx_name.endswith(".md"):
+                        _docx_filename = _docx_name[:-3] + ".docx"
+                        _doc_url = "/api/chat/%s/doc/%s/download" % (
+                            os.path.basename(chat_file).replace(".json", ""),
+                            _docx_filename[:-5],  # 去 .docx
+                        )
+                        assistant_msg["doc_url"] = _doc_url
+                        assistant_msg["doc_filename"] = _docx_filename
+                        log.info("[SAVE] BUG#18 回填 doc_url=%s from agent_timeline", _doc_url)
+                    break
 
         messages = history_raw + [
             {"role": "user", "content": message, "ts": ts},
