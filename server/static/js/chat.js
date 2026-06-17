@@ -249,16 +249,22 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     preservedDocPanel = _docProgressTracker.panelEl;  // 不限 parentNode，强制保留
   }
 
+  // Patch4 v3.1 BUG#13：保留独立的下载栏（doc_complete 时追加的）
+  var preservedDocDlBar = null;
+  var _existingDlBar = streamEl.querySelector('.doc-download-bar[data-doc-complete="1"]');
+  if (_existingDlBar) {
+    preservedDocDlBar = _existingDlBar;
+  }
+
   var html = '';
   if (isThinking) {
-    // Patch4 v3.1 BUG#10：AgentTimeline 已在显示思考时，不重复显示 thinking-indicator
-    var timelineShowing = (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl);
-    if (!timelineShowing) {
-      html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
-    }
+    // Patch4 v3.1 BUG#10 彻底根治：appendStreamingMsg 在 thinking 时什么都不显示
+    // 思考状态完全交给 AgentTimeline（"思考中..."）+ _renderCloudThink（think-details）
+    // 这里如果再显示 thinking-indicator 就会和 AgentTimeline 重复
     if (content) {
       html += '<div style="color:var(--text-muted);font-style:italic;font-size:.85em">' + md(content, false) + '</div>';
     }
+    // 注意：isThinking=true 且 content 为空时，html 为空字符串，appendStreamingMsg 不显示任何内容
   } else {
     html += _renderMsgBody(content, {sanitize: false});
   }
@@ -279,6 +285,11 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   // Patch4：恢复进度面板
   if (preservedDocPanel) {
     streamEl.insertBefore(preservedDocPanel, streamEl.firstChild);
+  }
+
+  // Patch4 v3.1 BUG#13：恢复独立下载栏（追加到末尾，正文之后）
+  if (preservedDocDlBar) {
+    streamEl.appendChild(preservedDocDlBar);
   }
 
   if (!userScrolledUp) {
@@ -312,7 +323,7 @@ function _renderCloudThink(text, mainText) {
   // AgentTimeline 已负责"思考中..."状态展示，这里只显示 think-details（思考内容详情，可折叠）
   // 字数>=20 才显示 think-details，字数少时什么都不显示（避免空 details）
   if (len >= 20) {
-    html += '<details open class="think-details"><summary>' + iconSvg('spin','14') + ' 思考中 (' + len + '字)</summary><div class="think-content">' + md(text, false) + '</div></details>';
+    html += '<details open class="think-details"><summary>' + iconSvg('think','14') + ' 思考内容 (' + len + '字)</summary><div class="think-content">' + md(text, false) + '</div></details>';
   }
   // len < 20 时不显示任何思考 UI（AgentTimeline 的"思考中..."已经够了）
   if (mainText) html += _renderMsgBody(mainText, {sanitize: false});
@@ -1025,11 +1036,27 @@ async function sendMessage() {
           } else if (d.type === 'doc_complete') {
             // set_doc_status completed 完成 → 进度面板标记完成 + 下载按钮
             // 新数据结构（来自 cloud_pipeline）: {filename, doc_url, md_filename, total_time, ts}
+            // Patch4 v3.1 BUG#13：同时保存到 window._docDownloadInfo 供持久化
+            if (d.doc_url) {
+              window._docDownloadInfo = {
+                url: d.doc_url,
+                filename: d.filename || 'document.docx',
+              };
+            }
             if (typeof _handleDocProgressEvent === 'function') {
               _handleDocProgressEvent('doc_complete', d);
             }
-          } else if (d.type === 'doc_error') {
-            showToast(d.message || '文档撰写失败', 'error');
+            // Patch4 v3.1 BUG#13：额外保险——在 streamEl 末尾追加一个独立的下载栏
+            // （进度面板可能在 done 事件重渲染时被覆盖，独立下载栏更稳）
+            var _streamElDl = document.getElementById('stream-msg');
+            if (_streamElDl && d.doc_url) {
+              var _docDlBar = document.createElement('div');
+              _docDlBar.className = 'doc-download-bar';
+              _docDlBar.setAttribute('data-doc-complete', '1');
+              _docDlBar.innerHTML = '<a href="' + esc((typeof API !== 'undefined' ? API : '') + d.doc_url) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(d.filename || 'document.docx') + ')</a>';
+              _streamElDl.appendChild(_docDlBar);
+            }
+            showToast('文档撰写完成', 'success');
           }
         } catch(e) { console.error('[chat.sendMessage.parseSSE]', e); }
       }
