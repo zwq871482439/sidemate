@@ -575,3 +575,30 @@ C:\Sidemate\
 - Reranker 精排质量验证（对比 v2-m3 vs 旧 base 的 NDCG）
 
 **复杂度**：低（优化项，非必须）
+
+### 5.Y.9 检索引擎统一为 bge-m3 dense+sparse（移除 BM25）
+
+**用户决策**：既然用了 bge-m3，BM25 应该退役，embedder 挂了应该自恢复而不是降级。
+
+**改动**：
+- 移除 `_search_bm25` + jieba 依赖（减少 30MB 打包体积）
+- 改用 `BGEM3FlagModel.encode(return_dense=True, return_sparse=True)`
+- dense + sparse 内部加权融合（替代 RRF）
+- 代码量减少约 200 行
+
+**收益**：
+- 去掉 jieba 分词（质量一般）
+- bge-m3 sparse 基于 token 权重，比 BM25 关键词匹配更智能
+- dense + sparse 同源，协同更好
+
+### 5.Y.10 KB 引擎健康监控 + 自动恢复（不降级）
+
+**用户决策**：embedder 挂了应该想办法恢复，不是静默降级到垃圾检索。
+
+**改动**：
+- 启动时 embedder 加载失败 → 触发 `restoreFromSnapshot()`（复用 Go Launcher 的依赖恢复机制）
+- 运行时 embedder 异常 → 自动重试 3 次（间隔 1s）
+- 仍失败 → 前端显示"知识库引擎离线"明确状态（不再静默降级到 BM25）
+- 日志记录故障详情供诊断
+
+**设计原则**：硬件/软件可能坏，但应用要能自救（跟 Go Launcher 环境自恢复同一套思路）
