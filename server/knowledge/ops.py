@@ -509,6 +509,13 @@ class _KBOpsMixin:
             log.warning("[KB] 文库总字符数 %.1fMB 超过 200MB 上限，可能影响内存和检索性能",
                         total_chars / 1024 / 1024)
 
+        # Patch4 v3.1 BUG#29：向量索引缺失但有 chunks → 触发重建
+        # 之前只在"文件存在但维度不匹配"时才设 _need_rebuild_vectors
+        # 文件被删/损坏清除后，这个 flag 不会被设，导致向量索引永远不重建
+        if self.vectors is None and self.chunks and not os.path.exists(self.vectors_path):
+            log.info("[KB] 向量索引缺失但有 %d chunks，标记重建", len(self.chunks))
+            self._need_rebuild_vectors = True
+
         # 向量维度不匹配时，自动重建向量索引
         if self._need_rebuild_vectors and self.chunks:
             log.info("[KB] 开始自动重建向量索引 (%d chunks)...", len(self.chunks))
