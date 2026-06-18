@@ -514,3 +514,64 @@ KB 文档不能直接读，必须用户"发牌"。
 - 预设模式：完全信任 / 谨慎模式 / 纯离线
 
 **复杂度**：中等（需要后端 action_mode 解析 + 前端 toggle UI + 权限持久化）
+
+---
+
+## Patch5 补充：目录重构 + 技术债清理（2026-06-19 新增）
+
+### 5.Y.6 目录重构
+
+**原则**：`server/` 只放源码，`data/` 只放用户数据，配置文件放根目录。
+
+#### 改动清单
+
+| 当前位置 | 目标位置 | 说明 |
+|---------|---------|------|
+| `server/extensions/*.json` | `data/extensions/*.json` | 注册信息跟数据一起，装完自动写 |
+| `server/extensions/registry.py` | `server/core/extension_manager.py` | 代码合并进 core |
+| `server/files/file_extractor.py` | `server/knowledge/file_extractor.py` 或 `server/parsers/` | 跟 KB 强耦合，合并消除独立 files/ 目录 |
+| `server/requirements.txt` | `C:\Sidemate\requirements.txt` | 移到根目录，跟 setup.iss 等配置放一起 |
+| `server/data/` | `data/` | 提升到根目录，跟 server 平级 |
+
+#### 重构后结构
+
+```
+C:\Sidemate\
+├── server/                    ← 纯源码
+│   ├── core/                  ← 核心逻辑（含 extension_manager）
+│   ├── knowledge/             ← 知识库（含 file_extractor）
+│   ├── pipelines/
+│   ├── routers/
+│   └── ...
+├── data/                      ← 用户数据
+│   ├── chats/
+│   ├── kb/
+│   ├── extensions/            ← 注册信息
+│   └── logs/
+├── models/                    ← 模型文件
+├── requirements.txt           ← 依赖清单（开发用）
+├── setup.iss                  ← 打包配置
+└── Sidemate.exe
+```
+
+**复杂度**：中（大量 import 路径要改）
+**风险**：中（路径变更可能引入隐藏 bug）
+**建议**：P5 中期做，配合全面回归测试
+
+### 5.Y.7 requirements.txt 清理
+
+**现状**：`server/requirements.txt` 在打包后无用（嵌入式 Python + checksum 校验）
+**处理**：
+- 打包时不包含 requirements.txt（ISS 排除）
+- 开发环境保留在项目根目录
+- deps_check.py 的 manifest 是权威来源
+
+### 5.Y.8 BM25 + 向量双路检索优化
+
+**现状**：BM25 + bge-m3 向量 + Reranker 三路融合已实现
+**优化方向**：
+- bge-m3 自带 sparse 检索能力，未来可替代独立 BM25（减少 jieba 依赖）
+- 当前 RRF 融合权重固定，可考虑按查询类型动态调整
+- Reranker 精排质量验证（对比 v2-m3 vs 旧 base 的 NDCG）
+
+**复杂度**：低（优化项，非必须）
