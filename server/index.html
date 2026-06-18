@@ -296,14 +296,14 @@
                ondrop="kbOnDrop(event)">
             <div style="font-size:1.3em;margin-bottom:4px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" style="vertical-align:-3px"><path d="M9 3v9M5 8l4-4 4 4M3 14h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
             <div style="color:var(--accent-color);font-weight:bold;font-size:.85em">点击或拖拽上传</div>
-            <div style="font-size:.7em;color:var(--text-muted);margin-top:2px">支持多选，文档上限 50 个</div>
+            <div style="font-size:.7em;color:var(--text-muted);margin-top:2px">支持多选，文档上限 200 个</div>
           </div>
-          <input type="file" id="kbFileInput" accept=".txt,.md,.csv,.doc,.docx,.xls,.xlsx,.pdf" multiple style="display:none" onchange="kbOnFilePicked(event)">
+          <input type="file" id="kbFileInput" accept=".txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx,.pdf,.pptx,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,.log,.rtf" multiple style="display:none" onchange="kbOnFilePicked(event)">
 
-          <!-- 支持格式提示（D29）-->
+          <!-- 支持格式提示（Patch4 v3.1：放开限制）-->
           <div style="font-size:.72em;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
-            支持: txt md csv doc docx xls xlsx pdf<br>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v2M7 10h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 单文件上限：PDF≤100页 | 表格≤200行 | 文本≤100K字 | 大小≤50MB<br>
+            支持: txt md csv json doc docx xls xlsx pdf pptx py js html 等<br>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v2M7 10h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 单文件大小 ≤ 200MB，支持长文档（PDF ≤ 1000 页）<br>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v2M7 10h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 图片型 PDF 及 .doc/.xls 旧格式不支持，请转存为新格式
           </div>
 
@@ -693,7 +693,7 @@
     <!-- 右栏：数据发送策略 -->
     <div style="background:var(--bg-primary);border:0.5px solid var(--border-color);border-radius:10px;padding:14px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px">数据发送策略</div>
-      <div style="font-size:.85em;color:var(--text-secondary);margin-bottom:10px">控制发送到云端 AI 的对话内容范围。联网搜索零配置（本机直搜 Bing，无需 API Key）。</div>
+      <div style="font-size:.85em;color:var(--text-secondary);margin-bottom:10px">控制发送到云端 AI 的对话内容范围。</div>
       <label class="policy-option"><input type="radio" name="contextPolicy" value="full" checked> 完整发送（默认）— 发送完整历史上下文，对话质量最佳</label>
       <label class="policy-option"><input type="radio" name="contextPolicy" value="current_only"> 仅发送当前消息 — 最高隐私保护，但对话无记忆</label>
       <label class="policy-option"><input type="radio" name="contextPolicy" value="slim_history"> 精简历史 — 仅保留最近 <input type="number" id="slimHistoryRounds" value="6" min="1" max="50" style="width:42px;text-align:center;padding:2px 4px;border:0.5px solid var(--border-color);border-radius:3px"> 轮对话</label>
