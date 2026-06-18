@@ -141,8 +141,8 @@ DEFAULTS = {
     "kb_compare_privacy_read": False,     # 隐私弹窗已读标记
 
     # ----- 文库（Patch 6）-----
-    "kb_max_documents": 50,              # D3: 最大文档数
-    "kb_max_total_chunks": 1000,         # 最大 chunk 总数（支持大文档）
+    "kb_max_documents": 200,             # D3: 最大文档数（Patch4 v3.1：50→200，用户需求）
+    "kb_max_total_chunks": 4000,         # 最大 chunk 总数（按文档数比例放大 1000→4000）
     "kb_chunk_max_chars": 2500,          # 每块最大字符
     "kb_chunk_overlap_chars": 200,       # 重叠字符
     "kb_search_top_k": 5,               # 检索返回 top-k

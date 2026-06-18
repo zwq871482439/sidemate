@@ -192,8 +192,9 @@ class TaggingScheduler:
             tag_match = re.match(r'标签[：:]\s*(.+)', line)
             if tag_match:
                 tag_str = tag_match.group(1)
-                # 兼容中英文逗号、顿号分隔
-                tags = [t.strip() for t in re.split(r'[，,、]', tag_str) if t.strip()]
+                # Patch4 v3.1 BUG#25：兼容中英文逗号、顿号、空格分隔
+                # LLM 有时候返回 "养生 运动 健康习惯"（空格分隔），原正则不支持
+                tags = [t.strip() for t in re.split(r'[，,、\s]+', tag_str) if t.strip()]
                 continue
 
             # 匹配摘要行
