@@ -1130,7 +1130,15 @@ async def api_kb_search(request: Request):
     top_k = body.get("top_k", 5)
     if not query:
         return JSONResponse({"error": "请输入查询"}, status_code=400)
-    return {"results": kb.search(query, top_k=top_k)}
+    # Patch4 v3.1：捕获异常返回结构化错误（之前 FastAPI 默默吞掉 500）
+    try:
+        results = kb.search(query, top_k=top_k)
+        return {"results": results}
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        log.error("[KB] search 异常: %s\n%s", str(e), tb)
+        return JSONResponse({"error": "检索失败: %s" % str(e)[:120], "traceback": tb[-500:]}, status_code=500)
 
 
 @router.post("/api/kb/import_text")
