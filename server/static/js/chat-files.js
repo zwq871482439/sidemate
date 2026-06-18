@@ -94,58 +94,182 @@ function clearPendingFile(e) {
 window.clearPendingFile = clearPendingFile;
 
 function pickKbFile() {
-  var picker = document.getElementById('kbFilePickerSelect');
-  if (!picker) return;
+  // Patch4 v3.1 BUG#24 重写：用自定义模态弹窗替代原生 select
+  // 原生 select 在不可见区域 + 异步 click() 时浏览器拒绝弹下拉
+  // 新方案：动态创建模态弹窗，支持多选
 
-  // 动态获取文库文件列表
-  // Patch4 v3.1 BUG#14：API 路径修正 /api/kb/files → /api/kb/documents
-  // 返回是数组（不是 {files: [...]}），字段名也不同（doc_id/filename/chunk_count）
   fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      // /api/kb/documents 直接返回数组，每项含 doc_id/filename/chunk_count/status
       var files = Array.isArray(data) ? data : (data.files || []);
-      picker.innerHTML = '';
-      files.forEach(function(f) {
-        var opt = document.createElement('option');
-        // 用 doc_id 作为引用值（后端按 doc_id 查文档全文）
-        opt.value = f.doc_id || f.path || f.name;
-        opt.textContent = (f.filename || f.name) + (f.chunk_count ? ' (' + f.chunk_count + '段)' : '');
-        picker.appendChild(opt);
-      });
+      // 只显示 ready 状态的文档
+      files = files.filter(function(f) { return f.status === 'ready'; });
 
       if (files.length === 0) {
         if (typeof showToast === 'function') showToast('文库中没有文档，请先上传', 'warning');
         return;
       }
 
-      // 触发选择（使用原生 select 弹窗）
-      picker.focus();
-      picker.click();
-
-      // 监听选择变化
-      var handler = function() {
-        var selected = picker.value;
-        if (!selected) return;
-        // Patch4 v3.1 BUG#14：用 doc_id 匹配，filename 显示
-        var selFile = files.find(function(f) { return (f.doc_id || f.path || f.name) === selected; });
-        if (selFile) {
-          var _docId = selFile.doc_id || selFile.path || selFile.name;
-          var _fname = selFile.filename || selFile.name;
-          if (typeof _refFilePath !== 'undefined') _refFilePath = _docId;
-          showFileIndicator(_fname, 'kb');
-          if (typeof pendingFile !== 'undefined') pendingFile = {name: _fname, path: _docId, source: 'kb'};
-          if (typeof showToast === 'function') showToast('已引用文库: ' + _fname, 'success');
-        }
-        picker.removeEventListener('change', handler);
-      };
-      picker.addEventListener('change', handler, {once: true});
+      _showKbPickerModal(files);
     })
     .catch(function(e) {
       console.error('[chat.pickKbFile]', e);
       if (typeof showToast === 'function') showToast('获取文库文件列表失败', 'error');
     });
 }
+
+// Patch4 v3.1 BUG#24：自定义 KB 选择器模态弹窗
+var _kbSelectedDocs = [];  // 已选文档（多选）
+
+function _showKbPickerModal(files) {
+  // 移除已有的弹窗
+  var existing = document.getElementById('kbPickerModal');
+  if (existing) existing.remove();
+
+  _kbSelectedDocs = [];
+
+  // 创建遮罩
+  var overlay = document.createElement('div');
+  overlay.id = 'kbPickerModal';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center';
+
+  // 弹窗卡片
+  var card = document.createElement('div');
+  card.style.cssText = 'background:var(--bg-primary,#fff);border-radius:12px;width:90%;max-width:520px;max-height:75vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.2)';
+
+  // 头部
+  var header = document.createElement('div');
+  header.style.cssText = 'padding:16px 20px;border-bottom:1px solid var(--border-color,#e5e5e5);display:flex;justify-content:space-between;align-items:center';
+  header.innerHTML = '<div style="font-weight:500;font-size:15px;color:var(--text-primary,#333)">选择文库文档</div>';
+  var closeBtn = document.createElement('button');
+  closeBtn.innerHTML = iconSvg ? iconSvg('close', '16') : '×';
+  closeBtn.style.cssText = 'background:none;border:none;cursor:pointer;color:var(--text-muted,#999);padding:4px;border-radius:4px';
+  closeBtn.onclick = function() { overlay.remove(); };
+  header.appendChild(closeBtn);
+  card.appendChild(header);
+
+  // 提示
+  var hint = document.createElement('div');
+  hint.style.cssText = 'padding:8px 20px;font-size:12px;color:var(--text-muted,#999)';
+  hint.textContent = '可多选，选中的文档内容会注入到对话中';
+  card.appendChild(hint);
+
+  // 列表区（可滚动）
+  var listWrap = document.createElement('div');
+  listWrap.style.cssText = 'flex:1;overflow-y:auto;padding:4px 12px';
+
+  files.forEach(function(f) {
+    var item = document.createElement('div');
+    item.style.cssText = 'padding:10px 12px;margin:2px 0;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .15s';
+    item._docId = f.doc_id;
+    item._filename = f.filename;
+    item.onmouseenter = function() { item.style.background = 'var(--bg-secondary,#f5f5f5)'; };
+    item.onmouseleave = function() {
+      if (item._selected !== true) item.style.background = 'transparent';
+    };
+    item.onclick = function() {
+      item._selected = !item._selected;
+      if (item._selected) {
+        item.style.background = 'var(--primary-50,#e6f0ff)';
+        item.style.color = 'var(--accent-color,#185FA5)';
+        _kbSelectedDocs.push({doc_id: f.doc_id, filename: f.filename, chunk_count: f.chunk_count || 0});
+      } else {
+        item.style.background = 'transparent';
+        item.style.color = '';
+        _kbSelectedDocs = _kbSelectedDocs.filter(function(d) { return d.doc_id !== f.doc_id; });
+      }
+      // 更新底部按钮文案
+      var selCount = _kbSelectedDocs.length;
+      confirmBtn.disabled = selCount === 0;
+      confirmBtn.textContent = selCount > 0 ? ('确认引用（' + selCount + ' 篇）') : '确认引用';
+    };
+
+    var iconSpan = document.createElement('span');
+    iconSpan.innerHTML = iconSvg ? iconSvg('doc', '16') : '📄';
+    iconSpan.style.cssText = 'flex-shrink:0';
+
+    var nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px';
+    nameSpan.textContent = f.filename || f.name;
+
+    var metaSpan = document.createElement('span');
+    metaSpan.style.cssText = 'font-size:11px;color:var(--text-muted,#999);flex-shrink:0';
+    var tags = (f.tags && f.tags.length) ? f.tags.slice(0, 2).join(' / ') : '';
+    metaSpan.textContent = (f.chunk_count || 0) + ' 段' + (tags ? ' · ' + tags : '');
+
+    item.appendChild(iconSpan);
+    item.appendChild(nameSpan);
+    item.appendChild(metaSpan);
+    listWrap.appendChild(item);
+  });
+  card.appendChild(listWrap);
+
+  // 底部按钮
+  var footer = document.createElement('div');
+  footer.style.cssText = 'padding:12px 20px;border-top:1px solid var(--border-color,#e5e5e5);display:flex;justify-content:flex-end;gap:8px';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = 'padding:8px 16px;border:1px solid var(--border-color,#e5e5e5);background:var(--bg-primary,#fff);border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-secondary,#666)';
+  cancelBtn.onclick = function() { overlay.remove(); };
+
+  var confirmBtn = document.createElement('button');
+  confirmBtn.textContent = '确认引用';
+  confirmBtn.disabled = true;
+  confirmBtn.style.cssText = 'padding:8px 16px;border:none;background:var(--accent-color,#185FA5);color:#fff;border-radius:6px;cursor:pointer;font-size:13px';
+  confirmBtn.style.opacity = '0.5';
+  confirmBtn.onclick = function() {
+    if (_kbSelectedDocs.length === 0) return;
+    // 单选兼容旧逻辑（_refFilePath / pendingFile 只支持单个，取第一个）
+    var first = _kbSelectedDocs[0];
+    if (typeof _refFilePath !== 'undefined') _refFilePath = first.doc_id;
+    if (typeof pendingFile !== 'undefined') {
+      // 多选时把所有 doc_id 拼成逗号分隔，后端按逗号拆分（如支持）
+      var allIds = _kbSelectedDocs.map(function(d) { return d.doc_id; }).join(',');
+      pendingFile = {name: _kbSelectedDocs.length > 1 ? (_kbSelectedDocs.length + ' 篇文库文档') : first.filename, path: allIds, source: 'kb'};
+    }
+    // 显示文件指示器
+    var displayName = _kbSelectedDocs.length > 1
+      ? (_kbSelectedDocs.length + ' 篇文库文档')
+      : first.filename;
+    showFileIndicator(displayName, 'kb');
+    // 多选时把所有文件名存到 window._kbSelectedFiles 供后端使用
+    window._kbSelectedFiles = _kbSelectedDocs.slice();
+    if (typeof showToast === 'function') showToast('已引用 ' + _kbSelectedDocs.length + ' 篇文库文档', 'success');
+    overlay.remove();
+  };
+  // disabled 状态视觉同步
+  var _origOnclick = confirmBtn.onclick;
+  confirmBtn.addEventListener('click', function() {
+    if (confirmBtn.disabled) return;
+  }, true);
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(confirmBtn);
+  card.appendChild(footer);
+
+  // disabled 视觉联动
+  var _updateDisabled = function() {
+    confirmBtn.style.opacity = _kbSelectedDocs.length === 0 ? '0.5' : '1';
+  };
+  // 覆盖 item.onclick 的尾部来更新 disabled
+  var origItemOnclicks = Array.prototype.slice.call(listWrap.children).map(function(item) {
+    var orig = item.onclick;
+    item.onclick = function(e) {
+      orig && orig.call(item, e);
+      _updateDisabled();
+    };
+  });
+
+  overlay.appendChild(card);
+  // 点遮罩关闭
+  overlay.onclick = function(e) {
+    if (e.target === overlay) overlay.remove();
+  };
+
+  document.body.appendChild(overlay);
+}
+window._showKbPickerModal = _showKbPickerModal;
 
 function onUnifiedPicked(e) {
   var file = e.target.files && e.target.files[0];
