@@ -178,7 +178,7 @@ function _renderSingleMsg(m, idx) {
     if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
     html += '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(m.doc_filename || 'document.docx') + ')</a></div>';
   }
-  html += _buildFileTag(m) + _buildStats(m) + _buildDocDownload(m) + _buildKbSources(m) + _buildCopyBtn();
+  html += _buildFileTag(m) + _buildStats(m) + _buildKbSources(m) + _buildCopyBtn();
   html += '</div>';
   return html;
 }
