@@ -512,12 +512,24 @@ class _KBOpsMixin:
         # Patch4 v3.1 BUG#29：向量索引缺失但有 chunks → 触发重建
         # 之前只在"文件存在但维度不匹配"时才设 _need_rebuild_vectors
         # 文件被删/损坏清除后，这个 flag 不会被设，导致向量索引永远不重建
-        if self.vectors is None and self.chunks and not os.path.exists(self.vectors_path):
-            log.info("[KB] 向量索引缺失但有 %d chunks，标记重建", len(self.chunks))
-            self._need_rebuild_vectors = True
+        # Patch4 v3.1 BUG#30：加 kb_auto_rebuild 开关，启动时重建太慢会卡死服务
+        # 改为懒加载模式：首次 search 时才重建（避免启动卡死）
+        try:
+            from config import get as _cfg
+            _auto_rebuild_on_start = _cfg("kb_auto_rebuild_on_start", False)
+        except Exception:
+            _auto_rebuild_on_start = False
 
-        # 向量维度不匹配时，自动重建向量索引
-        if self._need_rebuild_vectors and self.chunks:
+        if self.vectors is None and self.chunks and not os.path.exists(self.vectors_path):
+            if _auto_rebuild_on_start:
+                log.info("[KB] 向量索引缺失但有 %d chunks，标记重建", len(self.chunks))
+                self._need_rebuild_vectors = True
+            else:
+                log.info("[KB] 向量索引缺失，懒加载模式（首次检索时重建）")
+                self._need_rebuild_vectors = True  # 标记，但不阻塞启动
+
+        # 向量维度不匹配时，自动重建向量索引（仅在配置开启时启动期执行）
+        if self._need_rebuild_vectors and self.chunks and _auto_rebuild_on_start:
             log.info("[KB] 开始自动重建向量索引 (%d chunks)...", len(self.chunks))
             try:
                 self._rebuild_all_vectors()

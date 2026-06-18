@@ -376,6 +376,17 @@ class _KBSearchMixin:
             vec_results = []
             bm25_results = []
 
+            # Patch4 v3.1 BUG#30：向量索引懒加载重建（首次检索时触发）
+            if self.vectors is None and self._need_rebuild_vectors and self.chunks:
+                log.info("[KB] 首次检索触发向量索引懒重建 (%d chunks)...", len(self.chunks))
+                try:
+                    self._rebuild_all_vectors()
+                    self._need_rebuild_vectors = False
+                    log.info("[KB] 向量索引懒重建完成 ✅")
+                except Exception as e:
+                    log.error("[KB] 向量索引懒重建失败: %s, 本次降级 BM25", str(e)[:100])
+                    self._need_rebuild_vectors = False  # 避免每次都重试
+
             # 向量检索
             if self.vectors is not None and len(self.chunk_order) > 0:
                 if not self._embedder_loaded:
