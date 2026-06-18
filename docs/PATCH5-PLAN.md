@@ -441,3 +441,36 @@ KB 文档不能直接读，必须用户"发牌"。
 - token 估算用 `total_chars / 1.5`（中文）或 `total_chars / 4`（英文）的粗略公式
 - 切换在线/本地模式时，提示当前上下文窗口（如云端 1M vs 本地 16K）
 
+
+---
+
+## Patch5 补充：文件类型扩展（2026-06-19 新增）
+
+### 5.Y.4 新增文件格式解析器
+
+**目标**：让文库真正成为"本地知识库"，支持用户把各种文字内容扔进来。
+
+**当前支持**：txt/md/csv/json/docx/xlsx/pdf/pptx（+代码文件 .py/.js/.html/.css/.xml/.yaml 等）
+
+**新增格式（按优先级）**：
+
+| 格式 | 扩展名 | 依赖包 | 用途 | 优先级 |
+|------|--------|--------|------|--------|
+| 电子书 | `.epub` | `ebooklib` | 电子书导入（最大需求）| P0 |
+| 网页存档 | `.html` `.htm` | `beautifulsoup4` (已有) | 网页保存/导出 | P0 |
+| 字幕 | `.srt` `.vtt` | 无（纯文本解析）| 视频/录音字幕 | P1 |
+| 富文本 | `.rtf` | `striprtf` | 老 Word 文档 | P1 |
+| LaTeX | `.tex` | 无（正则去标记）| 学术论文 | P2 |
+| 邮件 | `.eml` | `email` (标准库) | 邮件存档 | P2 |
+| Jupyter | `.ipynb` | `nbformat` | 代码笔记本 | P2 |
+| Org-mode | `.org` | 无（简单解析）| Emacs 笔记 | P3 |
+| reStructuredText | `.rst` | 无（简单解析）| Python 文档 | P3 |
+
+**实施计划**：
+1. P0（epub + html）：新增 `ebooklib` 依赖，html 用已有 `beautifulsoup4`
+2. P1（srt + rtf）：srt 纯文本解析无需依赖，rtf 加 `striprtf`
+3. P2-P3：按用户反馈优先级再决定
+
+**实施位置**：`server/files/file_extractor.py` 的 `extract_text()` 函数
+
+**依赖管理**：新增包加入 `python/requirements.txt` 和 ISS 打包清单

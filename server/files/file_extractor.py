@@ -76,7 +76,8 @@ def extract_text(file_path: str) -> str:
             import fitz  # PyMuPDF
             doc = fitz.open(file_path)
             texts = []
-            max_pages = min(len(doc), 100)
+            # Patch4 v3.1：100 → 1000，配合 bge-m3 长序列支持大文档
+            max_pages = min(len(doc), 1000)
             for page_idx in range(max_pages):
                 page = doc[page_idx]
                 texts.append(page.get_text())
@@ -202,17 +203,17 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
     inline_limit = max_chars if max_chars > 0 else MAX_INLINE_CHARS
     extract_limit = inline_limit * 3  # 智能截取上限 = 注入上限的 3 倍
 
-    # 文件大小检查（50MB 上限）
+    # 文件大小检查（Patch4 v3.1：50MB → 200MB，允许电子书/长PDF/大型网页存档）
     try:
         file_size = os.path.getsize(file_path)
-        if file_size > 50 * 1024 * 1024:
+        if file_size > 200 * 1024 * 1024:
             return {
                 "status": "error",
                 "text": None,
                 "total_chars": 0,
                 "extracted_chars": 0,
                 "filename": filename,
-                "message": "❌ %s 文件过大（%.1fMB），最大支持 50MB" % (filename, file_size / 1024 / 1024),
+                "message": "❌ %s 文件过大（%.1fMB），最大支持 200MB" % (filename, file_size / 1024 / 1024),
             }
     except OSError as e:
         log.error(f"文件大小检查失败: {e}")

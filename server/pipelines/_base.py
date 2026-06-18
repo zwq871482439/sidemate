@@ -223,9 +223,11 @@ def handle_kb_retrieval(ctx: StreamContext) -> Generator[str, None, None]:
 
     budget = mgr.calc_kb_context_budget()
     safe_chars = budget["safe_chars"]
-    log.info("[KB] context 预算: safe_chars=%d", safe_chars)
+    # Patch4 v3.1：传 ai_mode 给 get_context，让其按模式动态调整 top_k
+    _ai_mode = getattr(ctx, 'ai_mode', None) or 'local'
+    log.info("[KB] context 预算: safe_chars=%d, ai_mode=%s", safe_chars, _ai_mode)
 
-    kb_context, kb_sources = kb.get_context(ctx.prompt, max_chars=safe_chars)
+    kb_context, kb_sources = kb.get_context(ctx.prompt, max_chars=safe_chars, ai_mode=_ai_mode)
     if not kb_context:
         yield 'data: {"type": "mode_hint", "message": "文库中未找到与问题相关的内容，将使用模型直接回答。"}\n\n'
         log.info("[KB] 无检索结果, fallback 普通对话")

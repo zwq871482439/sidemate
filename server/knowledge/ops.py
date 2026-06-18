@@ -505,8 +505,8 @@ class _KBOpsMixin:
 
         # 总字符数上限检查
         total_chars = sum(len(c.text) for c in self.chunks.values() if c.text)
-        if total_chars > 50 * 1024 * 1024:  # 50MB
-            log.warning("[KB] 文库总字符数 %.1fMB 超过 50MB 上限，可能影响内存和检索性能",
+        if total_chars > 200 * 1024 * 1024:  # Patch4 v3.1：50MB → 200MB
+            log.warning("[KB] 文库总字符数 %.1fMB 超过 200MB 上限，可能影响内存和检索性能",
                         total_chars / 1024 / 1024)
 
         # 向量维度不匹配时，自动重建向量索引

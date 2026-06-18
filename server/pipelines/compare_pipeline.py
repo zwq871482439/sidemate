@@ -81,7 +81,8 @@ def _run_local_column(ctx, query: str, q: queue.Queue, local_model: str = None, 
         q.put(("step", "searching"))
         budget = mgr.calc_kb_context_budget()
         safe_chars = budget["safe_chars"]
-        kb_context, kb_sources = kb.get_context(query, max_chars=safe_chars)
+        # Patch4 v3.1：对比模式默认用 local 参数（KB 主要服务本地管线）
+        kb_context, kb_sources = kb.get_context(query, max_chars=safe_chars, ai_mode='local')
 
         if not kb_context:
             q.put(("step_done", "search"))

@@ -429,12 +429,30 @@ class _KBSearchMixin:
         log.warning("[KB] search() 无结果: query=%s", query[:50])
         return []
 
-    def get_context(self, query: str, top_k: int = None, max_chars: int = 8000) -> Tuple[str, List[Dict]]:
+    def get_context(self, query: str, top_k: int = None, max_chars: int = None, ai_mode: str = None) -> Tuple[str, List[Dict]]:
         """检索相关 chunk 并拼接为上下文文本
+
+        Patch4 v3.1：支持按 ai_mode 动态调整 top_k 和 max_chars
+        - 本地模式（ai_mode='local'）：top_k=3, max_chars=5000（适配 4B 模型 16K 上下文）
+        - 云端模式（ai_mode='cloud'）：top_k=5, max_chars=12000（云端 1M 随便吃）
 
         Returns:
             (context_text, sources)
         """
+        # Patch4 v3.1：按模式动态调整参数
+        if top_k is None or max_chars is None:
+            try:
+                from config import get as _cfg
+                if ai_mode == 'local':
+                    top_k = top_k or _cfg("kb_search_top_k_local", 3)
+                    max_chars = max_chars or _cfg("kb_context_max_chars_local", 5000)
+                else:
+                    top_k = top_k or _cfg("kb_search_top_k_cloud", 5)
+                    max_chars = max_chars or _cfg("kb_context_max_chars_cloud", 12000)
+            except Exception:
+                top_k = top_k or 5
+                max_chars = max_chars or 8000  # fallback 旧默认值
+
         results = self.search(query, top_k=top_k)
 
         if not results:

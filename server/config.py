@@ -143,9 +143,9 @@ DEFAULTS = {
     # ----- 文库（Patch 6）-----
     "kb_max_documents": 200,             # D3: 最大文档数（Patch4 v3.1：50→200，用户需求）
     "kb_max_total_chunks": 4000,         # 最大 chunk 总数（按文档数比例放大 1000→4000）
-    "kb_chunk_max_chars": 2500,          # 每块最大字符
-    "kb_chunk_overlap_chars": 200,       # 重叠字符
-    "kb_search_top_k": 5,               # 检索返回 top-k
+    "kb_chunk_max_chars": 3000,          # 每块最大字符（Patch4 v3.1：2500→3000，适配 bge-m3）
+    "kb_chunk_overlap_chars": 300,       # 重叠字符（保持 10% overlap 比例）
+    "kb_search_top_k": 5,               # 检索返回 top-k（云端默认，本地模式动态降为 3）
     "kb_embedding_model": "BAAI/bge-m3",  # Patch4 v3.1：bge-base-zh-v1.5 → bge-m3（多语言+8192长序列）
     "kb_vector_dim": 1024,              # 向量维度（bge-m3 = 1024）
     "kb_embed_batch_size": 50,           # 嵌入批处理大小
@@ -181,9 +181,13 @@ DEFAULTS = {
     "recorder_resident": False,            # 纪要引擎(Whisper)是否常驻（True=不自动卸载）
 
     # ----- 文库检索参数（Patch 8 P8-10，从硬编码提取）-----
-    "kb_vector_score_threshold": 0.28,    # 向量检索最低余弦相似度（低于此值过滤）
-    "kb_relevance_floor": 0.25,           # MMR 重排序相关性地板（低于此值的候选跳过）
+    "kb_vector_score_threshold": 0.35,    # 向量检索最低余弦相似度（Patch4 v3.1：0.28→0.35，适配 bge-m3 分数分布）
+    "kb_relevance_floor": 0.30,           # MMR 重排序相关性地板（低于此值的候选跳过）
     "kb_reranker_top_k": 5,              # Reranker 精排返回数量
+    "kb_context_max_chars_local": 5000,   # 本地模式注入 LLM 的总字符上限（Patch4 v3.1 新增）
+    "kb_context_max_chars_cloud": 12000,  # 云端模式注入 LLM 的总字符上限（Patch4 v3.1 新增）
+    "kb_search_top_k_local": 3,           # 本地模式 top-k（少而精，适配 4B 模型 16K 上下文）
+    "kb_search_top_k_cloud": 5,           # 云端模式 top-k（多而广，云端 1M 上下文随便吃）
 
     # ----- .sidemate 包签名 -----
     "sidemate_hmac_key": os.environ.get("SIDEMATE_HMAC_KEY", _SIDEMATE_HMAC_KEY_DEFAULT),
