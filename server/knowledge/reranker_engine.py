@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 class RerankerEngine:
     """Reranker 引擎：Cross-Encoder 交叉编码器，用于检索后精排"""
 
-    def __init__(self, model_name: str = "BAAI/bge-reranker-base"):
+    def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3"):
         self.model_name = model_name
         self._model = None
         self._tokenizer = None

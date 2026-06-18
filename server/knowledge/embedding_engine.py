@@ -19,7 +19,7 @@ class EmbeddingEngine:
     扩展未安装时 mode="none"，encode 返回零向量但不崩溃。
     """
 
-    def __init__(self, model_name: str = "BAAI/bge-base-zh-v1.5", vector_dim: int = 768):
+    def __init__(self, model_name: str = "BAAI/bge-m3", vector_dim: int = 1024):
         self.model_name = model_name
         self.vector_dim = vector_dim
         self._model = None

@@ -146,8 +146,8 @@ DEFAULTS = {
     "kb_chunk_max_chars": 2500,          # 每块最大字符
     "kb_chunk_overlap_chars": 200,       # 重叠字符
     "kb_search_top_k": 5,               # 检索返回 top-k
-    "kb_embedding_model": "BAAI/bge-base-zh-v1.5",  # D33: 嵌入模型（随文库扩展安装）
-    "kb_vector_dim": 768,               # 向量维度（bge-base-zh-v1.5 = 768）
+    "kb_embedding_model": "BAAI/bge-m3",  # Patch4 v3.1：bge-base-zh-v1.5 → bge-m3（多语言+8192长序列）
+    "kb_vector_dim": 1024,              # 向量维度（bge-m3 = 1024）
     "kb_embed_batch_size": 50,           # 嵌入批处理大小
     "kb_async": True,                    # 异步处理开关
     "kb_data_dir": "",                   # 数据目录（空=项目根目录下 data/kb/）
