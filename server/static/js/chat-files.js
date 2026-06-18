@@ -31,12 +31,29 @@ function _closeAttachMenu(e) {
 }
 
 function doAttachUpload() {
-  _closeAttachMenu();
+  // Patch4 v3.1 BUG#24：同 doAttachKb，先阻止冒泡再关菜单
+  if (window.event && typeof window.event.stopPropagation === 'function') {
+    window.event.stopPropagation();
+  }
+  var menu = document.getElementById('attachMenu');
+  if (menu) menu.style.display = 'none';
+  _attachMenuOpen = false;
+  document.removeEventListener('click', _closeAttachMenu);
   document.getElementById('unifiedInput').click();
 }
 
 function doAttachKb() {
-  _closeAttachMenu();
+  // Patch4 v3.1 BUG#24：先阻止冒泡再关菜单，避免 document 上的 once 监听器
+  // 在 pickKbFile 的 picker.click() 之前消费掉，导致原生 select 不弹
+  if (window.event && typeof window.event.stopPropagation === 'function') {
+    window.event.stopPropagation();
+  }
+  // 直接关菜单 DOM，不走 _closeAttachMenu（避免 event 缺失导致逻辑错乱）
+  var menu = document.getElementById('attachMenu');
+  if (menu) menu.style.display = 'none';
+  _attachMenuOpen = false;
+  // 移除 document 上残留的 once 监听器（如果有的话）
+  document.removeEventListener('click', _closeAttachMenu);
   pickKbFile();
 }
 
