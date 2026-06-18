@@ -38,7 +38,7 @@ function _buildFileTag(m) {
 
 function _buildDocDownload(m) {
   if (!m.doc_url || m.role === 'user') return '';
-  return '<div class="doc-download-bar"><a href="' + esc(m.doc_url) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M8 2v8M5 6.5L8 4l3 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11.5" width="12" height="2" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>下载文档 (' + esc(m.doc_filename || 'document.docx') + ')</a></div>';
+  return '<div class="doc-download-bar"><a href="' + esc(m.doc_url) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M8 2v8M5 6.5L8 4l3 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11.5" width="12" height="2" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
 }
 
 function _buildKbSources(m) {
@@ -99,7 +99,7 @@ function _buildAgentTimelineHtml(timelineData) {
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(item.query || '') + '」</span>';
         break;
       case 'search_done':
-        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">搜索完成 — ' + (item.count || 0) + ' 条结果</span>';
+        stepHtml = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">找到 ' + (item.count || 0) + ' 个网页</span>';
         break;
       case 'fetching':
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('idea','14') + '</span> <span class="agent-label">正在阅读 ' + _esc(item.url || '') + '</span>';
@@ -148,13 +148,19 @@ function _buildAgentTimelineHtml(timelineData) {
         stepHtml = '<span class="agent-icon agent-done">' + iconSvg('check','14') + '</span> <span class="agent-label">生成 ' + _esc(item.docx_path || item.filename || '') + '</span>';
         break;
       case 'budget_exceeded':
-        stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">工具调用已达上限，正在整理回答...</span>';
+        stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">信息已收集完毕，正在撰写回复...</span>';
         break;
       case 'tool_limited':
         stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">部分工具已达上限</span>';
         break;
       case 'error':
-        stepHtml = '<span class="agent-icon agent-error">' + iconSvg('cross','14') + '</span> <span class="agent-label">工具执行失败' + (item.tool ? ' (' + _esc(item.tool) + ')' : '') + '</span>';
+        // Patch4 v3.1 BUG#17：按工具类型差异化文案
+        var _errMsg = '工具执行失败';
+        var _toolName = (item.tool || '').toLowerCase();
+        if (_toolName.indexOf('search_web') === 0) _errMsg = '外部搜索暂时不可用，已用模型自身知识回答';
+        else if (_toolName.indexOf('fetch_url') === 0) _errMsg = '网页暂时无法访问，已跳过';
+        else if (_toolName.indexOf('search_kb') === 0) _errMsg = '知识库检索异常，使用模型自身知识';
+        stepHtml = '<span class="agent-icon agent-error">' + iconSvg('cross','14') + '</span> <span class="agent-label">' + _errMsg + '</span>';
         break;
       default:
         return;  // 未知状态跳过
@@ -176,7 +182,7 @@ function _renderSingleMsg(m, idx) {
   if (m.doc_url) {
     var _dlUrl = m.doc_url;
     if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
-    html += '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(m.doc_filename || 'document.docx') + ')</a></div>';
+    html += '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
   }
   html += _buildFileTag(m) + _buildStats(m) + _buildKbSources(m) + _buildCopyBtn();
   html += '</div>';
@@ -195,7 +201,12 @@ function renderMessages() {
     var tag = document.getElementById('modelTag');
     var loaded = tag && !tag.classList.contains('none');
     if (loaded) {
-      el.innerHTML = '<div class="empty-state"><div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="font-size:1.6em;opacity:.5">' + iconSvg('chat','24') + '</div><div>开始对话吧</div><div style="font-size:.82em;color:var(--text-muted);margin-top:4px">输入问题或上传文件开始使用</div></div></div>';
+      // Patch4 v3.1 文案优化：根据模式动态显示引导
+      var _isCloud = (typeof _currentMode !== 'undefined' && _currentMode === 'cloud');
+      var _hint = _isCloud
+        ? '输入问题、上传文件，或直接说「帮我写一份关于XX的文档」'
+        : '输入问题或上传文件开始使用';
+      el.innerHTML = '<div class="empty-state"><div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="font-size:1.6em;opacity:.5">' + iconSvg('chat','24') + '</div><div>开始对话吧</div><div style="font-size:.82em;color:var(--text-muted);margin-top:4px">' + _hint + '</div></div></div>';
     } else {
       // 首次/非首次无模型：留空，由 #chatModelOverlay 接管
       el.innerHTML = '';
@@ -316,7 +327,7 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     if (_rebuildUrl.indexOf('http') !== 0) {
       _rebuildUrl = (typeof API !== 'undefined' ? API : '') + _rebuildUrl;
     }
-    _rebuildDlBar.innerHTML = '<a href="' + esc(_rebuildUrl) + '" download="' + esc(window._docDownloadInfo.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(window._docDownloadInfo.filename || 'document.docx') + ')</a>';
+    _rebuildDlBar.innerHTML = '<a href="' + esc(_rebuildUrl) + '" download="' + esc(window._docDownloadInfo.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(window._docDownloadInfo.filename || 'document.docx') + '</a>';
     streamEl.appendChild(_rebuildDlBar);
   }
 
@@ -1056,7 +1067,7 @@ async function sendMessage() {
             if (streamEl) {
               var docBar = document.createElement('div');
               docBar.className = 'doc-download-bar';
-              docBar.innerHTML = '<a href="' + esc(downloadUrl) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(d.filename || 'document.docx') + ')</a>';
+              docBar.innerHTML = '<a href="' + esc(downloadUrl) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(d.filename || 'document.docx') + '</a>';
               streamEl.appendChild(docBar);
             }
             showToast('文档撰写完成', 'success');
@@ -1081,7 +1092,7 @@ async function sendMessage() {
               var _docDlBar = document.createElement('div');
               _docDlBar.className = 'doc-download-bar';
               _docDlBar.setAttribute('data-doc-complete', '1');
-              _docDlBar.innerHTML = '<a href="' + esc((typeof API !== 'undefined' ? API : '') + d.doc_url) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载文档 (' + esc(d.filename || 'document.docx') + ')</a>';
+              _docDlBar.innerHTML = '<a href="' + esc((typeof API !== 'undefined' ? API : '') + d.doc_url) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(d.filename || 'document.docx') + '</a>';
               _streamElDl.appendChild(_docDlBar);
             }
             showToast('文档撰写完成', 'success');
@@ -1738,7 +1749,7 @@ DocProgressTracker.prototype._renderDownloads = function(docUrl, docxPath) {
     }
   }
   dlBox.innerHTML = '<a href="' + _esc(fullUrl) + '" download="' + _esc(fname) + '" target="_blank">' +
-    iconSvg('doc', '14') + ' 下载文档 (' + _esc(fname) + ')</a>';
+    iconSvg('doc', '14') + ' 下载 ' + _esc(fname) + '</a>';
 };
 
 // 全局调度入口（从 SSE 事件分发处调用）

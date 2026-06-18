@@ -92,7 +92,7 @@ function _renderChatSidebar(chats, currentPath) {
   var list = document.getElementById('chatSidebarList');
   if (!list) return;
   if (!chats.length) {
-    list.innerHTML = '<div class="chat-sidebar-empty">暂无会话</div>';
+    list.innerHTML = '<div class="chat-sidebar-empty">暂无对话记录</div>';
     return;
   }
   var html = '';

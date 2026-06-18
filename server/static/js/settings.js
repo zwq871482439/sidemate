@@ -191,7 +191,7 @@ async function refreshStatus() {
       if (modelInfoRow) modelInfoRow.style.display = 'flex';
       if (noModelHint) noModelHint.style.display = '';
       var nameEl2 = document.getElementById('modelNameDisplay');
-      if (nameEl2) nameEl2.textContent = '暂无模型';
+      if (nameEl2) nameEl2.textContent = '未安装模型';
       var tagEl2 = document.getElementById('modelQuantTag');
       if (tagEl2) tagEl2.textContent = '';
     }

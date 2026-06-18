@@ -77,8 +77,8 @@
           <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
             <div style="width:22px;height:22px;border-radius:50%;background:var(--accent-color);color:var(--text-on-accent, #fff);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">1</div>
             <div style="flex:1">
-              <div style="font-size:.85em;font-weight:600;color:var(--text-primary);margin-bottom:2px">预热 AI 模型</div>
-              <div style="font-size:.75em;color:var(--text-secondary);line-height:1.5">前往「设置」页面，点击「预热模型」将模型加载到内存。</div>
+              <div style="font-size:.85em;font-weight:600;color:var(--text-primary);margin-bottom:2px">启动 AI</div>
+              <div style="font-size:.75em;color:var(--text-secondary);line-height:1.5">前往设置页面，点击「启动模型」开始使用。</div>
             </div>
           </div>
           <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
@@ -130,7 +130,7 @@
         <div class="toolbar chat-toolbar-merged">
           <span class="model-info">当前模型: <span class="model-tag none" id="modelTag">加载中</span></span>
           <!-- Patch2 A7: 上下文圆环指示器（per-session，放在 chat toolbar） -->
-          <div class="context-ring-wrap level-normal" id="contextRing" title="上下文使用量">
+          <div class="context-ring-wrap level-normal" id="contextRing" title="对话记忆使用量">
             <svg viewBox="0 0 40 40" width="28" height="28">
               <circle cx="20" cy="20" r="15" fill="none" stroke="var(--bg-tertiary)" stroke-width="3"/>
               <circle id="contextRingArc" cx="20" cy="20" r="15" fill="none" stroke="var(--accent-color)" stroke-width="3"
@@ -174,7 +174,7 @@
               </div>
               <div class="attach-menu-item" onclick="doAttachKb()">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="vertical-align:-2px;flex-shrink:0"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
-                <span>引用文库</span>
+                <span>引用文库文档</span>
               </div>
             </div>
           </div>
@@ -317,7 +317,7 @@
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
           <h3 style="margin:0;font-size:1em"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:2px"><path d="M2 2.5h10a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1-1.5 1.5H7l-3 2.5V10.5H2a1.5 1.5 0 0 1-1.5-1.5V4A1.5 1.5 0 0 1 2 2.5z" stroke="currentColor" stroke-width="1.2"/></svg> 文库问答</h3>
           <!-- Patch3: 文库上下文指示器 -->
-          <div class="context-ring-wrap level-normal" id="kbContextRing" title="会话记忆使用量" style="cursor:pointer" onclick="kbRefreshContextRing()">
+          <div class="context-ring-wrap level-normal" id="kbContextRing" title="对话记忆使用量" style="cursor:pointer" onclick="kbRefreshContextRing()">
             <svg viewBox="0 0 40 40" width="24" height="24">
               <circle cx="20" cy="20" r="15" fill="none" stroke="var(--bg-tertiary)" stroke-width="3"/>
               <circle id="kbContextRingArc" cx="20" cy="20" r="15" fill="none" stroke="var(--accent-color)" stroke-width="3"
@@ -332,7 +332,7 @@
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:.75em;color:var(--text-secondary)">
               <input type="checkbox" id="kbCompareSwitch" onchange="toggleKbCompare(this.checked)" style="cursor:pointer">
               云端对比
-              <span title="同时获取本地知识库和云端AI的回答，由本地模型安全融合" style="cursor:help;font-size:var(--font-xs);color:var(--text-muted)">ⓘ</span>
+              <span title="本地查文库回答，云端补充知识。文库内容不上网" style="cursor:help;font-size:var(--font-xs);color:var(--text-muted)">ⓘ</span>
             </label>
           </div>
           <div style="margin-left:auto;display:flex;gap:4px">
@@ -683,7 +683,7 @@
     <div id="cloudConfigSection" style="background:var(--bg-primary);border:0.5px solid var(--border-color);border-radius:10px;padding:14px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px">云端 AI 模型配置</div>
       <div class="settings-row"><label>API 地址</label><input type="text" id="cloudBaseUrl" placeholder="https://api.openai.com/v1" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
-      <div class="settings-row"><label>API Key</label><input type="password" id="cloudApiKey" placeholder="输入新的 API Key（留空保持不变）" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><button class="settings-btn" onclick="toggleApiKeyVisibility()" style="font-size:.75em;padding:4px 10px">显示</button></div>
+      <div class="settings-row"><label>API Key</label><input type="password" id="cloudApiKey" placeholder="输入新的 API Key（不修改请勿填写）" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><button class="settings-btn" onclick="toggleApiKeyVisibility()" style="font-size:.75em;padding:4px 10px">显示</button></div>
       <div class="settings-row"><label>模型名称</label><input type="text" id="cloudModel" placeholder="gpt-4o-mini" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
       <div class="settings-row"><label>模型能力</label><span id="cloudCapsDisplay" style="font-size:var(--font-sm);color:var(--text-muted)">保存后自动识别</span></div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="settings-btn" onclick="testCloudConnection()">测试连接</button><button class="settings-btn settings-btn-primary" onclick="saveCloudConfig()">保存配置</button></div>
@@ -739,7 +739,11 @@
         </div>
         <div style="padding-top:8px;border-top:0.5px solid var(--border-color);margin-bottom:10px">
           <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px;font-size:13px">产品描述</div>
-          <div style="font-size:13px;color:var(--text-secondary)">本地优先的 AI 办公助手。离线运行，数据完全存储在您的电脑上。支持文库检索、云端知识对比、会议纪要等多场景智能协作。</div>
+          <div style="font-size:13px;color:var(--text-secondary);line-height:1.7">
+            本地优先的 AI 办公助手。<br>
+            离线运行，数据完全存在您的电脑上。<br>
+            支持智能对话、文档生成、文库问答、会议纪要。
+          </div>
         </div>
         <div style="padding-top:8px;border-top:0.5px solid var(--border-color)">
           <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;font-size:13px">团队信息</div>
@@ -877,8 +881,8 @@ function renderOnboardRoute2(opts) {
     cloudSection = 
     '<div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary)">' +
     '<div style="font-size:.82em;color:var(--text-secondary);line-height:1.5">' +
-    '<span style="font-size:14px">☁️</span> <strong style="color:var(--text-primary)">在线模式</strong>：切换到云端模型使用，搜索本地知识库辅助回答。<br>' +
-    '<span style="color:var(--text-muted)">在线模式下本地数据不会上传，但你的问题会发送给云端服务</span>' +
+    '<span style="font-size:14px">☁️</span> <strong style="color:var(--text-primary)">在线模式</strong>：已切换到云端模型。模型会自动检索本地知识库辅助回答。<br>' +
+    '<span style="color:var(--text-muted)">本地数据不会上传，但你的问题会发送给云端服务</span>' +
     '</div></div>';
   }
   var card = document.getElementById('onboardCard');

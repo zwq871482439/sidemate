@@ -40,7 +40,7 @@ MAX_TOOL_HISTORY_CHARS = 60000  # 工具历史最大字符数（约 40000 token�
 # 未列出的工具（set_doc_status / list_docs / workspace 工具）不限制
 TOOL_LIMITS = {
     "search_web": 3,   # 互联网搜索最多 3 次
-    "search_kb": 2,    # 知识库搜索最多 2 次
+    "search_kb": 5,    # 知识库搜索最多 5 次（Patch4 v3.1：2→5，KB 本地检索便宜，实测需要多角度查）
     "fetch_url": 5,    # 网页阅读最多 5 次
 }
 

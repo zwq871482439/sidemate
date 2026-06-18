@@ -383,3 +383,61 @@ KB 文档不能直接读，必须用户"发牌"。
 | THIRD-PARTY 许可 Tab | | ✅ |
 | 数据目录展示 | | ✅ |
 | 技术债务清理 | | ✅ |
+
+---
+
+## Patch5 补充计划（2026-06-18 新增）
+
+### 5.X 前端 UI 架构优化（来自 Patch4 v3.1 文案审查）
+
+#### 5.X.1 进度面板完成后自然消失（不再持久化）
+
+**现状**：`_docProgressTracker` 在 done 事件后被 `renderMessages` 全量重写冲掉，"完成"绿色面板闪现后消失。
+
+**决策**：**不修了**。响应结束后用户已经看到稳定的"下载文档"按钮（来自 `_renderSingleMsg` 持久化的 `doc_url`），进度面板的历史使命已经完成，自然消失反而符合用户预期。
+
+**依赖**：无（当前状态已经够用）
+
+#### 5.X.2 工具链（AgentTimeline）独立刷新
+
+**现状问题**：
+- `appendStreamingMsg` 重写 `streamEl.innerHTML`，工具链作为子元素跟着被冲
+- `renderMessages` 全量重写 `#messages`，工具链再次被冲
+- token 流密集时（如 70 秒写文档），`agent_status` 事件可能被挤丢
+
+**目标架构**：
+```
+#messages
+├─ .msg (user)         ← append-only，不重写
+├─ .msg (ai)           ← append-only
+│  ├─ .agent-timeline  ← 永久驻留（仅 renderMessages 时创建一次）
+│  ├─ .msg-body        ← token 流只更新这里
+│  └─ .doc-download-bar
+└─ #stream-msg         ← 临时流式容器，完成后迁移到上面的 .msg
+```
+
+**关键改动**：
+- `appendStreamingMsg` 只更新 `.msg-body` 子元素，不动 `.agent-timeline`
+- `_handleAgentStatus` 直接操作 `.agent-timeline` DOM（append 新 step）
+- done 事件触发：固化 `#stream-msg` 为正式 `.msg` 节点，工具链保留
+- 持久化的 `agent_timeline` 字段在 `renderMessages` 时一次性渲染（已有）
+
+**复杂度**：高（重构 chat.js 流式渲染核心）
+**建议**：跟 P5 整体前端重构一起做，不要单独 patch
+
+### 5.X.3 多选 KB 文档 Token 估算显示
+
+**需求**：用户多选文库文档时，实时显示 token 占用，让用户知道"这些文档够不够喂给模型"。
+
+**等级**：
+- < 20% 总上下文 → 低（绿色）
+- 10% 以内 → 极低
+- ~ 50% → 中（黄色）
+- ~ 70% → 高（橙色）
+- > 80% → 极高（红色）
+
+**实现**：
+- KB 选择器模态弹窗底部实时显示："已选 N 篇 · 约 12K tokens · 占用低（18%）"
+- token 估算用 `total_chars / 1.5`（中文）或 `total_chars / 4`（英文）的粗略公式
+- 切换在线/本地模式时，提示当前上下文窗口（如云端 1M vs 本地 16K）
+

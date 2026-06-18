@@ -182,7 +182,7 @@ async function kbRefreshDocs() {
     if (typeof updateKbLockBar === 'function') updateKbLockBar();
 
     if (!docs.length) {
-      listEl.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px 0;font-size:.82em">暂无文档</div>';
+      listEl.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px 0;font-size:.82em">文库为空，点击上方「上传文档」开始添加</div>';
       document.getElementById('kbEmpty').style.display = 'flex';
       document.getElementById('kbChatArea').style.display = 'none';
       return;
