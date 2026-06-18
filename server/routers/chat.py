@@ -255,28 +255,39 @@ async def api_chat_stream(request: Request):
                 prompt = (message or "") + "\n\n[用户上传了文件 %s，内容如下：]\n%s" % (
                     file_info["filename"], file_info["text"])
         else:
-            # 尝试作为 KB doc_id 引用
-            kb_doc = kb.get_document(file_path)
-            if kb_doc and kb_doc.status == "ready":
-                # 从 KB 取文档全文（拼接所有 chunks）
-                doc_texts = []
-                for chunk in kb.chunks.values():
-                    if chunk.doc_id == file_path and chunk.text:
-                        doc_texts.append(chunk.text)
-                if doc_texts:
-                    full_text = "\n\n".join(doc_texts)
-                    from files.file_extractor import calc_file_budget, smart_extract
-                    history_chars_kb = sum(len(m.get("content", "")) for m in history_raw) if history_raw else 0
-                    file_budget_kb = calc_file_budget(history_chars_kb)
-                    if len(full_text) > file_budget_kb:
-                        full_text = smart_extract(full_text, message or "", file_budget_kb)
-                    prompt = (message or "") + "\n\n[用户引用了文库文档 %s，内容如下：]\n%s" % (
-                        kb_doc.filename, full_text)
-                    log.info("[CHAT] KB doc_id引用: %s (%d字/%d预算)" % (kb_doc.filename, len(full_text), file_budget_kb))
-                else:
-                    log.warning("[CHAT] KB doc_id引用: %s 无可读文本" % file_path)
+            # Patch4 v3.1 BUG#27：支持多选 KB（doc_id 逗号分隔）
+            # 拆分所有 doc_id，逐个取全文，合并注入
+            doc_ids = [d.strip() for d in file_path.split(",") if d.strip()]
+            from files.file_extractor import calc_file_budget, smart_extract
+            history_chars_kb = sum(len(m.get("content", "")) for m in history_raw) if history_raw else 0
+            file_budget_kb = calc_file_budget(history_chars_kb)
+
+            all_docs_text = []
+            found_docs = []
+            for did in doc_ids:
+                kb_doc = kb.get_document(did)
+                if kb_doc and kb_doc.status == "ready":
+                    doc_texts = []
+                    for chunk in kb.chunks.values():
+                        if chunk.doc_id == did and chunk.text:
+                            doc_texts.append(chunk.text)
+                    if doc_texts:
+                        doc_full = "\n\n".join(doc_texts)
+                        all_docs_text.append("=== 文档：%s ===\n%s" % (kb_doc.filename, doc_full))
+                        found_docs.append(kb_doc.filename)
+
+            if all_docs_text:
+                full_text = "\n\n".join(all_docs_text)
+                # 多文档时预算放大 1.5 倍（单文档保持原预算）
+                if len(doc_ids) > 1:
+                    file_budget_kb = int(file_budget_kb * 1.5)
+                if len(full_text) > file_budget_kb:
+                    full_text = smart_extract(full_text, message or "", file_budget_kb)
+                docs_label = "、".join(found_docs) if len(found_docs) <= 3 else ("%s 等 %d 篇" % (found_docs[0], len(found_docs)))
+                prompt = (message or "") + "\n\n[用户引用了文库文档 %s，内容如下：]\n%s" % (docs_label, full_text)
+                log.info("[CHAT] KB 多选引用: %d篇 (%d字/%d预算) — %s" % (len(found_docs), len(full_text), file_budget_kb, docs_label))
             else:
-                log.warning("[CHAT] file_path 无效: %s" % file_path)
+                log.warning("[CHAT] file_path 无效或文库无此文档: %s" % file_path)
 
     log.debug("[CHAT] model=%s msg=%s" % (model_name, prompt[:100]))
 

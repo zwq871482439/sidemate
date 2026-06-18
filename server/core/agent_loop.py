@@ -262,6 +262,30 @@ class AgentLoop:
                 except json.JSONDecodeError:
                     args = {}
 
+                # Patch4 v3.1 BUG#28：工具超限后拒绝执行（之前只从 tools 表移除，
+                # 但模型仍可能基于 history 调用，导致"部分工具已达上限"后还在调）
+                _limit = TOOL_LIMITS.get(tool_name)
+                _current_count = tool_counts.get(tool_name, 0)
+                if _limit is not None and _current_count >= _limit:
+                    log.warning("[AGENT] 工具 %s 已达上限 %d/%d，拒绝执行", tool_name, _current_count, _limit)
+                    # 发送一个错误状态给前端
+                    yield ("agent_status", {
+                        "status": "error",
+                        "tool": tool_name,
+                        "reason": "limit_exceeded",
+                    })
+                    # 给模型返回一个明确的错误，让它自己收手
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "name": tool_name,
+                        "content": json.dumps({
+                            "error": "limit_exceeded",
+                            "message": "此工具调用已达上限 %d 次，请改用已有信息继续回答，不要再调用 %s" % (_limit, tool_name),
+                        }, ensure_ascii=False),
+                    })
+                    continue
+
                 log.info("[AGENT] 工具调用: %s(%s)", tool_name, args_str[:100])
 
                 # 发送开始状态
