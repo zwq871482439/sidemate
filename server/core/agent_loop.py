@@ -443,6 +443,7 @@ class AgentLoop:
                 try:
                     from core.doc_session import (
                         read_workspace_file, mark_doc_completed, _docs_root,
+                        _workspace_root,
                     )
                     # 1. 读 workspace/{filename}
                     try:
@@ -456,9 +457,9 @@ class AgentLoop:
                         }
                     md_content = f["content"]
 
-                    # 2. 生成 docx（覆盖同名）
+                    # 2. 生成 docx（Patch4 v3.1 BUG#22：输出到 workspace/，模型可见）
                     docx_filename = filename[:-3] + ".docx"  # 去掉 .md 加 .docx
-                    docs_dir = _docs_root(self.chat_id)
+                    docs_dir = _workspace_root(self.chat_id)  # 改为 workspace（模型可见）
                     os.makedirs(docs_dir, exist_ok=True)
                     docx_path = os.path.join(docs_dir, docx_filename)
 

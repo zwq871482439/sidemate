@@ -158,10 +158,13 @@ def download_chat_doc(chat_id: str, doc_id: str, fmt: str = "docx"):
     if not chat_path:
         return JSONResponse({"error": "非法或不存在会话"}, status_code=404)
 
-    # doc_id 白名单（Patch4 v3.1 BUG#15：允许中文字符，因为文档名可能是中文）
-    if not doc_id or not re.match(r'^[\u4e00-\u9fff\w\-]+$', doc_id):
+    # doc_id 白名单（Patch4 v3.1 BUG#15+21：允许中文 + 全角字符/中文标点）
+    # FastAPI 会自动 URL 解码路径参数，所以 doc_id 已经是解码后的原文
+    if not doc_id or not re.match(r'^[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\w\-]+$', doc_id):
         return JSONResponse({"error": "非法 doc_id"}, status_code=400)
 
+    # Patch4 v3.1 BUG#22：优先在 workspace/ 找（新位置），fallback 到 docs/（旧位置）
+    workspace_dir = os.path.join(chat_path, "workspace")
     docs_dir = os.path.join(chat_path, "docs")
 
     if fmt == "json":
@@ -171,10 +174,12 @@ def download_chat_doc(chat_id: str, doc_id: str, fmt: str = "docx"):
         return FileResponse(target, media_type="application/json",
                             filename=doc_id + ".json")
 
-    # 默认 docx
-    target = os.path.join(docs_dir, doc_id + ".docx")
+    # 默认 docx — Patch4 v3.1 BUG#22：优先 workspace/，fallback docs/
+    target = os.path.join(workspace_dir, doc_id + ".docx")
     if not os.path.isfile(target):
-        # fallback：如果只有 json，提示
+        # fallback 到旧位置 docs/
+        target = os.path.join(docs_dir, doc_id + ".docx")
+    if not os.path.isfile(target):
         return JSONResponse({"error": "docx 产物尚未生成"}, status_code=404)
     return FileResponse(target,
                         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

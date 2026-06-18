@@ -453,7 +453,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                         if "/" in _docx_basename:
                             _docx_basename = _docx_basename.rsplit("/", 1)[-1]
                         _doc_key = _docx_basename[:-5] if _docx_basename.endswith(".docx") else _docx_basename
-                        _doc_url = "/api/chat/%s/doc/%s/download" % (_chat_id, _doc_key)
+                        # Patch4 v3.1 BUG#21：URL 编码 doc_key（中文/全角字符必须编码）
+                        from urllib.parse import quote as _url_quote
+                        _doc_url = "/api/chat/%s/doc/%s/download" % (_chat_id, _url_quote(_doc_key, safe=''))
                         # Patch4 v3.1 BUG#18：保存到模块作用域变量，供消息持久化使用
                         _doc_complete_url = _doc_url
                         _doc_complete_filename = _docx_path

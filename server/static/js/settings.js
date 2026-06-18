@@ -952,6 +952,8 @@ async function loadCloudConfig() {
         keyEl.value = data.api_key_preview;
         keyEl.setAttribute('data-has-key', 'true');
       } else {
+        // Patch4 v3.1 BUG#20：不清空 input（保留 placeholder），只标记 has-key=false
+        // 否则用户切到设置 tab 但没填新 key 就保存，会误发空 key 覆盖已有配置
         keyEl.value = '';
         keyEl.removeAttribute('data-has-key');
       }
@@ -1065,14 +1067,21 @@ async function saveCloudConfig() {
   };
   // 上下文窗口已移除（自动从字典获取）
   var keyEl = document.getElementById('cloudApiKey');
-  // 只有用户输入了新内容（不是脱敏占位符）才发送 api_key
+  // Patch4 v3.1 BUG#20：只有用户实际输入了新 key（不是空、不是脱敏占位）才发送
+  // 不发 api_key 字段时，后端应保留已有 key（saveSettings 必须支持部分更新）
   if (keyEl && keyEl.value) {
     var hasExisting = keyEl.getAttribute('data-has-key') === 'true';
+    var val = keyEl.value;
     // 脱敏格式: "sk-***...***abc" — 如果值包含 ***...*** 说明用户没改
-    if (!hasExisting || keyEl.value.indexOf('***...***') === -1) {
-      body.api_key = keyEl.value;
+    var isMaskedPlaceholder = val.indexOf('***...***') !== -1;
+    // 空字符串或纯空白不发
+    var isEmpty = !val || !val.trim();
+    if (!isEmpty && (!hasExisting || !isMaskedPlaceholder)) {
+      body.api_key = val.trim();
     }
   }
+  // 如果 keyEl.value 为空但 has-key=true（用户主动清空）→ 不发 api_key
+  // 后端保留原 key（避免误清空）
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/cloud/config', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
