@@ -177,6 +177,12 @@ DEFAULTS = {
     "reranker_resident": False,            # Reranker 是否常驻（True=不自动卸载）
     "recorder_resident": False,            # 纪要引擎(Whisper)是否常驻（True=不自动卸载）
 
+    # ----- 权限工具开关（Patch5 B3，3 预设可批量改）-----
+    "tool_enabled_web_search": True,       # 互联网搜索（search_web/fetch_url）
+    "tool_enabled_file_rw": True,          # 文件读写（write_workspace 等）
+    "tool_enabled_code_exec": False,       # 代码执行（预留，默认关）
+    "tool_enabled_kb_search": True,        # 知识库检索（search_kb/get_context）
+
     # ----- 文库检索参数（Patch 8 P8-10，从硬编码提取）-----
     "kb_vector_score_threshold": 0.35,    # 向量检索最低余弦相似度（Patch4 v3.1：0.28→0.35，适配 bge-m3 分数分布）
     "kb_relevance_floor": 0.30,           # MMR 重排序相关性地板（低于此值的候选跳过）
