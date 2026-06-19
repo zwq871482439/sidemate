@@ -27,6 +27,7 @@ class KBDocument:
     tags: list = field(default_factory=list)    # 3-5 个关键词标签
     tag_status: str = "pending"                 # "pending" / "done"
     is_private: bool = False                    # Patch5: 私密文档标记（持久化到 kb_meta.json）
+    hit_count: int = 0                          # Patch5 B1: 检索命中次数（热力图，按文档去重计数）
 
 
 @dataclass

@@ -20,7 +20,6 @@ async function refreshResourcePanel() {
 
     var sys = data.system;
     var mod = data.modules || {};
-    var budget = data.budget || null;
 
     // 系统内存总览
     var total = sys.total_mb;
@@ -34,97 +33,37 @@ async function refreshResourcePanel() {
     availEl.textContent = fmtMB(avail);
     availEl.style.color = avail < 1500 ? '#ef4444' : avail < 3000 ? '#f59e0b' : '#16a34a';
 
-    // 内存预算
-    var budgetBar = document.getElementById('budgetBar');
-    var budgetLabel = document.getElementById('budgetLabel');
-    var budgetModules = document.getElementById('budgetModules');
-
-    if (budget && budgetBar && budgetLabel) {
-      var usedBudgetMb = budget.modules_used_mb || 0;
-      var limitMb = budget.limit_mb || 10240;
-      var usedPct = limitMb > 0 ? Math.max(0, Math.round((budget.usage_ratio || 0) * 100)) : 0;
-
-      budgetBar.style.width = Math.min(100, usedPct) + '%';
-      budgetBar.style.background = usedPct > 90 ? '#ef4444' : usedPct > 70 ? '#f59e0b' : 'var(--text-secondary)';
-      budgetLabel.textContent = fmtMB(usedBudgetMb) + ' / ' + fmtMB(limitMb) + '  ' + usedPct + '%';
-
-      // 模块明细（按 installed 决定是否显示，loaded 决定颜色）
-      if (budgetModules) {
-        var parts = [];
-        // 基础：始终存在
-        var baseInfo = mod.base || {};
-        parts.push('基础 ' + fmtMB(baseInfo.mb || 0));
-        // LLM
-        var llmInfo = mod.llm || {};
-        if (llmInfo.installed) {
-          parts.push(llmInfo.loaded ? ('LLM ' + fmtMB(llmInfo.mb)) : 'LLM 未加载');
-        }
-        // 文库（嵌入+重排合计）
-        var embedderInfo = mod.embedder || {};
-        var rerankerInfo = mod.reranker || {};
-        if (embedderInfo.installed) {
-          var kbTotal = (embedderInfo.mb || 0) + (rerankerInfo.mb || 0);
-          var kbLoaded = embedderInfo.loaded || rerankerInfo.loaded;
-          parts.push(kbLoaded ? ('文库 ' + fmtMB(kbTotal)) : '文库 未加载');
-        }
-        // 纪要
-        var recorderInfo = mod.recorder || {};
-        if (recorderInfo.installed) {
-          parts.push(recorderInfo.loaded ? ('纪要 ' + fmtMB(recorderInfo.mb)) : '纪要 未加载');
-        }
-        budgetModules.style.display = parts.length ? 'flex' : 'none';
-        budgetModules.textContent = parts.join('  |  ');
+    // 资源占用明细（保留模块占用展示，移除内存预算）
+    var resModules = document.getElementById('resModules');
+    if (resModules && mod) {
+      var parts = [];
+      // 基础：始终存在
+      var baseInfo = mod.base || {};
+      parts.push('基础 ' + fmtMB(baseInfo.mb || 0));
+      // LLM
+      var llmInfo = mod.llm || {};
+      if (llmInfo.installed) {
+        parts.push(llmInfo.loaded ? ('LLM ' + fmtMB(llmInfo.mb)) : 'LLM 未加载');
       }
-    } else if (budgetModules) {
-      budgetModules.style.display = 'none';
-    }
-
-    // 预算滑块初始化
-    var slider = document.getElementById('budgetSlider');
-    if (slider && budget) {
-      var minGb = budget.recommended_min_mb ? Math.round(budget.recommended_min_mb / 1024) : 8;
-      var maxGb = budget.recommended_max_mb ? Math.round(budget.recommended_max_mb / 1024) : 12;
-      var currentGb = budget.limit_mb ? (budget.limit_mb / 1024).toFixed(1) : '10.0';
-      if (minGb >= maxGb) { minGb = 8; maxGb = 12; }
-      if (parseFloat(currentGb) < minGb || parseFloat(currentGb) > maxGb) currentGb = minGb.toFixed(1);
-      slider.min = minGb;
-      slider.max = maxGb;
-      slider.step = 0.5;
-      slider.value = currentGb;
-      var sliderVal = document.getElementById('budgetSliderValue');
-      if (sliderVal) sliderVal.textContent = currentGb + ' GB';
+      // 文库（嵌入+重排合计）
+      var embedderInfo = mod.embedder || {};
+      var rerankerInfo = mod.reranker || {};
+      if (embedderInfo.installed) {
+        var kbTotal = (embedderInfo.mb || 0) + (rerankerInfo.mb || 0);
+        var kbLoaded = embedderInfo.loaded || rerankerInfo.loaded;
+        parts.push(kbLoaded ? ('文库 ' + fmtMB(kbTotal)) : '文库 未加载');
+      }
+      // 纪要
+      var recorderInfo = mod.recorder || {};
+      if (recorderInfo.installed) {
+        parts.push(recorderInfo.loaded ? ('纪要 ' + fmtMB(recorderInfo.mb)) : '纪要 未加载');
+      }
+      resModules.style.display = parts.length ? 'flex' : 'none';
+      resModules.textContent = parts.join('  |  ');
     }
   } catch(e) {
     silentLog('[settings.refreshResourcePanel]', e);
   }
-}
-
-async function onBudgetSliderChange(val) {
-  var gb = parseFloat(val);
-  if (isNaN(gb) || gb <= 0) return;
-  var mb = Math.round(gb * 1024);
-  var sliderVal = document.getElementById('budgetSliderValue');
-  if (sliderVal) sliderVal.textContent = gb.toFixed(1) + ' GB';
-  // 同步更新预算标签的 limit 部分
-  var budgetLabel = document.getElementById('budgetLabel');
-  if (budgetLabel) {
-    var current = budgetLabel.textContent || '';
-    // 格式: "1234 MB / 10240 MB  12%"
-    var parts = current.split('/');
-    var usedPart = parts[0] ? parts[0].trim() : '0 MB';
-    var pctMatch = current.match(/(\d+%)$/);
-    var pctPart = pctMatch ? '  ' + pctMatch[1] : '';
-    budgetLabel.textContent = usedPart + ' / ' + fmtMB(mb) + pctPart;
-  }
-  try {
-    await fetch(_apiBase + '/api/budget', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({budget_mb: mb})
-    });
-    // 更新成功后刷新整个资源面板，确保数据一致
-    refreshResourcePanel();
-  } catch(e) { console.error('[settings.onBudgetSliderChange]', e); }
 }
 
 // ===== 模型状态 =====
@@ -1164,8 +1103,7 @@ window.saveCloudConfig = saveCloudConfig;
 // search config functions removed (zero-config)
 
 window.exportBackup = exportBackup;
-window.importBackup = importBackup;window.refreshResourcePanel = refreshResourcePanel;
-window.onBudgetSliderChange = onBudgetSliderChange;
+window.refreshResourcePanel = refreshResourcePanel;
 window.refreshStatus = refreshStatus;
 window.updateWarmupBtn = updateWarmupBtn;
 window.handleWarmup = handleWarmup;

@@ -69,7 +69,8 @@ class TaskItem:
 
 
 # 支持的文件扩展名（与 kb.py upload 端点保持一致）
-_SUPPORTED_EXTENSIONS = frozenset({"txt", "md", "csv", "docx", "xlsx", "pdf"})
+# B2: 新增 epub/html/srt/rtf 四种格式
+_SUPPORTED_EXTENSIONS = frozenset({"txt", "md", "csv", "docx", "xlsx", "pdf", "epub", "html", "htm", "srt", "rtf"})
 
 
 class BatchQueue:
@@ -688,6 +689,42 @@ def _extract_file_text(file_path: str, file_type: str) -> str:
                     if page_text:
                         text += page_text + "\n\n"
             return text
+
+        elif file_type == "epub":
+            # B2: EPUB 电子书解析（委托给 file_extractor 统一逻辑）
+            try:
+                from files.file_extractor import extract_text
+                return extract_text(file_path)
+            except Exception as e:
+                log.error("[BATCH_QUEUE] EPUB 解析失败: %s", str(e)[:200])
+                return ""
+
+        elif file_type in ("html", "htm"):
+            # B2: HTML 网页文件解析（委托给 file_extractor 统一逻辑）
+            try:
+                from files.file_extractor import extract_text
+                return extract_text(file_path)
+            except Exception as e:
+                log.error("[BATCH_QUEUE] HTML 解析失败: %s", str(e)[:200])
+                return ""
+
+        elif file_type == "srt":
+            # B2: SRT 字幕文件解析（委托给 file_extractor 统一逻辑）
+            try:
+                from files.file_extractor import extract_text
+                return extract_text(file_path)
+            except Exception as e:
+                log.error("[BATCH_QUEUE] SRT 解析失败: %s", str(e)[:200])
+                return ""
+
+        elif file_type == "rtf":
+            # B2: RTF 富文本解析（委托给 file_extractor 统一逻辑）
+            try:
+                from files.file_extractor import extract_text
+                return extract_text(file_path)
+            except Exception as e:
+                log.error("[BATCH_QUEUE] RTF 解析失败: %s", str(e)[:200])
+                return ""
 
         else:
             log.warning("[BATCH_QUEUE] 不支持的文件格式: .%s", file_type)

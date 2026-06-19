@@ -35,7 +35,6 @@ class _KBStatsMixin:
             "bm25_available": self._bm25 is not None,
             "reranker_available": self.reranker.available,
             "models_loaded": self._embedder_loaded,  # 模型是否已加载（供前端显示载入/卸载按钮）
-            "memory_report": self.memory_manager.get_report(),  # 内存预算报告（Patch 8）
         }
 
     def get_all_tags(self) -> dict:

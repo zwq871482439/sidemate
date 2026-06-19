@@ -575,15 +575,7 @@
         <div class="settings-row"><span>系统内存</span><span class="val" id="resMemLabel">--</span></div>
         <div class="settings-row"><span>可用系统内存</span><span class="val" id="resAvail">--</span></div>
         <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border-color)">
-          <div class="settings-row"><span>内存预算</span><span class="val" id="budgetLabel">--</span></div>
-          <div class="settings-bar"><div id="budgetBar" class="settings-bar-fill" style="width:0"></div></div>
-          <div id="budgetModules" style="display:flex;gap:8px;font-size:var(--font-xs);color:var(--text-muted);margin-top:4px;flex-wrap:wrap"></div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:var(--font-xs);margin-top:6px">
-            <span style="color:var(--text-muted)">8G</span>
-            <input type="range" id="budgetSlider" min="8" max="12" step="0.5" value="10" style="flex:1;height:4px" onchange="onBudgetSliderChange(this.value)">
-            <span style="color:var(--text-muted)">12G</span>
-            <span id="budgetSliderValue" style="font-weight:600;min-width:48px;font-size:var(--font-sm)">10.0 GB</span>
-          </div>
+          <div id="resModules" style="display:flex;gap:8px;font-size:var(--font-xs);color:var(--text-muted);margin-top:4px;flex-wrap:wrap"></div>
         </div>
       </div>
     </div>

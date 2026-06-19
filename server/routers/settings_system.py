@@ -12,7 +12,7 @@ routers/settings_system.py — 系统信息/模型管理/设备/环境/配置/�
   模型导入：/api/models/import（已废弃）
   工作区：  /api/workspace, /api/workspace/{file_path:path}
   配置：    /api/config (GET/POST)
-  资源：    /api/resource-info, /api/budget
+  资源：    /api/resource-info
   加载进度：/api/load-progress
 """
 import os
@@ -36,30 +36,6 @@ log = logging.getLogger("settings.system")
 # ============================================================
 #  PermissionManager / AuditLogger 已在 Patch11 拆除
 # ============================================================
-
-
-# ============================================================
-#  辅助函数
-# ============================================================
-
-def _check_memory_budget(estimated_mb: int = 0) -> Optional[dict]:
-    """内存预算检查（委托给 kb.memory_manager）"""
-    try:
-        kb = get_kb()
-        report = kb.memory_manager.get_report()
-        if not kb.memory_manager.can_allocate(estimated_mb):
-            return {
-                "error": "内存预算不足：剩余 %dMB，本次需要约 %dMB（预算 %dMB，已用 %dMB）"
-                         % (report["available_mb"], estimated_mb,
-                            report["budget_mb"], report["modules_used_mb"]),
-                "budget_mb": report["budget_mb"],
-                "modules_used_mb": report["modules_used_mb"],
-                "available_mb": report["available_mb"],
-                "usage_ratio": report["usage_ratio"],
-            }
-    except Exception as e:
-        log.warning("[SETTINGS] 内存预算检查异常（放行）: %s", str(e))
-    return None
 
 
 # ============================================================
@@ -240,9 +216,6 @@ def api_models():
 @router.post("/api/load/{model_name}")
 def api_load(model_name: str):
     """加载模型（支持 progress_callback）"""
-    _budget = _check_memory_budget(estimated_mb=3000)
-    if _budget:
-        return JSONResponse(_budget, status_code=503)
     mgr = get_mgr()
     result = mgr.load(model_name)
     log.info("[LOAD] %s -> %s" % (model_name, "OK" if "error" not in result else result.get("error", "unknown")))
@@ -541,14 +514,9 @@ def api_resource_info():
             kb_extension_installed = kb_active
             recorder_installed = recorder_loaded or recorder_mb > 0
 
-    from knowledge.memory_manager import MemoryManager
-    budget_report = kb.memory_manager.get_report()
-    recommended = MemoryManager.recommended_budget()
-
-    # 预算汇总：用当前实际模块占用（从 modules 字段实时计算）
+    # B5: 移除内存预算报告（budget_report / recommended / MemoryManager 已废弃）
+    # 预算汇总改为实时计算模块占用（不再依赖 memory_manager）
     actual_modules_used = llm_mb + embedder_mb + reranker_mb + recorder_mb + base_mb
-    budget_limit = kb.memory_manager.budget_mb
-    actual_ratio = round(actual_modules_used / budget_limit, 2) if budget_limit > 0 else 0
 
     result = {
         "system": {
@@ -569,32 +537,8 @@ def api_resource_info():
                          "loaded": recorder_loaded, "installed": recorder_installed},
             "base": {"mb": base_mb, "loaded": True, "installed": True},
         },
-        "budget": {
-            "limit_mb": budget_limit,
-            "modules_used_mb": actual_modules_used,
-            "available_mb": max(0, budget_limit - actual_modules_used),
-            "usage_ratio": actual_ratio,
-            "recommended_min_mb": recommended["min_mb"],
-            "recommended_max_mb": recommended["max_mb"],
-            "suggested_mb": recommended["suggested_mb"],
-        }
     }
     return result
-
-
-@router.post("/api/budget")
-async def api_set_budget(request: Request):
-    """设置内存预算"""
-    kb = get_kb()
-    body = await request.json()
-    new_mb = body.get("budget_mb")
-    if not new_mb or not isinstance(new_mb, (int, float)):
-        return JSONResponse({"error": "无效的预算值"}, status_code=400)
-    ok = kb.memory_manager.set_budget(int(new_mb))
-    from config import set_value
-    set_value("memory_budget_mb", kb.memory_manager.budget_mb)
-    log.info("[SERVER] 内存预算已更新: %dMB", kb.memory_manager.budget_mb)
-    return {"ok": ok, "budget_mb": kb.memory_manager.budget_mb}
 
 
 # ============================================================
@@ -786,3 +730,160 @@ def api_license(file: str = "LICENSE"):
             return JSONResponse({"content": f.read(), "filename": file})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ============================================================
+#  Patch5 B3: 权限系统 API（预设 + 工具级权限）
+# ============================================================
+
+# 权限预设定义
+_PERMISSION_PRESETS = [
+    {
+        "preset_id": "trusted",
+        "name": "完全信任",
+        "description": "所有工具可用，联网/文件操作不需确认",
+        "config_overrides": {
+            "confirm_external_read": False,
+            "sandbox_cleanup": "never",
+        },
+    },
+    {
+        "preset_id": "cautious",
+        "name": "谨慎模式",
+        "description": "联网需确认，文件操作需确认，私密文档默认隔离",
+        "config_overrides": {
+            "confirm_external_read": True,
+            "sandbox_cleanup": "24h",
+        },
+    },
+    {
+        "preset_id": "offline",
+        "name": "纯离线",
+        "description": "禁止联网，仅本地操作，强制本地 AI 模式",
+        "config_overrides": {
+            "ai_mode": "local",
+            "confirm_external_read": True,
+            # 联网工具 toggle off（通过 tool_enabled_web_search=False 实现）
+            "tool_enabled_web_search": False,
+        },
+    },
+]
+
+# 工具级权限列表定义（映射到 config.py 配置项）
+_PERMISSION_TOOLS = [
+    {
+        "tool_id": "web_search",
+        "name": "联网搜索",
+        "description": "允许 Agent 使用互联网搜索引擎查找信息",
+        "config_key": "tool_enabled_web_search",
+        "default_enabled": True,
+    },
+    {
+        "tool_id": "file_read_write",
+        "name": "文件读写",
+        "description": "允许 Agent 读取和写入沙盒中的文件",
+        "config_key": "tool_enabled_file_rw",
+        "default_enabled": True,
+    },
+    {
+        "tool_id": "code_exec",
+        "name": "代码执行",
+        "description": "允许 Agent 执行 Python 代码",
+        "config_key": "tool_enabled_code_exec",
+        "default_enabled": True,
+    },
+    {
+        "tool_id": "kb_search",
+        "name": "文库检索",
+        "description": "允许 Agent 从知识库中检索文档",
+        "config_key": "tool_enabled_kb_search",
+        "default_enabled": True,
+    },
+]
+
+
+@router.get("/api/permissions/presets")
+def api_permissions_presets():
+    """获取权限预设列表（B3）
+
+    Response: {"presets": [{preset_id, name, description, config_overrides}, ...]}
+    """
+    return {"presets": _PERMISSION_PRESETS}
+
+
+@router.post("/api/permissions/preset/apply")
+async def api_permissions_preset_apply(request: Request):
+    """应用权限预设（B3）
+
+    Body: {"preset_id": "trusted" | "cautious" | "offline"}
+    Response: {"ok": true, "applied_preset": "...", "config_changes": {...}}
+    """
+    body = await request.json()
+    preset_id = body.get("preset_id", "").strip()
+    if not preset_id:
+        return JSONResponse({"error": "preset_id 不能为空"}, status_code=400)
+
+    # 查找预设
+    preset = None
+    for p in _PERMISSION_PRESETS:
+        if p["preset_id"] == preset_id:
+            preset = p
+            break
+    if not preset:
+        return JSONResponse({"error": "未知预设: %s" % preset_id}, status_code=400)
+
+    # 写入 config
+    from config import set_value
+    config_changes = {}
+    for key, value in preset["config_overrides"].items():
+        set_value(key, value)
+        config_changes[key] = value
+
+    log.info("[PERMISSION] 应用权限预设: %s (%s), 变更: %s",
+             preset_id, preset["name"], list(config_changes.keys()))
+    return {"ok": True, "applied_preset": preset_id, "config_changes": config_changes}
+
+
+@router.get("/api/permissions/tools")
+def api_permissions_tools():
+    """获取工具级权限列表（B3）
+
+    Response: {"tools": [{tool_id, name, description, enabled}, ...]}
+    """
+    from config import get as _cfg
+    tools = []
+    for tool in _PERMISSION_TOOLS:
+        enabled = _cfg(tool["config_key"], tool["default_enabled"])
+        tools.append({
+            "tool_id": tool["tool_id"],
+            "name": tool["name"],
+            "description": tool["description"],
+            "enabled": enabled,
+        })
+    return {"tools": tools}
+
+
+@router.post("/api/permissions/tool/{tool_id}")
+async def api_permissions_tool_set(tool_id: str, request: Request):
+    """设置单个工具权限（B3）
+
+    Body: {"enabled": true|false}
+    Response: {"ok": true, "tool_id": "...", "enabled": ...}
+    """
+    body = await request.json()
+    enabled = bool(body.get("enabled", True))
+
+    # 查找工具
+    tool = None
+    for t in _PERMISSION_TOOLS:
+        if t["tool_id"] == tool_id:
+            tool = t
+            break
+    if not tool:
+        return JSONResponse({"error": "未知工具: %s" % tool_id}, status_code=404)
+
+    # 写入 config
+    from config import set_value
+    set_value(tool["config_key"], enabled)
+    log.info("[PERMISSION] 工具权限设置: %s → enabled=%s", tool_id, enabled)
+    return {"ok": True, "tool_id": tool_id, "enabled": enabled}

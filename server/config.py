@@ -172,10 +172,7 @@ DEFAULTS = {
     "whisper_lock_on_transcribe": True,  # D22: 转写期间锁定对话 Tab
     "whisper_refine_batch_chars": 800,   # D37: 8B 纠错批次大小
 
-    # ----- 内存预算（Patch 8）-----
-    "memory_budget_mb": 8000,             # 内存预算上限（MB）
-    "memory_budget_min_mb": 8192,         # 预算滑块最小值（MB）
-    "memory_budget_max_mb": 12288,        # 预算滑块最大值（MB）
+    # ----- Reranker 空闲卸载（Patch 8，B5 移除内存预算后保留）-----
     "reranker_idle_timeout_sec": 300,      # Reranker 空闲超时（秒）
     "reranker_resident": False,            # Reranker 是否常驻（True=不自动卸载）
     "recorder_resident": False,            # 纪要引擎(Whisper)是否常驻（True=不自动卸载）

@@ -110,6 +110,111 @@ def extract_text(file_path: str) -> str:
         except Exception as e:
             log.error(f"提取 PDF 失败: {e}")
             return ""
+
+    elif ext == '.epub':
+        # B2: EPUB 电子书解析（ebooklib + beautifulsoup4）
+        try:
+            import ebooklib
+            from ebooklib import epub
+            from bs4 import BeautifulSoup
+            book = epub.read_epub(file_path, options={"ignore_ncx": True})
+            texts = []
+            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                html_content = item.get_content().decode("utf-8", errors="replace")
+                soup = BeautifulSoup(html_content, "html.parser")
+                # 提取章节标题作为 heading
+                for tag in soup.find_all(["h1", "h2", "h3"]):
+                    title_text = tag.get_text(strip=True)
+                    if title_text:
+                        texts.append(title_text)
+                # 提取段落文本
+                for tag in soup.find_all(["p", "div"]):
+                    para_text = tag.get_text(strip=True)
+                    if para_text:
+                        texts.append(para_text)
+            result = "\n\n".join(texts)
+            if not result.strip():
+                return "[此 EPUB 文件无法提取到文本内容，可能为纯图片电子书或 DRM 保护文件]"
+            return result
+        except ImportError:
+            log.warning("ebooklib / beautifulsoup4 未安装，无法提取 .epub 文件")
+            return ""
+        except Exception as e:
+            err_msg = str(e)[:200]
+            log.error(f"提取 EPUB 失败: {err_msg}")
+            # DRM 保护的 epub 常见错误
+            if "drm" in err_msg.lower() or "encrypt" in err_msg.lower():
+                return "[此 EPUB 文件受 DRM 保护，无法提取文本。请去除 DRM 后重新上传]"
+            return ""
+
+    elif ext in ('.html', '.htm'):
+        # B2: HTML 网页文件解析（beautifulsoup4）
+        try:
+            from bs4 import BeautifulSoup
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                html_content = f.read()
+            soup = BeautifulSoup(html_content, "html.parser")
+            # 移除 script 和 style 标签
+            for tag in soup.find_all(["script", "style", "noscript"]):
+                tag.decompose()
+            texts = []
+            # 提取标题
+            title = soup.find("title")
+            if title and title.get_text(strip=True):
+                texts.append(title.get_text(strip=True))
+            # 提取正文内容（p/div/table/li 等）
+            for tag in soup.find_all(["p", "div", "li", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6"]):
+                tag_text = tag.get_text(strip=True)
+                if tag_text and len(tag_text) > 1:
+                    texts.append(tag_text)
+            return "\n".join(texts)
+        except ImportError:
+            log.warning("beautifulsoup4 未安装，无法提取 .html 文件")
+            return ""
+        except Exception as e:
+            log.error(f"提取 HTML 失败: {e}")
+            return ""
+
+    elif ext == '.srt':
+        # B2: SRT 字幕文件解析（纯文本正则，无第三方库）
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            # SRT 格式：序号 + 时间轴 + 字幕文本（空行分隔）
+            # 正则去掉序号行和时间轴行，保留字幕文本
+            lines = content.splitlines()
+            texts = []
+            for line in lines:
+                line = line.strip()
+                # 跳过序号行（纯数字）
+                if line.isdigit():
+                    continue
+                # 跳过时间轴行（包含 --> 格式）
+                if "-->" in line:
+                    continue
+                # 跳过空行
+                if not line:
+                    continue
+                texts.append(line)
+            return "\n".join(texts)
+        except Exception as e:
+            log.error(f"提取 SRT 失败: {e}")
+            return ""
+
+    elif ext == '.rtf':
+        # B2: RTF 富文本解析（striprtf）
+        try:
+            from striprtf.striprtf import rtf_to_text
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                rtf_content = f.read()
+            text = rtf_to_text(rtf_content)
+            return text.strip()
+        except ImportError:
+            log.warning("striprtf 未安装，无法提取 .rtf 文件")
+            return ""
+        except Exception as e:
+            log.error(f"提取 RTF 失败: {e}")
+            return ""
     
     else:
         log.warning(f"不支持的文件类型: {ext}")

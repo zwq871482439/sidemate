@@ -1,28 +1,64 @@
-%% 桌伴 Sidemate Patch5 批次 A — 类图
-%% 包含所有新增/修改的核心类及其关系
+%% 桌伴 Patch5 批次 B — 类图
+%% 核心数据结构 + 服务类关系
 
 classDiagram
-    class ThreadPoolManager {
-        +ThreadPoolExecutor executor
-        +int max_workers
-        +submit(fn, *args, **kwargs) Future
-        +run_blocking(fn, *args) Any
-        +shutdown()
+    class KBDocument {
+        +str doc_id
+        +str filename
+        +str file_type
+        +int file_size
+        +str imported_at
+        +str status
+        +int chunk_count
+        +int total_chars
+        +float progress
+        +str source
+        +dict metadata
+        +str error_msg
+        +str summary
+        +list tags
+        +str tag_status
+        +bool is_private
+        +int hit_count
+    }
+
+    class KBChunk {
+        +str chunk_id
+        +str doc_id
+        +int index
+        +str text
+        +int char_count
+        +str heading
+        +str source_label
+        +bool is_private
+    }
+
+    class DedupDetector {
+        +KnowledgeBase kb
+        +check_l1(filename: str, file_size: int) dict
+        +check_l2(text: str, threshold: float) dict
+        +check_duplicate(filename: str, file_size: int, text: str) DedupResult
+    }
+
+    class DedupResult {
+        +bool is_duplicate
+        +str level
+        +str existing_doc_id
+        +str existing_filename
+        +float similarity
     }
 
     class BatchQueue {
         +str db_path
-        +sqlite3.Connection conn
-        +bool _running
-        +Thread _worker_thread
-        +create_batch(files) str
-        +enqueue(batch_id, file_path, doc_meta) str
-        +get_pending() Optional~TaskItem~
-        +update_status(task_id, status, error_msg, doc_id)
-        +get_batch_progress(batch_id) dict
-        +recover_pending() list
+        +create_batch(batch_id: str, total_files: int) str
+        +enqueue(batch_id: str, file_path: str, filename: str, file_type: str, file_size: int) str
+        +get_pending() TaskItem
+        +update_status(task_id: str, status: str, error_msg: str, doc_id: str)
+        +get_batch_progress(batch_id: str) dict
+        +cancel_batch(batch_id: str) int
+        +recover_pending() int
         +start_worker(kb_instance)
-        +stop_worker()
+        +stop_worker(timeout: float)
     }
 
     class TaskItem {
@@ -37,16 +73,20 @@ classDiagram
         +str error_msg
         +str created_at
         +str updated_at
-        +dict doc_meta
+        +str doc_meta
     }
 
     class AccessTokenManager {
+        +float _default_ttl
         +dict _tokens_cache
-        +generate_full_token(doc_id) str
-        +generate_search_token(doc_id) str
-        +verify_token(token, doc_id) tuple
-        +revoke_token(token)
-        +filter_private_docs(doc_ids, token) list
+        +dict _doc_tokens
+        +generate_full_token(doc_id: str, ttl: float) str
+        +generate_search_token(doc_id: str, ttl: float) str
+        +verify_token(token: str, doc_id: str) tuple
+        +revoke_token(token: str) bool
+        +revoke_doc_tokens(doc_id: str) int
+        +filter_private_docs(doc_ids: list, token: str, is_private_map: dict) list
+        +get_doc_access_level(doc_id: str, token: str) str
     }
 
     class AccessToken {
@@ -57,78 +97,10 @@ classDiagram
         +float expires_at
     }
 
-    class EmbeddingEngine {
-        +str model_name
-        +FlagModel _model
-        +str _mode
-        +int vector_dim
-        +load() bool
-        +encode(texts) ndarray
-        +encode_dense_sparse(texts) tuple
-        +encode_query(query) ndarray
-        +encode_query_sparse(query) dict
-    }
-
-    class KBDocument {
-        +str doc_id
-        +str filename
-        +str file_type
-        +int file_size
-        +str status
-        +int chunk_count
-        +float progress
-        +bool is_private
-        +str tag_status
-        +list tags
-    }
-
-    class KBChunk {
-        +str chunk_id
-        +str doc_id
-        +int index
-        +str text
-        +str heading
-        +str source_label
-        +bool is_private
-    }
-
-    class Watchdog {
-        +Config cfg
-        +int fail_count
-        +int restart_count
-        +time.Time window_start
-        +start_watcher(python_proc, ollama_proc)
-        +health_check(url) bool
-        +restart_process(mp ManagedProcess) error
-        +can_restart() bool
-    }
-
-    class GPUInfo {
-        +str vendor
-        +str backend
-        +bool has_cuda
-        +bool has_vulkan
-    }
-
-    class GPUDetector {
-        +detect_gpu() GPUInfo
-        +wmic_query() string
-        +powershell_fallback() string
-        +classify(vendor_name) GPUInfo
-    }
-
-    class HardlinkManager {
-        +setup_backup(site_packages_dir) bool
-        +verify_and_repair(site_packages_dir, broken_pkgs) bool
-        +create_hardlink(src, dst) error
-    }
-
-    ThreadPoolManager --> BatchQueue : runs worker
-    BatchQueue --> TaskItem : manages
-    AccessTokenManager --> AccessToken : creates/verifies
-    AccessTokenManager --> KBDocument : filters private
-    EmbeddingEngine --> KBChunk : encodes
-    KBDocument --> KBChunk : owns
-    Watchdog --> GPUInfo : uses
-    GPUDetector --> GPUInfo : produces
-    HardlinkManager ..> KBDocument : ensures deps available
+    KBDocument "1" --> "*" KBChunk : has chunks
+    DedupDetector ..> KBDocument : 遍历检测
+    DedupResult ..> DedupDetector : 返回值
+    BatchQueue "1" --> "*" TaskItem : manages
+    BatchQueue ..> KBDocument : 导入后创建
+    AccessTokenManager "1" --> "*" AccessToken : manages
+    AccessTokenManager ..> KBDocument : 过滤私密文档

@@ -22,7 +22,6 @@ from knowledge.models import KBDocument, KBChunk
 from knowledge.tags import normalize_tag
 from knowledge.embedding_engine import EmbeddingEngine
 from knowledge.reranker_engine import RerankerEngine
-from knowledge.memory_manager import MemoryManager
 
 log = logging.getLogger(__name__)
 
@@ -61,10 +60,6 @@ class _KBOpsMixin:
         self._reranker_timer: Optional[threading.Timer] = None  # 空闲超时计时器
         self._reranker_last_use: float = 0.0         # 上次使用时间戳
         self._reranker_unloaded_at: float = 0.0      # 上次卸载时间戳（用于冷却期）
-
-        # 内存预算管理器（Patch 8 P8-1）
-        from config import get as _cfg
-        self.memory_manager = MemoryManager(budget_mb=_cfg("memory_budget_mb", 8000))
 
         # 配置
         self._load_config()
@@ -170,7 +165,6 @@ class _KBOpsMixin:
             self._embedder_mem_mb = min(raw_delta, 800)  # bge-base 768维 上限 ~800MB
             log.info("[KB] 嵌入模型加载完成，实测占用 %d MB (raw_delta: %d, RSS: %d→%d)",
                      self._embedder_mem_mb, raw_delta, rss_before, rss_after)
-            self.memory_manager.register("embedder", self._embedder_mem_mb, "kb")
         return ok
 
     def init_reranker(self) -> bool:
@@ -211,7 +205,6 @@ class _KBOpsMixin:
             ok = self.init_reranker()
             if ok:
                 self._reranker_last_use = time.time()
-                self.memory_manager.register("reranker", self._reranker_mem_mb, "kb")
             return ok
 
     def _schedule_reranker_unload(self):
@@ -268,7 +261,6 @@ class _KBOpsMixin:
             self.reranker.unload()
             self._reranker_mem_mb = 0
             self._reranker_unloaded_at = time.time()
-            self.memory_manager.unregister("reranker")
 
             import gc
             gc.collect()
@@ -312,7 +304,6 @@ class _KBOpsMixin:
             self._release_model_object(self.reranker)
             self.reranker.unload()
             self._reranker_mem_mb = 0
-            self.memory_manager.unregister("reranker")
             log.info("[KB] Reranker 已卸载")
 
         # 卸载嵌入模型
@@ -322,7 +313,6 @@ class _KBOpsMixin:
             self._embedder_loaded = False
             self.embedder._mode = "none"
             self._embedder_mem_mb = 0
-            self.memory_manager.unregister("embedder")
             log.info("[KB] 嵌入模型已卸载")
 
         gc.collect()
@@ -985,6 +975,90 @@ class _KBOpsMixin:
 
         log.info("[KB] 文档删除: %s (%s), 移除 %d chunks", doc.filename, doc_id, len(doc_chunk_ids))
         return {"ok": True, "removed_chunks": len(doc_chunk_ids)}
+
+    def delete_documents_batch(self, doc_ids: List[str]) -> Dict:
+        """批量删除文档（B1 优化版）
+
+        减少重复 _save_meta() 和 _build_bm25_index() 调用次数：
+        - 所有文档的 chunk 删除在一次遍历中完成
+        - _save_meta() 和 _save_vectors() 各只调用一次
+        - _build_bm25_index() 只在最后调用一次
+
+        Args:
+            doc_ids: 要删除的文档 ID 列表
+
+        Returns:
+            {"ok": True, "deleted": N, "failed": [{"doc_id": "...", "error": "..."}]}
+        """
+        deleted = 0
+        failed = []
+        valid_doc_ids = set()
+        total_removed_chunks = 0
+
+        # 预检查：确认文档存在，取消正在处理的文档
+        for doc_id in doc_ids:
+            doc = self.documents.get(doc_id)
+            if not doc:
+                failed.append({"doc_id": doc_id, "error": "文档不存在"})
+                continue
+            # 如果正在处理中，先取消
+            if doc.status in ('processing', 'chunking', 'indexing'):
+                self.cancel_processing(doc_id)
+            valid_doc_ids.add(doc_id)
+
+        if not valid_doc_ids:
+            return {"ok": True, "deleted": 0, "failed": failed}
+
+        # 收集所有要删除的 chunk_id
+        all_doc_chunk_ids = set()
+        for doc_id in valid_doc_ids:
+            doc_chunk_ids = [cid for cid, c in self.chunks.items() if c.doc_id == doc_id]
+            all_doc_chunk_ids.update(doc_chunk_ids)
+            total_removed_chunks += len(doc_chunk_ids)
+
+        with self._processing_lock:
+            # 删除 chunk 记录和文本文件
+            for cid in all_doc_chunk_ids:
+                self.chunks.pop(cid, None)
+                text_path = os.path.join(self.texts_dir, cid + ".txt")
+                if os.path.exists(text_path):
+                    try:
+                        os.remove(text_path)
+                    except OSError:
+                        pass
+
+            # 过滤 chunk_order
+            self.chunk_order = [cid for cid in self.chunk_order if cid not in all_doc_chunk_ids]
+
+            # Patch5 T03: 清理 sparse 索引
+            for cid in all_doc_chunk_ids:
+                self._sparse_index.pop(cid, None)
+
+            # 重建向量索引（移除对应行）
+            if self.vectors is not None and all_doc_chunk_ids:
+                keep_indices = [i for i, cid in enumerate(self.chunk_order) if cid in self.chunks]
+                if keep_indices:
+                    self.vectors = self.vectors[keep_indices]
+                else:
+                    self.vectors = None
+                self.chunk_order = [cid for cid in self.chunk_order if cid in self.chunks]
+                self._save_vectors()
+
+            # 删除文档记录
+            for doc_id in valid_doc_ids:
+                if doc_id in self.documents:
+                    doc = self.documents[doc_id]
+                    del self.documents[doc_id]
+                    deleted += 1
+
+            # 统一只保存一次 meta
+            self._save_meta()
+
+            # BM25 重建（只需一次）
+            self._build_bm25_index()
+
+        log.info("[KB] 批量删除: %d 个文档, 移除 %d chunks", deleted, total_removed_chunks)
+        return {"ok": True, "deleted": deleted, "removed_chunks": total_removed_chunks, "failed": failed}
 
     # ===== 处理控制（D31/D32）=====
 

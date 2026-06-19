@@ -614,6 +614,13 @@ class _KBSearchMixin:
                 if accessible_doc_ids is not None:
                     merged = [r for r in merged if r.get("doc_id", "") in accessible_doc_ids]
 
+                # Patch5 B1: 检索热力图 — 命中的文档 hit_count += 1（按文档去重）
+                hit_doc_ids = set(r.get("doc_id", "") for r in merged if r.get("doc_id", ""))
+                for hit_doc_id in hit_doc_ids:
+                    doc = self.documents.get(hit_doc_id)
+                    if doc is not None:
+                        doc.hit_count = getattr(doc, "hit_count", 0) + 1
+
                 log.info("[KB] Dense+Sparse+Reranker+MMR: %d条, 来源=%s",
                          len(merged), [r.get("source_label", "")[:25] for r in merged[:3]])
                 return merged
@@ -679,6 +686,13 @@ class _KBSearchMixin:
             # Patch5 T03: 私密文档过滤
             if accessible_doc_ids is not None:
                 merged = [r for r in merged if r.get("doc_id", "") in accessible_doc_ids]
+
+            # Patch5 B1: 检索热力图 — 命中的文档 hit_count += 1（按文档去重）
+            hit_doc_ids = set(r.get("doc_id", "") for r in merged if r.get("doc_id", ""))
+            for hit_doc_id in hit_doc_ids:
+                doc = self.documents.get(hit_doc_id)
+                if doc is not None:
+                    doc.hit_count = getattr(doc, "hit_count", 0) + 1
 
             if not merged:
                 log.warning("[KB] search() 无结果: query=%s", query[:50])

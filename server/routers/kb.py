@@ -38,7 +38,6 @@ from fastapi import APIRouter, UploadFile, File, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from routers.deps import get_mgr, get_kb, get_log, WORKSPACE_DIR, UPLOAD_DIR
-from routers.settings_system import _check_memory_budget
 
 router = APIRouter()
 log = get_log()
@@ -162,6 +161,22 @@ def _extract_upload_text(tmp_path: str, ext: str):
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n\n"
+    elif ext == "epub":
+        # B2: EPUB 电子书解析（委托给 file_extractor 统一逻辑）
+        from files.file_extractor import extract_text as _ext_text
+        text = _ext_text(tmp_path)
+    elif ext in ("html", "htm"):
+        # B2: HTML 网页文件解析（委托给 file_extractor 统一逻辑）
+        from files.file_extractor import extract_text as _ext_text
+        text = _ext_text(tmp_path)
+    elif ext == "srt":
+        # B2: SRT 字幕文件解析（委托给 file_extractor 统一逻辑）
+        from files.file_extractor import extract_text as _ext_text
+        text = _ext_text(tmp_path)
+    elif ext == "rtf":
+        # B2: RTF 富文本解析（委托给 file_extractor 统一逻辑）
+        from files.file_extractor import extract_text as _ext_text
+        text = _ext_text(tmp_path)
     else:
         raise ValueError("不支持的文件格式: ." + ext)
 
@@ -633,9 +648,6 @@ def api_kb_load_models():
     if ext_check is not None:
         return ext_check
     kb = get_kb()
-    _budget = _check_memory_budget(estimated_mb=1400)
-    if _budget:
-        return JSONResponse(_budget, status_code=503)
 
     mem = _get_memory_info()
     ram_warning = None
@@ -767,8 +779,36 @@ async def api_kb_upload(file: UploadFile = File(...)):
     if not text.strip():
         return JSONResponse({"error": "文件内容为空或无法提取文字"}, status_code=400)
 
+    # B4: 去重检测（不阻塞导入，仅标记 metadata）
+    duplicate_detected = False
+    duplicate_info = None
+    try:
+        from core.dedup_detector import DedupDetector
+        detector = DedupDetector(kb)
+        dedup_result = detector.check_duplicate(tmp_path, text)
+        if dedup_result.is_duplicate:
+            duplicate_detected = True
+            duplicate_info = {
+                "existing_doc_id": dedup_result.existing_doc_id,
+                "existing_filename": dedup_result.existing_filename,
+                "level": dedup_result.level,
+                "similarity": dedup_result.similarity,
+            }
+            log.info("[KB] 检测到重复文件: %s ↔ %s (level=%s, sim=%.2f)",
+                     file.filename, dedup_result.existing_filename,
+                     dedup_result.level, dedup_result.similarity)
+    except Exception as e:
+        log.warning("[KB] 去重检测异常（不影响导入）: %s", str(e)[:100])
+
+    # 构建 metadata（含去重标记）
+    import_meta = {"has_images": image_count > 0, "image_count": image_count}
+    if duplicate_detected and duplicate_info:
+        import_meta["duplicate_of"] = duplicate_info["existing_doc_id"]
+        import_meta["duplicate_level"] = duplicate_info["level"]
+        import_meta["duplicate_similarity"] = duplicate_info["similarity"]
+
     result = kb.import_document(file.filename, text, file_type=ext,
-                                metadata={"has_images": image_count > 0, "image_count": image_count})
+                                metadata=import_meta)
     if "error" in result:
         return JSONResponse(result, status_code=400)
 
@@ -801,7 +841,9 @@ async def api_kb_upload(file: UploadFile = File(...)):
 
     return {"ok": True, "doc_id": doc_id, "filename": file.filename,
             "size": _upload_size, "chars": len(text), "status": "processing",
-            "has_images": image_count > 0, "image_count": image_count}
+            "has_images": image_count > 0, "image_count": image_count,
+            "duplicate_detected": duplicate_detected,
+            "duplicate_info": duplicate_info}
 
 
 @router.get("/api/kb/tagging-status")
@@ -1287,8 +1329,9 @@ async def api_kb_upload_batch(files: List[UploadFile] = File(...)):
         filename = _safe_filename(upload_file.filename)
         ext = (upload_file.filename or "").rsplit(".", 1)[-1].lower()
 
-        # 支持格式检查
-        if ext not in ("txt", "md", "csv", "docx", "xlsx", "pdf"):
+        # 支持格式检查（B2: 新增 epub/html/srt/rtf）
+        if ext not in ("txt", "md", "csv", "docx", "xlsx", "pdf",
+                        "epub", "html", "htm", "srt", "rtf"):
             tasks_info.append({
                 "task_id": "",
                 "filename": upload_file.filename,
@@ -1482,6 +1525,273 @@ async def api_kb_set_privacy(doc_id: str, request: Request):
 
     log.info("[KB] 文档私密标记设置: doc=%s, is_private=%s", doc_id, is_private)
     return {"doc_id": doc_id, "is_private": is_private}
+
+
+# ============================================================
+#  Patch5 B1: 批量操作 API（批量删除/重标/设私密）
+# ============================================================
+
+# 批量操作上限
+_BATCH_MAX_ITEMS = 50
+
+
+@router.post("/api/kb/documents/batch_delete")
+async def api_kb_batch_delete(request: Request):
+    """批量删除文档（B1）
+
+    Body: {"doc_ids": ["doc_xxx", ...]}
+    Response: {"success": true, "deleted": N, "failed": [{"doc_id": "...", "error": "..."}]}
+    """
+    kb = get_kb()
+    body = await request.json()
+    doc_ids = body.get("doc_ids", [])
+    if not doc_ids:
+        return JSONResponse({"error": "doc_ids 不能为空"}, status_code=400)
+    if len(doc_ids) > _BATCH_MAX_ITEMS:
+        return JSONResponse({"error": "批量操作上限 %d 个文档" % _BATCH_MAX_ITEMS}, status_code=400)
+
+    deleted = 0
+    failed = []
+    for doc_id in doc_ids:
+        try:
+            result = kb.delete_document(doc_id)
+            if "error" in result:
+                failed.append({"doc_id": doc_id, "error": result["error"]})
+            else:
+                deleted += 1
+        except Exception as e:
+            failed.append({"doc_id": doc_id, "error": str(e)[:100]})
+
+    log.info("[KB] 批量删除: 成功 %d, 失败 %d", deleted, len(failed))
+    return {"success": True, "deleted": deleted, "failed": failed}
+
+
+@router.post("/api/kb/documents/batch_retag")
+async def api_kb_batch_retag(request: Request):
+    """批量重新打标（B1）
+
+    Body: {"doc_ids": ["doc_xxx", ...]}
+    Response: {"success": true, "affected": N, "failed": [...]}
+    """
+    kb = get_kb()
+    body = await request.json()
+    doc_ids = body.get("doc_ids", [])
+    if not doc_ids:
+        return JSONResponse({"error": "doc_ids 不能为空"}, status_code=400)
+    if len(doc_ids) > _BATCH_MAX_ITEMS:
+        return JSONResponse({"error": "批量操作上限 %d 个文档" % _BATCH_MAX_ITEMS}, status_code=400)
+
+    # 获取打标调度器
+    import server as _srv
+    scheduler = getattr(_srv, '_tagging_scheduler', None) or getattr(kb, '_tagging_scheduler', None)
+    if not scheduler:
+        return JSONResponse({"error": "打标服务未启动（请重启应用）"}, status_code=503)
+
+    affected = 0
+    failed = []
+    for doc_id in doc_ids:
+        try:
+            doc = kb.get_document(doc_id)
+            if not doc:
+                failed.append({"doc_id": doc_id, "error": "文档不存在"})
+                continue
+            if doc.status != "ready":
+                failed.append({"doc_id": doc_id, "error": "文档尚未处理完成"})
+                continue
+            doc.tag_status = "pending"
+            scheduler.enqueue(doc_id)
+            affected += 1
+        except Exception as e:
+            failed.append({"doc_id": doc_id, "error": str(e)[:100]})
+
+    # 批量设置后统一保存一次 meta（减少 IO）
+    if affected > 0:
+        kb._save_meta()
+
+    log.info("[KB] 批量重标: 成功 %d, 失败 %d", affected, len(failed))
+    return {"success": True, "affected": affected, "failed": failed}
+
+
+@router.post("/api/kb/documents/batch_privacy")
+async def api_kb_batch_privacy(request: Request):
+    """批量设置文档私密标记（B1/B3）
+
+    Body: {"doc_ids": ["doc_xxx", ...], "is_private": true}
+    Response: {"success": true, "affected": N, "failed": [...]}
+    """
+    kb = get_kb()
+    body = await request.json()
+    doc_ids = body.get("doc_ids", [])
+    is_private = bool(body.get("is_private", False))
+    if not doc_ids:
+        return JSONResponse({"error": "doc_ids 不能为空"}, status_code=400)
+    if len(doc_ids) > _BATCH_MAX_ITEMS:
+        return JSONResponse({"error": "批量操作上限 %d 个文档" % _BATCH_MAX_ITEMS}, status_code=400)
+
+    affected = 0
+    failed = []
+    for doc_id in doc_ids:
+        try:
+            doc = kb.get_document(doc_id)
+            if not doc:
+                failed.append({"doc_id": doc_id, "error": "文档不存在"})
+                continue
+            doc.is_private = is_private
+            affected += 1
+            # 取消私密时清空令牌
+            if not is_private:
+                try:
+                    from core.access_token import get_access_token_manager
+                    get_access_token_manager().revoke_doc_tokens(doc_id)
+                except Exception:
+                    pass
+        except Exception as e:
+            failed.append({"doc_id": doc_id, "error": str(e)[:100]})
+
+    # 批量设置后统一保存一次 meta（减少 IO）
+    if affected > 0:
+        kb._save_meta()
+
+    log.info("[KB] 批量设私密: is_private=%s, 成功 %d, 失败 %d", is_private, affected, len(failed))
+    return {"success": True, "affected": affected, "failed": failed}
+
+
+# ============================================================
+#  Patch5 B1: 检索热力图 API
+# ============================================================
+
+@router.get("/api/kb/search_heatmap")
+def api_kb_search_heatmap():
+    """获取检索热力图数据（B1）
+
+    返回所有文档的 hit_count，按降序排列。
+
+    Response: {"heatmap": [{"doc_id": "...", "filename": "...", "hit_count": N}, ...]}
+    """
+    kb = get_kb()
+    heatmap = []
+    for doc in kb.documents.values():
+        heatmap.append({
+            "doc_id": doc.doc_id,
+            "filename": doc.filename,
+            "hit_count": getattr(doc, "hit_count", 0),
+        })
+    # 按 hit_count 降序
+    heatmap.sort(key=lambda x: x["hit_count"], reverse=True)
+    return {"heatmap": heatmap}
+
+
+@router.post("/api/kb/search_heatmap/reset")
+def api_kb_search_heatmap_reset():
+    """重置检索热力图（B1）
+
+    遍历所有文档，将 hit_count 设为 0。
+
+    Response: {"ok": true, "reset_count": N}
+    """
+    kb = get_kb()
+    reset_count = 0
+    for doc in kb.documents.values():
+        if getattr(doc, "hit_count", 0) > 0:
+            doc.hit_count = 0
+            reset_count += 1
+    kb._save_meta()
+    log.info("[KB] 热力图重置: 重置 %d 个文档", reset_count)
+    return {"ok": True, "reset_count": reset_count}
+
+
+# ============================================================
+#  Patch5 B4: 去重检测 API
+# ============================================================
+
+@router.get("/api/kb/duplicates")
+def api_kb_duplicates():
+    """获取待处理的重复文档列表（B4）
+
+    返回 metadata.duplicate_of 非空的文档。
+
+    Response: {"duplicates": [{"doc_id", "filename", "duplicate_of", "duplicate_level", "duplicate_similarity", "existing_filename"}, ...]}
+    """
+    kb = get_kb()
+    duplicates = []
+    for doc in kb.documents.values():
+        meta = getattr(doc, "metadata", {}) or {}
+        dup_of = meta.get("duplicate_of", "")
+        if dup_of:
+            existing_doc = kb.get_document(dup_of)
+            existing_filename = existing_doc.filename if existing_doc else "（已删除）"
+            duplicates.append({
+                "doc_id": doc.doc_id,
+                "filename": doc.filename,
+                "duplicate_of": dup_of,
+                "existing_filename": existing_filename,
+                "duplicate_level": meta.get("duplicate_level", "unknown"),
+                "duplicate_similarity": meta.get("duplicate_similarity", 0.0),
+            })
+    return {"duplicates": duplicates}
+
+
+@router.post("/api/kb/duplicates/resolve")
+async def api_kb_duplicates_resolve(request: Request):
+    """解决重复冲突（B4）
+
+    Body: {"doc_id": "doc_xxx", "action": "keep_both" | "replace" | "cancel"}
+    - keep_both: 保留两版，清除重复标记
+    - replace: 删除旧文档，保留新文档，清除标记
+    - cancel: 删除新文档，保留旧文档
+
+    Response: {"ok": true, "action": "...", "detail": "..."}
+    """
+    kb = get_kb()
+    body = await request.json()
+    doc_id = body.get("doc_id", "").strip()
+    action = body.get("action", "").strip()
+
+    if not doc_id:
+        return JSONResponse({"error": "doc_id 不能为空"}, status_code=400)
+    if action not in ("keep_both", "replace", "cancel"):
+        return JSONResponse({"error": "action 必须为 keep_both / replace / cancel"}, status_code=400)
+
+    doc = kb.get_document(doc_id)
+    if not doc:
+        return JSONResponse({"error": "文档不存在"}, status_code=404)
+
+    meta = getattr(doc, "metadata", {}) or {}
+    existing_doc_id = meta.get("duplicate_of", "")
+    if not existing_doc_id:
+        return JSONResponse({"error": "该文档无重复标记"}, status_code=400)
+
+    if action == "keep_both":
+        # 保留两版，清除重复标记
+        doc.metadata.pop("duplicate_of", None)
+        doc.metadata.pop("duplicate_level", None)
+        doc.metadata.pop("duplicate_similarity", None)
+        kb._save_meta()
+        log.info("[KB] 去重处理(保留两版): doc=%s", doc_id)
+        return {"ok": True, "action": "keep_both", "detail": "已保留两版，清除重复标记"}
+
+    elif action == "replace":
+        # 删除旧文档，保留新文档
+        try:
+            kb.delete_document(existing_doc_id)
+        except Exception as e:
+            return JSONResponse({"error": "删除旧文档失败: %s" % str(e)[:100]}, status_code=500)
+        # 清除新文档的重复标记
+        doc.metadata.pop("duplicate_of", None)
+        doc.metadata.pop("duplicate_level", None)
+        doc.metadata.pop("duplicate_similarity", None)
+        kb._save_meta()
+        log.info("[KB] 去重处理(替换旧版): 新文档=%s, 旧文档=%s 已删除", doc_id, existing_doc_id)
+        return {"ok": True, "action": "replace", "detail": "旧文档已删除，新文档已保留"}
+
+    else:  # cancel
+        # 删除新文档，保留旧文档
+        try:
+            kb.delete_document(doc_id)
+        except Exception as e:
+            return JSONResponse({"error": "删除新文档失败: %s" % str(e)[:100]}, status_code=500)
+        log.info("[KB] 去重处理(取消新版): 新文档=%s 已删除, 旧文档=%s 保留", doc_id, existing_doc_id)
+        return {"ok": True, "action": "cancel", "detail": "新文档已删除，旧文档已保留"}
 
 
 # ============================================================

@@ -1248,7 +1248,14 @@ def test_search_filter_logic():
             def _mmr_rerank(self, query, candidates, top_k=5, lambda_param=0.7):
                 return candidates[:top_k]
 
+        # Patch5 B1: search() 需要 documents 字典来更新 hit_count
+        class _MockDoc:
+            def __init__(self, doc_id):
+                self.doc_id = doc_id
+                self.hit_count = 0
+
         kb = MockKB()
+        kb.documents = {"d_public": _MockDoc("d_public"), "d_private": _MockDoc("d_private")}
 
         # accessible_doc_ids=None：不过滤
         results = kb.search("test")

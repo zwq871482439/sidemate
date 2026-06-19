@@ -37,7 +37,6 @@ from fastapi import APIRouter, UploadFile, File, Request
 from fastapi.responses import JSONResponse, FileResponse
 
 from routers.deps import get_mgr, get_kb, get_recorder, get_log
-from routers.settings_system import _check_memory_budget
 
 router = APIRouter()
 log = get_log()
@@ -92,9 +91,6 @@ async def api_recorder_whisper_load():
     ext_check = _check_recorder_extension()
     if ext_check is not None:
         return ext_check
-    _budget = _check_memory_budget(estimated_mb=1000)
-    if _budget:
-        return JSONResponse(_budget, status_code=503)
     recorder = get_recorder()
 
     # 已加载 / 正在加载 → 立即返回
