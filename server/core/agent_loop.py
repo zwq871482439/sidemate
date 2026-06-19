@@ -293,7 +293,13 @@ class AgentLoop:
                 yield ("agent_status", status_data)
 
                 # 执行工具
-                result = self._execute_tool(tool_name, args, stats)
+                # Patch5 T05: 工具调用（search_web/search_kb/fetch_url 等）可能涉及
+                # CPU 密集或 IO 阻塞操作（KB 检索的 embedding 计算、网页抓取），
+                # 包装到线程池执行，避免阻塞事件循环。
+                from core.thread_pool import get_thread_pool
+                result = get_thread_pool().run_blocking(
+                    self._execute_tool, tool_name, args, stats
+                )
 
                 # Patch4 修复 3：累计工具调用次数（用于子类硬限制）
                 tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1

@@ -580,6 +580,15 @@ func main() {
 		}
 	}
 
+	// ---- 0. GPU 检测 + 三档分流（Patch5 T04）----
+	log.Println("[Launcher] 检测 GPU 后端...")
+	gpuInfo := detectGPU()
+	ollamaBackend := setOllamaBackend(gpuInfo) // 返回 cuda/vulkan/cpu
+	log.Printf("[Launcher] GPU 检测结果: %s", gpuBackendSummary(gpuInfo))
+	log.Printf("[Launcher] OLLAMA_LLM_LIBRARY = %s", ollamaBackend)
+	// 设置到当前进程环境，供 ollama serve 子进程继承
+	os.Setenv("OLLAMA_LLM_LIBRARY", ollamaBackend)
+
 	// ---- 1. 启动 Ollama ----
 	log.Println("[Launcher] 启动 Ollama...")
 
@@ -590,6 +599,7 @@ func main() {
 		cmd.Env = append(os.Environ(),
 			fmt.Sprintf("OLLAMA_HOST=%s:%d", cfg.OllamaHost, cfg.OllamaPort),
 			fmt.Sprintf("OLLAMA_MODELS=%s", cfg.OllamaModels),
+			fmt.Sprintf("OLLAMA_LLM_LIBRARY=%s", ollamaBackend), // Patch5: GPU 三档分流
 			"OLLAMA_ORIGINS=*",
 			"OLLAMA_NOAUTOLOAD=true",
 			"OLLAMA_NOPRUNE=true",
@@ -746,6 +756,15 @@ func main() {
 	UpdateSplash(splash, 1, StepRunning, "检查环境完整性...")
 	SplashPumpMessages()
 	checkAndRepairEnv(appDir, splash)
+
+	// ---- 1.6 硬链接备份初始化（Patch5 T04：首次启动创建依赖双副本）----
+	sitePackagesDir := filepath.Join(appDir, "python", "Lib", "site-packages")
+	if _, err := os.Stat(sitePackagesDir); err == nil {
+		log.Println("[Launcher] 初始化依赖硬链接备份...")
+		if err := setupHardlinkBackup(sitePackagesDir); err != nil {
+			log.Printf("[Launcher] ⚠ 硬链接备份初始化失败: %v（不影响运行）", err)
+		}
+	}
 
 	// ---- 2. 启动 FastAPI ----
 	log.Println("[Launcher] 启动 FastAPI 服务...")
@@ -927,6 +946,12 @@ func main() {
 		}
 		os.Exit(1)
 	}
+
+	// ---- 2.5 启动看门狗 goroutine（Patch5 T04：运行期健康监测 + 自动重启）----
+	watchdogCtx, watchdogCancel := context.WithCancel(context.Background())
+	_ = watchdogCancel // 主进程退出时由 Job Object 兜底清理，无需显式 cancel
+	go startWatchdog(cfg, serverProc, ollamaProc, newPythonCmd, newOllamaCmd, watchdogCtx)
+	log.Println("[Launcher] 看门狗已启动（健康监测 + 自动重启）")
 
 	// ---- 3. 打开浏览器 ----
 	log.Println("[Launcher] 打开浏览器...")

@@ -95,6 +95,79 @@ def _get_module_dir():
                         "data", "kb", "module")
 
 
+def _extract_upload_text(tmp_path: str, ext: str):
+    """从上传的临时文件提取文本（同步阻塞操作）
+
+    Patch5 T05：从 api_kb_upload 中抽取，便于在线程池中执行，
+    避免文件解析（pdfplumber/docx/openpyxl）阻塞 FastAPI 事件循环。
+
+    Args:
+        tmp_path: 临时文件路径
+        ext: 文件扩展名（小写，不含点）
+
+    Returns:
+        tuple: (text, image_count)  — 提取的文本和图片计数
+    """
+    text = ""
+    image_count = 0
+
+    if ext in ("txt", "md", "csv"):
+        with open(tmp_path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    elif ext == "docx":
+        from files.doc_reader import DocReader
+        reader = DocReader()
+        text = reader.extract_text(tmp_path)
+        image_count = reader.count_images(tmp_path)
+    elif ext == "doc":
+        # 旧格式由调用方处理（返回特殊标记）
+        raise ValueError("不支持 .doc 旧格式，请用 Word 另存为 .docx 后重新上传")
+    elif ext == "xlsx":
+        import io
+        import openpyxl
+        with open(tmp_path, "rb") as f:
+            content_bytes = f.read()
+        wb = openpyxl.load_workbook(io.BytesIO(content_bytes), read_only=True, data_only=True)
+        for ws in wb.worksheets:
+            text += "## Sheet: " + (ws.title or "Sheet") + "\n"
+            for row in ws.iter_rows(max_row=200, values_only=True):
+                cells = [str(c) if c is not None else "" for c in row]
+                if any(cells):
+                    text += " | ".join(cells) + "\n"
+            text += "\n"
+        wb.close()
+    elif ext == "xls":
+        raise ValueError("不支持 .xls 旧格式，请用 Excel 另存为 .xlsx 后重新上传")
+    elif ext == "pdf":
+        try:
+            import pdfplumber
+            with pdfplumber.open(tmp_path) as pdf:
+                for i, page in enumerate(pdf.pages[:100]):
+                    page_text = page.extract_text() or ""
+                    if page_text:
+                        text += page_text + "\n"
+                    tables = page.extract_tables()
+                    for table in tables:
+                        for row in table:
+                            cells = [str(c) if c else "" for c in row]
+                            if any(cells):
+                                text += " | ".join(cells) + "\n"
+                        text += "\n"
+                    if page_text or tables:
+                        text += "\n"
+        except ImportError:
+            from pypdf import PdfReader
+            pdf = PdfReader(tmp_path)
+            for page in pdf.pages[:100]:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n\n"
+    else:
+        raise ValueError("不支持的文件格式: ." + ext)
+
+    return text, image_count
+
+
 def _is_module_installed():
     """检查 KB 模块是否已安装（优先使用 ExtensionRegistry）"""
     try:
@@ -671,69 +744,23 @@ async def api_kb_upload(file: UploadFile = File(...)):
         return JSONResponse({"error": "文库已满（最多%d个文档）" % stats["max_documents"]}, status_code=400)
 
     ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+
+    # Patch5 T05: 文件解析是 CPU/IO 密集操作（pdfplumber/docx/openpyxl），
+    # 放到线程池执行避免阻塞事件循环。
+    import asyncio
+    from core.thread_pool import get_thread_pool
     text = ""
     image_count = 0  # 文档中检测到的图片数
 
     try:
-        if ext in ("txt", "md", "csv"):
-            with open(tmp_path, "r", encoding="utf-8", errors="replace") as f:
-                text = f.read()
-        elif ext == "docx":
-            from files.doc_reader import DocReader
-            reader = DocReader()
-            text = reader.extract_text(tmp_path)
-            image_count = reader.count_images(tmp_path)
-        elif ext == "doc":
-            return JSONResponse({"error": "不支持 .doc 旧格式，请用 Word 另存为 .docx 后重新上传"}, status_code=400)
-        elif ext == "xlsx":
-            import io
-            try:
-                import openpyxl
-                with open(tmp_path, "rb") as f:
-                    content_bytes = f.read()
-                wb = openpyxl.load_workbook(io.BytesIO(content_bytes), read_only=True, data_only=True)
-                for ws in wb.worksheets:
-                    text += "## Sheet: " + (ws.title or "Sheet") + "\n"
-                    for row in ws.iter_rows(max_row=200, values_only=True):
-                        cells = [str(c) if c is not None else "" for c in row]
-                        if any(cells):
-                            text += " | ".join(cells) + "\n"
-                    text += "\n"
-                wb.close()
-                content_bytes = None  # 释放内存
-            except ImportError:
-                return JSONResponse({"error": "Excel 解析失败：缺少 openpyxl"}, status_code=400)
-        elif ext == "xls":
-            return JSONResponse({"error": "不支持 .xls 旧格式，请用 Excel 另存为 .xlsx 后重新上传"}, status_code=400)
-        elif ext == "pdf":
-            try:
-                try:
-                    import pdfplumber
-                    with pdfplumber.open(tmp_path) as pdf:
-                        for i, page in enumerate(pdf.pages[:100]):
-                            page_text = page.extract_text() or ""
-                            if page_text:
-                                text += page_text + "\n"
-                            tables = page.extract_tables()
-                            for table in tables:
-                                for row in table:
-                                    cells = [str(c) if c else "" for c in row]
-                                    if any(cells):
-                                        text += " | ".join(cells) + "\n"
-                                text += "\n"
-                            if page_text or tables:
-                                text += "\n"
-                except ImportError:
-                    from pypdf import PdfReader
-                    pdf = PdfReader(tmp_path)
-                    for page in pdf.pages[:100]:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n\n"
-            except ImportError:
-                return JSONResponse({"error": "PDF 解析失败：缺少 pdfplumber 或 pypdf"}, status_code=400)
-        else:
-            return JSONResponse({"error": "不支持的文件格式: ." + ext}, status_code=400)
+        text, image_count = await asyncio.get_event_loop().run_in_executor(
+            get_thread_pool().executor,
+            _extract_upload_text, tmp_path, ext
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+    except ImportError as e:
+        return JSONResponse({"error": "依赖库缺失: %s" % str(e)[:120]}, status_code=400)
     except Exception as e:
         return JSONResponse({"error": "文件解析出错: " + str(e)[:200]}, status_code=500)
 
