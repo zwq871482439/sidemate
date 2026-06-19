@@ -28,8 +28,9 @@ DisableDirPage=yes
 OutputDir=output
 OutputBaseFilename=Sidemate_Setup_v0.9.4
 SetupIconFile=installer\setup.ico
-Compression=lzma2/ultra64
-SolidCompression=yes
+; Patch4 v3.1：ultra64 → normal（含模型时 ultra 跑一整天，normal 30 分钟）
+Compression=lzma2/normal
+SolidCompression=no
 WizardStyle=modern
 
 ; 权限（安装到用户目录，无需管理员权限）

@@ -49,9 +49,9 @@ OutputDir=output
 OutputBaseFilename=Sidemate_Full_Setup_v0.9.4
 SetupIconFile=installer\setup.ico
 
-; 压缩（LZMA2 Ultra，最高压缩率，模型文件压缩有限但 Python/lib 压缩显著）
-Compression=lzma2/ultra64
-SolidCompression=yes
+; 压缩（Patch4 v3.1：ultra64 → normal，模型文件压缩率<5%但耗时差 20 倍）
+Compression=lzma2/normal
+SolidCompression=no
 
 ; ====== 分卷设置（方案 C 核心）======
 ; DiskSpanning 启用后，ISCC 自动将安装包切分为：
