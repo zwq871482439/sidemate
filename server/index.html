@@ -298,13 +298,34 @@
             <div style="color:var(--accent-color);font-weight:bold;font-size:.85em">点击或拖拽上传</div>
             <div style="font-size:.7em;color:var(--text-muted);margin-top:2px">支持多选，文档上限 200 个</div>
           </div>
-          <input type="file" id="kbFileInput" accept=".txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx,.pdf,.pptx,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,.log,.rtf" multiple style="display:none" onchange="kbOnFilePicked(event)">
+          <input type="file" id="kbFileInput" accept=".txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx,.pdf,.pptx,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,.log,.rtf,.epub,.srt,.htm" multiple style="display:none" onchange="kbOnFilePicked(event)">
 
           <!-- 支持格式提示（Patch4 v3.1：放开限制）-->
           <div style="font-size:.72em;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
-            支持: txt md csv json doc docx xls xlsx pdf pptx py js html 等<br>
+            支持: txt md csv json doc docx xls xlsx pdf pptx py js html epub srt rtf 等<br>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v2M7 10h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 单文件大小 ≤ 200MB，支持长文档（PDF ≤ 1000 页）<br>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v2M7 10h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 图片型 PDF 及 .doc/.xls 旧格式不支持，请转存为新格式
+          </div>
+
+          <!-- Patch5 B1: Tag 聚类栏 -->
+          <div id="kbTagClusters" class="kb-tag-clusters" style="display:none;margin-bottom:8px"></div>
+
+          <!-- Patch5 B1: 批量操作工具栏 -->
+          <div id="kbBatchToolbar" class="kb-batch-toolbar" style="display:none">
+            <span style="font-size:.78em;color:var(--text-secondary)">已选 <b id="kbBatchCount">0</b> 个</span>
+            <button class="kb-batch-btn" onclick="kbBatchDelete()" title="批量删除" style="color:var(--error-color)">🗑️ 删除</button>
+            <button class="kb-batch-btn" onclick="kbBatchRetag()" title="批量重标">🏷️ 重标</button>
+            <button class="kb-batch-btn" onclick="kbBatchPrivacy(true)" title="批量设为私密">🔒 私密</button>
+            <button class="kb-batch-btn" onclick="kbBatchPrivacy(false)" title="批量取消私密">🔓 公开</button>
+            <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbSelectInvert()">↔ 反选</button>
+            <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbClearSelection()">✕ 清除</button>
+          </div>
+
+          <!-- Patch5 B1: 全选 + 工具行 -->
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:.78em">
+            <button onclick="kbSelectAll()" style="border:none;background:none;cursor:pointer;color:var(--accent-color);padding:2px 4px;font-size:1em">☑ 全选</button>
+            <button onclick="kbShowDuplicates()" style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:2px 4px;font-size:1em">📋 重复检测</button>
+            <button onclick="kbResetHeatmap()" style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:2px 4px;font-size:1em;margin-left:auto">🔄 重置热力图</button>
           </div>
 
           <!-- 文档列表 -->
@@ -707,6 +728,33 @@
 
     </div><!-- /Row 5 grid -->
 
+    <!-- Patch5 B3: 权限管理卡片 -->
+    <div class="settings-card">
+      <div class="settings-card-title">🔐 权限管理</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">选择权限预设快速配置，或展开高级设置单独控制每个工具</div>
+
+      <!-- 预设按钮组 -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="settings-btn kb-preset-btn" data-preset="trusted" onclick="applyPermissionPreset('trusted')" title="所有工具可用，联网/文件操作不需确认">
+          ✅ 完全信任
+        </button>
+        <button class="settings-btn kb-preset-btn" data-preset="cautious" onclick="applyPermissionPreset('cautious')" title="联网需确认，文件操作需确认，私密文档默认隔离">
+          ⚠️ 谨慎模式
+        </button>
+        <button class="settings-btn kb-preset-btn" data-preset="offline" onclick="applyPermissionPreset('offline')" title="禁止联网，仅本地操作，强制本地 AI 模式">
+          ✈️ 纯离线
+        </button>
+      </div>
+
+      <!-- 高级设置折叠区 -->
+      <details>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-primary);padding:4px 0">⚙️ 高级设置（工具级权限）</summary>
+        <div id="permissionToolsList" style="margin-top:8px;font-size:13px">
+          <span style="color:var(--text-muted)">加载中...</span>
+        </div>
+      </details>
+    </div>
+
     <!-- Row 6: 备份与恢复（单栏）— Patch2 C2 -->
     <div class="settings-card" style="margin-bottom:12px">
       <div class="settings-card-title">备份与恢复</div>
@@ -1038,6 +1086,7 @@ window.addEventListener('DOMContentLoaded', function() {
 <script src="/static/js/stream_renderer.js?v=2.5"></script>
 <script src="/static/js/settings.js?v=2.5"></script>
 <script src="/static/js/qa.js?v=2.5"></script>
+<script src="/static/js/kb-batch.js?v=2.5"></script>
 <script src="/static/js/minutes.js?v=2.5"></script>
 <!-- Patch2 D1: chat.js 拆分为子模块（全局挂载，加载顺序敏感） -->
 <script src="/static/js/chat-session.js?v=2.5"></script>
@@ -1055,7 +1104,7 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   localStorage.setItem('_activeTab', name);  // 记住当前 Tab
-  if (name === 'settings') { refreshStatus(); loadRecorderResident(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); }
+  if (name === 'settings') { refreshStatus(); loadRecorderResident(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); }
   if (name === 'qa') kbRouteState();  // Patch 7: 三级状态路由（安装/激活/就绪）
   if (name === 'minutes') minutesRouteState();  // Patch 6: 纪要Tab三阶段状态路由
   if (name === 'chat') updateChatOverlay();  // 切换到对话 Tab 时同步模型锁状态

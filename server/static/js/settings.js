@@ -1089,6 +1089,99 @@ async function importBackup() {
   } catch(e) { showToast('恢复失败', 'error'); }
 }
 
+// ===== Patch5 B3: 权限管理 =====
+
+/**
+ * 加载工具级权限列表
+ */
+async function loadPermissionTools() {
+  var container = document.getElementById('permissionToolsList');
+  if (!container) return;
+
+  try {
+    var resp = await fetch(_apiBase + '/api/permissions/tools');
+    var data = await resp.json();
+    if (!data.tools || data.tools.length === 0) {
+      container.innerHTML = '<span style="color:var(--text-muted)">暂无可配置的工具</span>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < data.tools.length; i++) {
+      var tool = data.tools[i];
+      var checked = tool.enabled ? 'checked' : '';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-color)">';
+      html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">';
+      html += '<input type="checkbox" data-tool-id="'+esc(tool.tool_id)+'" '+checked+' onchange="toggleToolPermission(\''+esc(tool.tool_id)+'\', this.checked)" style="width:15px;height:15px">';
+      html += '<div>';
+      html += '<div style="font-weight:500;color:var(--text-primary)">'+esc(tool.name)+'</div>';
+      html += '<div style="font-size:.82em;color:var(--text-muted)">'+esc(tool.description)+'</div>';
+      html += '</div>';
+      html += '</label>';
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<span style="color:var(--error-color)">加载失败</span>';
+  }
+}
+
+/**
+ * 切换单个工具权限
+ */
+async function toggleToolPermission(toolId, enabled) {
+  try {
+    var resp = await fetch(_apiBase + '/api/permissions/tool/' + encodeURIComponent(toolId), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled: enabled})
+    });
+    var data = await resp.json();
+    if (data.ok) {
+      showToast('已' + (enabled ? '启用' : '禁用') + '「' + toolId + '」', 'success');
+    } else {
+      showToast('设置失败: ' + (data.error || '未知错误'), 'error');
+      // 回滚 checkbox
+      loadPermissionTools();
+    }
+  } catch(e) {
+    showToast('设置失败: ' + e.message, 'error');
+    loadPermissionTools();
+  }
+}
+
+/**
+ * 应用权限预设
+ */
+async function applyPermissionPreset(presetId) {
+  try {
+    var resp = await fetch(_apiBase + '/api/permissions/preset/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({preset_id: presetId})
+    });
+    var data = await resp.json();
+    if (data.ok) {
+      // 高亮选中的预设按钮
+      var btns = document.querySelectorAll('.kb-preset-btn');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.remove('kb-preset-active');
+        if (btns[i].getAttribute('data-preset') === presetId) {
+          btns[i].classList.add('kb-preset-active');
+        }
+      }
+      var presetNames = {trusted: '完全信任', cautious: '谨慎模式', offline: '纯离线'};
+      showToast('已应用「' + (presetNames[presetId] || presetId) + '」预设', 'success');
+      // 刷新工具列表（权限可能变了）
+      loadPermissionTools();
+    } else {
+      showToast('应用预设失败: ' + (data.error || '未知错误'), 'error');
+    }
+  } catch(e) {
+    showToast('应用预设失败: ' + e.message, 'error');
+  }
+}
+
 // 暴露到全局
 window.initModeTag = initModeTag;
 window.updateModeTagUI = updateModeTagUI;
@@ -1100,6 +1193,10 @@ window.loadCloudConfig = loadCloudConfig;
 window.toggleApiKeyVisibility = toggleApiKeyVisibility;
 window.testCloudConnection = testCloudConnection;
 window.saveCloudConfig = saveCloudConfig;
+// Patch5 B3: 权限管理
+window.loadPermissionTools = loadPermissionTools;
+window.applyPermissionPreset = applyPermissionPreset;
+window.toggleToolPermission = toggleToolPermission;
 // search config functions removed (zero-config)
 
 window.exportBackup = exportBackup;

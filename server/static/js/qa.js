@@ -242,10 +242,32 @@ async function kbRefreshDocs() {
         '<div style="background:var(--border-color);height:6px;border-radius:3px;margin:4px 0;position:relative"><div style="background:linear-gradient(90deg,var(--accent-color),var(--accent-hover));height:6px;border-radius:3px;width:'+pct+'%;transition:width .3s"></div></div>' +
         '<div style="font-size:.72em;color:var(--accent-color);font-weight:600;margin-bottom:2px">'+pct+'%</div>' : '');
 
-      html += '<div style="padding:8px;margin-bottom:6px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;position:relative">';
+      // Patch5 B1/B3: 文档项 — 新增 checkbox + 🔒 私密标记 + 热力图标记
+      var canSelect = (d.status === 'ready' || d.status === 'error' || d.status === 'cancelled');
+      var isChecked = (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs.has(d.doc_id)) ? 'checked' : '';
+      html += '<div class="kb-doc-item" data-doc-id="'+esc(d.doc_id)+'" style="padding:8px;margin-bottom:6px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;position:relative">';
       html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">';
+      // B1: checkbox（只有 ready/error/cancelled 状态才可选中）
+      if (canSelect) {
+        html += '<input type="checkbox" class="kb-doc-checkbox" data-doc-id="'+esc(d.doc_id)+'" '+isChecked+' onchange="kbToggleSelect(\''+esc(d.doc_id)+'\')" style="width:13px;height:13px;cursor:pointer;flex-shrink:0">';
+      }
       html += '<span>'+statusIcon+'</span>';
+      // B3: 私密文档 🔒 标记
+      if (d.is_private) {
+        html += '<span class="kb-lock-icon" title="私密文档（需令牌访问）" style="font-size:.85em">🔒</span>';
+      }
       html += '<b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.filename)+'</b>';
+      // B4: 重复标记
+      if (d.metadata && d.metadata.duplicate_of) {
+        html += '<span class="kb-dup-mark" title="检测到与「'+esc(d.metadata.duplicate_of)+'」重复" style="cursor:help;font-size:.85em;color:var(--warning-color)">📋</span>';
+      }
+      // B1: 热力图标记
+      if (d.hit_count && d.hit_count > 0) {
+        var fireCount = d.hit_count >= 10 ? '🔥🔥' : d.hit_count >= 3 ? '🔥' : '·';
+        html += '<span class="kb-heatmap-mark" title="被检索命中 '+d.hit_count+' 次" style="font-size:.75em;color:var(--text-muted);white-space:nowrap">'+fireCount+' '+d.hit_count+'</span>';
+      } else {
+        html += '<span class="kb-heatmap-mark" style="display:none"></span>';
+      }
       if (d.metadata && d.metadata.has_images) {
         html += '<span title="文档包含'+(d.metadata.image_count||'')+'张图片，当前版本不支持图片内容提取" style="cursor:help;font-size:.85em">' + iconSvg('file','14') + '</span>';
       }
@@ -298,6 +320,9 @@ async function kbRefreshDocs() {
       html += '</div>';
     }
     listEl.innerHTML = html;
+
+    // Patch5 B1/B3/B4: 渲染后触发批量操作相关更新（Tag聚类 + 热力图 + checkbox 恢复）
+    if (typeof kbOnDocsRendered === 'function') kbOnDocsRendered(docs);
 
     var hasProcessing = docs.some(function(d) { return ['processing', 'indexing', 'summarizing'].indexOf(d.status) >= 0; });
     var hasPendingTags = docs.some(function(d) { return ['pending','generating','failed'].indexOf(d.tag_status) >= 0 && d.status === 'ready'; });
@@ -419,6 +444,11 @@ async function kbUploadFile(f) {
         if (typeof showToast === 'function') {
           showToast('文档包含 ' + data.image_count + ' 张图片，当前版本不支持图片内容提取', 'warning', 5000);
         }
+      }
+      // Patch5 B4: 去重检测提示
+      if (data.duplicate_detected && data.duplicate_info) {
+        var dupMsg = '📄 检测到与「' + (data.duplicate_info.existing_filename || '已有文档') + '」重复，已标记';
+        showToast(dupMsg, 'warning', 6000);
       }
       kbRefreshDocs();
     } else {
