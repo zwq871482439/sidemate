@@ -84,6 +84,10 @@ class _KBOpsMixin:
         self._bm25_tokens = []     # 分词后的 chunk 列表，与 chunk_order 对齐
         self._bm25_chunk_ids = []  # BM25 索引对应的 chunk_id 列表
 
+        # Patch5 T03: bge-m3 sparse 索引（dense+sparse 检索用）
+        # 格式：{chunk_id: {token_id: weight}}
+        self._sparse_index: Dict[str, Dict[int, float]] = {}
+
         # 加载已有数据
         self._load_meta()
         # 初始化 BM25 索引（从已有 chunks 构建）
@@ -656,7 +660,8 @@ class _KBOpsMixin:
         }
 
     def import_document(self, filename: str, text: str, file_type: str = "txt",
-                        source: str = "upload", metadata: Dict = None) -> Dict:
+                        source: str = "upload", metadata: Dict = None,
+                        is_private: bool = False) -> Dict:
         """导入文档（创建记录，返回 doc_id，异步处理由 process_document 完成）
 
         Args:
@@ -665,6 +670,7 @@ class _KBOpsMixin:
             file_type: 文件扩展名
             source: "upload" | "transcript"
             metadata: 额外元数据（如 has_images, image_count）
+            is_private: Patch5 私密文档标记（持久化到 kb_meta.json）
         Returns:
             {"doc_id": "...", "status": "pending"} 或 {"error": "..."}
         """
@@ -687,11 +693,12 @@ class _KBOpsMixin:
             source=source,
             total_chars=len(text),
             metadata=metadata or {},
+            is_private=is_private,  # Patch5: 私密标记
         )
         self.documents[doc_id] = doc
         self._save_meta()
 
-        log.info("[KB] 文档导入: %s (%s, %d字)", filename, doc_id, len(text))
+        log.info("[KB] 文档导入: %s (%s, %d字, private=%s)", filename, doc_id, len(text), is_private)
         return {"doc_id": doc_id, "status": "pending"}
 
     def process_document(self, doc_id: str, text: str):
@@ -756,6 +763,7 @@ class _KBOpsMixin:
                     char_count=len(ck.text),
                     heading=heading,
                     source_label=self._build_source_label(doc.filename, heading),
+                    is_private=getattr(doc, 'is_private', False),  # Patch5: 继承文档私密标记
                 )
                 self.chunks[chunk_id] = chunk
                 new_chunks.append(chunk)
@@ -808,6 +816,18 @@ class _KBOpsMixin:
                     self.chunk_order.extend(new_chunk_ids)
 
                 self._save_vectors()
+
+                # Patch5 T03: 构建新 chunk 的 sparse 索引（bge-m3 dense+sparse）
+                if self._embedder_loaded and self.embedder.sparse_available:
+                    try:
+                        batch_texts = [c.text for c in new_chunks]
+                        _, sparse_weights = self.embedder.encode_dense_sparse(batch_texts)
+                        for chunk, weights in zip(new_chunks, sparse_weights):
+                            if weights:
+                                self._sparse_index[chunk.chunk_id] = weights
+                        log.info("[KB] sparse 索引构建: +%d chunks → 共%d", len(new_chunks), len(self._sparse_index))
+                    except Exception as e:
+                        log.warning("[KB] sparse 索引构建失败（不影响 dense 检索）: %s", str(e)[:100])
 
                 # BM25 索引重建（新增 chunk 后）
                 self._build_bm25_index()
@@ -941,6 +961,10 @@ class _KBOpsMixin:
 
             # 使用集合过滤替代逐个 remove（O(n) → O(n) 一次遍历）
             self.chunk_order = [cid for cid in self.chunk_order if cid not in doc_chunk_id_set]
+
+            # Patch5 T03: 清理 sparse 索引
+            for cid in doc_chunk_ids:
+                self._sparse_index.pop(cid, None)
 
             # 重建向量索引（移除对应行）
             if self.vectors is not None and doc_chunk_ids:

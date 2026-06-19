@@ -14,7 +14,7 @@ config.py - 全局配置管理（统一中心）
   - 压缩器：离线压缩参数
   - 长文本分段：chunk 相关参数
 """
-__version__ = "0.9.4"
+__version__ = "0.9.5"
 
 import os
 import json
@@ -191,6 +191,20 @@ DEFAULTS = {
 
     # ----- .sidemate 包签名 -----
     "sidemate_hmac_key": os.environ.get("SIDEMATE_HMAC_KEY", _SIDEMATE_HMAC_KEY_DEFAULT),
+
+    # ===== Patch5: 线程池 + 任务队列 + 令牌系统 =====
+    # 线程池大小（同步阻塞操作如文件解析、embedding 计算在此执行，避免卡死 FastAPI 事件循环）
+    "thread_pool_max_workers": 2,
+    # BatchQueue SQLite 数据库路径（空=运行时解析为 DATA_DIR/batch_queue.db）
+    "batch_queue_db_path": "",
+    # BatchQueue worker 轮询间隔（秒）
+    "batch_queue_poll_interval": 1.0,
+    # bge-m3 dense+sparse 融合权重（score = α × dense_norm + (1-α) × sparse_norm）
+    "kb_dense_sparse_alpha": 0.7,
+    # 是否启用 bge-m3 sparse 检索（False 时降级为 BM25）
+    "kb_enable_sparse": True,
+    # 令牌默认有效期（秒，0=永不过期）
+    "access_token_default_ttl": 0,
 }
 
 # ===== 本地模型统一 Token 限制（所有本地 LLM 调用共用）=====

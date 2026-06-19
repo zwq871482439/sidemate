@@ -185,6 +185,14 @@ async def _lifespan(app):
         return
     _lifespan_entered = True
 
+    # ===== Patch5 T01: 初始化全局线程池 =====
+    try:
+        from core.thread_pool import init_thread_pool, shutdown_thread_pool
+        init_thread_pool()
+        log.info("[STARTUP] 全局线程池已初始化")
+    except Exception as e:
+        log.warning("[STARTUP] 线程池初始化失败: %s" % str(e)[:100])
+
     if _cfg_get("ollama_auto_start", True):
         _report_startup("ollama_start", 70, "启动 Ollama 推理引擎...")
         log.info("[STARTUP] 自动启动 Ollama...")
@@ -273,7 +281,32 @@ async def _lifespan(app):
 
     _report_startup("ready", 85, "服务就绪，等待 HTTP...")
     log.info("[STARTUP] 所有 Router 已注册，服务就绪")
+
+    # ===== Patch5 T02: BatchQueue 初始化 + 断点恢复 + 启动 worker =====
+    global _batch_queue
+    if _kb_installed:
+        try:
+            from core.batch_queue import BatchQueue
+            _bq_db_path = _cfg_get("batch_queue_db_path", "") or None
+            _batch_queue = BatchQueue(db_path=_bq_db_path, data_dir=DATA_DIR)
+            # 断点恢复：processing → pending
+            recovered = _batch_queue.recover_pending()
+            if recovered > 0:
+                log.info("[STARTUP] BatchQueue 断点恢复: %d 个任务从 processing→pending" % recovered)
+            # 启动 worker（消费队列）
+            _batch_queue.start_worker(kb)
+            log.info("[STARTUP] BatchQueue worker 已启动")
+        except Exception as e:
+            log.warning("[STARTUP] BatchQueue 初始化失败: %s" % str(e)[:120])
+
     yield
+    # ===== Patch5: 关闭 BatchQueue worker =====
+    if _batch_queue is not None:
+        try:
+            _batch_queue.stop_worker()
+            log.info("[SHUTDOWN] BatchQueue worker 已停止")
+        except Exception as e:
+            log.warning("[SHUTDOWN] BatchQueue 停止失败: %s" % str(e)[:80])
     # 关闭时停止 TaggingScheduler
     if _tagging_scheduler:
         try:
@@ -285,6 +318,13 @@ async def _lifespan(app):
         ollama_manager.stop()
     except Exception as e:
         log.warning("[SHUTDOWN] Ollama 停止失败: %s" % str(e)[:80])
+    # ===== Patch5 T01: 关闭全局线程池 =====
+    try:
+        from core.thread_pool import shutdown_thread_pool
+        shutdown_thread_pool(wait=False)
+        log.info("[SHUTDOWN] 全局线程池已关闭")
+    except Exception as e:
+        log.warning("[SHUTDOWN] 线程池关闭失败: %s" % str(e)[:80])
 
 app = FastAPI(title="sidemate", version="%s.%s" % (VERSION, VERSION_PATCH), lifespan=_lifespan)
 _CORS_ORIGINS = os.environ.get("LOCAL_AI_CORS", "http://localhost:8976,http://127.0.0.1:8976").split(",")
@@ -317,6 +357,10 @@ _tagging_scheduler = None
 
 # Patch3: LLMScheduler 全局实例
 _llm_scheduler = None
+
+# Patch5: BatchQueue 全局实例
+_batch_queue = None
+
 log.info("[KB] 文库初始化完成: installed=%s, mode=%s, docs=%d, chunks=%d" % (
     _kb_installed, kb.embedder.mode, len(kb.documents), len(kb.chunks)))
 

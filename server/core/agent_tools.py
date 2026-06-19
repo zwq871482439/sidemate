@@ -89,6 +89,10 @@ TOOL_REGISTRY = {
                         "query": {
                             "type": "string",
                             "description": "搜索关键词"
+                        },
+                        "token": {
+                            "type": "string",
+                            "description": "访问令牌（可选，用于访问私密文档。无令牌时私密文档不出现在结果中）"
                         }
                     },
                     "required": ["query"]

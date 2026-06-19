@@ -1,0 +1,161 @@
+%% 桌伴 Sidemate Patch5 批次 A — 时序图集合
+%% 包含 5 个关键流程的时序图
+
+%% ===== 1. 批量导入流程（A1 + A2）=====
+sequenceDiagram
+    participant FE as 前端
+    participant API as FastAPI (kb.py)
+    participant TPool as ThreadPoolManager
+    participant BQ as BatchQueue
+    participant DB as SQLite
+    participant Worker as Queue Worker
+    participant KB as KnowledgeBase
+
+    FE->>API: POST /api/kb/upload_batch (50 files)
+    API->>API: 流式写入临时文件（run_in_threadpool）
+    API->>BQ: create_batch(files) → batch_id
+    BQ->>DB: INSERT batch + batch_task × 50
+    BQ-->>API: batch_id
+    API-->>FE: {batch_id, total: 50, tasks: [...]}
+
+    Note over Worker: 启动时已由 lifespan 拉起
+    loop 每个文件
+        Worker->>DB: get_pending() → task
+        DB-->>Worker: TaskItem(file_path, ...)
+        Worker->>TPool: submit(process_one_file, task)
+        TPool->>KB: import_document + process_document
+        KB-->>TPool: doc_id
+        TPool-->>Worker: result
+        Worker->>DB: update_status(task_id, 'done', doc_id)
+    end
+
+    FE->>API: GET /api/kb/batch/{batch_id}/progress (轮询)
+    API->>BQ: get_batch_progress(batch_id)
+    BQ->>DB: SELECT count(*) GROUP BY status
+    DB-->>BQ: {done: 30, pending: 20}
+    BQ-->>API: progress dict
+    API-->>FE: {total: 50, done: 30, ...}
+
+%% ===== 2. 断点恢复流程（A2）=====
+sequenceDiagram
+    participant Server as server.py lifespan
+    participant BQ as BatchQueue
+    participant DB as SQLite
+    participant TPool as ThreadPoolManager
+
+    Note over Server: 应用启动（lifespan startup）
+    Server->>BQ: init(db_path)
+    BQ->>DB: CREATE TABLE IF NOT EXISTS...
+    BQ->>DB: PRAGMA journal_mode=WAL
+    
+    Server->>BQ: recover_pending()
+    BQ->>DB: SELECT * FROM batch_task WHERE status IN ('pending','processing')
+    DB-->>BQ: [task1, task2, task3, ...]
+    BQ->>DB: UPDATE batch_task SET status='pending' WHERE status='processing'
+    Note over BQ: processing → pending（重启恢复）
+    
+    BQ-->>Server: recovered_count = 5
+    
+    Server->>BQ: start_worker(kb_instance)
+    Note over BQ: worker 线程在线程池中运行
+    loop while pending tasks exist
+        BQ->>DB: get_pending()
+        DB-->>BQ: task
+        BQ->>TPool: submit(process_one_file, task)
+    end
+
+%% ===== 3. Go 看门狗 + GPU 检测流程（A3）=====
+sequenceDiagram
+    participant Launcher as Go Launcher (main)
+    participant GPU as gpu_detect
+    participant WD as Watchdog goroutine
+    participant Python as Python FastAPI
+    participant Ollama as Ollama
+
+    Launcher->>GPU: detect_gpu()
+    GPU->>GPU: wmic path win32_VideoController get name
+    GPU-->>Launcher: GPUInfo{vendor: "nvidia", has_cuda: true}
+    
+    alt NVIDIA + CUDA
+        Launcher->>Launcher: OLLAMA_LLM_LIBRARY=cuda
+    else AMD/Intel + Vulkan
+        Launcher->>Launcher: OLLAMA_LLM_LIBRARY=vulkan
+    else 无 GPU
+        Launcher->>Launcher: OLLAMA_LLM_LIBRARY=cpu
+    end
+
+    Launcher->>Python: start python.exe server.py
+    Launcher->>Ollama: start ollama serve (with OLLAMA_LLM_LIBRARY)
+    
+    Launcher->>WD: go start_watcher(python_proc, ollama_proc)
+    
+    loop 每 30 秒
+        WD->>Python: GET /api/status (timeout=15s)
+        alt 响应正常
+            WD->>WD: fail_count = 0
+        else 超时/连接失败
+            WD->>WD: fail_count++
+            alt fail_count >= 3 && restart_count < 3/hour
+                WD->>Python: Stop() + kill
+                WD->>Python: 重新 start
+                WD->>WD: restart_count++, fail_count = 0
+            end
+        end
+    end
+
+%% ===== 4. bge-m3 Dense+Sparse 检索流程（A4）=====
+sequenceDiagram
+    participant User as 用户查询
+    participant Search as search.py
+    participant Embed as EmbeddingEngine
+    participant Token as AccessTokenManager
+    participant KB as KnowledgeBase
+
+    User->>Search: search(query, token=None)
+    
+    Search->>Token: filter_private_docs(all_doc_ids, token)
+    Token-->>Search: accessible_doc_ids（排除无令牌的私密文档）
+    
+    Search->>Embed: encode_query_sparse(query)
+    Embed->>Embed: FlagModel.encode([query], return_dense=True, return_sparse=True)
+    Embed-->>Search: (dense_vec, sparse_weights)
+    
+    par Dense 检索
+        Search->>KB: cosine_sim(dense_vec, all_vectors)
+        KB-->>Search: dense_results [(chunk_id, score)]
+    and Sparse 检索
+        Search->>KB: sparse_match(sparse_weights, sparse_index)
+        KB-->>Search: sparse_results [(chunk_id, score)]
+    end
+    
+    Search->>Search: weighted_fusion(dense_results, sparse_results, α=0.7)
+    Note over Search: score = α × dense_norm + (1-α) × sparse_norm
+    
+    Search->>Search: filter_private(results, accessible_doc_ids)
+    Search->>Search: reranker_top_k(fused_results)
+    Search->>Search: mmr_diversity(reranked)
+    Search-->>User: final_results
+
+%% ===== 5. 硬链接恢复流程（A5）=====
+sequenceDiagram
+    participant Installer as 安装器/首次启动
+    participant HL as hardlink.go
+    participant FS as NTFS 文件系统
+    participant Server as Python Server
+
+    Note over Installer: 安装时（ISS 安装包执行）
+    Installer->>HL: setup_hardlink_backup(site_packages_dir)
+    
+    HL->>FS: mklink /H site_packages_bak/ pkg_file（逐包硬链接）
+    Note over HL: 双副本：原目录 + _bak 目录<br/>硬链接不占额外空间（同一 inode）
+    FS-->>HL: 完成
+    
+    Note over Server: 启动时 SHA256 校验
+    Server->>Server: verify_manifest(site_packages)
+    alt 发现损坏包
+        Server->>HL: report_broken(broken_pkgs)
+        Note over HL: Go Launcher 检测损坏标记文件
+        HL->>FS: mklink /H site_packages/ broken_pkg_file ← 从 _bak 恢复
+        FS-->>HL: 恢复成功
+        HL->>Server: 重启 Python 进程
+    end

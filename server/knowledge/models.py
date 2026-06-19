@@ -26,6 +26,7 @@ class KBDocument:
     summary: str = ""          # 文档前200字预览（不再使用 LLM 生成摘要）
     tags: list = field(default_factory=list)    # 3-5 个关键词标签
     tag_status: str = "pending"                 # "pending" / "done"
+    is_private: bool = False                    # Patch5: 私密文档标记（持久化到 kb_meta.json）
 
 
 @dataclass
@@ -38,3 +39,4 @@ class KBChunk:
     char_count: int = 0
     heading: str = ""
     source_label: str = ""   # 来源标注，如 "报告.pdf §第一章"
+    is_private: bool = False # Patch5: 继承自文档（用于检索过滤）

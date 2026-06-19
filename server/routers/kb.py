@@ -1120,7 +1120,11 @@ async def api_kb_new_session(request: Request):
 
 @router.post("/api/kb/search")
 async def api_kb_search(request: Request):
-    """文库检索（仅返回结果不调用LLM）"""
+    """文库检索（仅返回结果不调用LLM）
+
+    Patch5 T03: 支持 token 参数进行私密文档过滤
+    Body: {"query": "...", "top_k": 5, "token": "optional_access_token"}
+    """
     ext_check = _check_knowledge_extension()
     if ext_check is not None:
         return ext_check
@@ -1128,11 +1132,23 @@ async def api_kb_search(request: Request):
     body = await request.json()
     query = body.get("query", "").strip()
     top_k = body.get("top_k", 5)
+    token = body.get("token", "")  # Patch5 T03: 令牌参数
     if not query:
         return JSONResponse({"error": "请输入查询"}, status_code=400)
     # Patch4 v3.1：捕获异常返回结构化错误（之前 FastAPI 默默吞掉 500）
     try:
+        # Patch5 T03: 私密文档过滤
+        from core.access_token import get_access_token_manager
+        token_mgr = get_access_token_manager()
+        # 构建 is_private 映射
+        is_private_map = {d.doc_id: getattr(d, 'is_private', False) for d in kb.documents.values()}
+        # 获取可访问的文档 ID
+        all_doc_ids = list(kb.documents.keys())
+        accessible_doc_ids = set(token_mgr.filter_private_docs(all_doc_ids, token, is_private_map))
+
         results = kb.search(query, top_k=top_k)
+        # 过滤掉不可访问的私密文档的 chunk
+        results = [r for r in results if r.get("doc_id", "") in accessible_doc_ids]
         return {"results": results}
     except Exception as e:
         import traceback
@@ -1164,6 +1180,281 @@ async def api_kb_import_text(request: Request):
     t.start()
 
     return {"ok": True, "doc_id": doc_id, "status": "processing"}
+
+
+# ============================================================
+#  Patch5 T02: 批量上传 + 任务队列
+# ============================================================
+
+def _get_batch_queue():
+    """获取全局 BatchQueue 实例（从 server.py 模块变量）"""
+    try:
+        import server as _srv
+        return getattr(_srv, '_batch_queue', None)
+    except Exception:
+        return None
+
+
+@router.post("/api/kb/upload_batch")
+async def api_kb_upload_batch(files: List[UploadFile] = File(...)):
+    """批量上传文件到文库（Patch5 T02）
+
+    多文件上传 → 流式写入临时文件 → 入队 SQLite → 异步处理
+    前端通过轮询 GET /api/kb/batch/{batch_id}/progress 获取进度。
+
+    Request: multipart/form-data
+        files: 多个文件
+
+    Response: 200
+        {
+            "batch_id": "b_xxx",
+            "total_files": 50,
+            "tasks": [{"task_id": "t_xxx", "filename": "...", "status": "pending"}, ...]
+        }
+    """
+    ext_check = _check_knowledge_extension()
+    if ext_check is not None:
+        return ext_check
+
+    bq = _get_batch_queue()
+    if bq is None:
+        return JSONResponse({"error": "批量上传服务未初始化（请重启应用）"}, status_code=503)
+
+    kb = get_kb()
+    mgr = get_mgr()
+    from config import get as _cfg_get
+    _UPLOAD_MAX_SIZE = _cfg_get("upload_max_size")
+
+    # 检查 LLM 已加载（打标需要）
+    loaded = mgr.get_loaded_llms()
+    if not loaded:
+        return JSONResponse({"error": "请先在「设置」页面加载模型，文档处理需要模型支持"}, status_code=400)
+
+    if not files:
+        return JSONResponse({"error": "未选择文件"}, status_code=400)
+
+    # 检查文档数上限
+    stats = kb.get_stats()
+    available_slots = stats["max_documents"] - stats["ready_documents"] - stats["processing_documents"]
+    if available_slots <= 0:
+        return JSONResponse({"error": "文库已满（最多%d个文档）" % stats["max_documents"]}, status_code=400)
+
+    if len(files) > available_slots:
+        return JSONResponse({
+            "error": "文件数 %d 超过文库剩余容量 %d" % (len(files), available_slots)
+        }, status_code=400)
+
+    # 创建批次
+    batch_id = bq.create_batch(total_files=len(files))
+
+    # 逐个文件流式写入临时目录 + 入队
+    import tempfile
+    _batch_tmp_dir = tempfile.mkdtemp(prefix="kb_batch_")
+    tasks_info = []
+    enqueued_count = 0
+
+    for upload_file in files:
+        if not upload_file.filename:
+            continue
+
+        filename = _safe_filename(upload_file.filename)
+        ext = (upload_file.filename or "").rsplit(".", 1)[-1].lower()
+
+        # 支持格式检查
+        if ext not in ("txt", "md", "csv", "docx", "xlsx", "pdf"):
+            tasks_info.append({
+                "task_id": "",
+                "filename": upload_file.filename,
+                "status": "error",
+                "error_msg": "不支持的文件格式: .%s" % ext,
+            })
+            continue
+
+        # 每个文件单独的临时子目录（便于后续清理）
+        file_tmp_dir = tempfile.mkdtemp(prefix="kb_upload_", dir=_batch_tmp_dir)
+        tmp_path = os.path.join(file_tmp_dir, filename)
+
+        # 流式写入
+        _upload_size = 0
+        _size_exceeded = False
+        try:
+            try:
+                import aiofiles
+                async with aiofiles.open(tmp_path, "wb") as f:
+                    while True:
+                        chunk = await upload_file.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        _upload_size += len(chunk)
+                        if _upload_size > _UPLOAD_MAX_SIZE:
+                            _size_exceeded = True
+                            break
+                        await f.write(chunk)
+            except ImportError:
+                content_bytes = await upload_file.read()
+                if len(content_bytes) > _UPLOAD_MAX_SIZE:
+                    _size_exceeded = True
+                else:
+                    _upload_size = len(content_bytes)
+                    with open(tmp_path, "wb") as f:
+                        f.write(content_bytes)
+
+            if _size_exceeded:
+                shutil.rmtree(file_tmp_dir, ignore_errors=True)
+                tasks_info.append({
+                    "task_id": "",
+                    "filename": upload_file.filename,
+                    "status": "error",
+                    "error_msg": "文件过大（最大%dMB）" % (_UPLOAD_MAX_SIZE // 1024 // 1024),
+                })
+                continue
+
+            # 入队
+            task_id = bq.enqueue(
+                batch_id=batch_id,
+                file_path=tmp_path,
+                filename=upload_file.filename,
+                file_type=ext,
+                file_size=_upload_size,
+            )
+            tasks_info.append({
+                "task_id": task_id,
+                "filename": upload_file.filename,
+                "status": "pending",
+            })
+            enqueued_count += 1
+
+        except Exception as e:
+            shutil.rmtree(file_tmp_dir, ignore_errors=True)
+            tasks_info.append({
+                "task_id": "",
+                "filename": upload_file.filename,
+                "status": "error",
+                "error_msg": "文件写入失败: %s" % str(e)[:100],
+            })
+
+    log.info("[KB] 批量上传: batch=%s, 入队 %d/%d 文件", batch_id, enqueued_count, len(files))
+
+    return {
+        "batch_id": batch_id,
+        "total_files": enqueued_count,
+        "tasks": tasks_info,
+    }
+
+
+@router.get("/api/kb/batch/{batch_id}/progress")
+async def api_kb_batch_progress(batch_id: str):
+    """查询批次导入进度（Patch5 T02）
+
+    前端轮询此端点（建议 2 秒间隔）获取批量上传的处理进度。
+    """
+    bq = _get_batch_queue()
+    if bq is None:
+        return JSONResponse({"error": "批量上传服务未初始化"}, status_code=503)
+    progress = bq.get_batch_progress(batch_id)
+    if "error" in progress:
+        return JSONResponse(progress, status_code=404)
+    return progress
+
+
+@router.post("/api/kb/batch/{batch_id}/cancel")
+async def api_kb_batch_cancel(batch_id: str):
+    """取消批次中未处理的任务（Patch5 T02）
+
+    将所有 pending 状态的任务标记为 cancelled。
+    正在 processing 的任务不受影响（会继续完成）。
+    """
+    bq = _get_batch_queue()
+    if bq is None:
+        return JSONResponse({"error": "批量上传服务未初始化"}, status_code=503)
+    cancelled = bq.cancel_batch(batch_id)
+    return {"cancelled": cancelled}
+
+
+@router.get("/api/kb/batch/active")
+async def api_kb_batch_active():
+    """获取所有活跃批次列表（Patch5 T02）"""
+    bq = _get_batch_queue()
+    if bq is None:
+        return JSONResponse({"error": "批量上传服务未初始化"}, status_code=503)
+    batches = bq.get_active_batches()
+    return {"batches": batches}
+
+
+# ============================================================
+#  Patch5 T03: 令牌管理 + 私密文档设置
+# ============================================================
+
+@router.post("/api/kb/documents/{doc_id}/token")
+async def api_kb_generate_token(doc_id: str, request: Request):
+    """为文档生成访问令牌（Patch5 T03）
+
+    Body: {"level": "full" | "search"}
+    Response: {"token": "a1b2c3...", "doc_id": "...", "level": "..."}
+    """
+    kb = get_kb()
+    doc = kb.get_document(doc_id)
+    if not doc:
+        return JSONResponse({"error": "文档不存在"}, status_code=404)
+
+    body = await request.json()
+    level = body.get("level", "search")
+    if level not in ("full", "search"):
+        return JSONResponse({"error": "level 必须为 full 或 search"}, status_code=400)
+
+    from core.access_token import get_access_token_manager
+    mgr = get_access_token_manager()
+    if level == "full":
+        token = mgr.generate_full_token(doc_id)
+    else:
+        token = mgr.generate_search_token(doc_id)
+
+    return {"token": token, "doc_id": doc_id, "level": level}
+
+
+@router.delete("/api/kb/documents/{doc_id}/token")
+async def api_kb_revoke_token(doc_id: str):
+    """撤销文档的所有访问令牌（Patch5 T03）
+
+    Response: {"revoked": true, "count": N}
+    """
+    kb = get_kb()
+    doc = kb.get_document(doc_id)
+    if not doc:
+        return JSONResponse({"error": "文档不存在"}, status_code=404)
+
+    from core.access_token import get_access_token_manager
+    mgr = get_access_token_manager()
+    count = mgr.revoke_doc_tokens(doc_id)
+    return {"revoked": True, "count": count}
+
+
+@router.post("/api/kb/documents/{doc_id}/privacy")
+async def api_kb_set_privacy(doc_id: str, request: Request):
+    """设置文档私密标记（Patch5 T03）
+
+    Body: {"is_private": true}
+    Response: {"doc_id": "...", "is_private": true}
+    """
+    kb = get_kb()
+    doc = kb.get_document(doc_id)
+    if not doc:
+        return JSONResponse({"error": "文档不存在"}, status_code=404)
+
+    body = await request.json()
+    is_private = bool(body.get("is_private", False))
+
+    # 设置 is_private 并持久化
+    doc.is_private = is_private
+    kb._save_meta()
+
+    # 撤销私密文档的现有令牌（取消私密时清空令牌）
+    if not is_private:
+        from core.access_token import get_access_token_manager
+        get_access_token_manager().revoke_doc_tokens(doc_id)
+
+    log.info("[KB] 文档私密标记设置: doc=%s, is_private=%s", doc_id, is_private)
+    return {"doc_id": doc_id, "is_private": is_private}
 
 
 # ============================================================

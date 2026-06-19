@@ -27,8 +27,11 @@ scikit-learn==1.8.0
 scipy==1.17.1
 
 # ===== 知识库依赖（扩展包）=====
-rank-bm25==0.2.2
-jieba==0.42.1
+# Patch5 T03: FlagEmbedding 用于 bge-m3 dense+sparse 编码（替代 jieba+BM25）
+FlagEmbedding>=1.3.0
+# Patch5: rank_bm25/jieba 标记为 deprecated（P5 保留做 fallback，P6 彻底移除）
+# rank-bm25==0.2.2  # [deprecated P5] 被 bge-m3 sparse 替代，保留做 fallback
+# jieba==0.42.1     # [deprecated P5] 被 bge-m3 sparse 替代，保留做 fallback
 faiss-cpu>=1.7.0
 
 # ===== 云端 AI =====
