@@ -243,6 +243,7 @@ async def api_kb_upload(file):
 | **C3 品牌视觉全套** | favicon + SVG Logo（已有 logo.svg）+ 桌面图标 + 启动画面 | 中 |
 | **C4 空状态 + 反馈 + CHANGELOG** | Chat/KB 空状态 + 反馈渠道 + 错误复制 + 更新日志 | 低 |
 | **C5 隐私 + 诊断 + 许可** | 隐私声明 + 系统诊断（Python/Ollama/GPU/磁盘）+ THIRD-PARTY | 低-中 |
+| **C7 前端体验细节**（新增，借鉴 Cherry Studio + LobeHub）| 会话拖拽排序 + 清除上下文按钮 + Token 预估 + 骨架屏 + Beta 标签 + 思考折叠 + 消息样式设置 | 中 |
 | ~~C6 代码签名~~ | ⏸️ 暂缓（用户决策 2026-06-19，先不买 EV 证书）|
 
 **C1 分发策略**：
@@ -266,7 +267,16 @@ async def api_kb_upload(file):
 
 **最低硬件**：Win11 22H2+ / Vulkan 1.2+ / 16GB+
 
-**工作量估计**：7-9 天
+**C7 前端体验细节详情**（借鉴竞品，详见 `docs/设计文档/规划与方案/竞品前端参考-CherryStudio-LobeHub.md`）：
+- 会话列表拖拽排序（Cherry Studio）
+- "清除上下文"按钮：保留消息但重置模型记忆（Cherry Studio）
+- 输入框预估 Token 数（Cherry Studio）
+- 骨架屏替代 spinner（LobeHub）
+- Beta 标签：隐身协作智能代理标 Beta（LobeHub）
+- 思考过程自动折叠（云端模型）（Cherry Studio）
+- 消息样式设置：气泡/列表切换（Cherry Studio）
+
+**工作量估计**：7-9 天（含 C7 新增 2-3 天）
 
 ---
 
