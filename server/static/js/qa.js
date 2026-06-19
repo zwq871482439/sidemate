@@ -123,10 +123,14 @@ async function kbRefreshDocs() {
     var statsResp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/stats');
     var stats = await statsResp.json();
 
-    countEl.textContent = stats.ready_documents + '/' + stats.max_documents;
+    // Patch4 v3.1 BUG#32：折叠/展开计数器统一用 stats.ready_documents
+    // 之前展开用 stats.ready_documents，折叠用 docs.length，两者不一致
+    var _docCount = stats.ready_documents;
+    var _maxDocs = stats.max_documents || 200;
+    countEl.textContent = _docCount + '/' + _maxDocs;
 
     var collapsedCount = document.getElementById('kbCollapsedCount');
-    if (collapsedCount) collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + stats.ready_documents + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + stats.max_documents + '</div>';
+    if (collapsedCount) collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + _docCount + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + _maxDocs + '</div>';
 
     _kbModelsLoaded = stats.models_loaded || false;
 
@@ -142,7 +146,8 @@ async function kbRefreshDocs() {
         if (panel) panel.classList.add('collapsed');
         var collapsedCount = document.getElementById('kbCollapsedCount');
         if (collapsedCount) {
-          collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + docs.length + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + (stats.max_documents || 50) + '</div>';
+          // Patch4 v3.1 BUG#32：跟展开时用同一个变量（stats.ready_documents）
+          collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + _docCount + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + _maxDocs + '</div>';
         }
       }, 300);
     } else if (docs.length === 0 && _kbPanelCollapsed) {

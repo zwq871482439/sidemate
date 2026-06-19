@@ -167,7 +167,10 @@ async def api_cloud_config_save(request: Request):
         raw_key = body["api_key"].strip()
         if raw_key:
             updates["cloud_api_key"] = CloudEngine._encode_api_key(raw_key)
-        else:
+        # Patch4 v3.1 BUG#31：api_key 为空时不主动清空（保留原 key）
+        # 只有显式传 clear_api_key=true 才清空（避免误覆盖）
+        # 之前的 else: updates["cloud_api_key"] = "" 是 key 莫名失效的根因
+        elif body.get("clear_api_key") is True:
             updates["cloud_api_key"] = ""
 
     if "model" in body:
