@@ -19,9 +19,9 @@ from config import UPLOAD_DIR, DOCS_DIR, CHAT_DIR
 router = APIRouter()
 log = get_log()
 
-# 录音文件实际存储在 recorder_pkg/data/recordings/audio/
-_recorder_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "recorder_pkg", "data", "recordings")
-RECORDING_DIR = os.path.realpath(os.path.join(_recorder_base, "audio"))
+# D1 重构：录音文件存储在 data/recorder/audio/
+from config import RECORDER_DATA_DIR
+RECORDING_DIR = os.path.realpath(os.path.join(RECORDER_DATA_DIR, "audio"))
 RECORDING_DIR_LEGACY = os.path.join(WORKSPACE_DIR, "recordings")
 FILE_DIR = os.path.join(WORKSPACE_DIR, "files")
 

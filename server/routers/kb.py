@@ -49,8 +49,8 @@ log = get_log()
 
 def _get_extensions_dir() -> str:
     """获取扩展注册目录"""
-    from config import ROOT_DIR
-    return os.path.join(ROOT_DIR, "extensions")
+    from config import EXTENSIONS_DIR
+    return EXTENSIONS_DIR
 
 
 def _check_knowledge_extension() -> Optional[JSONResponse]:
@@ -60,7 +60,7 @@ def _check_knowledge_extension() -> Optional[JSONResponse]:
         None 如果已安装，否则返回 JSONResponse 错误
     """
     try:
-        from extensions import ExtensionRegistry
+        from core.extension_manager import ExtensionRegistry
         registry = ExtensionRegistry(_get_extensions_dir())
         if not registry.is_installed("knowledge"):
             return JSONResponse(
@@ -114,7 +114,7 @@ def _extract_upload_text(tmp_path: str, ext: str):
         with open(tmp_path, "r", encoding="utf-8", errors="replace") as f:
             text = f.read()
     elif ext == "docx":
-        from files.doc_reader import DocReader
+        from knowledge.doc_reader import DocReader
         reader = DocReader()
         text = reader.extract_text(tmp_path)
         image_count = reader.count_images(tmp_path)
@@ -163,19 +163,19 @@ def _extract_upload_text(tmp_path: str, ext: str):
                     text += page_text + "\n\n"
     elif ext == "epub":
         # B2: EPUB 电子书解析（委托给 file_extractor 统一逻辑）
-        from files.file_extractor import extract_text as _ext_text
+        from knowledge.file_extractor import extract_text as _ext_text
         text = _ext_text(tmp_path)
     elif ext in ("html", "htm"):
         # B2: HTML 网页文件解析（委托给 file_extractor 统一逻辑）
-        from files.file_extractor import extract_text as _ext_text
+        from knowledge.file_extractor import extract_text as _ext_text
         text = _ext_text(tmp_path)
     elif ext == "srt":
         # B2: SRT 字幕文件解析（委托给 file_extractor 统一逻辑）
-        from files.file_extractor import extract_text as _ext_text
+        from knowledge.file_extractor import extract_text as _ext_text
         text = _ext_text(tmp_path)
     elif ext == "rtf":
         # B2: RTF 富文本解析（委托给 file_extractor 统一逻辑）
-        from files.file_extractor import extract_text as _ext_text
+        from knowledge.file_extractor import extract_text as _ext_text
         text = _ext_text(tmp_path)
     else:
         raise ValueError("不支持的文件格式: ." + ext)
@@ -186,9 +186,9 @@ def _extract_upload_text(tmp_path: str, ext: str):
 def _is_module_installed():
     """检查 KB 模块是否已安装（优先使用 ExtensionRegistry）"""
     try:
-        from extensions.registry import ExtensionRegistry
-        _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+        from core.extension_manager import ExtensionRegistry
+        from config import EXTENSIONS_DIR
+        registry = ExtensionRegistry(EXTENSIONS_DIR)
         return registry.is_installed("knowledge")
     except Exception:
         pass

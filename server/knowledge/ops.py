@@ -30,8 +30,9 @@ class _KBOpsMixin:
     """文库核心操作：初始化、持久化、文档管理、处理控制"""
 
     def __init__(self, base_dir: str = None):
+        from config import KB_DATA_DIR
         self.base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
-        self.data_dir = os.path.join(self.base_dir, "data", "kb")
+        self.data_dir = KB_DATA_DIR  # D1 重构：C:\Sidemate\data\kb
         self.texts_dir = os.path.join(self.data_dir, "kb_texts")
         self.meta_path = os.path.join(self.data_dir, "kb_meta.json")
         self.vectors_path = os.path.join(self.data_dir, "kb_vectors.npz")

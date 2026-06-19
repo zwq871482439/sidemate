@@ -243,7 +243,7 @@ async def api_chat_stream(request: Request):
     if file_path:
         if os.path.exists(file_path):
             # 普通文件上传路径 — 动态计算注入预算
-            from files.file_extractor import process_uploaded_file, calc_file_budget
+            from knowledge.file_extractor import process_uploaded_file, calc_file_budget
             history_chars = sum(len(m.get("content", "")) for m in history_raw) if history_raw else 0
             file_budget = calc_file_budget(history_chars)
             log.info("[CHAT] 文件注入预算: history=%d字 → file_budget=%d字" % (history_chars, file_budget))
@@ -258,7 +258,7 @@ async def api_chat_stream(request: Request):
             # Patch4 v3.1 BUG#27：支持多选 KB（doc_id 逗号分隔）
             # 拆分所有 doc_id，逐个取全文，合并注入
             doc_ids = [d.strip() for d in file_path.split(",") if d.strip()]
-            from files.file_extractor import calc_file_budget, smart_extract
+            from knowledge.file_extractor import calc_file_budget, smart_extract
             history_chars_kb = sum(len(m.get("content", "")) for m in history_raw) if history_raw else 0
             file_budget_kb = calc_file_budget(history_chars_kb)
 
@@ -733,7 +733,7 @@ async def api_qa_upload(file: UploadFile = File(...)):
         if ext in ("txt", "md", "csv"):
             text = content_bytes.decode("utf-8", errors="replace")
         elif ext == "docx":
-            from files.doc_reader import DocReader
+            from knowledge.doc_reader import DocReader
             _docx_tmp_path = os.path.join(UPLOAD_DIR, _safe_filename(file.filename))
             os.makedirs(os.path.dirname(_docx_tmp_path), exist_ok=True)
             with open(_docx_tmp_path, "wb") as f:

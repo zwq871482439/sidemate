@@ -47,7 +47,7 @@ def export_backup():
                     chat_count += 1
 
         # 2) 设置
-        settings_path = os.path.join(ROOT_DIR, "settings.json")
+        settings_path = os.path.join(DATA_DIR, "settings.json")
         if os.path.isfile(settings_path):
             zf.write(settings_path, "settings.json")
 
@@ -126,7 +126,7 @@ async def import_backup(file: UploadFile = File(...)):
                         log.warning("[BACKUP] settings.json 解析失败，跳过")
                         continue
 
-                    settings_path = os.path.join(ROOT_DIR, "settings.json")
+                    settings_path = os.path.join(DATA_DIR, "settings.json")
                     existing = {}
                     if os.path.isfile(settings_path):
                         try:

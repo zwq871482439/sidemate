@@ -43,7 +43,9 @@ from datetime import datetime
 from typing import Optional
 
 # ===== 启动进度上报（Go Launcher 轮询读取）=====
-_PROGRESS_FILE = os.path.join(_server_dir, "data", "startup_progress.json")
+# D1 重构：进度文件迁移到项目根 data/ 目录（与 config.DATA_DIR 一致）
+# 注意：此处 config 尚未导入，路径需手动计算（PROJECT_ROOT = dirname(server_dir)）
+_PROGRESS_FILE = os.path.join(os.path.dirname(_server_dir), "data", "startup_progress.json")
 
 def _report_startup(phase: str, progress: int, text: str):
     """写入启动进度文件，供 Go Launcher 轮询读取"""
@@ -348,8 +350,9 @@ except ImportError:
 kb = get_knowledge_base()
 kb._model_manager = mgr
 # Patch3: 使用 ExtensionRegistry 检测文库扩展安装状态（正规流程）
-from extensions import ExtensionRegistry
-_ext_registry = ExtensionRegistry(os.path.join(ROOT_DIR, "extensions"))
+from core.extension_manager import ExtensionRegistry
+from config import EXTENSIONS_DIR
+_ext_registry = ExtensionRegistry(EXTENSIONS_DIR)
 _kb_installed = _ext_registry.is_installed("knowledge")
 
 # Patch3: TaggingScheduler 全局实例

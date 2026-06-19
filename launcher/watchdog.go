@@ -65,7 +65,7 @@ func startWatchdog(
 ) {
 	exePath, _ := os.Executable()
 	appDir := filepath.Dir(exePath)
-	logPath := filepath.Join(appDir, "server", "data", "logs", "launcher.log")
+	logPath := filepath.Join(appDir, "data", "logs", "launcher.log")
 
 	wd := &Watchdog{
 		cfg:           cfg,

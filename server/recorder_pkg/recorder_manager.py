@@ -77,7 +77,8 @@ class RecorderManager:
 
     def __init__(self, data_dir: str = None):
         if data_dir is None:
-            data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "recordings")
+            from config import RECORDER_DATA_DIR
+            data_dir = RECORDER_DATA_DIR  # D1 重构：C:\Sidemate\data\recorder
         self.data_dir = data_dir
         self.chunks_dir = os.path.join(data_dir, "chunks")
         self.audio_dir = os.path.join(data_dir, "audio")
@@ -141,14 +142,14 @@ class RecorderManager:
     @staticmethod
     def _get_extensions_dir() -> str:
         """获取扩展注册目录（基于项目根目录）"""
-        pkg_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(os.path.dirname(pkg_dir), "extensions")
+        from config import EXTENSIONS_DIR
+        return EXTENSIONS_DIR
 
     @staticmethod
     def _is_recorder_extension_installed() -> bool:
         """检查纪要扩展是否已安装"""
         try:
-            from extensions import ExtensionRegistry
+            from core.extension_manager import ExtensionRegistry
             registry = ExtensionRegistry(RecorderManager._get_extensions_dir())
             return registry.is_installed("recorder")
         except Exception:
@@ -158,9 +159,9 @@ class RecorderManager:
     def _get_whisper_model_path() -> str:
         """从扩展注册表获取 Whisper 模型路径"""
         try:
-            from extensions import ExtensionRegistry
-            from config import ROOT_DIR
-            registry = ExtensionRegistry(os.path.join(ROOT_DIR, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            from config import ROOT_DIR, EXTENSIONS_DIR
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             registered_path = registry.get_model_path("recorder", "whisper")
             if registered_path:
                 return os.path.join(ROOT_DIR, registered_path)

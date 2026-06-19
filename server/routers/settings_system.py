@@ -497,17 +497,17 @@ def api_resource_info():
     kb_extension_installed = False
     recorder_installed = False
     try:
-        from extensions.registry import ExtensionRegistry
-        from config import ROOT_DIR
-        _ext_dir = os.path.join(ROOT_DIR, "extensions")
+        from core.extension_manager import ExtensionRegistry
+        from config import EXTENSIONS_DIR
+        _ext_dir = EXTENSIONS_DIR
         _registry = ExtensionRegistry(_ext_dir)
         kb_extension_installed = _registry.is_installed("knowledge")
         recorder_installed = _registry.is_installed("recorder")
     except Exception:
         # fallback: 文件存在性检测
         try:
-            from config import ROOT_DIR
-            _ext_dir = os.path.join(ROOT_DIR, "extensions")
+            from config import EXTENSIONS_DIR
+            _ext_dir = EXTENSIONS_DIR
             kb_extension_installed = os.path.exists(os.path.join(_ext_dir, "knowledge.json"))
             recorder_installed = os.path.exists(os.path.join(_ext_dir, "recorder.json"))
         except Exception:
@@ -601,11 +601,10 @@ def api_onboard_status():
     前端据此判断是否显示首次引导流程。
     """
     import os
-    from extensions import ExtensionRegistry
-    from config import get as cfg_get, DATA_DIR
+    from core.extension_manager import ExtensionRegistry
+    from config import get as cfg_get, DATA_DIR, EXTENSIONS_DIR
 
-    ext_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extensions")
-    registry = ExtensionRegistry(ext_dir)
+    registry = ExtensionRegistry(EXTENSIONS_DIR)
 
     # 检查 .onboard_done 标记
     onboard_marker = os.path.join(DATA_DIR, ".onboard_done")

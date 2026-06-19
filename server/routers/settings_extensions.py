@@ -75,6 +75,7 @@ def _cleanup_old_tasks():
 
 def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
     """后台线程：校验 → 解压 → 安装 → 加载"""
+    from config import EXTENSIONS_DIR
     info = _install_tasks[task_id]
     q = info["queue"]
 
@@ -193,8 +194,8 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
                     log.warning("[EXT] 无 wheels 目录，跳过依赖安装（依赖应由基础包提供）")
 
             progress(80, "注册文库扩展...")
-            from extensions.registry import ExtensionRegistry
-            registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             registry.register("knowledge", {
                 "id": "knowledge",
                 "version": manifest.get("version", "1.0.0"),
@@ -277,8 +278,8 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
                     log.warning("[EXT] 无 wheels 目录，跳过依赖安装（依赖应由基础包提供）")
 
             progress(80, "注册纪要扩展...")
-            from extensions.registry import ExtensionRegistry
-            registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             registry.register("recorder", {
                 "id": "recorder",
                 "version": manifest.get("version", "1.0.0"),
@@ -666,8 +667,8 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
             mgr._scan_models()
 
             # 注册 LLM 到 ExtensionRegistry（修复重启后 is_installed("llm") 返回 False）
-            from extensions.registry import ExtensionRegistry
-            registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             registry.register("llm", {
                 "id": "llm",
                 "version": manifest.get("version", "1.0.0"),
@@ -720,7 +721,8 @@ async def api_extensions_upload(file: UploadFile = File(...)):
     # 接收文件到临时目录
     content = await file.read()
     _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    os.makedirs(os.path.join(_project_dir, "extensions"), exist_ok=True)
+    from config import EXTENSIONS_DIR
+    os.makedirs(EXTENSIONS_DIR, exist_ok=True)
 
     import tempfile
     tmp_dir = tempfile.mkdtemp(prefix="ext_install_")
@@ -778,13 +780,14 @@ def api_extensions_install_progress(task_id: str):
 @router.get("/api/extensions/list")
 def api_extensions_list():
     """已安装扩展列表（含 type 字段，同时兼容新旧注册方式）"""
+    from config import EXTENSIONS_DIR
     _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     extensions = []
 
     # 新方式：ExtensionRegistry 注册信息
     try:
-        from extensions.registry import ExtensionRegistry
-        registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+        from core.extension_manager import ExtensionRegistry
+        registry = ExtensionRegistry(EXTENSIONS_DIR)
         for ext_info in registry.list_installed():
             ext_id = ext_info.get("id", "unknown")
             extensions.append({
@@ -803,6 +806,7 @@ def api_extensions_list():
 @router.delete("/api/extensions/uninstall/{ext_type}/{ext_name}")
 async def api_extensions_uninstall(ext_type: str, ext_name: str):
     """通用卸载扩展"""
+    from config import EXTENSIONS_DIR
     _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     if ext_type == "knowledge":
@@ -816,8 +820,8 @@ async def api_extensions_uninstall(ext_type: str, ext_name: str):
                 shutil.rmtree(model_dir)
         # 通过 ExtensionRegistry 注销
         try:
-            from extensions.registry import ExtensionRegistry
-            registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             registry.unregister("knowledge")
         except Exception as reg_err:
             log.warning("[EXT] 文库注册注销失败: %s", str(reg_err)[:100])
@@ -834,8 +838,8 @@ async def api_extensions_uninstall(ext_type: str, ext_name: str):
             shutil.rmtree(whisper_model_dir)
         # 通过 ExtensionRegistry 注销
         try:
-            from extensions.registry import ExtensionRegistry
-            registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             registry.unregister("recorder")
         except Exception as reg_err:
             log.warning("[EXT] 纪要注册注销失败: %s", str(reg_err)[:100])
@@ -855,8 +859,8 @@ async def api_extensions_uninstall(ext_type: str, ext_name: str):
             log.info("[EXT] 已删除 LLM manifest: %s", manifest_dir)
         # 通过 ExtensionRegistry 注销
         try:
-            from extensions.registry import ExtensionRegistry
-            registry = ExtensionRegistry(os.path.join(_project_dir, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             registry.unregister("llm")
         except Exception as reg_err:
             log.warning("[EXT] LLM 注册注销失败: %s", str(reg_err)[:100])

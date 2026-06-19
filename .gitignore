@@ -10,14 +10,8 @@ ollama.exe
 Sidemate.exe
 
 # ====== 用户数据（运行时生成）======
-# 主数据目录
-server/data/
-# KB 知识库数据
-server/knowledge/data/
-# 录音数据
-server/recorder_pkg/data/
-# 用户配置
-server/settings.json
+# 统一数据目录（D1 重构后，所有用户数据在项目根 data/ 下）
+data/
 
 # ====== Python 缓存 ======
 __pycache__/

@@ -143,7 +143,7 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                             if chunk.doc_id == file_path and chunk.text:
                                 _doc_texts.append(chunk.text)
                         if _doc_texts:
-                            from files.file_extractor import calc_file_budget, smart_extract
+                            from knowledge.file_extractor import calc_file_budget, smart_extract
                             _full_text = "\n\n".join(_doc_texts)
                             _hist_chars = sum(
                                 len(m.get("content", "")) for m in history_raw

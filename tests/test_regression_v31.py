@@ -16,9 +16,11 @@ import sys, os, json, shutil
 
 # 设置环境
 sys.path.insert(0, 'C:/Sidemate/server')
-os.chdir('C:/Sidemate/server')
+# D1 重构后：chdir 项目根（数据在 data/），但代码相对路径需要 server/
+SERVER_DIR = 'C:/Sidemate/server'
+os.chdir('C:/Sidemate')
 
-# 关键路径
+# 关键路径（D1 重构后数据在项目根 data/）
 TEST_CHAT_ID = '_test_v31_regression'
 TEST_CHAT_DIR = os.path.join('data', 'chats', TEST_CHAT_ID)
 TEST_WORKSPACE = os.path.join(TEST_CHAT_DIR, 'workspace')
@@ -296,7 +298,7 @@ def test_static_review_bugs():
         check("BUG#1 已修复：_summarize_tool_result 含 edit_workspace", True)
 
     # Bug 2: _status_phase 不识别 workspace_appended/workspace_edited
-    with open('pipelines/cloud_pipeline.py', 'r', encoding='utf-8') as f:
+    with open(os.path.join(SERVER_DIR, 'pipelines/cloud_pipeline.py'), 'r', encoding='utf-8') as f:
         cp_src = f.read()
     has_appended_phase = 'workspace_appended' in cp_src
     has_edited_phase = 'workspace_edited' in cp_src
@@ -306,7 +308,7 @@ def test_static_review_bugs():
           has_edited_phase, "缺失则 edit 不显示 done 状态" if not has_edited_phase else "")
 
     # Bug 3: 前端 chat.js 缺 workspace_appended/workspace_edited case
-    with open('static/js/chat.js', 'r', encoding='utf-8') as f:
+    with open(os.path.join(SERVER_DIR, 'static/js/chat.js'), 'r', encoding='utf-8') as f:
         js_src = f.read()
     js_has_appended = "workspace_appended" in js_src or "workspace_appending" in js_src
     js_has_edited = "workspace_edited" in js_src or "workspace_editing" in js_src
@@ -324,7 +326,7 @@ def test_static_review_bugs():
 
     # Bug 5: _inject_session_context 应已删除 _collect_assets_block 调用
     # 检查方式：函数定义可以保留（兼容历史数据），但 _inject_session_context 函数体不应再调用
-    with open('core/agent_tools.py', 'r', encoding='utf-8') as f:
+    with open(os.path.join(SERVER_DIR, 'core/agent_tools.py'), 'r', encoding='utf-8') as f:
         at_src = f.read()
     # 提取 _inject_session_context 函数体（从 def 到下一个顶层 def）
     import re as _re

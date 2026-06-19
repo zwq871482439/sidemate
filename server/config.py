@@ -25,7 +25,8 @@ from typing import Any, Dict
 log = logging.getLogger(__name__)
 
 # ===== 工作区根目录 =====
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))           # C:\Sidemate\server
+PROJECT_ROOT = os.path.dirname(ROOT_DIR)                         # C:\Sidemate\（项目根）
 
 # .sidemate 包签名密钥（HMAC-SHA256）
 # 【安全级别说明】当前 HMAC 仅用作包完整性校验（防传输损坏），非安全签名。
@@ -34,7 +35,8 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 _SIDEMATE_HMAC_KEY_DEFAULT = "zhuoban-sidemate-default-key-v1"
 
 # ===== 运行时目录（统一管理，避免散落各处） =====
-DATA_DIR = os.path.join(ROOT_DIR, "data")
+# D1 重构：DATA_DIR 从 server/data 提升到项目根 data/
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")                    # C:\Sidemate\data
 CACHE_DIR = os.path.join(DATA_DIR, "cache")       # P4: 缓存根目录
 CHAT_DIR = os.path.join(DATA_DIR, "chats")
 LOG_DIR = os.path.join(DATA_DIR, "logs")
@@ -43,15 +45,20 @@ FILES_DIR = os.path.join(CACHE_DIR, "files")       # P4: data/files → cache/fi
 DOCS_DIR = os.path.join(CACHE_DIR, "docs")         # P4: 新增
 KBSESSION_DIR = os.path.join(DATA_DIR, "kbsession")
 BACKUP_DIR = os.path.join(DATA_DIR, "backup")       # P4: 依赖备份
+# D1 重构新增：数据子目录显式定义
+KB_DATA_DIR = os.path.join(DATA_DIR, "kb")                       # 知识库向量数据
+EXTENSIONS_DIR = os.path.join(DATA_DIR, "extensions")            # 扩展注册 JSON
+RECORDER_DATA_DIR = os.path.join(DATA_DIR, "recorder")           # 录音数据
 WORKSPACE_DIR = ROOT_DIR  # 保持向后兼容
 
 def ensure_dirs():
     """确保所有运行时目录存在"""
-    for d in [DATA_DIR, CHAT_DIR, LOG_DIR, CACHE_DIR, UPLOAD_DIR, FILES_DIR, DOCS_DIR, KBSESSION_DIR, BACKUP_DIR]:
+    for d in [DATA_DIR, CHAT_DIR, LOG_DIR, CACHE_DIR, UPLOAD_DIR, FILES_DIR, DOCS_DIR,
+              KBSESSION_DIR, BACKUP_DIR, KB_DATA_DIR, EXTENSIONS_DIR, RECORDER_DATA_DIR]:
         os.makedirs(d, exist_ok=True)
 
-# 配置文件路径
-_CONFIG_FILE = os.path.join(ROOT_DIR, "settings.json")
+# 配置文件路径（D1 重构：从 ROOT_DIR 提升到 DATA_DIR）
+_CONFIG_FILE = os.path.join(DATA_DIR, "settings.json")
 
 # ===== 默认配置（唯一真相源）=====
 DEFAULTS = {
@@ -63,8 +70,8 @@ DEFAULTS = {
     # 确认机制: 读取外部文件时是否需要用户确认
     "confirm_external_read": True,
 
-    # ----- 扩展与模型目录（运行时解析为 ROOT_DIR 下的相对路径）-----
-    "extensions_dir": "",                 # 空=ROOT_DIR/extensions（运行时解析）
+    # ----- 扩展与模型目录（运行时解析）-----
+    "extensions_dir": "",                 # 空=DATA_DIR/extensions（D1 重构后）
     "models_dir": "",                     # 空=ROOT_DIR/models（运行时解析）
 
     # ----- 文件操作限制 -----

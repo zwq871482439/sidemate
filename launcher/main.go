@@ -527,7 +527,7 @@ func main() {
 	// Windows GUI 模式下无控制台，将 launcher 日志写到文件
 	exePath, _ := os.Executable()
 	appDir := filepath.Dir(exePath)
-	launcherLogFile := filepath.Join(appDir, "server", "data", "logs", "launcher.log")
+	launcherLogFile := filepath.Join(appDir, "data", "logs", "launcher.log")
 	os.MkdirAll(filepath.Dir(launcherLogFile), 0755)
 	if lf, err := os.OpenFile(launcherLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
 		log.SetOutput(lf)
@@ -610,7 +610,7 @@ func main() {
 			"OLLAMA_GPU_LAYERS=99",
 			"OLLAMA_GPU_OVERHEAD=2147483648",
 		)
-		ollamaLogPath := filepath.Join(appDir, "server", "data", "logs", "ollama-stdout.log")
+		ollamaLogPath := filepath.Join(appDir, "data", "logs", "ollama-stdout.log")
 		if of, err := os.OpenFile(ollamaLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
 			cmd.Stdout = of
 			cmd.Stderr = of
@@ -782,7 +782,7 @@ func main() {
 			"LOCAL_AI_HOST=127.0.0.1",
 			fmt.Sprintf("LOCAL_AI_PORT=%d", cfg.ServerPort),
 		)
-		pythonLogPath := filepath.Join(serverDir, "data", "logs", "python-stdout.log")
+		pythonLogPath := filepath.Join(appDir, "data", "logs", "python-stdout.log")
 		if pf, err := os.OpenFile(pythonLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
 			cmd.Stdout = pf
 			cmd.Stderr = pf
@@ -811,15 +811,15 @@ func main() {
 	log.Println("[Launcher] 等待 FastAPI 就绪...")
 	UpdateSplash(splash, 1, StepRunning, "加载依赖...")
 	// 清理上次残留的进度文件
-	_ = os.Remove(filepath.Join(appDir, "server", "data", "startup_progress.json"))
+	_ = os.Remove(filepath.Join(appDir, "data", "startup_progress.json"))
 	serverReady := false
 	serverStart := time.Now()
 
 	waitForServerWithProgress := func(host string, port int, timeout time.Duration) bool {
 		url := fmt.Sprintf("http://%s:%d/api/status", host, port)
 		deadline := time.Now().Add(timeout)
-		// 进度文件路径：server/data/startup_progress.json
-		progressFile := filepath.Join(appDir, "server", "data", "startup_progress.json")
+		// 进度文件路径：data/startup_progress.json
+		progressFile := filepath.Join(appDir, "data", "startup_progress.json")
 		lastReportedText := ""
 
 		for time.Now().Before(deadline) {
@@ -896,7 +896,7 @@ func main() {
 			UpdateSplashDuration(splash, 1, elapsed)
 			serverReady = true
 			// 清理进度文件（不再需要）
-			_ = os.Remove(filepath.Join(appDir, "server", "data", "startup_progress.json"))
+			_ = os.Remove(filepath.Join(appDir, "data", "startup_progress.json"))
 			log.Printf("[Launcher] ✅ FastAPI 就绪 (%.1fs)", elapsed.Seconds())
 			break
 		}

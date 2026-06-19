@@ -48,8 +48,8 @@ log = get_log()
 
 def _get_extensions_dir() -> str:
     """获取扩展注册目录"""
-    from config import ROOT_DIR
-    return os.path.join(ROOT_DIR, "extensions")
+    from config import EXTENSIONS_DIR
+    return EXTENSIONS_DIR
 
 
 def _check_recorder_extension() -> Optional[JSONResponse]:
@@ -59,7 +59,7 @@ def _check_recorder_extension() -> Optional[JSONResponse]:
         None 如果已安装，否则返回 JSONResponse 错误
     """
     try:
-        from extensions import ExtensionRegistry
+        from core.extension_manager import ExtensionRegistry
         registry = ExtensionRegistry(_get_extensions_dir())
         if not registry.is_installed("recorder"):
             return JSONResponse(

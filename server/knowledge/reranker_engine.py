@@ -45,9 +45,9 @@ class RerankerEngine:
         # 尝试从扩展注册表获取模型路径
         model_path = None
         try:
-            from extensions import ExtensionRegistry
-            from config import ROOT_DIR
-            registry = ExtensionRegistry(os.path.join(ROOT_DIR, "extensions"))
+            from core.extension_manager import ExtensionRegistry
+            from config import ROOT_DIR, EXTENSIONS_DIR
+            registry = ExtensionRegistry(EXTENSIONS_DIR)
             if registry.is_installed("knowledge"):
                 registered_path = registry.get_model_path("knowledge", "reranker")
                 if registered_path:
