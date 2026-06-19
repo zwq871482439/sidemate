@@ -529,7 +529,7 @@ def api_resource_info():
             "llm": {"name": llm_name, "mb": llm_mb,
                     "loaded": llm_name is not None,
                     "installed": bool(mgr.model_configs)},
-            "embedder": {"name": "bge-base-zh-v1.5", "mb": embedder_mb,
+            "embedder": {"name": getattr(kb.embedder, 'model_name', 'unknown') if (kb and kb.embedder) else '未加载', "mb": embedder_mb,
                          "loaded": kb_active, "installed": kb_extension_installed},
             "reranker": {"name": "bge-reranker-base", "mb": reranker_mb,
                          "loaded": kb_reranker_loaded, "installed": kb_extension_installed},

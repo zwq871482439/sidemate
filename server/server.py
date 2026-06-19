@@ -102,12 +102,14 @@ FULL_VERSION = CONFIG_VERSION  # "0.9.4"
 
 # ===== 日志 =====
 _LOG_LEVEL = getattr(logging, os.environ.get("LOCAL_AI_LOG_LEVEL", "INFO").upper(), logging.INFO)
+# P5 审计修复 P2-14: 日志轮转（maxBytes=10MB, backupCount=5）
+from logging.handlers import RotatingFileHandler
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 logging.basicConfig(
     level=_LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=5, encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
@@ -306,6 +308,7 @@ async def _lifespan(app):
     if _batch_queue is not None:
         try:
             _batch_queue.stop_worker()
+            _batch_queue.close()  # P5 审计修复：关闭 SQLite 连接 + WAL checkpoint
             log.info("[SHUTDOWN] BatchQueue worker 已停止")
         except Exception as e:
             log.warning("[SHUTDOWN] BatchQueue 停止失败: %s" % str(e)[:80])

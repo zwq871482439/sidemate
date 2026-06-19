@@ -156,9 +156,16 @@ class EmbeddingEngine:
             self._model_path = model_path
             self._mode = "bge"
             self._sparse_available = False
-            # sentence-transformers >= 5.0 重命名了此方法
-            self.vector_dim = getattr(self._model, 'get_embedding_dimension',
-                                      self._model.get_sentence_embedding_dimension)()
+            # P5 审计修复 P0-4: getattr 陷阱修复 — sentence-transformers >= 5.0 重命名了方法
+            try:
+                if hasattr(self._model, 'get_embedding_dimension'):
+                    self.vector_dim = self._model.get_embedding_dimension()
+                elif hasattr(self._model, 'get_sentence_embedding_dimension'):
+                    self.vector_dim = self._model.get_sentence_embedding_dimension()
+                else:
+                    self.vector_dim = 1024  # bge-m3 默认维度
+            except Exception:
+                self.vector_dim = 1024
             log.info("[KB] SentenceTransformer 加载成功 (dim=%d, sparse=unavailable)", self.vector_dim)
             return True
         except Exception as e:

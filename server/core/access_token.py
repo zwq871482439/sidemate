@@ -87,6 +87,9 @@ class AccessTokenManager:
     def _create_token(self, doc_id: str, level: str, ttl: float = None) -> AccessToken:
         """创建令牌并存入缓存
 
+        P5 审计修复 P2-13: 每个 doc_id 最多保留 MAX_TOKENS_PER_DOC 个令牌，
+        超限时 LRU 淘汰最旧的令牌。
+
         Args:
             doc_id: 绑定的文档 ID
             level: 令牌级别 "full" | "search"
@@ -98,6 +101,16 @@ class AccessTokenManager:
         now = time.time()
         effective_ttl = self._default_ttl if ttl is None else ttl
         expires_at = now + effective_ttl if effective_ttl > 0 else 0
+
+        # P2-13: LRU 淘汰 — 每个 doc_id 最多 MAX_TOKENS_PER_DOC 个令牌
+        MAX_TOKENS_PER_DOC = 1000
+        doc_token_set = self._doc_tokens.setdefault(doc_id, set())
+        if len(doc_token_set) >= MAX_TOKENS_PER_DOC:
+            # 淘汰最旧的令牌（按 created_at 排序）
+            oldest_token = min(doc_token_set,
+                               key=lambda t: self._tokens_cache[t].created_at
+                               if t in self._tokens_cache else float('inf'))
+            self._remove_token(oldest_token)
 
         token_str = self._generate_token_string()
         access_token = AccessToken(
@@ -230,7 +243,10 @@ class AccessTokenManager:
                             is_private_map: Dict[str, bool] = None) -> List[str]:
         """过滤私密文档，返回可访问的文档 ID 列表
 
-        根据令牌级别决定哪些私密文档对调用者可见。
+        Patch5 审计修复 P1-9: 缩小令牌作用域
+          - full 令牌：只对绑定的 doc_id 放行私密文档，其他私密仍屏蔽
+          - search 令牌：所有私密都屏蔽（search 令牌只能 get_context，不能读私密全文）
+          - 无令牌/令牌无效：所有私密都屏蔽
 
         Args:
             doc_ids: 候选文档 ID 列表
@@ -253,10 +269,13 @@ class AccessTokenManager:
                 # 非私密文档：始终可访问
                 accessible.append(doc_id)
             else:
-                # 私密文档：根据令牌级别决定
-                if is_valid and level in ("full", "search"):
-                    accessible.append(doc_id)
-                # level == "none" 或无有效令牌 → 跳过
+                # 私密文档：只有 full 令牌绑定到此 doc_id 时才放行
+                if is_valid and level == "full":
+                    # 检查令牌是否绑定到此 doc_id
+                    access_token_obj = self._tokens_cache.get(token)
+                    if access_token_obj and access_token_obj.doc_id == doc_id:
+                        accessible.append(doc_id)
+                # level == "search" 或无有效令牌 → 跳过
 
         return accessible
 

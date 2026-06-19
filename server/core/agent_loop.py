@@ -297,9 +297,15 @@ class AgentLoop:
                 # CPU 密集或 IO 阻塞操作（KB 检索的 embedding 计算、网页抓取），
                 # 包装到线程池执行，避免阻塞事件循环。
                 from core.thread_pool import get_thread_pool
-                result = get_thread_pool().run_blocking(
-                    self._execute_tool, tool_name, args, stats
-                )
+                # P5 审计修复 P0-5: 捕获线程池工具执行异常
+                try:
+                    result = get_thread_pool().run_blocking(
+                        self._execute_tool, tool_name, args, stats
+                    )
+                except Exception as e:
+                    log.error("[AGENT] 工具执行异常 %s: %s", tool_name, str(e)[:200])
+                    result = {"error": "工具执行失败: " + str(e)[:200], "tool": tool_name,
+                              "success": False}
 
                 # Patch4 修复 3：累计工具调用次数（用于子类硬限制）
                 tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1

@@ -7,6 +7,7 @@ search() 主入口、get_context() 上下文拼接。
 从 knowledge_base.py 拆分而来。
 """
 import math
+import time
 import logging
 import numpy as np
 from typing import List, Dict, Tuple
@@ -621,6 +622,20 @@ class _KBSearchMixin:
                     if doc is not None:
                         doc.hit_count = getattr(doc, "hit_count", 0) + 1
 
+                # Patch5 审计修复 P0-3: hit_count 批量延迟持久化
+                _dirty = getattr(self, '_hit_count_dirty', 0) + len(hit_doc_ids)
+                _last_flush = getattr(self, '_last_hit_flush', 0.0)
+                _now = time.time()
+                if _dirty >= 10 or (_now - _last_flush) > 60:
+                    try:
+                        self._save_meta()
+                        self._hit_count_dirty = 0
+                        self._last_hit_flush = _now
+                    except Exception as e:
+                        log.warning("[KB] hit_count 持久化失败: %s", e)
+                else:
+                    self._hit_count_dirty = _dirty
+
                 log.info("[KB] Dense+Sparse+Reranker+MMR: %d条, 来源=%s",
                          len(merged), [r.get("source_label", "")[:25] for r in merged[:3]])
                 return merged
@@ -693,6 +708,20 @@ class _KBSearchMixin:
                 doc = self.documents.get(hit_doc_id)
                 if doc is not None:
                     doc.hit_count = getattr(doc, "hit_count", 0) + 1
+
+            # Patch5 审计修复 P0-3: hit_count 批量延迟持久化
+            _dirty = getattr(self, '_hit_count_dirty', 0) + len(hit_doc_ids)
+            _last_flush = getattr(self, '_last_hit_flush', 0.0)
+            _now = time.time()
+            if _dirty >= 10 or (_now - _last_flush) > 60:
+                try:
+                    self._save_meta()
+                    self._hit_count_dirty = 0
+                    self._last_hit_flush = _now
+                except Exception as e:
+                    log.warning("[KB] hit_count 持久化失败: %s", e)
+            else:
+                self._hit_count_dirty = _dirty
 
             if not merged:
                 log.warning("[KB] search() 无结果: query=%s", query[:50])

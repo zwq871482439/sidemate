@@ -39,3 +39,66 @@ def migrate_data_layout(data_dir: str):
                     shutil.move(src, dst)
             shutil.rmtree(old_path, ignore_errors=True)
             log.info("[DATA-MIGRATE] 合并 %s → %s（新目录已存在）", old_name, new_rel)
+
+    # === P5 D1 新增：从旧路径迁移 ===
+    server_dir = os.path.dirname(data_dir)  # data_dir=C:\Sidemate\data, server_dir=C:\Sidemate\server
+
+    # 1. settings.json: server/settings.json → data/settings.json
+    old_settings = os.path.join(server_dir, "settings.json")
+    new_settings = os.path.join(data_dir, "settings.json")
+    if os.path.isfile(old_settings) and not os.path.isfile(new_settings):
+        shutil.move(old_settings, new_settings)
+        log.info("[DATA-MIGRATE] settings.json → data/")
+
+    # 2. kb 数据: server/knowledge/data/kb/ → data/kb/
+    old_kb = os.path.join(server_dir, "knowledge", "data", "kb")
+    new_kb = os.path.join(data_dir, "kb")
+    if os.path.isdir(old_kb) and not os.path.isdir(new_kb):
+        shutil.move(old_kb, new_kb)
+        log.info("[DATA-MIGRATE] kb/ → data/kb/")
+    elif os.path.isdir(old_kb) and os.path.isdir(new_kb):
+        for f in os.listdir(old_kb):
+            src = os.path.join(old_kb, f)
+            dst = os.path.join(new_kb, f)
+            if not os.path.exists(dst):
+                shutil.move(src, dst)
+        shutil.rmtree(old_kb, ignore_errors=True)
+        log.info("[DATA-MIGRATE] kb/ 合并到 data/kb/")
+
+    # 3. 旧 server/data/ 残留
+    old_data = os.path.join(server_dir, "data")
+    if os.path.isdir(old_data):
+        for item in os.listdir(old_data):
+            src = os.path.join(old_data, item)
+            dst = os.path.join(data_dir, item)
+            if os.path.exists(dst):
+                if os.path.isdir(src) and os.path.isdir(dst):
+                    for f in os.listdir(src):
+                        s = os.path.join(src, f)
+                        d = os.path.join(dst, f)
+                        if not os.path.exists(d):
+                            shutil.move(s, d)
+            else:
+                shutil.move(src, dst)
+        shutil.rmtree(old_data, ignore_errors=True)
+        log.info("[DATA-MIGRATE] server/data/ → data/")
+
+    # 4. 录音数据
+    old_rec = os.path.join(server_dir, "recorder_pkg", "data", "recordings")
+    new_rec = os.path.join(data_dir, "recorder")
+    if os.path.isdir(old_rec) and not os.path.isdir(new_rec):
+        shutil.move(old_rec, new_rec)
+        log.info("[DATA-MIGRATE] recordings/ → data/recorder/")
+
+    # 5. 扩展注册 JSON
+    old_ext = os.path.join(server_dir, "extensions")
+    new_ext = os.path.join(data_dir, "extensions")
+    if os.path.isdir(old_ext):
+        os.makedirs(new_ext, exist_ok=True)
+        for f in os.listdir(old_ext):
+            if f.endswith(".json"):
+                src = os.path.join(old_ext, f)
+                dst = os.path.join(new_ext, f)
+                if not os.path.exists(dst):
+                    shutil.move(src, dst)
+        log.info("[DATA-MIGRATE] extensions/*.json → data/extensions/")

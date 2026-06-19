@@ -84,6 +84,10 @@ class _KBOpsMixin:
         # 格式：{chunk_id: {token_id: weight}}
         self._sparse_index: Dict[str, Dict[int, float]] = {}
 
+        # Patch5 审计修复 P0-3: hit_count 批量延迟写入计数器
+        self._hit_count_dirty = 0
+        self._last_hit_flush = 0.0
+
         # 加载已有数据
         self._load_meta()
         # 初始化 BM25 索引（从已有 chunks 构建）

@@ -362,18 +362,18 @@ def test_token_filter_private_docs():
         check("无令牌：私密文档被过滤", "private_1" not in result and "private_2" not in result)
         check("无令牌：公开文档可见", "public_1" in result and "public_2" in result)
 
-        # search 令牌：私密文档可见
+        # P5 审计修复 P1-9: search 令牌不放行任何私密文档（只能 get_context）
         token_s = mgr.generate_search_token("private_1")
         result_s = mgr.filter_private_docs(doc_ids, token_s, is_private_map)
-        check("search 令牌：私密文档可见",
-              "private_1" in result_s and "private_2" in result_s)
+        check("search 令牌：私密文档不可见",
+              "private_1" not in result_s and "private_2" not in result_s)
 
-        # full 令牌：私密文档可见
+        # P5 审计修复 P1-9: full 令牌只对绑定的 doc_id 放行私密
         mgr.clear_all()
         token_f = mgr.generate_full_token("private_1")
         result_f = mgr.filter_private_docs(doc_ids, token_f, is_private_map)
-        check("full 令牌：私密文档可见",
-              "private_1" in result_f and "private_2" in result_f)
+        check("full 令牌：仅绑定私密文档可见",
+              "private_1" in result_f and "private_2" not in result_f)
 
         # is_private_map=None：全部非私密
         mgr.clear_all()

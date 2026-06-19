@@ -380,7 +380,7 @@ def api_kb_module_status():
     """KB 模块安装状态（简化二态：installed + ready）"""
     kb = get_kb()
     installed = _is_module_installed()
-    ready = installed and kb._embedder_loaded and kb.embedder.mode == "bge"
+    ready = installed and kb._embedder_loaded and kb.embedder.mode in ("bge", "flag_model")
 
     result = {
         "installed": installed,
@@ -1512,7 +1512,9 @@ async def api_kb_set_privacy(doc_id: str, request: Request):
         return JSONResponse({"error": "文档不存在"}, status_code=404)
 
     body = await request.json()
-    is_private = bool(body.get("is_private", False))
+    # P5 审计修复 P1-8: batch_privacy bool 陷阱 — JSON 字符串 "false"/"0" 会被 bool() 误判为 True
+    _is_private_raw = body.get("is_private", False)
+    is_private = _is_private_raw if isinstance(_is_private_raw, bool) else (str(_is_private_raw).lower() == "true")
 
     # 设置 is_private 并持久化
     doc.is_private = is_private
@@ -1622,7 +1624,9 @@ async def api_kb_batch_privacy(request: Request):
     kb = get_kb()
     body = await request.json()
     doc_ids = body.get("doc_ids", [])
-    is_private = bool(body.get("is_private", False))
+    # P5 审计修复 P1-8: batch_privacy bool 陷阱
+    _is_private_raw = body.get("is_private", False)
+    is_private = _is_private_raw if isinstance(_is_private_raw, bool) else (str(_is_private_raw).lower() == "true")
     if not doc_ids:
         return JSONResponse({"error": "doc_ids 不能为空"}, status_code=400)
     if len(doc_ids) > _BATCH_MAX_ITEMS:

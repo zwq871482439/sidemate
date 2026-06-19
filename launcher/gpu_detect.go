@@ -5,6 +5,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -179,6 +181,13 @@ func setOllamaBackend(gpu GPUInfo) string {
 	// 设置环境变量，供后续 ollama serve 启动继承
 	// 注意：这里设置到当前进程环境，子进程（ollama）会继承
 	// 由调用方负责在 exec.Command 的 Env 中追加
+	os.Setenv("OLLAMA_LLM_LIBRARY", backend)
+	// P5 审计修复 P2-15: 验证设置成功
+	if actual := os.Getenv("OLLAMA_LLM_LIBRARY"); actual != backend {
+		log.Println("[GPU] WARN: OLLAMA_LLM_LIBRARY 设置失败，期望=" + backend + " 实际=" + actual)
+	} else {
+		log.Println("[GPU] OLLAMA_LLM_LIBRARY=" + backend)
+	}
 	return backend
 }
 

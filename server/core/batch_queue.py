@@ -104,7 +104,8 @@ class BatchQueue:
         self._initialized = False
 
         # worker 控制
-        self._worker_thread: Optional[threading.Thread] = None
+        self._worker_threads: List[threading.Thread] = []  # P2-12: 多 worker 支持
+        self._worker_thread: Optional[threading.Thread] = None  # 兼容旧引用
         self._worker_stop = threading.Event()
         self._kb_instance = None  # KnowledgeBase 引用
 
@@ -441,37 +442,65 @@ class BatchQueue:
 
     # ===== Worker 消费循环 =====
 
-    def start_worker(self, kb_instance) -> None:
+    def start_worker(self, kb_instance, worker_count: int = 2) -> None:
         """启动 worker 消费循环（在独立线程中运行）
 
-        worker 内部使用 ThreadPoolManager.submit() 提交每个文件的处理任务，
-        避免直接在事件循环中阻塞。
+        P5 审计修复 P2-12: 支持多 worker 并行消费。
+        get_pending() 已用 BEGIN IMMEDIATE 原子取任务，多 worker 天然安全。
 
         Args:
             kb_instance: KnowledgeBase 实例
+            worker_count: worker 线程数（默认 2）
         """
         self._kb_instance = kb_instance
         self._worker_stop.clear()
 
-        if self._worker_thread is not None and self._worker_thread.is_alive():
-            log.warning("[BATCH_QUEUE] worker 已在运行")
-            return
+        if self._worker_threads:
+            alive_count = sum(1 for t in self._worker_threads if t.is_alive())
+            if alive_count > 0:
+                log.warning("[BATCH_QUEUE] worker 已在运行 (%d 个)", alive_count)
+                return
 
-        self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
-        self._worker_thread.start()
-        log.info("[BATCH_QUEUE] worker 线程已启动")
+        self._worker_threads = []
+        for i in range(worker_count):
+            t = threading.Thread(target=self._worker_loop, name="batch-worker-" + str(i), daemon=True)
+            t.start()
+            self._worker_threads.append(t)
+        # 兼容旧引用
+        self._worker_thread = self._worker_threads[0] if self._worker_threads else None
+        log.info("[BATCH_QUEUE] %d 个 worker 线程已启动", len(self._worker_threads))
 
     def stop_worker(self, timeout: float = 5.0) -> None:
-        """优雅停止 worker
+        """优雅停止所有 worker
 
         Args:
             timeout: 等待超时时间（秒）
         """
         self._worker_stop.set()
-        if self._worker_thread is not None and self._worker_thread.is_alive():
-            self._worker_thread.join(timeout=timeout)
-            log.info("[BATCH_QUEUE] worker 线程已停止")
+        for t in self._worker_threads:
+            if t.is_alive():
+                t.join(timeout=timeout)
+        if self._worker_threads:
+            log.info("[BATCH_QUEUE] %d 个 worker 线程已停止", len(self._worker_threads))
+        self._worker_threads = []
         self._worker_thread = None
+
+    def close(self):
+        """关闭所有线程的 SQLite 连接（lifespan shutdown 时调用）
+
+        执行 WAL checkpoint 确保数据落盘，然后关闭线程局部连接。
+        """
+        try:
+            conn = getattr(self._local, 'conn', None)
+            if conn:
+                try:
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except Exception:
+                    pass
+                conn.close()
+                self._local.conn = None
+        except Exception as e:
+            log.warning("[BATCH_QUEUE] close() 异常: %s", e)
 
     def _worker_loop(self) -> None:
         """worker 消费循环：不断从队列取 pending 任务，在线程池中处理
@@ -595,9 +624,10 @@ class BatchQueue:
 
         finally:
             # 清理临时文件
+            # P5 审计修复 P1-10: 只删除单文件临时目录，避免并发误删共享目录
             try:
                 _tmp_dir = os.path.dirname(task.file_path)
-                if _tmp_dir and os.path.isdir(_tmp_dir) and "kb_upload" in _tmp_dir:
+                if _tmp_dir and os.path.isdir(_tmp_dir) and "kb_upload" in os.path.basename(_tmp_dir):
                     import shutil
                     shutil.rmtree(_tmp_dir, ignore_errors=True)
             except Exception:
@@ -625,9 +655,10 @@ class BatchQueue:
 # ===== 辅助函数 =====
 
 def _extract_file_text(file_path: str, file_type: str) -> str:
-    """从文件中提取文本（复用 kb.py 的解析逻辑）
+    """从文件中提取文本
 
-    支持：txt/md/csv, docx, xlsx, pdf
+    P5 审计修复 P2-11: 优先委托给 knowledge.file_extractor.extract_text() 统一逻辑，
+    如果 file_extractor 处理失败则降级到内部实现。
 
     Args:
         file_path: 文件路径
@@ -636,6 +667,16 @@ def _extract_file_text(file_path: str, file_type: str) -> str:
     Returns:
         提取的文本内容，失败返回空字符串
     """
+    # P2-11: 优先委托给 file_extractor 统一逻辑
+    try:
+        from knowledge.file_extractor import extract_text
+        text = extract_text(file_path)
+        if text and text.strip():
+            return text
+    except Exception as e:
+        log.debug("[BATCH_QUEUE] file_extractor 委托失败，降级内部实现: %s", str(e)[:80])
+
+    # 降级：内部实现（保留兼容性）
     try:
         if file_type in ("txt", "md", "csv"):
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -689,42 +730,6 @@ def _extract_file_text(file_path: str, file_type: str) -> str:
                     if page_text:
                         text += page_text + "\n\n"
             return text
-
-        elif file_type == "epub":
-            # B2: EPUB 电子书解析（委托给 file_extractor 统一逻辑）
-            try:
-                from knowledge.file_extractor import extract_text
-                return extract_text(file_path)
-            except Exception as e:
-                log.error("[BATCH_QUEUE] EPUB 解析失败: %s", str(e)[:200])
-                return ""
-
-        elif file_type in ("html", "htm"):
-            # B2: HTML 网页文件解析（委托给 file_extractor 统一逻辑）
-            try:
-                from knowledge.file_extractor import extract_text
-                return extract_text(file_path)
-            except Exception as e:
-                log.error("[BATCH_QUEUE] HTML 解析失败: %s", str(e)[:200])
-                return ""
-
-        elif file_type == "srt":
-            # B2: SRT 字幕文件解析（委托给 file_extractor 统一逻辑）
-            try:
-                from knowledge.file_extractor import extract_text
-                return extract_text(file_path)
-            except Exception as e:
-                log.error("[BATCH_QUEUE] SRT 解析失败: %s", str(e)[:200])
-                return ""
-
-        elif file_type == "rtf":
-            # B2: RTF 富文本解析（委托给 file_extractor 统一逻辑）
-            try:
-                from knowledge.file_extractor import extract_text
-                return extract_text(file_path)
-            except Exception as e:
-                log.error("[BATCH_QUEUE] RTF 解析失败: %s", str(e)[:200])
-                return ""
 
         else:
             log.warning("[BATCH_QUEUE] 不支持的文件格式: .%s", file_type)
