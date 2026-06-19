@@ -75,6 +75,16 @@ def extract_text(file_path: str) -> str:
         try:
             import fitz  # PyMuPDF
             doc = fitz.open(file_path)
+
+            # Patch4 v3.1 BUG#33：加密 PDF 检测
+            # fitz.open() 不抛异常，但 page.get_text() 返回空或触发崩溃
+            if doc.is_encrypted:
+                # 尝试用空密码解锁（很多 PDF 加密但允许空密码阅读）
+                if not doc.authenticate(""):
+                    doc.close()
+                    log.warning("PDF 加密且空密码无法解锁: %s" % file_path)
+                    return "[此 PDF 已加密，无法提取文本。请先用 PDF 工具解除密码保护后重新上传]"
+
             texts = []
             # Patch4 v3.1：100 → 1000，配合 bge-m3 长序列支持大文档
             max_pages = min(len(doc), 1000)
