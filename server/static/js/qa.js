@@ -467,12 +467,76 @@ async function kbUploadFile(f) {
         showToast(dupMsg, 'warning', 6000);
       }
       kbRefreshDocs();
+
+      // Patch5 G：订阅文档进度 SSE
+      if (data.doc_id) {
+        kbSubscribeProgress(data.doc_id, f.name);
+      }
     } else {
       showToast('上传失败: ' + (data.error || '未知错误'), 'error');
     }
   } catch (err) {
     showToast('上传失败: ' + err.message, 'error');
   }
+}
+
+// Patch5 G：订阅文档处理进度 SSE
+function kbSubscribeProgress(docId, filename) {
+  var apiBase = (typeof API !== 'undefined') ? API : '';
+  var url = apiBase + '/api/kb/progress/' + encodeURIComponent(docId);
+  var es;
+  try {
+    es = new EventSource(url);
+  } catch (e) {
+    console.warn('[KB] SSE 不支持，回退轮询', e);
+    return;
+  }
+  es.onmessage = function(ev) {
+    try {
+      var d = JSON.parse(ev.data);
+      // 阶段映射成中文文案
+      var phaseText = {
+        'subscribed': '准备中',
+        'chunking_done': '切块完成',
+        'embedding': '正在生成向量',
+        'done': '完成',
+        'error': '失败',
+        'timeout': '超时',
+        'unknown': '等待中'
+      }[d.phase] || d.phase;
+
+      var pct = Math.round((d.progress || 0) * 100);
+      var detail = '';
+      if (d.chunk_total) {
+        detail = ' · ' + (d.chunk_done || 0) + '/' + d.chunk_total + ' 块';
+      }
+      if (d.batch_total && d.batch_total > 1) {
+        detail += ' · 第 ' + (d.batch_idx || 0) + '/' + d.batch_total + ' 批';
+      }
+      // 显示在 toast 顶部，5s 不自动消失
+      if (typeof showToast === 'function') {
+        if (d.phase === 'done') {
+          showToast('✓ ' + (filename || '') + ' 处理完成' + detail, 'success', 3000);
+        } else if (d.phase === 'error') {
+          showToast('✗ ' + (filename || '') + ' 处理失败', 'error', 5000);
+        } else if (pct > 0 && pct < 100) {
+          showToast('⏳ ' + (filename || '') + ' · ' + phaseText + ' · ' + pct + '%' + detail, 'info', 2000);
+        }
+      }
+      if (d.phase === 'done' || d.phase === 'error' || d.phase === 'timeout') {
+        es.close();
+        kbRefreshDocs();
+      }
+    } catch (e) {
+      console.warn('[KB] SSE 解析失败', e);
+    }
+  };
+  es.onerror = function() {
+    // 服务端关闭连接或异常
+    try { es.close(); } catch (e) {}
+  };
+  // 兜底：60s 后强制关闭
+  setTimeout(function() { try { es.close(); } catch (e) {} }, 60000);
 }
 
 // --- 文档操作 ---

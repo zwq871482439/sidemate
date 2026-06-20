@@ -618,16 +618,22 @@ async function kbResolveDuplicate(docId, action) {
     var data = await resp.json();
     if (data.ok) {
       showToast(data.detail, 'success');
-      // 从弹窗中移除已处理的项
+      // 从弹窗中移除已处理的项（先 fadeout）
       var item = document.querySelector('.kb-dup-item[data-doc-id="' + docId + '"]');
-      if (item) item.remove();
-      // 如果没有更多重复项，关闭弹窗
-      var remaining = document.querySelectorAll('.kb-dup-item');
-      if (remaining.length === 0) {
-        var overlay = document.querySelector('.kb-dup-overlay');
-        if (overlay) overlay.remove();
+      if (item) {
+        item.style.opacity = '0.4';
+        item.style.pointerEvents = 'none';
       }
-      kbRefreshDocs();
+      // Patch5 G：延迟刷新，让后端 delete_document + 向量重建有时间持久化
+      setTimeout(function() {
+        if (item) item.remove();
+        var remaining = document.querySelectorAll('.kb-dup-item');
+        if (remaining.length === 0) {
+          var overlay = document.querySelector('.kb-dup-overlay');
+          if (overlay) overlay.remove();
+        }
+        kbRefreshDocs();
+      }, 600);
     } else {
       showToast('操作失败: ' + (data.error || '未知错误'), 'error');
     }

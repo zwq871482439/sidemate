@@ -47,6 +47,12 @@ class _KBOpsMixin:
         self.chunk_order: List[str] = []             # chunk_id 有序列表，与 vectors 行对齐
         self._need_rebuild_vectors = False           # 模型升级后需要重建向量索引
 
+        # Patch5 G：进度回调队列（doc_id → list[progress_event]）
+        # _notify_progress 推入，/api/kb/progress/{doc_id} SSE 消费
+        import queue as _queue_mod
+        self._progress_queues: Dict[str, "_queue_mod.Queue"] = {}
+        self._progress_lock = threading.Lock()
+
         # 嵌入引擎
         self.embedder = EmbeddingEngine()
         self._embedder_loaded = False
@@ -625,6 +631,47 @@ class _KBOpsMixin:
         except Exception as e:
             log.error("[KB] 保存 chunk 文本失败: %s", str(e))
 
+    # ===== Patch5 G：进度回调机制（供前端 SSE 订阅）=====
+
+    def register_progress_callback(self, doc_id: str):
+        """为某个 doc_id 注册一个进度队列，前端 SSE 订阅时创建"""
+        import queue as _queue_mod
+        with self._progress_lock:
+            if doc_id not in self._progress_queues:
+                self._progress_queues[doc_id] = _queue_mod.Queue()
+
+    def get_progress_queue(self, doc_id: str):
+        """获取 doc_id 对应的进度队列（前端 SSE 消费）"""
+        with self._progress_lock:
+            return self._progress_queues.get(doc_id)
+
+    def cleanup_progress_callback(self, doc_id: str):
+        """完成后清理队列"""
+        with self._progress_lock:
+            self._progress_queues.pop(doc_id, None)
+
+    def _notify_progress(self, doc_id: str, phase: str = "", progress: float = 0.0,
+                         chunk_total: int = 0, chunk_done: int = 0,
+                         chunk_cached: int = 0, batch_idx: int = 0, batch_total: int = 0):
+        """内部调用：把进度事件推到队列"""
+        with self._progress_lock:
+            q = self._progress_queues.get(doc_id)
+        if q is None:
+            return  # 没人订阅就跳过
+        try:
+            q.put_nowait({
+                "phase": phase,
+                "progress": round(progress, 3),
+                "chunk_total": chunk_total,
+                "chunk_done": chunk_done,
+                "chunk_cached": chunk_cached,
+                "batch_idx": batch_idx,
+                "batch_total": batch_total,
+                "ts": time.time(),
+            })
+        except Exception:
+            pass  # 队列满或其他异常，不影响主流程
+
     # ===== 文档管理 =====
 
     def list_documents(self) -> List[Dict]:
@@ -769,13 +816,20 @@ class _KBOpsMixin:
             doc.progress = 0.3  # 分块完成 30%
             self._transition(doc_id, "indexing")
             self._save_meta()
+            # Patch5 G：通知前端"分块完成"
+            self._notify_progress(doc_id, phase="chunking_done",
+                                 progress=0.3,
+                                 chunk_total=len(new_chunks),
+                                 chunk_cached=0)
 
             # === 2. 嵌入 ===
             if not self._embedder_loaded:
                 self.init_embedder()
 
             batch_size = self.embed_batch_size
+            total_batches = (len(new_chunks) + batch_size - 1) // batch_size
             all_vectors = []
+            batch_idx = 0
             for i in range(0, len(new_chunks), batch_size):
                 token.check_or_raise()
 
@@ -794,6 +848,14 @@ class _KBOpsMixin:
                 progress = 0.3 + 0.7 * min(1.0, (i + batch_size) / len(new_chunks))
                 doc.progress = round(progress, 2)
                 self._save_meta()
+                # Patch5 G：通知前端"嵌入进度"
+                batch_idx += 1
+                self._notify_progress(doc_id, phase="embedding",
+                                     progress=doc.progress,
+                                     chunk_total=len(new_chunks),
+                                     chunk_done=min(i + batch_size, len(new_chunks)),
+                                     batch_idx=batch_idx,
+                                     batch_total=total_batches)
 
             # 合并向量
             if all_vectors:
@@ -835,6 +897,10 @@ class _KBOpsMixin:
             self._transition(doc_id, "ready")
             doc.progress = 1.0
             self._save_meta()
+            # Patch5 G：通知前端"完成"
+            self._notify_progress(doc_id, phase="done", progress=1.0,
+                                 chunk_total=len(new_chunks),
+                                 chunk_done=len(new_chunks))
 
             log.info("[KB] 文档处理完成: %s → %d chunks, %d total",
                      doc.filename, len(new_chunks), len(self.chunk_order))

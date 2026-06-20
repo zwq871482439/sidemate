@@ -276,15 +276,15 @@ async def _lifespan(app):
             log.info("[STARTUP] TaggingScheduler 已启动")
             # 把 scheduler 引用存到 kb 上，避免 upload 线程内 import server 拿不到
             kb._tagging_scheduler = _tagging_scheduler
-            # 自动入队所有 tag_status=pending/generating 的已有文档（含中断恢复）
+            # Patch5 G：不立即入队 pending 文档，登记到 pending_ready 等 batch 空闲
             pending_count = 0
             for doc in kb.documents.values():
                 if doc.status == 'ready' and getattr(doc, 'tag_status', 'pending') in ('pending', 'generating'):
-                    doc.tag_status = 'pending'  # generating → 重置为 pending，重新打标
-                    _tagging_scheduler.enqueue(doc.doc_id)
+                    doc.tag_status = 'pending'
+                    _tagging_scheduler.notify_doc_ready(doc.doc_id)
                     pending_count += 1
             if pending_count > 0:
-                log.info("[STARTUP] 已自动入队 %d 篇 pending 文档进行打标" % pending_count)
+                log.info("[STARTUP] %d 篇 pending 文档已登记，等 batch 空闲后入队打标" % pending_count)
         except Exception as e:
             log.warning("[STARTUP] TaggingScheduler 启动失败: %s" % str(e)[:100])
 
@@ -305,6 +305,10 @@ async def _lifespan(app):
             # 启动 worker（消费队列）
             _batch_queue.start_worker(kb)
             log.info("[STARTUP] BatchQueue worker 已启动")
+            # Patch5 G：把 batch_queue 引用注入 TaggingScheduler，启用 gating
+            if _tagging_scheduler and hasattr(_tagging_scheduler, 'set_batch_queue'):
+                _tagging_scheduler.set_batch_queue(_batch_queue)
+                log.info("[STARTUP] TaggingScheduler 已注入 batch_queue")
         except Exception as e:
             log.warning("[STARTUP] BatchQueue 初始化失败: %s" % str(e)[:120])
 

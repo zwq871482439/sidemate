@@ -833,13 +833,30 @@ async def api_kb_upload(file: UploadFile = File(...)):
     doc_id = result["doc_id"]
     doc_text = text
 
+    # Patch5 G：注册 progress callback，前端通过 /api/kb/progress/{doc_id} 订阅
+    try:
+        kb.register_progress_callback(doc_id)
+    except Exception:
+        pass
+
     def _process():
         try:
             kb.process_document(doc_id, doc_text)
-            # Patch3: 文档处理完成后 enqueue 打标（直接拿 kb 上挂的引用，不走 import server）
+            # Patch5 G：取消"立即入队打标"——避免向量化 + LLM 打标同时抢 GPU
+            # 改为由 TaggingScheduler 自己 gating（看 batch_queue 空闲才入队）
             scheduler = getattr(kb, '_tagging_scheduler', None)
             if scheduler:
-                scheduler.enqueue(doc_id)
+                # 只注册到"待打标"清单，不立即入队
+                try:
+                    doc = kb.get_document(doc_id)
+                    if doc:
+                        doc.tag_status = "pending"
+                        kb._save_meta()
+                        # 通知 scheduler 有新 ready 文档（让它的 watcher 自动入队）
+                        if hasattr(scheduler, 'notify_doc_ready'):
+                            scheduler.notify_doc_ready(doc_id)
+                except Exception as _e:
+                    log.warning("[KB] 标记 tag_status=pending 失败: %s", str(_e)[:80])
             else:
                 log.warning("[KB] 打标调度器未就绪，文档将在重启后自动入队: doc_id=%s", doc_id)
         except Exception as e:
@@ -1937,3 +1954,69 @@ async def api_kb_session_context(session_id: str = "default"):
         "level": level,
         "turns": turns,
     }
+
+
+# ============================================================
+#  Patch5 G：KB 文档处理进度 SSE
+# ============================================================
+
+@router.get("/api/kb/progress/{doc_id}")
+async def api_kb_progress_sse(doc_id: str):
+    """文档处理进度实时推送（SSE）
+
+    客户端用 EventSource 订阅，事件格式：
+      data: {"phase": "chunking_done|embedding|done|error", "progress": 0.5,
+             "chunk_total": 12, "chunk_done": 6, "batch_idx": 1, "batch_total": 3}
+    """
+    import json as _json
+    kb = get_kb()
+    queue = kb.get_progress_queue(doc_id)
+    if queue is None:
+        # 没注册过，立即返回当前状态
+        doc = kb.get_document(doc_id)
+        if not doc:
+            return JSONResponse({"error": "文档不存在"}, status_code=404)
+        return JSONResponse({"phase": "unknown", "progress": doc.progress,
+                            "status": doc.status})
+
+    async def sse_gen():
+        try:
+            # 先推一个起始事件
+            doc = kb.get_document(doc_id)
+            start_ev = {
+                "phase": "subscribed",
+                "progress": doc.progress if doc else 0,
+                "status": doc.status if doc else "unknown",
+            }
+            yield "data: %s\n\n" % _json.dumps(start_ev, ensure_ascii=False)
+
+            import asyncio
+            timeout_counter = 0
+            while True:
+                try:
+                    ev = queue.get_nowait()
+                    yield "data: %s\n\n" % _json.dumps(ev, ensure_ascii=False)
+                    if ev.get("phase") in ("done", "error"):
+                        break
+                except Exception:
+                    # 队列空，sleep 一会
+                    await asyncio.sleep(0.5)
+                    timeout_counter += 1
+                    # 兜底：60s 无事件自动断开
+                    if timeout_counter > 120:
+                        yield "data: %s\n\n" % _json.dumps({"phase": "timeout"})
+                        break
+                    # 检查文档是否已 ready（兜底退出条件）
+                    if timeout_counter % 4 == 0:
+                        cur_doc = kb.get_document(doc_id)
+                        if cur_doc and cur_doc.status in ("ready", "error", "cancelled"):
+                            yield "data: %s\n\n" % _json.dumps({
+                                "phase": "done" if cur_doc.status == "ready" else "error",
+                                "progress": cur_doc.progress,
+                                "status": cur_doc.status,
+                            })
+                            break
+        finally:
+            kb.cleanup_progress_callback(doc_id)
+
+    return StreamingResponse(sse_gen(), media_type="text/event-stream")

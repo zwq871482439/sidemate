@@ -24,6 +24,34 @@ class TaggingScheduler:
         self._thread = None
         self._lock = threading.Lock()
         self._has_work = threading.Event()
+        # Patch5 G：batch_queue 引用，gating 用（None 时不 gating）
+        self._batch_queue = None
+        self._pending_ready = set()  # 已 ready 但还没入队的 doc_id（等 batch 空闲）
+
+    def set_batch_queue(self, batch_queue):
+        """注入 BatchQueue 实例，用于 gating 判断"""
+        self._batch_queue = batch_queue
+        log.info("[TAG] 已注入 batch_queue 引用，启用 gating")
+
+    def notify_doc_ready(self, doc_id: str):
+        """文档向量化完成后调用：登记到 pending_ready，等 batch 空闲再入队"""
+        with self._lock:
+            self._pending_ready.add(doc_id)
+        log.info("[TAG] doc_ready 通知: %s，等 batch 空闲后入队", doc_id)
+        self._has_work.set()
+
+    def _is_batch_idle(self) -> bool:
+        """检查 batch_queue 是否空闲（无 pending/processing 任务）"""
+        if self._batch_queue is None:
+            return True  # 没注入就不 gating
+        try:
+            stats = self._batch_queue.get_stats()
+            pending = stats.get("pending", 0)
+            processing = stats.get("processing", 0)
+            return pending == 0 and processing == 0
+        except Exception as e:
+            log.warning("[TAG] batch_queue 状态查询失败: %s", str(e)[:80])
+            return True  # 失败时不卡 worker
 
     def enqueue(self, doc_id: str):
         """文档上传后调用，加入打标队列"""
@@ -34,8 +62,11 @@ class TaggingScheduler:
         self._has_work.set()
 
     def _worker(self):
-        """后台线程：循环取任务 → 调用本地 LLM 打标 → 写回 KB 元数据"""
-        log.info("[TAG] Worker 线程已启动")
+        """后台线程：循环取任务 → 调用本地 LLM 打标 → 写回 KB 元数据
+
+        Patch5 G：增加 gating — batch_queue 不空闲时不取任务，避免 GPU 抢占
+        """
+        log.info("[TAG] Worker 线程已启动（gating=%s）", "on" if self._batch_queue else "off")
         while self._running:
             # 等待工作信号
             self._has_work.wait(timeout=5.0)
@@ -43,7 +74,15 @@ class TaggingScheduler:
                 break
             self._has_work.clear()
 
+            # Patch5 G：把 pending_ready 中 batch 已空闲的迁到 queue
+            self._promote_pending_if_idle()
+
             while True:
+                # Patch5 G：gating — batch 不空闲就跳出，等下一轮
+                if not self._is_batch_idle():
+                    log.debug("[TAG] batch 未空闲，暂停打标，等 10s 后重试")
+                    break
+
                 # 取一个任务
                 with self._lock:
                     if not self._queue:
@@ -55,7 +94,26 @@ class TaggingScheduler:
                 except Exception as e:
                     log.error("[TAG] 打标失败: doc_id=%s, error=%s", doc_id, str(e)[:200])
 
+                # 每处理完一个再 check gating
+                if not self._is_batch_idle():
+                    log.debug("[TAG] 处理完一个文档后 batch 仍忙，暂停等 10s")
+                    break
+
         log.info("[TAG] Worker 线程已退出")
+
+    def _promote_pending_if_idle(self):
+        """如果 batch 已空闲，把 pending_ready 中的 doc_id 提升到 queue"""
+        if not self._pending_ready:
+            return
+        if not self._is_batch_idle():
+            return  # batch 还忙，先不动
+        with self._lock:
+            to_promote = list(self._pending_ready)
+            self._pending_ready.clear()
+        for doc_id in to_promote:
+            # 复用 enqueue 逻辑
+            self.enqueue(doc_id)
+            log.info("[TAG] pending→queue: %s（batch 空闲）", doc_id)
 
     def _process_one(self, doc_id: str):
         """处理单个文档的打标任务，失败自动重入队"""
