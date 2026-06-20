@@ -22,13 +22,17 @@ cmd.SysProcAttr = &syscall.SysProcAttr{
 
 ---
 
-## 2. 版本号注入（ldflags）
+## 2. 版本号注入 + GUI 子系统（ldflags）
 
-**编译命令**必须用 ldflags 注入版本号：
+**编译命令**必须用 ldflags 注入版本号 + windowsgui 子系统：
 
 ```bash
-go build -ldflags "-X main.AppVersion=v0.9.5" -o Sidemate.exe .
+go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.5" -o Sidemate.exe .
 ```
+
+**两个 ldflags 都必须**：
+- `-H windowsgui`：**铁律！不加会弹 cmd 窗口**（Sidemate.exe 本身是 GUI 应用，不是 console 应用）
+- `-X main.AppVersion=v0.9.5`：版本号注入
 
 **不要硬编码版本号到 main.go**（虽然 `var AppVersion = "v0.9.5"` 是默认兜底）
 
