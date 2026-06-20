@@ -267,8 +267,14 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 # 原先只有 doc_mode 才读 file_path，导致 chat 模式引用 KB 文档时 AI 看不到内容
                 _chat_kb_context = ""
                 if file_path and not _doc_mode:
+                    log.info("[LOCAL] chat 模式收到 file_path=%s, 尝试提取 KB 文档内容", file_path)
                     try:
                         kb_doc_ref = kb.get_document(file_path)
+                        if not kb_doc_ref:
+                            log.warning("[LOCAL] file_path=%s 在 KB 中未找到（documents=%d）",
+                                        file_path, len(kb.documents))
+                        elif kb_doc_ref.status != "ready":
+                            log.warning("[LOCAL] file_path=%s 状态=%s，不是 ready", file_path, kb_doc_ref.status)
                         if kb_doc_ref and kb_doc_ref.status == "ready":
                             _doc_texts = []
                             for chunk in kb.chunks.values():

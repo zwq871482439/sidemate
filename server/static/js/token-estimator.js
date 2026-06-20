@@ -115,7 +115,16 @@ var TokenEstimator = {
   },
 
   _estimateDoc: function() {
-    // KB 引用文档
+    // KB 引用文档：从 window._kbSelectedFiles 获取文件大小
+    if (typeof window !== 'undefined' && window._kbSelectedFiles && window._kbSelectedFiles.length > 0) {
+      var totalSize = 0;
+      for (var i = 0; i < window._kbSelectedFiles.length; i++) {
+        var d = window._kbSelectedFiles[i];
+        totalSize += (d.file_size || d.size || 0);
+      }
+      return Math.ceil(totalSize / 1024 * this.FILE_TOKENS_PER_KB);
+    }
+    // 上传文件：按文件大小估算
     if (typeof pendingFile !== 'undefined' && pendingFile) {
       var sizeKB = (pendingFile.size || 0) / 1024;
       return Math.ceil(sizeKB * this.FILE_TOKENS_PER_KB);

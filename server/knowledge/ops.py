@@ -548,23 +548,20 @@ class _KBOpsMixin:
             ],
         }
         try:
-            import tempfile
-            tmp_fd, tmp_path = tempfile.mkstemp(
-                suffix=".tmp", dir=os.path.dirname(self.meta_path), prefix="kb_meta_"
-            )
-            try:
-                with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, self.meta_path)
-            except Exception:
-                # 清理临时文件
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            # Patch5 修复 Errno 22：不用 mkstemp，用固定临时文件名 + os.replace
+            tmp_path = os.path.join(os.path.dirname(self.meta_path), "kb_meta_writing.json")
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.meta_path)
         except Exception as e:
             log.error("[KB] 保存元数据失败: %s", str(e))
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _rebuild_all_vectors(self):
         """重建全部向量索引（模型升级后维度变化时调用）"""
@@ -593,31 +590,33 @@ class _KBOpsMixin:
         """保存向量索引"""
         if self.vectors is None or len(self.chunk_order) == 0:
             return
+        import tempfile
+        # Patch5 修复 Errno 22：不用 mkstemp（fd 句柄与 numpy 冲突）
+        # 改用 mktemp + os.replace（原子写入）
+        tmp_dir = os.path.dirname(self.vectors_path)
+        tmp_path = os.path.join(tmp_dir, "kb_vec_writing.npz")
         try:
-            import tempfile
-            # Patch5 修复：tempfile 用 .npz 后缀，避免 numpy 内部判断错误
-            tmp_fd, tmp_path = tempfile.mkstemp(
-                suffix=".npz.tmp", dir=os.path.dirname(self.vectors_path), prefix="kb_vec_"
+            # 如果上次残留则删除
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            np.savez_compressed(
+                tmp_path,
+                vectors=self.vectors,
+                chunk_order=np.array(self.chunk_order),
             )
-            try:
-                os.close(tmp_fd)
-                np.savez_compressed(
-                    tmp_path,
-                    vectors=self.vectors,
-                    chunk_order=np.array(self.chunk_order),
-                )
-                # 验证文件大小（防止 savez 写出 0 字节）
-                if os.path.getsize(tmp_path) == 0:
-                    raise IOError("np.savez_compressed 写出 0 字节文件")
-                os.replace(tmp_path, self.vectors_path)
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            # 验证文件大小（防止 savez 写出 0 字节）
+            if os.path.getsize(tmp_path) == 0:
+                raise IOError("np.savez_compressed 写出 0 字节文件")
+            # 原子替换
+            os.replace(tmp_path, self.vectors_path)
         except Exception as e:
             log.error("[KB] 保存向量索引失败: %s", str(e))
+            # 清理残留临时文件
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _save_chunk_text(self, chunk: KBChunk):
         """保存 chunk 原文到文件"""

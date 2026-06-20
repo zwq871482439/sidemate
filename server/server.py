@@ -165,15 +165,13 @@ else:
         log.warning("[STARTUP] 依赖抽检失败（不影响使用）: %s", str(_e)[:120])
 
 # ===== 加载核心框架 =====
-_report_startup("framework", 10, "加载 FastAPI 框架...")
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# Ollama Manager
-_report_startup("ollama_mgr", 15, "初始化 Ollama 管理器...")
+# Ollama Manager（进度上报移入 _lifespan）
 from core.ollama_manager import OllamaManager
 ollama_manager = OllamaManager()
 
@@ -188,6 +186,10 @@ async def _lifespan(app):
         yield
         return
     _lifespan_entered = True
+
+    # Patch5 启动重构：所有进度上报集中在此（顶层不再写进度文件）
+    _report_startup("lifespan_start", 30, "初始化服务实例...")
+    log.info("[STARTUP] _lifespan 开始（进度上报统一入口）")
 
     # ===== Patch5 T01: 初始化全局线程池 =====
     try:
@@ -339,14 +341,14 @@ _CORS_ORIGINS = os.environ.get("LOCAL_AI_CORS", "http://localhost:8976,http://12
 app.add_middleware(CORSMiddleware, allow_origins=_CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 # ===== 全局服务实例化 =====
+# Patch5 启动重构：进度上报全部移入 _lifespan，顶层只做 import + 实例化（不写进度文件）
+# 修复进度倒退 bug：顶层 30% → _lifespan 70% 导致 Launcher 看到进度回跳
 
 # 模型管理器（Patch 12: 从 core 包导入）
-_report_startup("model_mgr", 20, "加载模型管理器...")
 from core.model_manager import ModelManager
 mgr = ModelManager()
 
 # 文库
-_report_startup("knowledge_base", 30, "初始化文库引擎...")
 from knowledge import get_knowledge_base
 import uuid
 try:
