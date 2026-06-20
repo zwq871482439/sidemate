@@ -1004,8 +1004,8 @@ async function _loadVersionDisplay() {
     var data = await resp.json();
     var el = document.getElementById('versionDisplay');
     if (el) {
-      // 优先使用统一版本号（如 "0.9.5"），其次使用 version_display
-      el.textContent = data.version ? ('v' + data.version) : (data.version_display || 'v0.9.5');
+      // 优先使用统一版本号，其次使用 version_display，最后读全局 APP_VERSION（不再硬编码）
+      el.textContent = data.version ? ('v' + data.version) : (data.version_display || (window.APP_VERSION ? ('v' + window.APP_VERSION) : ''));
     }
     var titleEl = document.getElementById('settingsTitleVersion');
     if (titleEl && data.version_display) {
@@ -1013,7 +1013,7 @@ async function _loadVersionDisplay() {
     }
   } catch (e) {
     var el = document.getElementById('versionDisplay');
-    if (el) el.textContent = 'v0.9.5';
+    if (el) el.textContent = window.APP_VERSION ? ('v' + window.APP_VERSION) : '';
   }
 }
 
@@ -1174,13 +1174,20 @@ async function init() {
 }
 
 // ===== 启动 =====
+// 启动时初始化全局版本号（单一来源：/api/system/info 从 config.py 的 DEFAULTS["version"] 读）
+window.APP_VERSION = '';
 document.title = '桌伴 Sidemate';
-// 启动时从后端获取版本号，注入到页面标题
 fetch((typeof API !== 'undefined' ? API : '') + '/api/system/info')
   .then(function(r) { return r.json(); })
   .then(function(d) {
     if (d.version) {
+      window.APP_VERSION = d.version;
       document.title = '桌伴 Sidemate v' + d.version;
+      // 同步刷新所有版本号显示
+      var vDisplays = document.querySelectorAll('[data-app-version]');
+      for (var i = 0; i < vDisplays.length; i++) {
+        vDisplays[i].textContent = 'v' + d.version;
+      }
     }
   })
   .catch(function() {}); // 静默失败，不影响主流程

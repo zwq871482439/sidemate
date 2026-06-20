@@ -1415,7 +1415,7 @@ async function refreshAboutInfo() {
     // 更新版本号
     var verEl = document.getElementById('versionDisplay');
     if (verEl) {
-      verEl.textContent = data.version ? ('v' + data.version) : 'v0.9.5';
+      verEl.textContent = data.version ? ('v' + data.version) : (window.APP_VERSION ? ('v' + window.APP_VERSION) : '');
     }
 
     // 更新运行环境信息（设置页关于区域）
@@ -1424,7 +1424,7 @@ async function refreshAboutInfo() {
       var modeLabel = data.mode === 'cloud' ? '云端 AI' : '本地 AI';
       var ollamaLabel = data.ollama_status === 'running' ? '运行中' : '未运行';
       envEl.innerHTML =
-        '<div>版本：<strong>v' + (data.version || '0.9.4') + '</strong>（构建日期 ' + (data.build_date || '-') + '）</div>' +
+        '<div>版本：<strong>v' + (data.version || (window.APP_VERSION || '-')) + '</strong>（构建日期 ' + (data.build_date || '-') + '）</div>' +
         '<div>Python：' + (data.python || '-') + '</div>' +
         '<div>Ollama：' + ollamaLabel + '（版本 ' + (data.ollama_version || '-') + '）</div>' +
         '<div>当前模式：' + modeLabel + '</div>' +

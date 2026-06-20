@@ -14,7 +14,6 @@ config.py - 全局配置管理（统一中心）
   - 压缩器：离线压缩参数
   - 长文本分段：chunk 相关参数
 """
-__version__ = "0.9.5"
 
 import os
 import json
@@ -62,6 +61,11 @@ _CONFIG_FILE = os.path.join(DATA_DIR, "settings.json")
 
 # ===== 默认配置（唯一真相源）=====
 DEFAULTS = {
+    # ----- 应用版本号（唯一权威来源 single source of truth）-----
+    # 其他所有模块/前端/launcher 均从此处取版本号，禁止在其他地方硬编码版本字面量。
+    # launcher/build.bat 通过 findstr 解析此行抽取版本号。
+    "version": "0.9.5",
+
     # ----- 通用 -----
     # 沙盒清理策略: "on_start" | "24h" | "7d" | "never"
     "sandbox_cleanup": "24h",
@@ -223,6 +227,9 @@ MAX_OUTPUT_TOKENS = 4096    # num_predict，最大输出 token 数
 
 # 导出顶层常量（供 validators/sidemate_validator.py 等模块使用）
 SIDEMATE_HMAC_KEY = DEFAULTS["sidemate_hmac_key"]
+
+# 模块版本号：向后兼容别名，始终等于 DEFAULTS["version"]（唯一权威源）
+__version__ = DEFAULTS["version"]
 
 
 def load_config() -> Dict[str, Any]:
