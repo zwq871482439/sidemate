@@ -124,8 +124,8 @@ def api_info():
         except ImportError:
             pass
     return {
-        "version": FULL_VERSION,                           # "0.9.4"
-        "version_display": "v%s Patch %s" % (VERSION, VERSION_PATCH),  # "v0.9 Patch 4"
+        "version": FULL_VERSION,                           # "0.9.5"（从 config.py 单一来源）
+        "version_display": "v%s" % FULL_VERSION,           # "v0.9.5"（统一格式，不再带 Patch 编号）
         "modules": modules,
     }
 
@@ -697,8 +697,8 @@ def api_system_info():
         pass
 
     return {
-        "version": FULL_VERSION,                          # "0.9.4"（统一版本号）
-        "version_display": "v%s Patch %s" % (VERSION, VERSION_PATCH),  # "v0.9 Patch 4"
+        "version": FULL_VERSION,                          # "0.9.5"（从 config.py 单一来源）
+        "version_display": "v%s" % FULL_VERSION,          # "v0.9.5"（统一格式，不再带 Patch 编号）
         "python": platform.python_version(),
         "ollama_status": ollama_status,
         "ollama_version": ollama_ver,

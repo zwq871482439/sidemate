@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Sidemate v0.9 Patch 4 — FastAPI + Ollama + Qwen3.5-4B
-版本号统一在 config.__version__ 中定义（当前 0.9.4），
-VERSION / VERSION_PATCH 保留用于向后兼容。
+版本号唯一权威来源：config.py 的 DEFAULTS["version"]（前端/launcher 均从此处取）。
+VERSION / VERSION_PATCH 保留用于向后兼容显示。
 启动: python server.py
 
 本文件(server.py)是主服务进程，负责：
@@ -91,14 +91,14 @@ migrate_data_layout(DATA_DIR)
 HOST = os.environ.get("LOCAL_AI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LOCAL_AI_PORT", "8976"))
 VERSION = "0.9"
-VERSION_PATCH = 4
+VERSION_PATCH = 5
 LOG_FILE = os.path.join(LOG_DIR, "server.log")
 
 # 会话缓存常量（P1-A4: 已移至 session/context_cache.py 中按需调用）
 from config import get as _cfg_get, DEFAULTS as _DEFAULTS, __version__ as CONFIG_VERSION
 
-# 统一版本号：FULL_VERSION 由 config.__version__ 驱动
-FULL_VERSION = CONFIG_VERSION  # "0.9.4"
+# 统一版本号：FULL_VERSION 由 config.__version__ 驱动（单一来源：config.py DEFAULTS["version"]）
+FULL_VERSION = CONFIG_VERSION  # "0.9.5"
 
 # ===== 日志 =====
 _LOG_LEVEL = getattr(logging, os.environ.get("LOCAL_AI_LOG_LEVEL", "INFO").upper(), logging.INFO)
