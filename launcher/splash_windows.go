@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"syscall"
 	"time"
@@ -153,6 +154,10 @@ type SplashState struct {
 	currentStepStatus  StepStatus // 当前步骤的状态
 	currentStepName    string // 当前步骤名称（如"环境"），用于日志
 	stageStartTime     time.Time // 当前阶段开始时间（用于强制延迟）
+	// Patch5 Splash 方案 B：环形进度 + 流水指示器
+	totalStages        int    // 总阶段数（动态计算，去掉未装的扩展）
+	currentStageIdx    int    // 当前阶段索引（0-based）
+	stageSubText       string // 阶段子状态（如"正在加载 bge-m3"）
 
 	closeBtnRect   splashRect
 	openLogBtnRect splashRect
@@ -500,36 +505,9 @@ func splashPaint(hdc syscall.Handle, ss *SplashState) {
 	splashProcSelectObj.Call(uintptr(hdc), hOldSepPen)
 	splashProcDeleteObj.Call(sepPen)
 
-	// --- 单行动态步骤（Patch5 启动重构） ---
-	// 不再画 3 行固定步骤，改为画 1 行动态步骤 + 状态指示灯
-	stageY := sStepStartY
-	splashDrawDynamicStep(hdc, ss, stageY)
-
-	// --- 进度条（圆角 + 加宽加高 + 百分比居内） ---
-	progBarH := 22 * dpi / 96
-	progBarR_ := int32(11 * dpi / 96) // 进度条自身圆角半径
-	progBarY := sProgressY - progBarH - 4*dpi/96
-	progBarX := 30 * dpi / 96
-	progBarR := sW - 30*dpi/96
-	progBarW := progBarR - progBarX
-
-	// 进度条背景（圆角）
-	splashFillRoundRect(hdc, progBarX, progBarY, progBarR, progBarY+progBarH, progBarR_, splashColorProgBG)
-	// 进度条填充（圆角裁剪）
-	if ss.progress > 0 {
-		fillW := progBarW * int32(ss.progress) / 100
-		if fillW < progBarR_*2 {
-			fillW = progBarR_ * 2 // 最小宽度保证圆角可见
-		}
-		if fillW > progBarW {
-			fillW = progBarW
-		}
-		splashFillRoundRect(hdc, progBarX, progBarY, progBarX+fillW, progBarY+progBarH, progBarR_, splashColorTitleBG)
-	}
-	// 百分比文字居中在进度条内（白色）
-	pctText := fmt.Sprintf("%d%%", ss.progress)
-	pctFontSize := 12 * dpi / 96
-	splashDrawTextEx(hdc, pctText, pctFontSize, progBarX, progBarY, progBarW, progBarH, splashColorWhite, true)
+	// --- Patch5 Splash 方案 B：环形进度 + 阶段名 + 子状态 + 流水指示器 ---
+	// 替换原来的单行动态步骤 + 线性进度条
+	splashDrawRingProgress(hdc, ss)
 
 	// --- 错误卡片 ---
 	if ss.failed {
@@ -626,84 +604,162 @@ func splashDrawStepRow(hdc syscall.Handle, ss *SplashState, idx int, stepLabel s
 	splashDrawTextEx(hdc, statusText, statusFontSize, 76*dpi/96, rowY+16*dpi/96, 300*dpi/96, statusFontSize+4*dpi/96, dotColor, false)
 }
 
-// splashDrawDynamicStep 画单行动态步骤（Patch5 启动重构）
-// 比 splashDrawStepRow 更大、更醒目，因为只有一行
-func splashDrawDynamicStep(hdc syscall.Handle, ss *SplashState, y int32) {
-	dotCx := int32(52 * dpi / 96)
-	dotCy := y + 18*dpi/96
-	dotR := sDotR + 4*dpi/96 // 比原来大一点
+// splashDrawRingProgress 画方案 B：环形进度 + 阶段名 + 子状态 + 流水指示器
+// 布局（在 SplashState 中间区域）：
+//   ┌──────────────────────────────┐
+//   │      ┌──────┐                │
+//   │      │ 60%  │  加载知识库模型 │   ← 大圆环(全局进度) + 阶段名
+//   │      │ ring │  正在加载 bge-m3│   ← 子状态
+//   │      └──────┘                │
+//   │   ●●●○○                       │   ← 流水指示器（5个小条）
+//   └──────────────────────────────┘
+func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
+	sc := func(v int32) int32 { return v * dpi / 96 }
 
-	status := ss.currentStepStatus
+	// 区域参数
+	centerX := sW / 2
+	ringR := sc(46) // 环形半径
+	ringThickness := sc(7)
+	ringCY := sStepStartY + sc(20) // 圆环垂直中心
+
+	// === 1. 画环形进度（背景环 + 前景环） ===
+	// 用裁剪矩形的方式画弧（GDI 不直接支持 stroke arc，用两个椭圆做"环"）
+	// 背景：完整浅色圆环
+	bgR := ringR
+	bgBrush, _, _ := splashProcCreateBrush.Call(splashColorBodyBG)
+	bgPen, _, _ := splashProcCreatePen.Call(0, uintptr(ringThickness), splashColorProgBG)
+	oldBgB, _, _ := splashProcSelectObj.Call(uintptr(hdc), bgBrush)
+	oldBgP, _, _ := splashProcSelectObj.Call(uintptr(hdc), bgPen)
+	splashProcEllipse.Call(uintptr(hdc),
+		uintptr(centerX-bgR), uintptr(ringCY-bgR),
+		uintptr(centerX+bgR), uintptr(ringCY+bgR))
+	splashProcSelectObj.Call(uintptr(hdc), oldBgB)
+	splashProcSelectObj.Call(uintptr(hdc), oldBgP)
+	splashProcDeleteObj.Call(bgBrush)
+	splashProcDeleteObj.Call(bgPen)
+
+	// 前景：按 progress 画扇形覆盖（从顶部顺时针）
+	// 简化实现：用 Pie 函数画扇形，再用背景色挖洞模拟环
+	progress := ss.progress
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+	if progress > 0 {
+		// GDI Pie：画饼图扇形（从 12 点钟方向顺时针 progress%）
+		// 角度换算：0% = -90°（12点钟），100% = 270°（回到 12 点钟）
+		startAngle := -90.0
+		endAngle := -90.0 + 360.0*float64(progress)/100.0
+		// 转换为 GDI Pie 需要的"起点和终点的 xy 坐标"（不是角度）
+		startRad := startAngle * 3.14159265 / 180.0
+		endRad := endAngle * 3.14159265 / 180.0
+		startX := float64(centerX) + float64(bgR)*math.Cos(startRad)
+		startY := float64(ringCY) + float64(bgR)*math.Sin(startRad)
+		endX := float64(centerX) + float64(bgR)*math.Cos(endRad)
+		endY := float64(ringCY) + float64(bgR)*math.Sin(endRad)
+
+		fgBrush, _, _ := splashProcCreateBrush.Call(splashColorRun)
+		fgPen, _, _ := splashProcCreatePen.Call(0, 1, splashColorRun)
+		oldFgB, _, _ := splashProcSelectObj.Call(uintptr(hdc), fgBrush)
+		oldFgP, _, _ := splashProcSelectObj.Call(uintptr(hdc), fgPen)
+		splashPie.Call(uintptr(hdc),
+			uintptr(centerX-bgR), uintptr(ringCY-bgR),
+			uintptr(centerX+bgR), uintptr(ringCY+bgR),
+			intptr(startX), intptr(startY),
+			intptr(endX), intptr(endY))
+		splashProcSelectObj.Call(uintptr(hdc), oldFgB)
+		splashProcSelectObj.Call(uintptr(hdc), oldFgP)
+		splashProcDeleteObj.Call(fgBrush)
+		splashProcDeleteObj.Call(fgPen)
+
+		// 中间挖洞（用背景色画小圆，把扇形变成环）
+		innerR := bgR - ringThickness
+		innerBrush, _, _ := splashProcCreateBrush.Call(splashColorBodyBG)
+		innerPen, _, _ := splashProcCreatePen.Call(0, 1, splashColorBodyBG)
+		oldIB, _, _ := splashProcSelectObj.Call(uintptr(hdc), innerBrush)
+		oldIP, _, _ := splashProcSelectObj.Call(uintptr(hdc), innerPen)
+		splashProcEllipse.Call(uintptr(hdc),
+			uintptr(centerX-innerR), uintptr(ringCY-innerR),
+			uintptr(centerX+innerR), uintptr(ringCY+innerR))
+		splashProcSelectObj.Call(uintptr(hdc), oldIB)
+		splashProcSelectObj.Call(uintptr(hdc), oldIP)
+		splashProcDeleteObj.Call(innerBrush)
+		splashProcDeleteObj.Call(innerPen)
+	}
+
+	// 圆环中心：百分比文字
+	pctText := fmt.Sprintf("%d%%", progress)
+	pctFontSize := 20 * dpi / 96
+	splashDrawTextEx(hdc, pctText, pctFontSize,
+		centerX-sc(40), ringCY-sc(12), sc(80), sc(24),
+		splashColorRun, true)
+
+	// === 2. 阶段名（圆环右侧） ===
 	text := ss.currentStepText
 	if text == "" {
 		text = "准备中..."
 	}
+	if ss.currentStepStatus == StepDone {
+		text = text + " ✓"
+	}
+	stageFontSize := 16 * dpi / 96
+	textX := centerX + ringR + sc(24)
+	textW := sW - textX - sc(24)
+	splashDrawTextEx(hdc, text, stageFontSize,
+		textX, ringCY-sc(16), textW, stageFontSize+sc(6),
+		splashColorTitleBG, false)
 
-	var dotColor uintptr
-	var statusSuffix string
-	switch status {
-	case StepWaiting: // 包含未初始化（0）
-		dotColor = splashColorWait
-		statusSuffix = ""
-	case StepRunning:
-		dotColor = splashColorRun
-		statusSuffix = ""
-	case StepRetry:
-		dotColor = splashColorRetry
-		statusSuffix = ""
-	case StepDone:
-		dotColor = splashColorDone
-		statusSuffix = " ✓"
-	case StepFailed:
-		dotColor = splashColorFail
-		statusSuffix = ""
+	// === 3. 子状态文字 ===
+	if ss.stageSubText != "" {
+		subFontSize := 11 * dpi / 96
+		var subColor uintptr = splashColorSubtitle
+		if ss.currentStepStatus == StepRunning {
+			subColor = splashColorRun
+		}
+		splashDrawTextEx(hdc, ss.stageSubText, subFontSize,
+			textX, ringCY+sc(8), textW, subFontSize+sc(4),
+			subColor, false)
 	}
 
-	// 画圆形指示灯（Running 时加旋转动画效果用纯色实心 + 脉冲）
-	hBrush, _, _ := splashProcCreateBrush.Call(dotColor)
-	hOldB, _, _ := splashProcSelectObj.Call(uintptr(hdc), hBrush)
-	hPen, _, _ := splashProcCreatePen.Call(0, 1, dotColor)
-	hOldP, _, _ := splashProcSelectObj.Call(uintptr(hdc), hPen)
-
-	if status == StepWaiting || status == 0 {
-		// 空心圆
-		splashProcDeleteObj.Call(hBrush)
-		hBrush, _, _ = splashProcCreateBrush.Call(splashColorBodyBG)
-		splashProcSelectObj.Call(uintptr(hdc), hBrush)
-		splashProcDeleteObj.Call(hPen)
-		hPen, _, _ = splashProcCreatePen.Call(0, 2, dotColor)
-		splashProcSelectObj.Call(uintptr(hdc), hPen)
+	// === 4. 流水指示器（5 个小条，水平居中，底部） ===
+	totalStages := ss.totalStages
+	if totalStages <= 0 {
+		totalStages = 5 // 默认 5 个阶段（防止除零）
 	}
+	currentIdx := ss.currentStageIdx
+	indicatorY := sProgressY - sc(20)
+	indicatorH := sc(6)
+	indicatorW := sc(80)
+	indicatorGap := sc(10)
+	totalW := int32(totalStages)*indicatorW + int32(totalStages-1)*indicatorGap
+	indicatorStartX := (sW - totalW) / 2
 
-	splashProcEllipse.Call(
-		uintptr(hdc),
-		uintptr(dotCx-dotR), uintptr(dotCy-dotR),
-		uintptr(dotCx+dotR), uintptr(dotCy+dotR),
-	)
-
-	// Done 时画勾号
-	if status == StepDone {
-		hWhitePen, _, _ := splashProcCreatePen.Call(0, 2, splashColorWhite)
-		splashProcSelectObj.Call(uintptr(hdc), hWhitePen)
-		ckScale := dpi / 96
-		splashProcMoveToEx.Call(uintptr(hdc), uintptr(dotCx-5*ckScale), uintptr(dotCy), 0)
-		splashProcLineTo.Call(uintptr(hdc), uintptr(dotCx-1*ckScale), uintptr(dotCy+5*ckScale))
-		splashProcMoveToEx.Call(uintptr(hdc), uintptr(dotCx-1*ckScale), uintptr(dotCy+5*ckScale), 0)
-		splashProcLineTo.Call(uintptr(hdc), uintptr(dotCx+6*ckScale), uintptr(dotCy-5*ckScale))
-		splashProcDeleteObj.Call(hWhitePen)
+	for i := 0; i < totalStages; i++ {
+		x := indicatorStartX + int32(i)*(indicatorW+indicatorGap)
+		var segColor uintptr
+		if i < currentIdx {
+			segColor = splashColorDone // 已完成 = 绿
+		} else if i == currentIdx {
+			if ss.currentStepStatus == StepDone {
+				segColor = splashColorDone
+			} else {
+				segColor = splashColorRun // 当前 = 蓝
+			}
+		} else {
+			segColor = splashColorProgBG // 未开始 = 浅灰
+		}
+		splashFillRoundRect(hdc, x, indicatorY, x+indicatorW, indicatorY+indicatorH, sc(3), segColor)
 	}
+}
 
-	splashProcSelectObj.Call(uintptr(hdc), hOldB)
-	splashProcSelectObj.Call(uintptr(hdc), hOldP)
-	splashProcDeleteObj.Call(hBrush)
-	splashProcDeleteObj.Call(hPen)
+// splashPie 是 Pie GDI 函数的封装（避免反复 syscall）
+var splashPie = splashGdi32.NewProc("Pie")
 
-	// 步骤文案（大字号，因为是单行）
-	stageFontSize := 15 * dpi / 96
-	stageText := text + statusSuffix
-	textX := dotCx + dotR + 14*dpi/96
-	textW := sW - textX - 30*dpi/96
-	splashDrawTextEx(hdc, stageText, stageFontSize, textX, y+4*dpi/96, textW, stageFontSize+8*dpi/96, splashColorTitleBG, false)
+// intptr 把 float64 转 uintptr（用于 GDI Pie 坐标）
+func intptr(v float64) uintptr {
+	return uintptr(int32(v))
 }
 
 func splashDrawErrorCard(hdc syscall.Handle, ss *SplashState) {
@@ -901,6 +957,27 @@ func UpdateSplashStageProgress(ss *SplashState, progress int) {
 		ss.targetProgress = progress
 		splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
 	}
+}
+
+// UpdateSplashStageInfo 更新阶段索引和总数（用于流水指示器）
+// totalStages: 总阶段数（动态计算）
+// currentIdx: 当前阶段索引（0-based）
+func UpdateSplashStageInfo(ss *SplashState, totalStages int, currentIdx int) {
+	if ss == nil {
+		return
+	}
+	ss.totalStages = totalStages
+	ss.currentStageIdx = currentIdx
+	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
+}
+
+// UpdateSplashStageSubText 更新阶段子状态文字（如"正在加载 bge-m3"）
+func UpdateSplashStageSubText(ss *SplashState, subText string) {
+	if ss == nil {
+		return
+	}
+	ss.stageSubText = subText
+	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
 }
 
 // UpdateSplashDuration 更新步骤耗时

@@ -652,7 +652,9 @@ func main() {
 	// ---- 0. GPU 检测 + 三档分流（Patch5 T04）----
 	// Patch5 启动重构：单行动态步骤
 	// 阶段 1: 检查环境（0→10%，强制停留 1s 探明 KB/纪要/LLM 状态）
+	UpdateSplashStageInfo(splash, 5, 0) // 初始：5 阶段（占位，后面会动态调整），当前在第 0 阶段
 	UpdateSplashStage(splash, StepRunning, "检查环境依赖...", 5)
+	UpdateSplashStageSubText(splash, "GPU 检测 + 依赖校验")
 	stageStart := time.Now()
 	log.Println("[Launcher] 检测 GPU 后端...")
 	gpuInfo := detectGPU()
@@ -664,7 +666,9 @@ func main() {
 
 	// ---- 1. 启动 Ollama ----
 	// Patch5 启动重构：基础服务阶段（10→30%）
+	UpdateSplashStageInfo(splash, 5, 1) // 当前在第 1 阶段（基础服务）
 	UpdateSplashStage(splash, StepRunning, "启动基础服务...", 15)
+	UpdateSplashStageSubText(splash, "启动 Ollama 引擎...")
 	log.Println("[Launcher] 启动 Ollama...")
 
 	// 辅助：构建 ollama 命令（启动和重试共用）
@@ -1068,16 +1072,22 @@ func main() {
 	log.Printf("[Launcher] 启动阶段规划: KB=%v 纪要=%v LLM=%v, 共 %d 个加载阶段",
 		hasKB, hasRecorder, hasLLM, len(stages))
 
+	// Patch5 Splash 方案 B：计算总阶段数（基础服务+加载阶段+看门狗）
+	// 用于流水指示器
+	totalStagesForIndicator := 1 + len(stages) + 1 // 基础服务 + 加载阶段 + 看门狗
+	UpdateSplashStageInfo(splash, totalStagesForIndicator, 1) // 当前在"基础服务"阶段（已完成 → index=1 进入加载阶段）
+
 	// 执行各加载阶段
 	// 这些加载实际上由 Python 端在 lifespan 内同步完成的（我们之前已经改过）
 	// 这里只需要显示进度并等待 Python 端报告完成
 	// 通过轮询 startup_progress.json 获取真实进度
 	progressFile := filepath.Join(appDir, "data", "startup_progress.json")
-	lastStageIdx := -1
 	for i, stage := range stages {
-		_ = i
 		// 显示该阶段开始
+		// Patch5 方案 B：更新流水指示器（index = 基础服务1 + 当前阶段 i）
+		UpdateSplashStageInfo(splash, totalStagesForIndicator, 1+i)
 		UpdateSplashStage(splash, StepRunning, stage.name, stage.startProg)
+		UpdateSplashStageSubText(splash, "") // 清空子状态
 		log.Printf("[Launcher] 进入阶段: %s (%d%%→%d%%)", stage.name, stage.startProg, stage.endProg)
 
 		// 轮询等待该阶段完成（通过 startup_progress.json）
@@ -1088,6 +1098,7 @@ func main() {
 			// 读 Python 端进度
 			fileProgress := -1
 			filePhase := ""
+			fileText := ""
 			if data, err := os.ReadFile(progressFile); err == nil {
 				var sp struct {
 					Phase    string  `json:"phase"`
@@ -1098,6 +1109,7 @@ func main() {
 				if json.Unmarshal(data, &sp) == nil {
 					fileProgress = sp.Progress
 					filePhase = sp.Phase
+					fileText = sp.Text
 				}
 			}
 
@@ -1106,21 +1118,16 @@ func main() {
 				// Python 进度 0-100 映射到当前阶段的 startProg→endProg
 				localProg := stage.startProg + (stage.endProg-stage.startProg)*fileProgress/100
 				UpdateSplashStageProgress(splash, localProg)
-				if filePhase != "" {
-					UpdateSplashStage(splash, StepRunning, stage.name+"  "+filePhase, localProg)
+				// Patch5 修复：用 fileText 作为子状态（人类可读），不再拼接 phase 名
+				if fileText != "" {
+					UpdateSplashStageSubText(splash, fileText)
 				}
 			}
 
-			// 检测该阶段是否完成：
-			// 简化逻辑：当 filePhase 变到下一个阶段，或 fileProgress 达到 100，就认为当前完成
-			// 实际上我们无法精确知道 Python 端的"KB 完成"事件
-			// 这里用一个简化策略：等到进度文件超过某个阈值（每个阶段对应一个 phase 关键字）
-
-			// 更可靠的检测：每个加载阶段对应的 Python phase 关键字
+			// 检测该阶段是否完成（通过 phase 关键字）
 			stageDone := false
 			switch stage.name {
 			case "加载知识库模型...":
-				// KB 完成的标志：filePhase 含 "kb_loaded" 或 "model_warmup"（说明 KB 已经过了）
 				stageDone = strings.Contains(filePhase, "kb_loaded") ||
 					strings.Contains(filePhase, "model_warmup") ||
 					strings.Contains(filePhase, "recorder") ||
@@ -1130,8 +1137,10 @@ func main() {
 					strings.Contains(filePhase, "model_warmup") ||
 					strings.Contains(filePhase, "done")
 			case "预热 AI 模型（耗时较长）...":
-				stageDone = strings.Contains(filePhase, "done") ||
+				stageDone = strings.Contains(filePhase, "warmup_done") ||
+					strings.Contains(filePhase, "warmup_skipped") ||
 					strings.Contains(filePhase, "ready") ||
+					strings.Contains(filePhase, "done") ||
 					fileProgress >= 100
 			}
 
@@ -1142,7 +1151,6 @@ func main() {
 
 			time.Sleep(500 * time.Millisecond)
 		}
-		lastStageIdx++
 	}
 
 	// 如果没有任何阶段（全没装），快速冲到 95%
@@ -1153,7 +1161,10 @@ func main() {
 	}
 
 	// ---- 看门狗阶段（95→100%，强制停留 3s）----
+	// Patch5 方案 B：流水指示器移到最后一格
+	UpdateSplashStageInfo(splash, totalStagesForIndicator, totalStagesForIndicator-1)
 	UpdateSplashStage(splash, StepRunning, "初始化看门狗...", 96)
+	UpdateSplashStageSubText(splash, "启动健康监测服务")
 	stageStart = time.Now()
 
 	// 实际启动看门狗
