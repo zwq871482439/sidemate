@@ -82,10 +82,7 @@ class _KBOpsMixin:
         self._global_paused = False                    # D31: 录音时全局暂停
 
         # Patch5: BM25 索引已彻底移除（bge-m3 sparse 替代）
-        # 保留三个空字段只是为了兼容 __getattr__ 防止老代码 AttributeError
-        self._bm25 = None
-        self._bm25_tokens = []
-        self._bm25_chunk_ids = []
+        # _bm25* 字段也已删除，下游 stats.py 不再读这些字段
 
         # Patch5 T03: bge-m3 sparse 索引（dense+sparse 检索用）
         # 格式：{chunk_id: {token_id: weight}}
@@ -999,8 +996,7 @@ class _KBOpsMixin:
             del self.documents[doc_id]
             self._save_meta()
 
-            # BM25 重建
-            self._build_bm25_index()
+            # Patch5: BM25 已移除（bge-m3 sparse 替代），不再重建
 
         log.info("[KB] 文档删除: %s (%s), 移除 %d chunks", doc.filename, doc_id, len(doc_chunk_ids))
         return {"ok": True, "removed_chunks": len(doc_chunk_ids)}
@@ -1083,8 +1079,7 @@ class _KBOpsMixin:
             # 统一只保存一次 meta
             self._save_meta()
 
-            # BM25 重建（只需一次）
-            self._build_bm25_index()
+            # Patch5: BM25 已移除（bge-m3 sparse 替代），不再重建
 
         log.info("[KB] 批量删除: %d 个文档, 移除 %d chunks", deleted, total_removed_chunks)
         return {"ok": True, "deleted": deleted, "removed_chunks": total_removed_chunks, "failed": failed}

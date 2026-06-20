@@ -245,12 +245,15 @@ def _get_memory_info():
 _dep_check_cache = None
 
 def _check_kb_dependencies():
-    """检查 KB 模块依赖，结果在进程生命周期内缓存"""
+    """检查 KB 模块依赖，结果在进程生命周期内缓存
+
+    Patch5: rank_bm25/jieba 已移除（bge-m3 sparse 替代），不再检查。
+    """
     global _dep_check_cache
     if _dep_check_cache is not None:
         return _dep_check_cache
     _dep_check_cache = {}
-    for dep in ["rank_bm25", "jieba", "numpy"]:
+    for dep in ["numpy"]:
         try:
             __import__(dep)
             _dep_check_cache[dep] = True
