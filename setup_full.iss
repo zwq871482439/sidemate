@@ -97,7 +97,7 @@ Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs
 Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
 
 ; ====== Server 源码（排除用户数据）======
-Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\deps_manifest.json,settings.json,requirements.txt"
+Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\deps_manifest.json,settings.json,extensions\*.json,requirements.txt"
 
 ; ====== LLM 模型: Qwen3.5-4B (Ollama blob 格式, ~3.0GB) ======
 Source: "server\models\blobs\*"; DestDir: "{app}\server\models\blobs"; Flags: ignoreversion
