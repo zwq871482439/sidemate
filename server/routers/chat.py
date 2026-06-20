@@ -310,28 +310,8 @@ async def api_chat_stream(request: Request):
 
     llm_history = _clean_history_for_model(history_raw, ai_mode=_ai_mode)
 
-    # 话题漂移检测（用完整聊天文件历史，不用前端裁剪后的 history_raw）
+    # Patch5: drift 检测取消（误报率高，砍掉，不再注入 drift_hint）
     drift_result = {"drift": False}
-    try:
-        from intelligence.task_classifier import check_topic_drift
-        model_profile = mgr._get_profile(model_name or DEFAULT_LLM)
-        # 优先从 chat 文件读取完整历史
-        _drift_history = history_raw
-        if chat_file:
-            try:
-                _chat_data = load_chat(chat_file)
-                if _chat_data and _chat_data.get("messages"):
-                    _drift_history = _chat_data["messages"]
-            except Exception:
-                pass
-        drift_result = check_topic_drift(message, _drift_history,
-                                          model_max_rounds=model_profile.get("max_rounds", 6))
-    except Exception as e:
-        log.warning("[DRIFT] 检测失败: %s" % str(e)[:80])
-
-    log.info("[DRIFT] result=%s history_len=%d user_msgs=%d" % (
-        drift_result, len(_drift_history) if _drift_history else 0,
-        len([m for m in (_drift_history or []) if m.get("role") == "user"])))
 
     # 检查模型是否加载（云模式跳过）
     if _ai_mode != "cloud":

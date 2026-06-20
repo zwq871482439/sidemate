@@ -186,6 +186,46 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
             # ====== CloudEngine 直出（非 doc/research 的本地模式 KB 等）======
             elif not _doc_mode:
                 log.info("[CLOUD] >> chat_stream model=%s", model_choice)
+
+                # Patch5 修复：chat 模式也注入 KB 文档引用（与本地模式一致）
+                file_path = getattr(ctx, 'file_path', None)
+                if file_path and not _doc_mode:
+                    log.info("[CLOUD] chat 模式收到 file_path=%s, 尝试提取 KB 文档内容", file_path)
+                    try:
+                        doc_ids = [d.strip() for d in file_path.split(",") if d.strip()]
+                        from knowledge.file_extractor import calc_file_budget, smart_extract
+                        history_chars_kb = sum(
+                            len(m.get("content", "")) for m in history_raw
+                        ) if history_raw else 0
+                        file_budget_kb = calc_file_budget(history_chars_kb)
+
+                        all_docs_text = []
+                        found_docs = []
+                        for did in doc_ids:
+                            kb_doc = kb.get_document(did)
+                            if kb_doc and kb_doc.status == "ready":
+                                doc_texts = [c.text for c in kb.chunks.values()
+                                             if c.doc_id == did and c.text]
+                                if doc_texts:
+                                    all_docs_text.append("=== 文档：%s ===\n%s" %
+                                                        (kb_doc.filename, "\n\n".join(doc_texts)))
+                                    found_docs.append(kb_doc.filename)
+
+                        if all_docs_text:
+                            full_text = "\n\n".join(all_docs_text)
+                            if len(doc_ids) > 1:
+                                file_budget_kb = int(file_budget_kb * 1.5)
+                            if len(full_text) > file_budget_kb:
+                                full_text = smart_extract(full_text, message or "", file_budget_kb)
+                            docs_label = "、".join(found_docs) if len(found_docs) <= 3 else \
+                                ("%s 等 %d 篇" % (found_docs[0], len(found_docs)))
+                            prompt = (message or "") + "\n\n[用户引用了文库文档 %s，内容如下：]\n%s" % \
+                                    (docs_label, full_text)
+                            log.info("[CLOUD] chat 模式 KB 注入: %d篇 (%d字/%d预算) — %s",
+                                    len(found_docs), len(full_text), file_budget_kb, docs_label)
+                    except Exception as _e:
+                        log.warning("[CLOUD] chat 模式 KB 引用提取失败: %s", str(_e)[:100])
+
                 try:
                     if not hasattr(mgr, '_cloud_engine'):
                         from core.cloud_engine import CloudEngine

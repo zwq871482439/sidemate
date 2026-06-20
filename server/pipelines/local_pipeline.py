@@ -117,20 +117,9 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
 
     t0 = time.time()
 
-    # ====== 步骤 1: drift detect → 话题漂移检测 ======
+    # Patch5: drift 检测取消（90%场景误报，效果太差，砍掉）
     drift_hint = ""
-    drift_level = drift_result.get("drift_level", "none")
-    if drift_level in ("hard", "swell"):
-        drift_hint = drift_result.get("suggestion", "")
-    if drift_result.get("drift"):
-        yield sse_event("topic_drift", {
-            "reason": drift_result.get("reason", ""),
-            "overlap": drift_result.get("overlap", 1.0),
-            "msg_count": drift_result.get("msg_count", 0),
-            "swell_threshold": drift_result.get("swell_threshold", 12),
-            "drift_level": drift_level,
-            "suggestion": drift_result.get("suggestion", ""),
-        })
+    drift_result = drift_result or {}
 
     # ====== 步骤 2: context guard → 上下文 >85% 警告 / >95% 新建 ======
     try:

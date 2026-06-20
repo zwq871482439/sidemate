@@ -488,26 +488,34 @@ async function sendMessage() {
   var msgEl3 = document.getElementById('messages');
   if (msgEl3) { msgEl3.scrollTop = msgEl3.scrollHeight; }
 
-  // 文件上传处理
+  // 文件上传处理（仅对真实 File 对象；KB 引用是 {path, source} 对象，跳过上传直接传 path）
   if ((typeof pendingFile !== 'undefined') && pendingFile && userMsg) {
-    try {
-      var fd2 = new FormData();
-      fd2.append('file', pendingFile);
-      // Patch4 v3.1：传 chat_id 让后端把文件存到 session workspace/
-      var _uploadChatId = '';
-      if (typeof currentChatFile !== 'undefined' && currentChatFile) {
-        _uploadChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
-      }
-      var _uploadUrl = (typeof API !== 'undefined' ? API : '') + '/api/file_upload';
-      if (_uploadChatId) _uploadUrl += '?chat_id=' + encodeURIComponent(_uploadChatId);
-      var fileResp = await fetch(_uploadUrl, {method: 'POST', body: fd2});
-      var fileData = await fileResp.json();
-      if (fileData.path) {
-        userMsg.content += '\n\n[用户上传了文件: ' + pendingFile.name + '，请读取并参考]';
-        uploadedFilePath = fileData.path;
-      }
-    } catch(e) { console.error('[chat.sendMessage.fileUpload]', e); }
-    pendingFile = null;
+    var _isKbRef = (pendingFile.source === 'kb') || !(pendingFile instanceof File);
+    if (_isKbRef && pendingFile.path) {
+      // KB 文档引用：直接把 doc_id 当 file_path 传给后端，不走 /api/file_upload
+      uploadedFilePath = pendingFile.path;
+      userMsg.content += '\n\n[用户引用了文库文档: ' + (pendingFile.name || '') + '，请读取并参考]';
+      pendingFile = null;
+    } else {
+      try {
+        var fd2 = new FormData();
+        fd2.append('file', pendingFile);
+        // Patch4 v3.1：传 chat_id 让后端把文件存到 session workspace/
+        var _uploadChatId = '';
+        if (typeof currentChatFile !== 'undefined' && currentChatFile) {
+          _uploadChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
+        }
+        var _uploadUrl = (typeof API !== 'undefined' ? API : '') + '/api/file_upload';
+        if (_uploadChatId) _uploadUrl += '?chat_id=' + encodeURIComponent(_uploadChatId);
+        var fileResp = await fetch(_uploadUrl, {method: 'POST', body: fd2});
+        var fileData = await fileResp.json();
+        if (fileData.path) {
+          userMsg.content += '\n\n[用户上传了文件: ' + pendingFile.name + '，请读取并参考]';
+          uploadedFilePath = fileData.path;
+        }
+      } catch(e) { console.error('[chat.sendMessage.fileUpload]', e); }
+      pendingFile = null;
+    }
   }
   // 在 clearFileRef 之前保存引用路径
   var _savedRefPath = (typeof _refFilePath !== 'undefined') ? _refFilePath : null;
