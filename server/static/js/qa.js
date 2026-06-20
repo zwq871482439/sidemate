@@ -244,7 +244,11 @@ async function kbRefreshDocs() {
 
       // Patch5 B1/B3: 文档项 — 新增 checkbox + 🔒 私密标记 + 热力图标记
       var canSelect = (d.status === 'ready' || d.status === 'error' || d.status === 'cancelled');
-      var isChecked = (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs.has(d.doc_id)) ? 'checked' : '';
+      // Patch5 修复：kb-batch.js 在 qa.js 之后加载，_kbSelectedDocs 可能未定义
+      // 用 typeof + 数组兜底（kb-batch.js 加载后会替换为 Set）
+      var _selectedSet = (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs) ? _kbSelectedDocs : [];
+      var _hasMethod = (typeof _selectedSet.has === 'function');
+      var isChecked = (_hasMethod && _selectedSet.has(d.doc_id)) ? 'checked' : '';
       html += '<div class="kb-doc-item" data-doc-id="'+esc(d.doc_id)+'" style="padding:8px;margin-bottom:6px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;position:relative">';
       html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">';
       // B1: checkbox（只有 ready/error/cancelled 状态才可选中）
