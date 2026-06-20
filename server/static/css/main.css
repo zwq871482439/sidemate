@@ -1,3 +1,32 @@
+/* ===== Inter 字体内嵌（Patch5 C3 T01.1.3）=====
+   Inter 字体（SIL Open Font License 1.1）计划用于拉丁文字显示。
+   当前系统未找到 Inter 字体文件（server/static/fonts/ 目录为空），
+   跳过字体内嵌，使用系统默认字体。
+   待 Patch6 补充 Inter-Regular/Medium/SemiBold woff2 文件后启用以下 @font-face：
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/Inter-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/Inter-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/static/fonts/Inter-SemiBold.woff2') format('woff2');
+}
+===== Inter 字体待 P6 补充 ===== */
+
 /* ===== Logo 色体系：深蓝(主) + 橙黄(强调) + 米白(背景) ===== */
 :root {
   --primary-900: #1e3a5f;
@@ -1096,3 +1125,39 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   background:var(--accent-color) !important;color:#fff !important;
   border-color:var(--accent-color) !important;
 }
+
+/* ============================================================
+   Patch5 C7 T02: 代码块增强 + 消息列表模式 + Token 显示
+   ============================================================ */
+
+/* 代码块增强：header + 折叠 */
+.code-block { position: relative; }
+.code-header { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: var(--gray-100); border-bottom: 1px solid var(--border-color);
+  font-size: 12px; color: var(--text-muted); border-radius: 6px 6px 0 0; }
+.code-header + pre { border-radius: 0 0 6px 6px; margin-top: 0; }
+.code-lang { font-family: monospace; font-weight: 600; }
+.code-lines { opacity: 0.7; }
+.code-toggle, .code-copy-btn { background: none; border: 1px solid var(--border-color);
+  padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; color: var(--text-secondary); }
+.code-toggle:hover, .code-copy-btn:hover { background: var(--gray-200); }
+.code-block pre.collapsed { max-height: 0; overflow: hidden; margin: 0; padding: 0; }
+/* 兼容旧的无 header 代码块（streaming 中） */
+.code-block:not(:has(.code-header)) .code-copy-btn { position: absolute; top: 6px; right: 6px; }
+
+/* 消息列表模式 */
+#messages.msg-list-mode .msg { max-width: 100%; border-left: 2px solid var(--border-color); padding-left: 12px; margin: 8px 0; border-radius: 0; }
+#messages.msg-list-mode .msg.user { border-left-color: var(--primary-500); background: transparent; }
+#messages.msg-list-mode .msg.ai { border-left-color: var(--accent-400); background: transparent; }
+
+/* Token 显示状态 */
+#tokenDisplay.token-warn { color: #d97706; }
+#tokenDisplay.token-over { color: #dc2626; font-weight: 600; }
+
+/* 暗色主题适配 */
+[data-theme="dark"] .code-header { background: var(--bg-secondary); border-bottom-color: var(--border-color); }
+[data-theme="dark"] .code-toggle, [data-theme="dark"] .code-copy-btn { border-color: var(--border-color); color: var(--text-secondary); }
+[data-theme="dark"] .code-toggle:hover, [data-theme="dark"] .code-copy-btn:hover { background: var(--bg-tertiary); }
+[data-theme="dark"] #messages.msg-list-mode .msg.user { border-left-color: var(--accent-color); }
+[data-theme="dark"] #messages.msg-list-mode .msg.ai { border-left-color: var(--accent-400); }
+

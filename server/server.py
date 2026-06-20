@@ -440,6 +440,7 @@ from routers import chat as _r_chat, kb as _r_kb, recorder as _r_recorder
 from routers import settings_system as _r_settings_sys, settings_cloud as _r_settings_cloud, settings_extensions as _r_settings_ext, skill as _r_skill
 from routers import files as _r_files
 from routers.backup import router as backup_router
+from routers import diagnostics as _r_diag
 
 app.include_router(_r_chat.router)
 app.include_router(_r_kb.router)
@@ -450,6 +451,7 @@ app.include_router(_r_settings_ext.router)
 app.include_router(_r_skill.router)
 app.include_router(_r_files.router)
 app.include_router(backup_router)
+app.include_router(_r_diag.router)
 
 # ===== 静态页面路由 =====
 

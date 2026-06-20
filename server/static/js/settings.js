@@ -193,6 +193,9 @@ async function refreshStatus() {
     if (typeof refreshActionBar === 'function') refreshActionBar();
     refreshTokenBudget(data);
     updateTabVisibility();
+    // Patch5 C7: 模型加载后显示清除上下文按钮
+    var _ccBtn = document.getElementById('clearContextBtn');
+    if (_ccBtn) _ccBtn.style.display = hasLoaded ? 'inline-block' : 'none';
     // refreshStatus 完成后 _loadedModelId 已更新，重新刷新 modeTag 文案
     if (typeof initModeTag === 'function') initModeTag();
   } catch(e) {
@@ -1218,6 +1221,72 @@ window.installExtension = installExtension;
 window.uninstallExtension = uninstallExtension;
 window.onExtFilePicked = onExtFilePicked;
 window.updateTabVisibility = updateTabVisibility;
+
+// ===== Patch5 C7 T03: 隐私声明 + 诊断报告 =====
+/**
+ * 加载完整隐私声明（内嵌摘要 + 可选 fetch 完整文件）
+ */
+function loadPrivacyDetail() {
+  var el = document.getElementById('privacyContent');
+  if (!el) return;
+  // 内嵌核心承诺摘要（避免依赖外部文件加载）
+  var summary =
+    '<div style="line-height:1.8">' +
+    '<div style="font-weight:600;color:var(--text-primary);margin-bottom:6px">桌伴隐私承诺</div>' +
+    '<div style="margin-bottom:4px">✅ <b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在您的电脑本地。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>不主动上传</b>：程序不会主动上传任何用户数据到任何服务器。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时与外部通信。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>文库权限保护</b>：文档受 full/search/none 三级令牌授权保护。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>开源组件透明</b>：所有第三方组件遵循原始开源许可证。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>随时可清除</b>：删除安装目录即可彻底卸载，数据随之清除。</div>' +
+    '</div>';
+  el.innerHTML = summary;
+}
+
+/**
+ * 导出系统诊断报告
+ * fetch /api/diagnostics/export，展示在页面 + 触发浏览器下载
+ */
+async function exportDiagnostics() {
+  var output = document.getElementById('diagOutput');
+  if (output) {
+    output.style.display = 'block';
+    output.textContent = '正在收集诊断信息...';
+  }
+  try {
+    var _apiBase = (typeof _apiBase !== 'undefined') ? _apiBase : '';
+    var resp = await fetch(_apiBase + '/api/diagnostics/export');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var text = await resp.text();
+
+    // 展示在页面
+    if (output) {
+      output.textContent = text;
+    }
+
+    // 触发浏览器下载
+    var blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    var now = new Date();
+    var ts = now.getFullYear() + '' + String(now.getMonth() + 1).padStart(2, '0') + '' + String(now.getDate()).padStart(2, '0') + '_' + String(now.getHours()).padStart(2, '0') + '' + String(now.getMinutes()).padStart(2, '0') + '' + String(now.getSeconds()).padStart(2, '0');
+    a.download = 'sidemate_diagnostic_' + ts + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    if (typeof showToast === 'function') showToast('诊断报告已导出', 'success');
+  } catch(e) {
+    if (output) {
+      output.textContent = '导出失败: ' + e.message;
+    }
+    if (typeof showToast === 'function') showToast('诊断报告导出失败: ' + e.message, 'error');
+  }
+}
+window.loadPrivacyDetail = loadPrivacyDetail;
+window.exportDiagnostics = exportDiagnostics;
 
 // ===== Action 管理 =====
 async function refreshCapabilities() {

@@ -297,6 +297,17 @@ async def api_chat_stream(request: Request):
 
     # 读取 session 缓存
     context_cache = load_chat_cache(chat_file)
+
+    # Patch5 C7: 清除上下文 — 只取最后一个 context_cutoff 标记之后的消息
+    history_raw = list(history_raw or [])
+    _cutoff_idx = -1
+    for _i, _m in enumerate(history_raw):
+        if isinstance(_m, dict) and _m.get("context_cutoff"):
+            _cutoff_idx = _i
+    if _cutoff_idx >= 0:
+        history_raw = history_raw[_cutoff_idx + 1:]
+        log.info("[CHAT] context_cutoff at idx %d, history_raw trimmed to %d msgs" % (_cutoff_idx, len(history_raw)))
+
     llm_history = _clean_history_for_model(history_raw, ai_mode=_ai_mode)
 
     # 话题漂移检测（用完整聊天文件历史，不用前端裁剪后的 history_raw）
@@ -564,7 +575,8 @@ async def api_chats_append(chat_name: str, request: Request):
                 # 传递前端附加字段（_aborted/_abort_reason 等）
                 for _ek in ("_aborted", "_abort_reason", "think", "model", "chars",
                             "think_chars", "time", "speed", "task_type", "msg_hash",
-                            "action_mode", "agent_timeline", "token_stats", "kb_sources"):
+                            "action_mode", "agent_timeline", "token_stats", "kb_sources",
+                            "context_cutoff"):
                     _ev = body.get(_ek)
                     if _ev is not None:
                         msg[_ek] = _ev
@@ -609,7 +621,8 @@ async def api_chats_append(chat_name: str, request: Request):
                     msg["_file_tag"] = file_tag
                 for _ek in ("_aborted", "_abort_reason", "think", "model", "chars",
                             "think_chars", "time", "speed", "task_type", "msg_hash",
-                            "action_mode", "agent_timeline", "token_stats", "kb_sources"):
+                            "action_mode", "agent_timeline", "token_stats", "kb_sources",
+                            "context_cutoff"):
                     _ev = body.get(_ek)
                     if _ev is not None:
                         msg[_ek] = _ev

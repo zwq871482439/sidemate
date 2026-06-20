@@ -42,6 +42,8 @@ MIT License 组件
   - Rich
   - six
   - idna
+  - ebooklib (MIT License, 用于 EPUB 文档解析)
+  - striprtf (MIT License, 用于 RTF 文档解析)
 
 MIT License 原文：
 
@@ -81,6 +83,7 @@ Apache License 2.0 组件
   - flatbuffers (Google)
   - requests
   - tzdata
+  - FlagEmbedding (BAAI, Apache License 2.0, 用于 BGE-M3 向量模型推理)
 
 Apache License 2.0 通知要求：
 
@@ -215,9 +218,15 @@ Python Software Foundation License 属于 permissive license，
     许可协议：本 EULA 管辖
     说明：自研组件，非第三方。
 
+  - Inter Font
+    版权所有：Rasmus Andersson
+    许可协议：SIL Open Font License 1.1
+    来源：https://github.com/rsms/inter
+    说明：用于 UI 拉丁文字显示（Patch5 C3 品牌视觉，字体文件待 Patch6 补充）。
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-本声明最后更新：2026年6月11日
+本声明最后更新：2026年6月20日
 
 如需获取任何第三方组件的完整许可协议文本或源代码，请联系：
 [待补充]

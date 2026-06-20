@@ -1,106 +1,90 @@
-%% 桌伴 Patch5 批次 B — 类图
-%% 核心数据结构 + 服务类关系
+%% 桌伴 Sidemate Patch5 批次 C — 类图
 
 classDiagram
-    class KBDocument {
-        +str doc_id
-        +str filename
-        +str file_type
-        +int file_size
-        +str imported_at
-        +str status
-        +int chunk_count
-        +int total_chars
-        +float progress
-        +str source
-        +dict metadata
-        +str error_msg
-        +str summary
-        +list tags
-        +str tag_status
-        +bool is_private
-        +int hit_count
+    class TokenEstimator {
+        +CHARS_PER_TOKEN_CN: float = 1.5
+        +CHARS_PER_TOKEN_EN: float = 4.0
+        +MAX_CONTEXT_TOKENS: int = 16384
+        +estimateTokens(text: str) int
+        +estimateMixedTokens(text: str) int
+        +estimateFileTokens(filePath: str) int
+        +estimateTotal() int
+        +formatCount(n: int) str
+        +updateInputDisplay(inputEl, displayEl) void
+        +getWarningLevel(n: int) str
     }
 
-    class KBChunk {
-        +str chunk_id
-        +str doc_id
-        +int index
-        +str text
-        +int char_count
-        +str heading
-        +str source_label
-        +bool is_private
+    class SkeletonLoader {
+        +TYPES: dict
+        +show(container: HTMLElement, type: str) void
+        +hide(container: HTMLElement) void
+        +renderChatSkeleton() HTMLElement
+        +renderKBSkeleton() HTMLElement
+        +renderDocSkeleton() HTMLElement
+        +isShowing(container: HTMLElement) bool
     }
 
-    class DedupDetector {
-        +KnowledgeBase kb
-        +check_l1(filename: str, file_size: int) dict
-        +check_l2(text: str, threshold: float) dict
-        +check_duplicate(filename: str, file_size: int, text: str) DedupResult
+    class CodeBlockEnhancer {
+        +enhance(container: HTMLElement) void
+        +addHeader(codeBlock: HTMLElement) void
+        +addLineNumbers(codeBlock: HTMLElement) void
+        +toggleCollapse(codeBlock: HTMLElement) void
+        +getLineCount(codeEl: HTMLElement) int
+        +detectLanguage(codeBlock: HTMLElement) str
     }
 
-    class DedupResult {
-        +bool is_duplicate
-        +str level
-        +str existing_doc_id
-        +str existing_filename
-        +float similarity
+    class MessageStyleManager {
+        -STORAGE_KEY: str = "sidemate_msg_style"
+        -currentMode: str
+        +getMode() str
+        +setMode(mode: str) void
+        +applyMode(container: HTMLElement) void
+        +toggleMode() void
+        +renderToggleButton() HTMLElement
     }
 
-    class BatchQueue {
-        +str db_path
-        +create_batch(batch_id: str, total_files: int) str
-        +enqueue(batch_id: str, file_path: str, filename: str, file_type: str, file_size: int) str
-        +get_pending() TaskItem
-        +update_status(task_id: str, status: str, error_msg: str, doc_id: str)
-        +get_batch_progress(batch_id: str) dict
-        +cancel_batch(batch_id: str) int
-        +recover_pending() int
-        +start_worker(kb_instance)
-        +stop_worker(timeout: float)
+    class ContextCutoff {
+        +markCutoff(messages: list) void
+        +filterHistory(messages: list) list
+        +hasCutoff(messages: list) bool
+        +getLastCutoffIndex(messages: list) int
+        +clearCutoff() void
     }
 
-    class TaskItem {
-        +str task_id
-        +str batch_id
-        +str file_path
-        +str filename
-        +str file_type
-        +int file_size
-        +str status
-        +str doc_id
-        +str error_msg
-        +str created_at
-        +str updated_at
-        +str doc_meta
+    class DiagnosticsRouter {
+        +GET /api/diagnostics/info dict
+        +GET /api/diagnostics/export PlainTextResponse
+        -collectSystemInfo() dict
+        -collectModelInfo() dict
+        -collectGPUInfo() dict
+        -collectKeyConfig() dict
+        -formatReport(info: dict) str
     }
 
-    class AccessTokenManager {
-        +float _default_ttl
-        +dict _tokens_cache
-        +dict _doc_tokens
-        +generate_full_token(doc_id: str, ttl: float) str
-        +generate_search_token(doc_id: str, ttl: float) str
-        +verify_token(token: str, doc_id: str) tuple
-        +revoke_token(token: str) bool
-        +revoke_doc_tokens(doc_id: str) int
-        +filter_private_docs(doc_ids: list, token: str, is_private_map: dict) list
-        +get_doc_access_level(doc_id: str, token: str) str
+    class ChatRouter {
+        +POST /api/chat/stream SSE
+        +POST /api/chats/{name}/append dict
+        -buildHistory(messages: list, cutoff_idx: int) list
+        -findLastCutoff(messages: list) int
     }
 
-    class AccessToken {
-        +str token
-        +str doc_id
-        +str level
-        +float created_at
-        +float expires_at
+    class SettingsSystemRouter {
+        +GET /api/resource-info dict
+        +GET /api/info dict
+        -collectResourceData() dict
     }
 
-    KBDocument "1" --> "*" KBChunk : has chunks
-    DedupDetector ..> KBDocument : 遍历检测
-    DedupResult ..> DedupDetector : 返回值
-    BatchQueue "1" --> "*" TaskItem : manages
-    BatchQueue ..> KBDocument : 导入后创建
-    AccessTokenManager "1" --> "*" AccessToken : manages
-    AccessTokenManager ..> KBDocument : 过滤私密文档
+    class ErrorsHandler {
+        +showToast(message, type, duration, action, key) void
+        +addErrorCopyButton(toast, errorDetail) void
+        +copyErrorDetail(text: str) void
+    }
+
+    %% 关系
+    TokenEstimator --> MessageStyleManager : 显示 token 数
+    SkeletonLoader ..> ChatRouter : 等待响应时显示
+    ContextCutoff --> ChatRouter : 过滤 history
+    CodeBlockEnhancer ..> ChatRouter : 渲染后增强
+    DiagnosticsRouter --> ChatRouter : 独立路由模块
+    SettingsSystemRouter ..> DiagnosticsRouter : 诊断信息补充
+    ErrorsHandler --> ChatRouter : 错误处理

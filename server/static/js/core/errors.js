@@ -135,6 +135,25 @@ function showToast(message, type, duration, action, key) {
   toast.style.display = 'flex';
   toast.style.alignItems = 'center';
   toast.style.gap = '6px';
+
+  // Patch5 C7 T03: error 类型 toast 追加"复制"按钮
+  if (type === 'error') {
+    var _errCopy = document.createElement('button');
+    _errCopy.textContent = '复制';
+    _errCopy.style.cssText = 'font-size:11px;padding:2px 8px;border:1px solid var(--border-color);background:none;border-radius:3px;cursor:pointer;color:var(--text-secondary);margin-left:8px;flex-shrink:0';
+    _errCopy.onclick = function() {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(message).then(function() {
+            _errCopy.textContent = '已复制';
+            setTimeout(function() { _errCopy.textContent = '复制'; }, 1500);
+          });
+        }
+      } catch(e) {}
+    };
+    toast.insertBefore(_errCopy, closeBtn);  // 插在 closeBtn 之前
+  }
+
   toast.appendChild(closeBtn);
 
   // 记录 key 映射

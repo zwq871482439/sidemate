@@ -1,6 +1,6 @@
 ; ====================================================================
 ; Sidemate 全量安装脚本 (Inno Setup) — 主程序 + LLM + KB 模型
-; 版本: 0.9.4.0
+; 版本: 0.9.5.0
 ; 包含: 程序本体 + Qwen3.5-4B LLM + BGE-M3 Embedder + Reranker-v2-m3
 ; 不含: 纪要扩展 (Whisper)
 ;
@@ -10,10 +10,10 @@
 ;   - 用户下载 exe + 所有 .bin 放同目录，运行 exe 自动合并
 ;
 ; 产出文件（压缩后约 8GB）：
-;   Sidemate_Full_Setup_v0.9.4.exe       ← 入口（< 4GB）
-;   Sidemate_Full_Setup_v0.9.4-1.bin     ← 分卷 1
-;   Sidemate_Full_Setup_v0.9.4-2.bin     ← 分卷 2
-;   Sidemate_Full_Setup_v0.9.4-3.bin     ← 分卷 3（可能没有，视压缩率）
+;   Sidemate_Full_Setup_v0.9.5.exe       ← 入口（< 4GB）
+;   Sidemate_Full_Setup_v0.9.5-1.bin     ← 分卷 1
+;   Sidemate_Full_Setup_v0.9.5-2.bin     ← 分卷 2
+;   Sidemate_Full_Setup_v0.9.5-3.bin     ← 分卷 3（可能没有，视压缩率）
 ;
 ; 组件体积（未压缩）：
 ;   Launcher + Ollama + lib + Python + Server ≈ 1.6GB
@@ -24,7 +24,7 @@
 ; ====================================================================
 
 #define MyAppName "桌伴 Sidemate"
-#define MyAppVersion "0.9.4.0"
+#define MyAppVersion "0.9.5.0"
 #define MyAppPublisher "Sidemate Team"
 #define MyAppURL "https://sidemate.app"
 #define MyAppExeName "Sidemate.exe"
@@ -34,7 +34,7 @@
 AppId={{B7E3F2A1-8C9D-4E5F-A6B0-1D2E3F4A5B6C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName=Sidemate v0.9 Patch 4 (Full)
+AppVerName=Sidemate v0.9 Patch 5 (Full)
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -46,7 +46,7 @@ DisableDirPage=yes
 
 ; 输出设置
 OutputDir=output
-OutputBaseFilename=Sidemate_Full_Setup_v0.9.4
+OutputBaseFilename=Sidemate_Full_Setup_v0.9.5
 SetupIconFile=installer\setup.ico
 
 ; 压缩（Patch4 v3.1：ultra64 → normal，模型文件压缩率<5%但耗时差 20 倍）
@@ -72,10 +72,10 @@ PrivilegesRequired=lowest
 InfoBeforeFile=LICENSE
 
 ; 版本信息
-VersionInfoVersion=0.9.4.0
+VersionInfoVersion=0.9.5.0
 VersionInfoCompany=Sidemate Team
 VersionInfoProductName=桌伴 Sidemate
-VersionInfoProductVersion=0.9.4.0
+VersionInfoProductVersion=0.9.5.0
 
 ; 禁用程序组页
 DisableProgramGroupPage=yes

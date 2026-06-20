@@ -236,7 +236,8 @@ function md(text, sanitize) {
     } else if (typeof hljs !== 'undefined') {
       try { highlighted = hljs.highlightAuto(safeCode).value; } catch(e) {}
     }
-    return '<div class="code-block"><pre><code' + cls + '>' + highlighted + '</code></pre><button class="code-copy-btn" onclick="copyCode(this)">复制</button></div>';
+    // Patch5 C7: 纯净结构（header + 复制按钮由 CodeBlockEnhancer.enhance() 动态注入）
+    return '<div class="code-block"><pre><code' + cls + '>' + highlighted + '</code></pre></div>';
   };
 
   // 自定义 heading：加 id 用于锚点
@@ -368,13 +369,13 @@ function _mdFallback(text, latexPlaceholders) {
   text = text.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
     var cls = lang ? 'language-' + lang : '';
     var idx = codeBlocks.length;
-    codeBlocks.push('<div class="code-block"><pre><code class="' + cls + '">' + esc(code.trimEnd()) + '</code></pre><button class="code-copy-btn" onclick="copyCode(this)">复制</button></div>');
+    codeBlocks.push('<div class="code-block"><pre><code class="' + cls + '">' + esc(code.trimEnd()) + '</code></pre></div>');
     return '\x02CB' + idx + '\x02';
   });
   text = text.replace(/```(\w*)\n([\s\S]*)$/g, function(_, lang, code) {
     var cls = lang ? 'language-' + lang : '';
     var idx = codeBlocks.length;
-    codeBlocks.push('<div class="code-block"><pre><code class="' + cls + '">' + esc(code.trimEnd()) + '</code></pre><button class="code-copy-btn" onclick="copyCode(this)">复制</button></div>');
+    codeBlocks.push('<div class="code-block"><pre><code class="' + cls + '">' + esc(code.trimEnd()) + '</code></pre></div>');
     return '\x02CB' + idx + '\x02';
   });
   text = text.replace(/```(\w*)$/gm, function(_, lang) {

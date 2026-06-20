@@ -206,7 +206,7 @@ function renderMessages() {
       var _hint = _isCloud
         ? '输入问题、上传文件，或直接说「帮我写一份关于XX的文档」'
         : '输入问题或上传文件开始使用';
-      el.innerHTML = '<div class="empty-state"><div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="font-size:1.6em;opacity:.5">' + iconSvg('chat','24') + '</div><div>开始对话吧</div><div style="font-size:.82em;color:var(--text-muted);margin-top:4px">' + _hint + '</div></div></div>';
+      el.innerHTML = '<div class="empty-state"><div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="font-size:1.6em;opacity:.5">' + iconSvg('chat','24') + '</div><div>开始对话吧</div><div style="font-size:.92em;color:var(--text-primary);margin-top:6px;font-weight:500">' + _hint + '</div><div style="font-size:.78em;color:var(--text-muted);margin-top:10px;display:flex;gap:12px;justify-content:center"><span>💡 提示：可上传 PDF/Word/TXT 文件</span><span>·</span><span>支持引用文库文档</span></div></div></div>';
     } else {
       // 首次/非首次无模型：留空，由 #chatModelOverlay 接管
       el.innerHTML = '';
@@ -227,11 +227,13 @@ function renderMessages() {
       el.appendChild(div);
     }
     applyCodeHighlight(el);
+    if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
     if (_lastScrollBottom) { el.scrollTop = el.scrollHeight; }
     return;
   }
   el.innerHTML = currentMessages.map(function(m) { return renderMsg(m); }).join('');
   applyCodeHighlight(el);
+  if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
 }
 
 // ===== 流式渲染（性能优化：50ms 节流）=====
@@ -507,6 +509,9 @@ async function sendMessage() {
   document.getElementById('newChatBtn').disabled = true;
   document.getElementById('delChatBtn').disabled = true;
 
+  // Patch5 C7: 显示骨架屏（替代 spinner 的空白等待）
+  if (typeof Skeleton !== 'undefined') Skeleton.show(document.getElementById('messages'), 'chat');
+
   appendStreamingMsg('', '', 0, null, true);
   var msgEl = document.getElementById('messages');
   msgEl.scrollTop = msgEl.scrollHeight;
@@ -542,6 +547,16 @@ async function sendMessage() {
       }
       return true;
     });
+
+    // Patch5 C7: 清除上下文 — 只取最后一个 context_cutoff 标记之后的消息
+    var _cutoffIdx = -1;
+    for (var ci = 0; ci < history.length; ci++) {
+      if (history[ci] && history[ci].context_cutoff) _cutoffIdx = ci;
+    }
+    if (_cutoffIdx >= 0) {
+      history = history.slice(_cutoffIdx + 1);
+      console.log('[CHAT] context_cutoff at idx %d, history trimmed to %d msgs', _cutoffIdx, history.length);
+    }
 
     var endpoint = '/api/chat/stream';
 
@@ -688,6 +703,8 @@ async function sendMessage() {
           } else if (d.type === 'pipeline_progress') {
           } else if (d.type === 'token') {
             fullText += d.content;
+            // Patch5 C7: 收到首个有内容的 token 时隐藏骨架屏
+            if (typeof Skeleton !== 'undefined' && fullText.length > 0) Skeleton.hide(document.getElementById('messages'));
             var noThinkTypes = ['text', 'code', 'agent'];
             if (!thinkingPhase && !thinkText && !noThinkTypes.includes(currentTaskType)) {
               thinkingPhase = true;
@@ -734,6 +751,8 @@ async function sendMessage() {
             appendStreamingMsg('', thinkText, thinkLen);
             lastRender = now;
           } else if (d.type === 'done') {
+            // Patch5 C7: done 事件隐藏骨架屏
+            if (typeof Skeleton !== 'undefined') Skeleton.hide(document.getElementById('messages'));
             doneData = d;
             // 如果前面已经显示了 error 卡片，不再覆盖渲染
             if (_hadError) {
@@ -773,6 +792,8 @@ async function sendMessage() {
             thinkingPhase = false;
             appendStreamingMsg(fullText, thinkText, thinkLen);
           } else if (d.type === 'error') {
+            // Patch5 C7: error 事件隐藏骨架屏
+            if (typeof Skeleton !== 'undefined') Skeleton.hide(document.getElementById('messages'));
             thinkingPhase = false;
             // 结构化错误渲染：带类型图标 + 详情展开
             var errorType = d.error_type || 'unknown';
@@ -1115,6 +1136,8 @@ async function sendMessage() {
     }
     _hadError = true;  // 阻止 finally 重新 renderMessages 覆盖错误/终止提示
   } finally {
+    // Patch5 C7: 兜底隐藏骨架屏
+    if (typeof Skeleton !== 'undefined') Skeleton.hide(document.getElementById('messages'));
     // doc_outline 模式：保留 stream-msg 元素和确认按钮，不重新渲染
     var _isDocOutlineMode = !!window._docOutlinePending;
     if (_isDocOutlineMode) {
@@ -1355,6 +1378,72 @@ window.saveFileAs = saveFileAs;
 window.pickKbFile = pickKbFile;
 window.exportChat = exportChat;
 window.copyMsgContent = copyMsgContent;
+
+// ===== Patch5 C7: 清除上下文 =====
+/**
+ * 清除上下文：重置模型对当前对话的记忆，消息保留但不再被参考
+ */
+async function clearContext() {
+  if (typeof generating !== 'undefined' && generating) {
+    if (typeof showToast === 'function') showToast('请等待当前回复完成', 'warning');
+    return;
+  }
+  // 确认弹窗
+  var confirmed = true;
+  if (typeof showDialog === 'function') {
+    confirmed = await showDialog('清除上下文',
+      '将重置模型对当前对话的记忆。消息会保留，但模型不再参考之前的内容。',
+      {confirm: true, confirmLabel: '清除', cancelLabel: '取消'});
+  }
+  if (!confirmed) return;
+
+  // 给当前会话追加一条 context_cutoff 标记消息（system role + 特殊 content）
+  if (typeof currentChatFile !== 'undefined' && currentChatFile) {
+    var _ccName = currentChatFile.split(/[\\/]/).pop().replace('.json', '');
+    var _ccMsg = {
+      role: 'system',
+      content: '[CONTEXT_CUTOFF]',
+      ts: new Date().toTimeString().slice(0, 8),
+      context_cutoff: true
+    };
+    try {
+      await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(_ccName) + '/append', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(_ccMsg)
+      });
+      // 同步到内存中的 currentMessages
+      if (typeof currentMessages !== 'undefined') {
+        currentMessages.push(_ccMsg);
+        if (typeof _lastMsgCount !== 'undefined') _lastMsgCount = currentMessages.length;
+      }
+    } catch(e) {
+      console.warn('[chat.clearContext] 追加标记失败:', e.message);
+    }
+  } else {
+    // 没有会话文件：仅在内存标记
+    if (typeof currentMessages !== 'undefined') {
+      currentMessages.push({
+        role: 'system',
+        content: '[CONTEXT_CUTOFF]',
+        ts: new Date().toTimeString().slice(0, 8),
+        context_cutoff: true
+      });
+    }
+  }
+
+  if (typeof showToast === 'function') {
+    showToast('上下文已清除，模型将从下条消息开始新对话', 'success');
+  }
+}
+window.clearContext = clearContext;
+
+// ===== Patch5 C7: 初始化 Token 估算 + UI 增强 =====
+// 在页面加载后初始化
+window.addEventListener('load', function() {
+  if (typeof initTokenEstimator === 'function') initTokenEstimator();
+  if (typeof initUiEnhance === 'function') initUiEnhance();
+});
 
 // ===== Cloud Agent 工具时间线（累积式，每步保留）=====
 function _handleAgentStatus(data) {

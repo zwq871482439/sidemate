@@ -1,8 +1,7 @@
-# 桌伴 Patch5 批次 B — 系统架构设计 + 任务分解
+# 桌伴 Sidemate Patch5 批次 C — 系统架构设计 + 任务分解
 
-> **架构师**: 高见远  
-> **日期**: 2026-06-20  
-> **范围**: B1 批量操作UI + Tag聚类 + 热力图 / B2 文件类型扩展 + 扩展包改造 / B3 权限系统UI + 私密文档UI / B4 去重检测 / B5 内存预算移除
+> 版本：v0.9 Patch 5 批次 C | 架构师：高见远 | 更新：2026-06-20
+> 范围：C7 前端体验 + C3 品牌视觉 + C4 空状态反馈 + C5 隐私诊断 + C1 小包分发
 
 ---
 
@@ -10,298 +9,204 @@
 
 ### 1. 实现方案
 
-#### B1: 批量操作 UI + Tag 聚类 + 检索热力图
+#### 1.1 核心技术挑战
 
-**核心挑战**: 前端纯 JS 实现（非 React），需在不引入框架的前提下实现 checkbox 全选/反选、批量操作、Tag 模糊聚类、热力图展示。
-
-**技术方案**:
-
-| 子功能 | 方案 | 说明 |
-|--------|------|------|
-| 文档列表 checkbox | 前端原生 JS | 每个文档项加 `<input type="checkbox">`，维护 `Set<doc_id>` 选中集合；全选/反选按钮操作集合 |
-| 批量删除 | 新增后端 API `DELETE /api/kb/documents/batch` | 接收 `doc_ids[]`，循环调用现有 `kb.delete_document()`，返回逐个结果 |
-| 批量重新打标 | 新增后端 API `POST /api/kb/documents/batch_retag` | 循环设置 `tag_status=pending` + `enqueue` 打标调度器 |
-| 批量设置私密 | 扩展现有 `POST /api/kb/documents/{doc_id}/privacy` → 新增批量版 | 循环设置 `is_private` + `_save_meta()` |
-| Tag 前端聚类 | 纯前端 JS，**编辑距离 + token Jaccard 混合算法** | 见下方详细算法 |
-| 检索热力图 | 后端 SQLite 存 `hit_count`，前端显示 🔥 + 重置按钮 | hit_count 存 `kb_meta.json` 的 `documents[].hit_count` 字段（复用现有持久化） |
-
-**Tag 聚类算法（前端 JS 实现）**:
-
-```javascript
-// 算法：编辑距离归一化相似度 + token Jaccard 混合
-// 1. 收集所有文档的所有 tags → 扁平化数组
-// 2. 两两计算相似度：
-//    - 短 tag（≤6字符）：Levenshtein 距离归一化 = 1 - dist/maxLen
-//    - 长 tag（>6字符）：token Jaccard（按2-gram分词后交集/并集）
-// 3. 相似度 > 0.7 → 归为同一组（并查集 Union-Find）
-// 4. 每组取频率最高的 tag 作为组名（display name）
-// 5. 前端按组折叠显示，组名后标注 "(N)" 表示合并数
-
-function tagSimilarity(a, b) {
-  a = a.toLowerCase().trim();
-  b = b.toLowerCase().trim();
-  if (a === b) return 1.0;
-  if (a.length <= 6 || b.length <= 6) {
-    // 编辑距离归一化
-    var dist = levenshtein(a, b);
-    return 1 - dist / Math.max(a.length, b.length);
-  }
-  // 2-gram Jaccard
-  var ga = bigrams(a), gb = bigrams(b);
-  var inter = 0;
-  for (var i = 0; i < ga.length; i++) {
-    if (gb.indexOf(ga[i]) >= 0) inter++;
-  }
-  var union = ga.length + gb.length - inter;
-  return union > 0 ? inter / union : 0;
-}
-```
-
-**设计决策 — hit_count 存储位置**: 存 `kb_meta.json`（在 `KBDocument` 上新增 `hit_count: int = 0` 字段）。
-
-理由：
-1. hit_count 是文档级元数据，跟 `chunk_count`、`total_chars` 同级
-2. 复用现有 `_save_meta()` 持久化机制，无需新建表
-3. 重置热力图 = 遍历 documents 设 `hit_count=0` + `_save_meta()`
-4. 不会高频写入（每次检索命中 +1，但只在 `_save_meta` 时落盘）
-
-#### B2: 文件类型扩展 + 扩展包改造
-
-**核心挑战**: 新增 4 种文件格式解析（epub/html/srt/rtf），且扩展包结构需去掉 wheels 目录。
-
-**技术方案**:
-
-| 格式 | 解析库 | 说明 |
-|------|--------|------|
-| `.epub` | `ebooklib` + `beautifulsoup4` | ebooklib 读取章节 → bs4 去 HTML 标签提纯文本 |
-| `.html` | `beautifulsoup4`（已有依赖） | bs4 解析 → 提取 `<p>`/`<div>`/`<table>` 文本 |
-| `.srt` | 纯文本正则解析（无第三方库） | 正则去掉序号 + 时间轴 → 保留字幕文本 |
-| `.rtf` | `striprtf` | 轻量库，RTF → 纯文本 |
-
-**改造点（3 处文件解析入口）**:
-1. `files/file_extractor.py` → `extract_text()` 函数（聊天附件注入用）
-2. `routers/kb.py` → `_extract_upload_text()` 函数（文库单文件上传用）
-3. `core/batch_queue.py` → `_extract_file_text()` 函数（文库批量上传用）
-
-> **关键约定**: 三处解析逻辑保持一致。建议抽取为公共函数 `files.file_extractor.extract_text_by_ext()`，三处统一调用。
-
-**扩展包改造**:
-- 移除 `kb.py` 安装逻辑中的 `wheels/` 目录处理（L519-L538）
-- 移除 `kb.py` 卸载逻辑中的 `wheels_dir` 清理（L611-L614）
-- `_SUPPORTED_EXTENSIONS` 常量扩展（`batch_queue.py` L72）
-- `upload_batch` 的格式检查扩展（`kb.py` L1291）
-
-#### B3: 权限系统 UI + 私密文档 UI
-
-**核心挑战**: 前端需实现预设 + 高级展开的交互模式，且复用现有 2 层权限（会话上下文 + KB 权限）。
-
-**技术方案**:
-
-权限系统分三层：
-1. **后端权限引擎**: 已有（批次 A 的 `access_token.py` + `search.py` 的 `accessible_doc_ids` 过滤），无需改动
-2. **设置页权限管理卡片**: 新增前端 UI — 3 预设 + 高级展开
-3. **文档列表 🔒 标记**: 文档项加锁图标 + 批量设私密
-
-**3 个权限预设**:
-
-| 预设 | 说明 | 对应配置 |
+| 挑战 | 难点 | 解决方案 |
 |------|------|----------|
-| 完全信任 | 所有工具可用，联网/文件操作不需确认 | `confirm_external_read: False`, `sandbox_cleanup: "never"` |
-| 谨慎模式 | 联网需确认，文件操作需确认，私密文档默认隔离 | `confirm_external_read: True`, `sandbox_cleanup: "24h"` |
-| 纯离线 | 禁止联网，仅本地操作 | `confirm_external_read: True`, 联网工具 toggle off |
+| **纯前端骨架屏** | 原生 JS 无组件框架，需手动管理 DOM 生命周期 | CSS shimmer 动画 + 占位灰色块，替换现有 spinner |
+| **统一 Token 估算** | 输入文本 + 引用文档 + 上传文件三源合并 | 新建 `token-estimator.js`，统一 `estimateTokens(text)` 公式，输入框右下角实时显示 |
+| **清除上下文（保留消息）** | 消息保留但模型"忘记"之前的对话 | 消息加 `context_cutoff: true` 标记，`sendMessage()` 构建 history 时跳过 cutoff 之前的消息 |
+| **消息样式切换（气泡/列表）** | 两种布局需动态切换不破坏已有渲染 | CSS class 控制（`.msg-list-mode` 父容器），localStorage 持久化偏好 |
+| **代码块折叠/行号** | 已有复制功能，需增强 | 扩展现有 `.code-block` 结构，加 `.code-header`（语言+行数+折叠按钮）+ 行号渲染 |
+| **Splash 启动画面 Logo** | Go 原生 GDI 绘制，当前是纯文字+ico 图标 | 已加载 logo.ico → `DrawIconEx`，增加品牌色背景渐变 + 副标题优化 |
+| **轻量安装包 <2GB** | 当前全量包 6GB+ 触发 Defender | setup.iss 移除模型文件，仅含主程序+Python+Ollama+Lib（~1.6GB）|
+| **纯模型扩展包** | 旧扩展包含 wheels/，与嵌入式 Python 重复 | 移除 wheels/，只保留 models/，manifest.json 的 `requires` 声明依赖已预装 |
 
-**高级展开**: 每个工具单独 toggle（联网搜索、文件读写、代码执行、文库检索等），映射到 `config.py` 的 `confirm_external_read` + 各工具的 enabled 标志。
+#### 1.2 框架与技术选型
 
-> **设计决策**: 权限预设不新增数据结构，复用 `settings.json` 的现有配置项。预设 = 一组配置值的快捷设置。高级展开 = 直接修改单个配置项。
+| 层 | 技术 | 说明 |
+|----|------|------|
+| **前端** | 原生 HTML/JS/CSS | 已有技术栈，不引入框架 |
+| **后端** | FastAPI (Python 3.14) | 已有技术栈 |
+| **Launcher** | Go + Win32 GDI | 已有技术栈 |
+| **安装包** | Inno Setup (ISS) | 已有技术栈 |
+| **图标生成** | Python Pillow + icoutils | 从 logo.svg 生成多尺寸 PNG/ICO |
+| **字体** | Inter (woff2) | 开源字体，SIL Open Font License |
 
-**文档列表 🔒 标记**: 在 `qa.js` 的 `kbRefreshDocs()` 渲染循环中，检查 `d.is_private` → 显示 🔒 图标。批量设置私密复用 B1 的 checkbox 选择机制。
+#### 1.3 架构模式
 
-#### B4: 去重检测
+保持现有 **前后端分离** 架构：
+- 前端：原生 JS 模块化（`<script>` 引入，全局函数挂载 `window`）
+- 后端：FastAPI 路由分模块（`routers/` 目录）
+- Launcher：Go 独立进程（看门狗 + Splash + 托盘）
 
-**核心挑战**: 导入时不阻塞主流程，检测到重复后放入"待处理队列"，需复用 A2 SQLite 队列。
-
-**技术方案**:
-
-两层检测策略：
-
-| 层级 | 检测条件 | 实现 |
-|------|----------|------|
-| L1 快速检测 | filename 完全相同 + file_size 相同（字节级） | 纯 Python，O(N) 遍历现有 documents |
-| L2 内容检测 | 前 2000 字相似度 ≥ 95% | difflib.SequenceMatcher（Python 标准库，无需第三方） |
-
-**流程**:
-1. 导入时（`upload` / `upload_batch`），文本提取后、`import_document` 前，调用 `check_duplicate()`
-2. L1 检测：遍历 `kb.documents`，匹配 filename+size
-3. L2 检测：取前 2000 字与现有文档前 2000 字做 `SequenceMatcher.ratio()`
-4. 检测到重复 → **不阻塞导入** → 正常导入文档 → 标记 `metadata.duplicate_of = existing_doc_id` → 放入"待处理队列"
-5. 前端单独窗口/弹窗展示冲突列表，用户批量决策（保留两版/替换旧版/取消新版）
-
-**待处理队列**: 复用 `kb_meta.json` 的 `metadata.duplicate_of` 标记 + 前端过滤显示。
-
-> **设计决策**: 不在 SQLite batch_queue 中新建去重表。去重标记存在文档 metadata 中，前端通过 `GET /api/kb/documents?filter=duplicates` 过滤。原因：去重是文档级状态，不是队列任务状态；文档导入后已存在于 kb_meta 中。
-
-#### B5: 内存预算移除
-
-**核心挑战**: 需干净移除配置项 + 管理器逻辑 + UI 组件，同时不破坏现有功能。
-
-**技术方案**:
-
-移除清单：
-
-| 文件 | 移除内容 | 保留内容 |
-|------|----------|----------|
-| `config.py` | `memory_budget_mb` / `memory_budget_min_mb` / `memory_budget_max_mb` 默认值 | `reranker_idle_timeout_sec` / `reranker_resident` 保留 |
-| `knowledge/memory_manager.py` | 整个文件删除 | — |
-| `knowledge/ops.py` | `self.memory_manager` 初始化 + 所有 `memory_manager.register/unregister/can_allocate` 调用 | — |
-| `routers/settings_system.py` | `_check_memory_budget()` 函数 + `/api/budget` 端点 | RES 日志保留 |
-| `routers/kb.py` | `_check_memory_budget()` 调用处（L636-L638） | — |
-| `static/js/settings.js` | `onBudgetSliderChange()` + 预算滑块初始化逻辑 | RES 面板保留 |
-| `index.html` | 内存预算滑块 HTML | 资源面板 HTML 保留 |
-
-**保留项**:
-- `RES 日志`（`/api/resource-info` 的 system/modules 信息）→ C5 系统诊断用
-- `reranker_idle_timeout_sec` / `reranker_resident` → Reranker 空闲卸载逻辑保留（独立的内存优化机制）
-- `_get_memory_info()`（kb.py）→ 用于加载前 RAM 检查（`available_mb < 800` 警告）
-
-> **风险标注**: `memory_manager` 被 `ops.py` 的 `init_embedder()` / `init_reranker()` / `unload_models()` / `_unload_reranker()` 引用。移除时需确保所有 `self.memory_manager.xxx()` 调用被清理，否则启动时 AttributeError。
+批次 C 全部是 **前端为主 + 少量后端端点 + 安装脚本** 的改动，不涉及核心架构变更。
 
 ---
 
 ### 2. 文件列表
 
-#### 新增文件
+#### 2.1 新增文件
 
-| 文件路径 | 说明 |
-|----------|------|
-| `server/core/dedup_detector.py` | B4 去重检测引擎（L1+L2 检测） |
-| `server/static/js/kb-batch.js` | B1 批量操作 + Tag 聚类 + 热力图前端逻辑（从 qa.js 拆出，减少 qa.js 膨胀） |
+| 路径 | 类型 | 说明 |
+|------|------|------|
+| `server/static/js/token-estimator.js` | 前端 | 统一 Token 估算模块 |
+| `server/static/js/skeleton.js` | 前端 | 骨架屏渲染模块 |
+| `server/static/js/ui-enhance.js` | 前端 | 代码块增强（折叠+行号）+ 消息样式切换 |
+| `server/static/css/skeleton.css` | 前端 | 骨架屏样式（shimmer 动画） |
+| `server/static/fonts/Inter-Regular.woff2` | 资源 | Inter 字体 Regular 字重 |
+| `server/static/fonts/Inter-Medium.woff2` | 资源 | Inter 字体 Medium 字重 |
+| `server/static/fonts/Inter-SemiBold.woff2` | 资源 | Inter 字体 SemiBold 字重 |
+| `server/static/img/icon-16.png` | 资源 | 16x16 图标 |
+| `server/static/img/icon-32.png` | 资源 | 32x32 图标 |
+| `server/static/img/icon-48.png` | 资源 | 48x48 图标 |
+| `server/static/img/icon-256.png` | 资源 | 256x256 图标 |
+| `server/static/img/favicon.ico` | 资源 | 多尺寸 favicon（16/32/48） |
+| `server/routers/diagnostics.py` | 后端 | 系统诊断端点（导出诊断报告） |
+| `CHANGELOG.md` | 文档 | 版本更新日志（P4 + P5） |
+| `docs/PRIVACY.md` | 文档 | 隐私声明正文 |
+| `installer/generate_icons.py` | 工具 | 从 logo.svg 生成多尺寸图标脚本 |
+| `installer/build_extensions.py` | 工具 | 生成纯模型扩展包脚本 |
 
-#### 修改文件
+#### 2.2 修改文件
 
-| 文件路径 | 涉及任务 | 改动说明 |
-|----------|----------|----------|
-| `server/routers/kb.py` | B1/B2/B3/B4/B5 | 新增批量操作 API + 扩展格式支持 + hit_count 记录 + 去重检测调用 + 移除内存预算检查 |
-| `server/core/batch_queue.py` | B2/B4 | 扩展 `_SUPPORTED_EXTENSIONS` + `_extract_file_text()` 新增格式 + 去重检测调用 |
-| `server/files/file_extractor.py` | B2 | `extract_text()` 新增 epub/html/srt/rtf 分支 |
-| `server/knowledge/models.py` | B1/B4 | `KBDocument` 新增 `hit_count: int = 0` 字段 |
-| `server/knowledge/ops.py` | B1/B5 | search 时 hit_count+1 + `_save_meta` / 移除 memory_manager 引用 |
-| `server/knowledge/search.py` | B1 | search() 返回结果时记录命中文档 ID（回调或直接操作） |
-| `server/knowledge/memory_manager.py` | B5 | **删除整个文件** |
-| `server/config.py` | B5 | 移除 memory_budget_mb/min/max 配置项 |
-| `server/routers/settings_system.py` | B5 | 移除 `_check_memory_budget()` + `/api/budget` 端点 |
-| `server/server.py` | — | 无需改动（lifespan 不涉及 memory_manager） |
-| `server/static/js/qa.js` | B1/B3 | 文档列表 checkbox 渲染 + 🔒 标记 + 引入 kb-batch.js |
-| `server/static/js/settings.js` | B3/B5 | 权限管理卡片 + 移除预算滑块逻辑 |
-| `server/static/js/kb-batch.js` | B1 | 批量操作 + Tag 聚类 + 热力图（新文件） |
-| `server/index.html` | B1/B3/B5 | 引入 kb-batch.js + 权限管理卡片 HTML + 移除预算滑块 HTML |
+| 路径 | 类型 | 改动说明 |
+|------|------|----------|
+| `server/index.html` | 前端 | favicon 引用 + 字体引入 + 骨架屏容器 + Token 估算显示位 + 消息样式切换按钮 + 清除上下文按钮 + 空状态优化 + 隐私声明入口 + 诊断面板入口 + 反馈入口 + JS 引入 |
+| `server/static/css/main.css` | 前端 | 代码块增强样式 + 消息列表模式样式 + 空状态样式 + 隐私/诊断面板样式 + 字体 @font-face |
+| `server/static/js/chat.js` | 前端 | 清除上下文逻辑（context_cutoff）+ 骨架屏触发 + Token 估算集成 + 代码块增强调用 |
+| `server/static/js/chat-session.js` | 前端 | 消息持久化增加 context_cutoff 字段 |
+| `server/static/js/core/utils.js` | 前端 | 代码块渲染增强（折叠+行号 header）|
+| `server/static/js/core/errors.js` | 前端 | 错误 toast 增加"复制详情"按钮 |
+| `server/static/js/settings.js` | 前端 | 诊断面板渲染 + 隐私声明渲染 + 反馈入口 |
+| `server/routers/chat.py` | 后端 | history 构建跳过 context_cutoff 消息 + append 支持 context_cutoff 字段 |
+| `server/routers/settings_system.py` | 后端 | 诊断信息端点增强（GPU/磁盘/Python 版本）|
+| `server/server.py` | 后端 | 注册 diagnostics 路由 |
+| `server/config.py` | 后端 | 版本号更新到 0.9.5 |
+| `launcher/splash_windows.go` | Launcher | Splash 品牌色背景优化 + Logo 区域增强 |
+| `launcher/main.go` | Launcher | 版本号同步 |
+| `setup.iss` | 安装 | 版本号更新 + 图标引用 + 排除模型文件确认 |
+| `setup_full.iss` | 安装 | 版本号更新 |
+| `THIRD-PARTY-NOTICES` | 文档 | 新增 FlagEmbedding / ebooklib / striprtf / Inter Font |
+| `launcher/build.bat` | Launcher | 版本号同步（自动从 config.py 提取）|
 
 ---
 
-### 3. 数据结构和接口
+### 3. 数据结构与接口
 
 #### 3.1 类图
 
 ```mermaid
 classDiagram
-    class KBDocument {
-        +str doc_id
-        +str filename
-        +str file_type
-        +int file_size
-        +str status
-        +int chunk_count
-        +int total_chars
-        +list tags
-        +str tag_status
-        +bool is_private
-        +int hit_count
-        +dict metadata
+    class TokenEstimator {
+        +CHARS_PER_TOKEN_CN: 1.5
+        +CHARS_PER_TOKEN_EN: 4.0
+        +estimateTokens(text: str) int
+        +estimateMixedTokens(text: str) int
+        +formatTokenCount(n: int) str
+        +updateInputDisplay(inputEl, displayEl) void
     }
 
-    class DedupDetector {
-        +KnowledgeBase kb
-        +check_l1(filename, file_size) dict
-        +check_l2(text, threshold) dict
-        +check_duplicate(filename, file_size, text) DedupResult
+    class SkeletonLoader {
+        +show(container, type) void
+        +hide(container) void
+        +renderChatSkeleton() HTMLElement
+        +renderKBSkeleton() HTMLElement
     }
 
-    class DedupResult {
-        +bool is_duplicate
-        +str level
-        +str existing_doc_id
-        +str existing_filename
-        +float similarity
+    class CodeBlockEnhancer {
+        +enhance(container) void
+        +addHeader(codeBlock) void
+        +addLineNumbers(codeBlock) void
+        +toggleCollapse(codeBlock) void
     }
 
-    class BatchQueue {
-        +create_batch(total_files) str
-        +enqueue(batch_id, file_path, filename, ...) str
-        +get_pending() TaskItem
-        +update_status(task_id, status, ...)
-        +get_batch_progress(batch_id) dict
+    class MessageStyleManager {
+        -MODE_KEY: str
+        +getMode() str
+        +setMode(mode: str) void
+        +applyMode(container) void
+        +toggleMode() void
     }
 
-    class AccessTokenManager {
-        +generate_full_token(doc_id) str
-        +generate_search_token(doc_id) str
-        +verify_token(token, doc_id) tuple
-        +filter_private_docs(doc_ids, token, is_private_map) list
+    class ContextCutoff {
+        +markCutoff(messages) void
+        +filterHistory(messages) array
+        +hasCutoff(messages) bool
     }
 
-    KBDocument --> DedupDetector : 被 L1/L2 检测
-    DedupDetector ..> KBDocument : 遍历现有文档
-    DedupResult ..> DedupDetector : 返回值
-    BatchQueue ..> KBDocument : 导入后创建
-    AccessTokenManager ..> KBDocument : 过滤私密文档
+    class DiagnosticsRouter {
+        +GET /api/diagnostics/info dict
+        +GET /api/diagnostics/export dict
+        +collectSystemInfo() dict
+        +collectModelInfo() dict
+        +generateReport() str
+    }
+
+    class ChatRouter {
+        +POST /api/chat/stream SSE
+        +POST /api/chats/{name}/append dict
+        -buildHistory(messages, cutoff_idx) list
+    }
+
+    TokenEstimator --> MessageStyleManager : 显示 token 数
+    SkeletonLoader ..> ChatRouter : 等待响应时显示
+    ContextCutoff --> ChatRouter : 过滤 history
+    CodeBlockEnhancer ..> ChatRouter : 渲染后增强
+    DiagnosticsRouter --> ChatRouter : 独立模块
 ```
 
-#### 3.2 新增 API 端点
+#### 3.2 关键数据结构
 
-| 方法 | 路径 | 任务 | 说明 |
-|------|------|------|------|
-| `POST` | `/api/kb/documents/batch_delete` | B1 | 批量删除文档 |
-| `POST` | `/api/kb/documents/batch_retag` | B1 | 批量重新打标 |
-| `POST` | `/api/kb/documents/batch_privacy` | B1/B3 | 批量设置私密 |
-| `GET` | `/api/kb/search_heatmap` | B1 | 获取检索热力图数据 |
-| `POST` | `/api/kb/search_heatmap/reset` | B1 | 重置热力图 |
-| `GET` | `/api/kb/duplicates` | B4 | 获取待处理重复文档列表 |
-| `POST` | `/api/kb/duplicates/resolve` | B4 | 解决重复冲突（保留/替换/取消） |
-| `GET` | `/api/permissions/presets` | B3 | 获取权限预设列表 |
-| `POST` | `/api/permissions/preset/apply` | B3 | 应用权限预设 |
-| `GET` | `/api/permissions/tools` | B3 | 获取工具级权限列表 |
-| `POST` | `/api/permissions/tool/{tool_id}` | B3 | 设置单个工具权限 |
-
-#### 3.3 关键数据结构
-
-**KBDocument 扩展字段** (knowledge/models.py):
-```python
-@dataclass
-class KBDocument:
-    # ... 现有字段 ...
-    hit_count: int = 0          # B1: 检索命中次数（热力图）
-    # metadata.duplicate_of: str = ""  # B4: 重复标记（存在 metadata dict 中）
-```
-
-**DedupResult** (core/dedup_detector.py):
-```python
-@dataclass
-class DedupResult:
-    is_duplicate: bool
-    level: str           # "none" | "l1_filename_size" | "l2_content"
-    existing_doc_id: str
-    existing_filename: str
-    similarity: float    # 0.0 - 1.0
-```
-
-**权限预设结构** (前端 → 后端):
+**消息对象（增加 context_cutoff 字段）**：
 ```json
 {
-  "preset_id": "trusted",
-  "name": "完全信任",
-  "description": "所有工具可用",
-  "config_overrides": {
-    "confirm_external_read": false,
-    "sandbox_cleanup": "never"
+  "role": "user",
+  "content": "清除上下文后的新问题",
+  "ts": "14:30:00",
+  "context_cutoff": true
+}
+```
+
+**诊断报告结构**：
+```json
+{
+  "timestamp": "2026-06-20T18:00:00",
+  "version": "0.9.5",
+  "system": {
+    "os": "Windows 11 22H2",
+    "python_version": "3.14.0",
+    "cpu": "Intel i7-12700K",
+    "gpu": "NVIDIA RTX 3060 / CUDA 12.1",
+    "ram_total_gb": 32,
+    "ram_available_gb": 16.5,
+    "disk_free_gb": 120.3
+  },
+  "models": {
+    "llm": {"name": "qwen3-5-4b", "loaded": true, "mem_mb": 4300},
+    "embedder": {"name": "bge-m3", "loaded": true, "mem_mb": 600},
+    "reranker": {"name": "bge-reranker-v2-m3", "loaded": false, "mem_mb": 0}
+  },
+  "config": {
+    "ai_mode": "local",
+    "kb_permission": "full",
+    "ollama_port": 11434
+  },
+  "extensions": ["knowledge", "recorder"]
+}
+```
+
+**扩展包 manifest.json（纯模型版）**：
+```json
+{
+  "type": "model",
+  "name": "sidemate-knowledge-bge-m3",
+  "version": "1.0.0",
+  "description": "BGE-M3 向量模型 + BGE-Reranker-v2-m3 精排模型",
+  "requires": ["FlagEmbedding", "torch", "transformers"],
+  "models": {
+    "embedding": "BAAI/bge-m3",
+    "reranker": "BAAI/bge-reranker-v2-m3"
   }
 }
 ```
@@ -310,358 +215,398 @@ class DedupResult:
 
 ### 4. 程序调用流程
 
-#### 4.1 批量删除流程
+#### 4.1 统一 Token 估算流程
 
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant FE as qa.js / kb-batch.js
-    participant BE as kb.py Router
-    participant KB as KnowledgeBase
+    participant Input as msgInput 输入框
+    participant TE as TokenEstimator
+    participant Disp as token-display 显示区
+    participant Chat as chat.js
 
-    U->>FE: 勾选多个文档 → 点击"批量删除"
-    FE->>FE: 收集 selectedDocIds (Set)
-    FE->>FE: showDialog 确认
-    FE->>BE: POST /api/kb/documents/batch_delete {doc_ids: [...]}
-    BE->>KB: 循环 kb.delete_document(doc_id)
-    KB-->>BE: 逐个返回结果
-    BE-->>FE: {success: true, deleted: N, failed: [...]}
-    FE->>FE: kbRefreshDocs() 刷新列表
-    FE->>U: showToast("已删除 N 个文档")
-```
+    U->>Input: 输入文字 / 引用文档 / 上传文件
+    Input->>TE: oninput 触发 estimateTotal()
+    TE->>TE: 合并三源：输入文本 + _refFilePath + pendingFile
+    TE->>TE: estimateMixedTokens(combinedText)
+    Note over TE: 中文 chars/1.5 + 英文 chars/4
+    TE->>Disp: 更新显示 "≈ 1,234 tokens / 16,384"
+    Disp->>U: 实时显示（超 80% 变橙色警告）
 
-#### 4.2 Tag 聚类 + 渲染流程
-
-```mermaid
-sequenceDiagram
-    participant FE as kb-batch.js
-    participant Alg as 聚类算法
-
-    FE->>FE: kbRefreshDocs() 获取文档列表
-    FE->>FE: 收集所有 doc.tags → flatTagList
-    FE->>Alg: clusterTags(flatTagList, threshold=0.7)
-    Alg->>Alg: 两两计算 tagSimilarity()
-    Alg->>Alg: Union-Find 合并相似组
-    Alg->>Alg: 每组取频率最高 tag 作组名
-    Alg-->>FE: [{group_name, tags: [...], count: N}, ...]
-    FE->>FE: 按聚类组渲染 Tag 标签栏
-    FE->>FE: 点击组名 → 过滤显示该组文档
-```
-
-#### 4.3 去重检测流程
-
-```mermaid
-sequenceDiagram
-    participant U as 用户
-    participant BE as kb.py / batch_queue.py
-    participant DD as DedupDetector
-    participant KB as KnowledgeBase
-    participant FE as qa.js
-
-    U->>BE: 上传文件 (upload / upload_batch)
-    BE->>BE: 提取文本 text
-    BE->>DD: check_duplicate(filename, file_size, text)
-    DD->>DD: L1: filename+size 匹配现有文档
-    alt L1 命中
-        DD-->>BE: DedupResult(is_duplicate=True, level="l1")
-    else L1 未命中
-        DD->>DD: L2: 前2000字 SequenceMatcher
-        alt similarity >= 0.95
-            DD-->>BE: DedupResult(is_duplicate=True, level="l2")
-        else
-            DD-->>BE: DedupResult(is_duplicate=False)
-        end
-    end
-    BE->>KB: import_document (不阻塞)
-    BE->>KB: doc.metadata["duplicate_of"] = existing_doc_id (如果重复)
-    BE-->>FE: {ok: true, doc_id, duplicate_detected: true/false}
-    alt 重复检测到
-        FE->>U: 显示"检测到重复"提示
-        U->>FE: 打开重复处理窗口
-        FE->>BE: GET /api/kb/duplicates
-        BE-->>FE: 重复文档列表 + 冲突详情
-        U->>FE: 选择"保留两版" / "替换旧版" / "取消新版"
-        FE->>BE: POST /api/kb/duplicates/resolve {doc_id, action}
+    U->>Chat: 点击发送
+    Chat->>TE: getFinalEstimate()
+    TE-->>Chat: 返回 token 数
+    Chat->>Chat: 与 _maxPromptTokens 比对
+    alt 超限
+        Chat->>U: showToast 警告"输入过长，已自动裁剪历史"
     end
 ```
 
-#### 4.4 检索热力图记录流程
+#### 4.2 清除上下文流程
 
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant BE as kb.py (search)
-    participant KB as KnowledgeBase (search.py)
-    participant Meta as kb_meta.json
+    participant Chat as chat.js
+    participant Session as chat-session.js
+    participant API as /api/chats/append
+    participant Stream as /api/chat/stream
 
-    U->>BE: POST /api/kb/search {query}
-    BE->>KB: kb.search(query)
-    KB-->>BE: results [{doc_id, ...}]
-    BE->>KB: 对命中的 doc_id 执行 doc.hit_count += 1
-    BE->>KB: kb._save_meta() (异步，非每次都存)
-    BE-->>U: {results: [...]}
+    U->>Chat: 点击"清除上下文"按钮
+    Chat->>Chat: 确认弹窗"将重置模型记忆，消息保留但不再被参考"
+    U->>Chat: 确认
+    Chat->>Session: 给最后一条消息标记 context_cutoff=true
+    Session->>API: POST append {context_cutoff: true}
+    API->>API: 写入 messages.json
 
-    U->>BE: GET /api/kb/search_heatmap
-    BE->>KB: 按 hit_count 降序返回文档列表
-    BE-->>U: {heatmap: [{doc_id, filename, hit_count}, ...]}
+    Note over U,Stream: 后续发送消息时
 
-    U->>BE: POST /api/kb/search_heatmap/reset
-    BE->>KB: 遍历 documents 设 hit_count=0
-    BE->>KB: kb._save_meta()
-    BE-->>U: {ok: true}
+    U->>Chat: 输入新问题并发送
+    Chat->>Chat: buildHistory()
+    Chat->>Chat: 找到最后一个 context_cutoff 的索引
+    Chat->>Chat: history = currentMessages.slice(cutoffIdx + 1, -1)
+    Chat->>Stream: POST {history: filteredHistory, message: text}
+    Stream->>Stream: 仅用 cutoff 后的消息构建 prompt
+    Stream-->>Chat: SSE 流式响应
 ```
 
-#### 4.5 内存预算移除流程
+#### 4.3 骨架屏流程
 
 ```mermaid
 sequenceDiagram
-    participant Dev as 工程师
-    participant Cfg as config.py
-    participant MM as memory_manager.py
-    participant Ops as ops.py
-    participant SetSys as settings_system.py
-    participant KB as kb.py
-    participant FE as settings.js
+    participant U as 用户
+    participant Chat as chat.js
+    participant Skel as skeleton.js
+    participant Stream as /api/chat/stream
 
-    Dev->>Cfg: 删除 memory_budget_mb/min/max 配置项
-    Dev->>MM: 删除整个文件
-    Dev->>Ops: 移除 self.memory_manager 初始化
-    Dev->>Ops: 移除所有 memory_manager.register/unregister/can_allocate 调用
-    Dev->>SetSys: 删除 _check_memory_budget() + /api/budget
-    Dev->>KB: 移除 _check_memory_budget() 调用 (L636-L638)
-    Dev->>FE: 删除 onBudgetSliderChange() + 滑块初始化
-    Note over FE: 保留 RES 日志面板 (refreshResourcePanel)
+    U->>Chat: 点击发送
+    Chat->>Skel: show(messagesContainer, "chat-response")
+    Skel->>Skel: 渲染 3 行灰色占位块（shimmer 动画）
+    Chat->>Stream: POST 请求
+
+    alt 流式响应开始
+        Stream-->>Chat: SSE data chunk
+        Chat->>Skel: hide(messagesContainer)
+        Skel->>Skel: 移除骨架屏 DOM
+        Chat->>Chat: appendStreamingMsg(content)
+    else 超时 3s 无响应
+        Skel->>Skel: 保持骨架屏（替代 spinner）
+    end
+```
+
+#### 4.4 诊断报告导出流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant Set as settings.js
+    participant Diag as /api/diagnostics/info
+    participant Export as /api/diagnostics/export
+
+    U->>Set: 设置页 → 关于 → 点击"系统诊断"
+    Set->>Diag: GET /api/diagnostics/info
+    Diag->>Diag: collectSystemInfo() + collectModelInfo()
+    Diag-->>Set: 返回诊断 JSON
+    Set->>Set: 渲染诊断面板（OS/GPU/RAM/模型状态）
+
+    U->>Set: 点击"导出诊断报告"
+    Set->>Export: GET /api/diagnostics/export
+    Export->>Export: 生成完整报告文本
+    Export-->>Set: 返回报告内容
+    Set->>Set: 触发浏览器下载 diagnostic_report.txt
+```
+
+#### 4.5 扩展包构建流程
+
+```mermaid
+sequenceDiagram
+    participant Dev as 开发者
+    participant Script as build_extensions.py
+    participant FS as 文件系统
+    participant Val as SidemateValidator
+
+    Dev->>Script: python build_extensions.py
+    Script->>FS: 读取 models/embedding/ + models/reranker/
+    Script->>FS: 读取 models/blobs/ (LLM)
+    Script->>Script: 生成 manifest.json（纯模型，无 wheels）
+    Script->>FS: 打包为 .sidemate (zip)
+    Script->>Val: 校验包完整性
+    Val-->>Script: 校验通过
+    Script->>FS: 输出到 output/
+    Note over FS: sidemate-knowledge-bge-m3.sidemate (~6GB)<br/>sidemate-llm-qwen3.5-4b.sidemate (~3GB)
 ```
 
 ---
 
 ### 5. 待明确事项
 
-| # | 问题 | 当前假设 | 需确认 |
-|---|------|----------|--------|
-| 1 | B1 批量操作最多支持选多少个文档？ | 假设无限制（受文库最大文档数 200 限制） | 是否需要设上限？ |
-| 2 | B1 Tag 聚类相似度阈值 0.7 是否合理？ | 0.7（可配置） | 是否需要前端可调？ |
-| 3 | B1 hit_count 每次检索都 +1 还是去重后 +1？ | 每次检索命中都 +1（不去重） | 同一文档一次检索多个 chunk 命中算 1 次还是 N 次？ → 假设算 1 次（文档级去重） |
-| 4 | B2 epub 是否需要保留章节结构（heading）？ | 提取纯文本，章节标题作为 heading | 是否需要 TOC？ |
-| 5 | B3 权限预设的"纯离线"模式是否禁用云端 AI？ | 是，切换 ai_mode=local + 联网工具 off | 与现有 ai_mode 配置的关系？ |
-| 6 | B4 L2 内容检测的前 2000 字是否包含文档标题？ | 包含（取文本前 2000 字） | — |
-| 7 | B5 移除内存预算后，_get_memory_info() 的 RAM 警告（<800MB）是否保留？ | 保留（独立的 RAM 检查，不依赖 budget） | — |
-| 8 | B5 移除后 reranker 空闲卸载逻辑是否保留？ | 保留（独立机制，不受 budget 影响） | — |
+| # | 问题 | 当前假设 |
+|---|------|----------|
+| 1 | Token 估算中"引用文档"的文本来源 | 假设 `_refFilePath` 指向的文件可前端读取（txt/md），docx/pdf 等用文件大小估算（size_kb × 200）|
+| 2 | 消息样式切换的默认值 | 默认气泡式（当前样式），列表式作为可选 |
+| 3 | 诊断报告导出格式 | 纯文本（.txt），便于用户复制粘贴给支持团队 |
+| 4 | 反馈渠道的具体邮箱 | 占位 `support@sidemate.app`，发布前替换 |
+| 5 | Inter 字体的具体子集 | 使用完整 Latin 子集（不含 CJK，中文回退系统字体）|
+| 6 | Splash 画面 Logo 增强 vs 重绘 | 当前 logo.ico 已可用，仅优化背景色和文字布局，不大改 |
+| 7 | 扩展包 requires 字段 | 声明依赖包名，安装时检查 site-packages 是否已存在，不存在则提示 |
 
 ---
 
 ## Part B: 任务分解
 
-### 6. 依赖包列表
+### 6. 依赖包
+
+本批次不新增 Python 运行时依赖（全部已有）。工具类依赖：
 
 ```
-# B2 新增 pip 包
-ebooklib==0.18:        EPUB 电子书解析
-striprtf==0.0.26:      RTF 富文本转纯文本
-# beautifulsoup4:      已有依赖（HTML 解析），无需新增
-# difflib:              Python 标准库（B4 去重），无需安装
+- Pillow>=10.0.0: 图标生成（开发工具，非运行时）
+- icoutils/pillow: ICO 文件生成（开发工具）
+- Inter Font (SIL OFL 1.1): 前端字体内嵌
 ```
-
-> **注意**: B2 扩展包改造后，这些依赖应预装到 `python/site-packages/`，不再通过 wheels 分发。
-
----
 
 ### 7. 任务列表
 
-#### T01: 项目基础设施 + 后端核心扩展（config / models / file_extractor / batch_queue）
+#### T01: 项目基础设施 + 品牌 + 分发（C3 + C1）
 
-| 项 | 内容 |
-|----|------|
-| **源文件** | `config.py`, `knowledge/models.py`, `files/file_extractor.py`, `core/batch_queue.py`, `core/dedup_detector.py`(新) |
-| **依赖** | 无（批次 A 已完成） |
-| **优先级** | P0 |
+| 项目 | 内容 |
+|------|------|
+| **Task ID** | T01 |
+| **Task Name** | 品牌视觉全套 + 小包分发 + 扩展包改造 |
+| **Source Files** | `server/static/img/icon-{16,32,48,256}.png`(新增), `server/static/img/favicon.ico`(新增), `server/static/fonts/Inter-*.woff2`(新增×3), `installer/generate_icons.py`(新增), `installer/build_extensions.py`(新增), `server/index.html`(favicon+字体), `server/static/css/main.css`(@font-face), `launcher/splash_windows.go`(品牌色), `setup.iss`(轻量版确认), `setup_full.iss`(版本号), `THIRD-PARTY-NOTICES`(更新), `server/config.py`(版本号) |
+| **Dependencies** | 无（logo.svg 已有） |
+| **Priority** | P1 |
 
-**内容**:
-- `config.py`: 移除 `memory_budget_mb` / `memory_budget_min_mb` / `memory_budget_max_mb` 三个配置项（B5）
-- `knowledge/models.py`: `KBDocument` 新增 `hit_count: int = 0` 字段（B1）
-- `files/file_extractor.py`: `extract_text()` 新增 `.epub` / `.html` / `.srt` / `.rtf` 四个格式分支（B2）
-- `core/batch_queue.py`: `_SUPPORTED_EXTENSIONS` 扩展为 `{"txt","md","csv","docx","xlsx","pdf","epub","html","srt","rtf"}`；`_extract_file_text()` 新增对应解析逻辑（B2）
-- `core/dedup_detector.py`(新): `DedupDetector` 类 — `check_l1()` / `check_l2()` / `check_duplicate()` 方法（B4）
+**具体工作**：
+1. **图标生成**：用 Pillow 从 logo.svg 渲染 16/32/48/256 PNG + 多尺寸 favicon.ico
+2. **Inter 字体**：下载 3 个字重 woff2，加入 `@font-face` 声明
+3. **favicon 引用**：index.html `<link rel="icon">` 改为引用 `/static/img/favicon.ico`
+4. **Splash 增强**：Go Launcher 的 splashPaint 优化品牌色背景（已有 logo.ico 加载逻辑）
+5. **轻量 setup.iss**：确认 setup.iss 不含模型文件（当前已不含，仅需版本号 0.9.4→0.9.5）
+6. **扩展包构建脚本**：`build_extensions.py` 打包纯模型 .sidemate
+7. **THIRD-PARTY 更新**：新增 FlagEmbedding / ebooklib / striprtf / Inter Font
 
-#### T02: 后端路由层 — 批量操作 API + 去重 API + 热力图 API + 权限 API
+#### T02: 前端体验核心（C7 — Token 估算 + 清除上下文 + 消息样式 + 代码块 + 骨架屏）
 
-| 项 | 内容 |
-|----|------|
-| **源文件** | `routers/kb.py`, `routers/settings_system.py`, `knowledge/ops.py`, `knowledge/search.py` |
-| **依赖** | T01 |
-| **优先级** | P0 |
+| 项目 | 内容 |
+|------|------|
+| **Task ID** | T02 |
+| **Task Name** | 前端体验细节全套 |
+| **Source Files** | `server/static/js/token-estimator.js`(新增), `server/static/js/skeleton.js`(新增), `server/static/js/ui-enhance.js`(新增), `server/static/css/skeleton.css`(新增), `server/static/css/main.css`(代码块+消息模式+空状态), `server/static/js/chat.js`(集成), `server/static/js/chat-session.js`(context_cutoff 持久化), `server/static/js/core/utils.js`(代码块渲染增强), `server/index.html`(UI 元素+JS 引入), `server/routers/chat.py`(history 过滤+append 字段) |
+| **Dependencies** | T01（字体+样式基础） |
+| **Priority** | P0 |
 
-**内容**:
-- `routers/kb.py`:
-  - 新增 `POST /api/kb/documents/batch_delete` — 接收 `{doc_ids: []}`，循环删除（B1）
-  - 新增 `POST /api/kb/documents/batch_retag` — 接收 `{doc_ids: []}`，循环 enqueue 打标（B1）
-  - 新增 `POST /api/kb/documents/batch_privacy` — 接收 `{doc_ids: [], is_private: bool}`（B1/B3）
-  - 新增 `GET /api/kb/search_heatmap` — 返回 `[{doc_id, filename, hit_count}]` 降序（B1）
-  - 新增 `POST /api/kb/search_heatmap/reset` — 遍历 documents 设 hit_count=0 + save_meta（B1）
-  - 新增 `GET /api/kb/duplicates` — 返回 metadata.duplicate_of 非空的文档列表（B4）
-  - 新增 `POST /api/kb/duplicates/resolve` — 接收 `{doc_id, action: "keep_both"/"replace"/"cancel"}`（B4）
-  - `_extract_upload_text()` 新增 epub/html/srt/rtf 解析分支（B2）
-  - `upload_batch` 格式检查扩展（B2）
-  - upload/upload_batch 中调用 `DedupDetector.check_duplicate()` + 标记 metadata（B4）
-  - 移除 `_check_memory_budget()` 调用（L636-L638）（B5）
-  - 移除扩展包安装中的 wheels 逻辑（L519-L538）+ 卸载中的 wheels 清理（L611-L614）（B2）
-- `routers/settings_system.py`:
-  - 移除 `_check_memory_budget()` 函数（B5）
-  - 移除 `POST /api/budget` 端点（B5）
-  - `api_resource_info()` 中移除 budget_report 引用（B5）
-  - 新增 `GET /api/permissions/presets` — 返回 3 预设定义（B3）
-  - 新增 `POST /api/permissions/preset/apply` — 接收 `{preset_id}` 写入 config（B3）
-  - 新增 `GET /api/permissions/tools` — 返回工具列表 + enabled 状态（B3）
-  - 新增 `POST /api/permissions/tool/{tool_id}` — 接收 `{enabled: bool}` 写入 config（B3）
-- `knowledge/ops.py`:
-  - 移除 `self.memory_manager` 初始化（L67）（B5）
-  - 移除所有 `memory_manager.register/unregister/can_allocate` 调用（B5）
-  - `delete_document()` 支持批量调用优化（减少 _save_meta 次数）（B1）
-- `knowledge/search.py`:
-  - `search()` 内部，命中结果对应的 doc_id → `doc.hit_count += 1`（B1）
+**具体工作**：
+1. **TokenEstimator**：`token-estimator.js` — 统一估算输入+引用+上传，输入框右下角显示
+2. **清除上下文**：chat.js 加 `clearContext()` 函数，chat.py 的 history 构建 + append 支持 `context_cutoff`
+3. **骨架屏**：`skeleton.js` + `skeleton.css` — 替代 spinner，灰块 shimmer 动画
+4. **消息样式切换**：`ui-enhance.js` — 气泡/列表切换，localStorage 持久化
+5. **代码块增强**：utils.js 的 renderer.code 增强 — 加 header（语言+折叠）+ 行号
+6. **index.html**：加清除上下文按钮 + 样式切换按钮 + Token 显示区 + JS 引入
 
-#### T03: 前端 — 批量操作 UI + Tag 聚类 + 热力图 + 私密标记 + 权限管理
+#### T03: 空状态 + 反馈 + 隐私 + 诊断 + CHANGELOG（C4 + C5）
 
-| 项 | 内容 |
-|----|------|
-| **源文件** | `static/js/qa.js`, `static/js/kb-batch.js`(新), `static/js/settings.js`, `index.html`, `static/css/main.css` |
-| **依赖** | T01, T02 |
-| **优先级** | P0 |
+| 项目 | 内容 |
+|------|------|
+| **Task ID** | T03 |
+| **Task Name** | 空状态优化 + 反馈渠道 + 错误复制 + 隐私声明 + 诊断面板 + 更新日志 |
+| **Source Files** | `server/static/js/core/errors.js`(错误复制), `server/static/js/settings.js`(诊断面板+隐私+反馈), `server/static/js/chat.js`(空状态文案), `server/static/css/main.css`(空状态+诊断+隐私样式), `server/index.html`(空状态+诊断入口+隐私入口+反馈入口), `server/routers/diagnostics.py`(新增), `server/server.py`(注册路由), `server/routers/settings_system.py`(诊断增强), `CHANGELOG.md`(新增), `docs/PRIVACY.md`(新增) |
+| **Dependencies** | T01（THIRD-PARTY 更新参考）|
+| **Priority** | P1 |
 
-**内容**:
-- `static/js/kb-batch.js`(新):
-  - `_kbSelectedDocs = new Set()` — 选中文档集合
-  - `kbToggleSelect(docId)` / `kbSelectAll()` / `kbSelectInvert()` — checkbox 操作（B1）
-  - `kbBatchDelete()` / `kbBatchRetag()` / `kbBatchPrivacy()` — 批量操作（B1）
-  - `clusterTags(tagList, threshold)` — Tag 聚类算法（Levenshtein + 2-gram Jaccard + Union-Find）（B1）
-  - `kbRenderTagClusters()` — 渲染聚类后的 Tag 栏（B1）
-  - `kbLoadHeatmap()` / `kbResetHeatmap()` — 热力图数据加载 + 重置（B1）
-  - `kbRenderPrivacyIcon(doc)` — 文档项 🔒 标记渲染（B3）
-  - `kbShowDuplicates()` / `kbResolveDuplicate(docId, action)` — 去重处理窗口（B4）
-- `static/js/qa.js`:
-  - `kbRefreshDocs()` 渲染循环中：每个文档项加 checkbox + 🔒 图标（B1/B3）
-  - 文档列表顶部加批量操作工具栏（全选/反选/删除/重标/设私密）（B1）
-  - 引入 kb-batch.js（index.html 中 `<script src="static/js/kb-batch.js">`）
-- `static/js/settings.js`:
-  - 移除 `onBudgetSliderChange()` + 预算滑块初始化逻辑（B5）
-  - `refreshResourcePanel()` 中移除 budget 相关代码（B5）
-  - 新增 `loadPermissionPresets()` / `applyPermissionPreset(presetId)` — 权限预设（B3）
-  - 新增 `loadToolPermissions()` / `toggleToolPermission(toolId, enabled)` — 工具级权限（B3）
-- `index.html`:
-  - `<head>` 中引入 `<script src="static/js/kb-batch.js"></script>`（B1）
-  - 设置页移除内存预算滑块 HTML（B5）
-  - 设置页新增权限管理卡片 HTML（3 预设按钮 + 高级展开折叠区）（B3）
-- `static/css/main.css`:
-  - 新增 `.kb-batch-toolbar` / `.kb-checkbox` / `.kb-tag-cluster` / `.kb-heatmap-bar` 样式（B1）
-  - 新增 `.kb-lock-icon` / `.permission-card` 样式（B3）
-
-#### T04: B5 内存预算彻底清理 — memory_manager.py 删除 + 残留引用扫描
-
-| 项 | 内容 |
-|----|------|
-| **源文件** | `knowledge/memory_manager.py`(删), `knowledge/ops.py`, `routers/settings_system.py`, `routers/kb.py`, `static/js/settings.js`, `index.html` |
-| **依赖** | T01, T02, T03（部分重叠，专门做清理验证） |
-| **优先级** | P1 |
-
-**内容**:
-- 删除 `knowledge/memory_manager.py` 整个文件（B5）
-- 全局搜索 `memory_manager` / `MemoryManager` / `_check_memory_budget` 残留引用 → 逐一清理（B5）
-- `knowledge/ops.py` 中 `init_embedder()` / `init_reranker()` / `unload_models()` / `_ensure_reranker()` / `_unload_reranker()` 移除 `memory_manager` 调用（B5）
-- `routers/settings_system.py` 的 `api_resource_info()` 移除 budget_report + recommended 引用（B5）
-- 验证 `_get_memory_info()`（kb.py）正常工作（保留 RAM 警告）（B5）
-- 验证 Reranker 空闲卸载逻辑不受影响（保留 `_schedule_reranker_unload`）（B5）
-
-#### T05: 集成调试 + 扩展包格式验证
-
-| 项 | 内容 |
-|----|------|
-| **源文件** | 全部文件交叉验证 |
-| **依赖** | T01, T02, T03, T04 |
-| **优先级** | P1 |
-
-**内容**:
-- 验证 B1：勾选文档 → 批量删除/重标/设私密 → 列表刷新正确
-- 验证 B1：Tag 聚类显示正确（相似 tag 归组）→ 热力图显示命中次数 → 重置清零
-- 验证 B2：上传 epub/html/srt/rtf → 文本提取成功 → 检索正常
-- 验证 B2：扩展包安装无 wheels 目录 → 依赖预装在 site-packages → 安装成功
-- 验证 B3：权限预设切换 → 配置生效 → 私密文档 🔒 标记正确
-- 验证 B4：上传重复文件 → 检测到重复 → 不阻塞导入 → 冲突窗口弹出 → 决策生效
-- 验证 B5：服务启动无 AttributeError → 设置页无预算滑块 → RES 日志正常
+**具体工作**：
+1. **Chat 空状态**：chat.js renderMessages 空状态文案按模式动态显示（已有基础，优化文案）
+2. **KB 空状态**：index.html kbEmpty 文案优化（已有基础，加操作引导）
+3. **反馈渠道**：settings.js 设置页加反馈入口（mailto 链接占位）
+4. **错误复制**：errors.js showToast 的 type='error' 时增加"复制详情"按钮
+5. **隐私声明**：docs/PRIVACY.md 撰写 + settings.js 关于区域加隐私声明展开
+6. **诊断面板**：diagnostics.py 新增 `/api/diagnostics/info` + `/api/diagnostics/export`
+7. **CHANGELOG**：CHANGELOG.md 记录 P4 + P5 所有改动
 
 ---
 
-### 8. 共享知识
+### 8. 共享知识（跨文件约定）
 
 ```
-=== 跨文件约定 ===
-
-1. API 响应格式：
-   - 成功: {"ok": true, ...data}
-   - 失败: {"error": "错误信息"} (HTTP 400/404/500)
-   - 批量操作: {"success": true, "affected": N, "failed": [{doc_id, error}]}
-
-2. 文档 ID 格式: "doc_" + uuid4().hex[:12]
-
-3. hit_count 更新规则：
-   - 每次 kb.search() 命中后，对命中的唯一 doc_id 集合各 +1（非每 chunk +1）
-   - 更新后不立即 _save_meta()（等下次自然保存或显式保存）
-   - GET /api/kb/search_heatmap 时从 kb.documents 读取
-
-4. 去重标记格式：
-   - doc.metadata["duplicate_of"] = existing_doc_id（空字符串 = 无重复）
-   - doc.metadata["duplicate_level"] = "l1" | "l2"
-   - doc.metadata["duplicate_similarity"] = 0.95
-
-5. 文件解析统一入口：
-   - 所有文本提取都应调用 files.file_extractor.extract_text()
-   - kb.py 和 batch_queue.py 的私有解析函数应委托给 file_extractor
-
-6. 权限预设映射：
-   - "trusted" → {confirm_external_read: false, sandbox_cleanup: "never"}
-   - "cautious" → {confirm_external_read: true, sandbox_cleanup: "24h"}
-   - "offline" → {ai_mode: "local", confirm_external_read: true}
-
-7. 前端全局变量约定（qa.js + kb-batch.js 共享）：
-   - _kbSelectedDocs: Set<doc_id> — 当前选中的文档
-   - _kbTagClusters: Array — 当前 Tag 聚类结果缓存
-   - _kbHeatmapData: Array — 热力图数据缓存
-
-8. B5 移除后的安全约定：
-   - 不再有任何 can_allocate() 检查（模型加载不再受预算限制）
-   - RAM 检查保留：available_mb < 800 时仍发警告（kb.py _get_memory_info）
-   - Reranker 空闲卸载保留：_schedule_reranker_unload 不受影响
+- 版本号单一来源：server/config.py DEFAULTS["version"]，前端/launcher/iss 全部从此同步
+- 前端 JS 模块挂载 window 全局函数（无模块系统），通过 <script> 引入顺序保证依赖
+- 所有 API 响应格式：{code: 0, data: ..., message: ...} 或直接返回数据对象
+- Token 估算公式：中文 chars/1.5，英文 chars/4，混合文本按字符比例加权
+- 消息持久化格式：data/chats/{name}/messages.json，每条消息可选 context_cutoff 字段
+- 代码块 HTML 结构：<div class="code-block"><div class="code-header">...</div><pre><code>...</code></pre></div>
+- CSS 变量体系：已有 --accent-color / --bg-primary / --text-primary 等，新增样式复用
+- 骨架屏 CSS 类名：.skeleton-block / .skeleton-line / .skeleton-shimmer
+- 消息模式 CSS：父容器 .msg-list-mode 切换列表布局
+- 图标资源路径：/static/img/icon-{size}.png，favicon: /static/img/favicon.ico
+- 字体资源路径：/static/fonts/Inter-{weight}.woff2
+- 扩展包格式：.sidemate = zip，含 manifest.json + models/，不含 wheels/
+- 诊断报告格式：纯文本 .txt，包含时间戳/版本/系统/模型/配置/扩展信息
+- 隐私声明核心承诺：所有数据存储在 {localappdata}/Sidemate/data/，不上传任何用户数据
 ```
-
----
 
 ### 9. 任务依赖图
 
 ```mermaid
-graph TD
-    T01[T01: 后端核心扩展<br/>config/models/file_extractor/dedup]
-    T02[T02: 后端路由层<br/>批量API/去重API/热力图API/权限API]
-    T03[T03: 前端UI<br/>批量操作/Tag聚类/热力图/权限管理]
-    T04[T04: B5内存预算清理<br/>memory_manager删除/残留扫描]
-    T05[T05: 集成调试<br/>全功能验证]
+graph LR
+    T01[T01: 品牌+分发<br/>C3+C1] --> T02[T02: 前端体验<br/>C7]
+    T01 --> T03[T03: 空状态+隐私+诊断<br/>C4+C5]
+    T02 --> T04[T04: 集成调试]
+    T03 --> T04
 
-    T01 --> T02
-    T01 --> T04
-    T02 --> T03
-    T02 --> T04
-    T03 --> T05
-    T04 --> T05
+    style T01 fill:#e1f5e1
+    style T02 fill:#fff3e0
+    style T03 fill:#e3f2fd
+    style T04 fill:#fce4ec
 ```
 
-**说明**: T01 是基础设施（无依赖）。T02 依赖 T01 的数据结构和解析能力。T03 依赖 T02 的 API 端点。T04 可与 T02/T03 并行（但有交叉文件，需注意冲突）。T05 是最终集成验证。
+**依赖说明**：
+- T01 先做：提供字体+图标+CSS 基础，T02/T03 的 UI 改动依赖这些资源
+- T02 和 T03 可并行：T02 纯前端交互，T03 以后端端点+文档为主
+- T04（集成调试）：验证所有功能正常，版本号统一，端到端走通
 
 ---
 
-### 附：高风险改动标注
+## 附录：各任务技术细节
 
-| 风险点 | 任务 | 风险描述 | 缓解措施 |
-|--------|------|----------|----------|
-| memory_manager 全局引用 | B5 | ops.py 中 6+ 处调用，遗漏会导致启动崩溃 | 全局搜索 `memory_manager` 逐一清理 + 启动测试 |
-| _extract_upload_text 三处重复 | B2 | kb.py / batch_queue.py / file_extractor.py 三处解析逻辑需同步 | 统一委托给 file_extractor.extract_text() |
-| hit_count 并发写入 | B1 | 多线程检索同时 +1 可能竞争 | KBDocument 是普通对象，GIL 保护下的 += 操作是安全的 |
-| epub 解析依赖 | B2 | ebooklib 可能解析某些 DRM 保护的 epub 失败 | try-except 包裹 + 友好错误提示 |
-| Tag 聚类性能 | B1 | 200 个文档 × 5 tag = 1000 个 tag 两两比较 = 50 万次 | 阈值预过滤（首字符不同跳过）+ 缓存聚类结果 |
+### A1. Token 估算公式实现
+
+```javascript
+// token-estimator.js
+var TokenEstimator = {
+  // 估算单段文本的 token 数
+  estimateTokens: function(text) {
+    if (!text) return 0;
+    // 区分中英文字符
+    var cnChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+    var otherChars = text.length - cnChars;
+    // 中文 ~1.5 字/token，英文 ~4 字/token
+    return Math.ceil(cnChars / 1.5 + otherChars / 4.0);
+  },
+
+  // 合并三源估算
+  estimateTotal: function() {
+    var inputText = '';
+    var inputEl = document.getElementById('msgInput');
+    if (inputEl) inputText = inputEl.value;
+
+    var refText = '';
+    if (typeof _refFilePath !== 'undefined' && _refFilePath) {
+      // 引用文档：无法前端读取，用文件信息估算
+      refText = '[引用文档]'; // 占位，实际按文档字数
+    }
+
+    var fileText = '';
+    if (typeof pendingFile !== 'undefined' && pendingFile) {
+      fileText = '[上传文件]'; // 占位，实际按文件大小
+    }
+
+    return this.estimateTokens(inputText + refText + fileText);
+  },
+
+  // 格式化显示
+  formatCount: function(n) {
+    if (n > 1000) return (n / 1000).toFixed(1) + 'k';
+    return String(n);
+  }
+};
+```
+
+### A2. 清除上下文后端实现
+
+```python
+# chat.py — api_chat_stream 中的 history 构建
+history_raw = req.history or []
+
+# 查找最后一个 context_cutoff 标记
+cutoff_idx = -1
+for i, msg in enumerate(history_raw):
+    if msg.get("context_cutoff"):
+        cutoff_idx = i
+
+# 只取 cutoff 之后的消息作为 history
+if cutoff_idx >= 0:
+    history_raw = history_raw[cutoff_idx + 1:]
+    log.info("[CHAT] context_cutoff at idx %d, history trimmed to %d msgs" % (cutoff_idx, len(history_raw)))
+```
+
+### A3. 代码块增强 HTML 结构
+
+```html
+<!-- 增强后的代码块 -->
+<div class="code-block">
+  <div class="code-header">
+    <span class="code-lang">python</span>
+    <span class="code-lines">12 行</span>
+    <button class="code-toggle" onclick="toggleCodeCollapse(this)">折叠</button>
+    <button class="code-copy-btn" onclick="copyCode(this)">复制</button>
+  </div>
+  <pre><code class="language-python">...</code></pre>
+</div>
+```
+
+### A4. 诊断端点实现
+
+```python
+# diagnostics.py
+@router.get("/api/diagnostics/info")
+def api_diagnostics_info():
+    """收集系统诊断信息"""
+    import platform, psutil, sys
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "version": config.get("version"),
+        "system": {
+            "os": platform.platform(),
+            "python_version": sys.version.split()[0],
+            "ram_total_gb": round(psutil.virtual_memory().total / 1024**3, 1),
+            "ram_available_gb": round(psutil.virtual_memory().available / 1024**3, 1),
+            "disk_free_gb": round(psutil.disk_usage(PROJECT_ROOT).free / 1024**3, 1),
+        },
+        "models": _collect_model_status(),
+        "config": _collect_key_config(),
+    }
+
+@router.get("/api/diagnostics/export")
+def api_diagnostics_export():
+    """导出完整诊断报告（纯文本）"""
+    info = api_diagnostics_info()
+    report = _format_report(info)
+    return PlainTextResponse(report, media_type="text/plain",
+                             headers={"Content-Disposition": "attachment; filename=sidemate_diagnostic.txt"})
+```
+
+### A5. 扩展包构建脚本
+
+```python
+# build_extensions.py
+def build_kb_extension():
+    """构建知识库模型扩展包（bge-m3 + reranker）"""
+    manifest = {
+        "type": "model",
+        "name": "sidemate-knowledge-bge-m3",
+        "version": "1.0.0",
+        "description": "BGE-M3 向量模型 + BGE-Reranker-v2-m3 精排模型",
+        "requires": ["FlagEmbedding", "torch", "transformers"],
+    }
+    # 打包 models/embedding/ + models/reranker/ + manifest.json
+    # 不含 wheels/
+    _pack_sidemate(
+        name="sidemate-knowledge-bge-m3",
+        manifest=manifest,
+        dirs=["models/embedding", "models/reranker"],
+    )
+
+def build_llm_extension():
+    """构建 LLM 模型扩展包（Qwen3.5-4B）"""
+    manifest = {
+        "type": "model",
+        "name": "sidemate-llm-qwen3.5-4b",
+        "version": "1.0.0",
+        "description": "Qwen3.5-4B 本地大语言模型（Ollama 格式）",
+        "requires": [],
+    }
+    _pack_sidemate(
+        name="sidemate-llm-qwen3.5-4b",
+        manifest=manifest,
+        dirs=["models/blobs", "models/manifests"],
+    )
+```
