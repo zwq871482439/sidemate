@@ -5,7 +5,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"syscall"
 	"time"
@@ -509,9 +508,8 @@ func splashPaint(hdc syscall.Handle, ss *SplashState) {
 	splashProcSelectObj.Call(uintptr(hdc), hOldSepPen)
 	splashProcDeleteObj.Call(sepPen)
 
-	// --- Patch5 Splash 方案 B：环形进度 + 阶段名 + 子状态 + 流水指示器 ---
-	// 替换原来的单行动态步骤 + 线性进度条
-	splashDrawRingProgress(hdc, ss)
+	// --- Patch5 新方案：4 段横向圆角进度条 + 阶段名 ---
+	splashDrawSegmentProgress(hdc, ss)
 
 	// --- 错误卡片 ---
 	if ss.failed {
@@ -608,149 +606,81 @@ func splashDrawStepRow(hdc syscall.Handle, ss *SplashState, idx int, stepLabel s
 	splashDrawTextEx(hdc, statusText, statusFontSize, 76*dpi/96, rowY+16*dpi/96, 300*dpi/96, statusFontSize+4*dpi/96, dotColor, false)
 }
 
-// splashDrawRingProgress 画方案 B：环形进度 + 阶段名 + 子状态 + 流水指示器
-// 布局（在 SplashState 中间区域）：
-//   ┌──────────────────────────────┐
-//   │      ┌──────┐                │
-//   │      │ 60%  │  加载知识库模型 │   ← 大圆环(全局进度) + 阶段名
-//   │      │ ring │  正在加载 bge-m3│   ← 子状态
-//   │      └──────┘                │
-//   │   ●●●○○                       │   ← 流水指示器（5个小条）
-//   └──────────────────────────────┘
-// splashDrawRingProgress 画 4 段环形（Patch5 新方案）
-// 4 段，每段 90°，从顶部开始顺时针：
-//   段 0: 0-90°    (右上)
-//   段 1: 90-180°  (右下)
-//   段 2: 180-270° (左下)
-//   段 3: 270-360° (左上)
+// splashDrawSegmentProgress 画 4 段横向圆角进度条（Patch5 最终方案）
 //
-// 颜色规则：
-//   已完成段 = 绿色（splashColorDone）
-//   加载中段 = 蓝色呼吸闪烁（splashColorRun，alpha 受 animTick 调制）
-//   未到段   = 灰色（splashColorProgBG）
+// 视觉效果：
+//   ┌───────────────────────────────┐
+//   │  ████████  ████████  ▒▒▒▒▒▒▒▒  ░░░░░░░░  │
+//   │        正在加载模型引擎          │
+//   └───────────────────────────────┘
 //
-// 不显示百分比，只在中央显示阶段名
-func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
+// 已完成段 = 绿色
+// 加载中段 = 蓝色 + 光泽扫过动画
+// 未到段   = 灰色
+func splashDrawSegmentProgress(hdc syscall.Handle, ss *SplashState) {
 	sc := func(v int32) int32 { return v * dpi / 96 }
 
-	centerX := sW / 2
-	ringR := sc(50) // 半径略大（4 段需要更清晰）
-	ringThickness := sc(10)
-	ringCY := sStepStartY + sc(40)
+	segY := sStepStartY + sc(15) // 4段横条垂直位置
+	segH := sc(10)                // 高度
+	segW := sc(110)               // 每段宽度
+	segGap := sc(8)               // 间距
+	segR := sc(5)                 // 圆角
 
-	// 计算呼吸闪烁 alpha（加载中段）
-	// sin 波，周期 1.2 秒，alpha 范围 0.5-1.0
-	animPhase := float64(ss.animTick%60) / 60.0 * 2 * math.Pi
-	breathAlpha := 0.6 + 0.4*math.Sin(animPhase) // 0.2-1.0
+	totalW := 4*segW + 3*segGap
+	segStartX := (sW - totalW) / 2
 
-	// 4 段，每段 90°
+	// 光泽动画：亮色条纹在加载中段内左右移动
+	shimmerPos := (ss.animTick % 100) // 周期 100 tick (约1.6s)
+	shimmerFrac := float64(shimmerPos) / 100.0
+	shimmerXRel := int32(float64(segW)*shimmerFrac) // 光泽在段内的相对位置
+	shimmerW := sc(3) // 光泽宽度
+
 	for seg := 0; seg < 4; seg++ {
-		// 每段起止角度（从 -90° 即 12 点钟方向开始顺时针）
-		segStart := -90.0 + float64(seg)*90.0
-		segEnd := segStart + 90.0
-
 		state := ss.segmentStates[seg]
+		x := segStartX + int32(seg)*(segW+segGap)
 
-		var segColor uintptr
+		var baseColor uintptr
 		switch state {
 		case 2: // 完成
-			segColor = splashColorDone
-		case 1: // 加载中（蓝色呼吸）
-			// 简化：直接用蓝色，靠 animTick 触发 invalidate 让定时器重绘
-			// 颜色亮度由 breathAlpha 调制
-			segColor = modulateColor(splashColorRun, breathAlpha)
-		default: // 0 未到
-			segColor = splashColorProgBG
+			baseColor = splashColorDone
+		case 1: // 加载中
+			baseColor = splashColorRun
+		default:
+			baseColor = splashColorProgBG
 		}
 
-		// 画这一段的弧（用 Pie 画扇形再挖洞模拟环段）
-		drawRingArc(hdc, centerX, ringCY, ringR, ringThickness,
-			segStart, segEnd, segColor, splashColorBodyBG)
+		// 画底色段（圆角矩形）
+		splashFillRoundRect(hdc, x, segY, x+segW, segY+segH, segR, baseColor)
+
+		// 加载中段：光泽扫过效果
+		if state == 1 {
+			// 光泽颜色：蓝色调亮
+			shimmerX := x + shimmerXRel
+			// 限制在段内
+			if shimmerX > x {
+				shimmerEnd := shimmerX + shimmerW
+				if shimmerEnd > x+segW {
+					shimmerEnd = x + segW
+				}
+				// 光泽用更亮的蓝色
+				shimmerColor := uintptr(0x00bb8844) // #4488bb 亮蓝
+				splashFillRoundRect(hdc, shimmerX, segY+sc(1), shimmerEnd, segY+segH-sc(1), segR, shimmerColor)
+			}
+		}
 	}
 
-	// 中央：阶段名（不显示百分比）
+	// 阶段名（横条下方居中）
 	text := ss.currentStepText
 	if text == "" {
 		text = "准备中"
 	}
 	stageFontSize := 16 * dpi / 96
 	splashDrawTextEx(hdc, text, stageFontSize,
-		sc(20), ringCY-sc(10), sW-sc(40), stageFontSize+sc(6),
+		sc(20), segY+segH+sc(14), sW-sc(40), stageFontSize+sc(6),
 		splashColorTitleBG, true)
 }
 
-// drawRingArc 画环形的一段弧
-// startAngle/endAngle 单位度（数学坐标系，-90=12点钟）
-// outerColor: 弧的颜色
-// holeColor: 中心挖洞的颜色（背景色）
-func drawRingArc(hdc syscall.Handle, centerX, centerY, radius, thickness int32,
-	startAngle, endAngle float64, outerColor, holeColor uintptr) {
-
-	innerR := radius - thickness
-
-	// Pie 需要圆心矩形容器 + 起止点坐标
-	// 整圆 bbox
-	left := centerX - radius
-	top := centerY - radius
-	right := centerX + radius
-	bottom := centerY + radius
-
-	// 起止点（外圆上）
-	startRad := startAngle * math.Pi / 180.0
-	endRad := endAngle * math.Pi / 180.0
-	sx := float64(centerX) + float64(radius)*math.Cos(startRad)
-	sy := float64(centerY) + float64(radius)*math.Sin(startRad)
-	ex := float64(centerX) + float64(radius)*math.Cos(endRad)
-	ey := float64(centerY) + float64(radius)*math.Sin(endRad)
-
-	// 画扇形
-	brush, _, _ := splashProcCreateBrush.Call(outerColor)
-	pen, _, _ := splashProcCreatePen.Call(0, 1, outerColor)
-	oldB, _, _ := splashProcSelectObj.Call(uintptr(hdc), brush)
-	oldP, _, _ := splashProcSelectObj.Call(uintptr(hdc), pen)
-	// GDI Pie：从 (sx,sy) 到 (ex,ey)，按逆时针方向扫描（交换坐标修复方向）
-	splashPie.Call(uintptr(hdc),
-		uintptr(left), uintptr(top), uintptr(right), uintptr(bottom),
-		uintptr(int32(ex)), uintptr(int32(ey)),
-		uintptr(int32(sx)), uintptr(int32(sy)))
-	splashProcSelectObj.Call(uintptr(hdc), oldB)
-	splashProcSelectObj.Call(uintptr(hdc), oldP)
-	splashProcDeleteObj.Call(brush)
-	splashProcDeleteObj.Call(pen)
-
-	// 挖洞：用背景色画内圆
-	hBrush, _, _ := splashProcCreateBrush.Call(holeColor)
-	hPen, _, _ := splashProcCreatePen.Call(0, 1, holeColor)
-	oldHB, _, _ := splashProcSelectObj.Call(uintptr(hdc), hBrush)
-	oldHP, _, _ := splashProcSelectObj.Call(uintptr(hdc), hPen)
-	splashProcEllipse.Call(uintptr(hdc),
-		uintptr(centerX-innerR), uintptr(centerY-innerR),
-		uintptr(centerX+innerR), uintptr(centerY+innerR))
-	splashProcSelectObj.Call(uintptr(hdc), oldHB)
-	splashProcSelectObj.Call(uintptr(hdc), oldHP)
-	splashProcDeleteObj.Call(hBrush)
-	splashProcDeleteObj.Call(hPen)
-}
-
-// modulateColor 把 COLORREF 的亮度按 alpha 调制（0-1）
-// alpha=1 原色，alpha=0 黑色
-func modulateColor(color uintptr, alpha float64) uintptr {
-	r := float64(color & 0xFF)
-	g := float64((color >> 8) & 0xFF)
-	b := float64((color >> 16) & 0xFF)
-	r = math.Max(0, math.Min(255, r*alpha+255*(1-alpha)*0.3)) // 跟灰色背景混合
-	g = math.Max(0, math.Min(255, g*alpha+255*(1-alpha)*0.3))
-	b = math.Max(0, math.Min(255, b*alpha+255*(1-alpha)*0.3))
-	return uintptr(int32(r)) | (uintptr(int32(g)) << 8) | (uintptr(int32(b)) << 16)
-}
-
-// splashPie 是 Pie GDI 函数的封装（避免反复 syscall）
-var splashPie = splashGdi32.NewProc("Pie")
-
-// intptr 把 float64 转 uintptr（用于 GDI Pie 坐标）
-func intptr(v float64) uintptr {
-	return uintptr(int32(v))
-}
+// ===== 保留的旧函数（不再使用，但可能被引用） =====
 
 func splashDrawErrorCard(hdc syscall.Handle, ss *SplashState) {
 	// 卡片背景
