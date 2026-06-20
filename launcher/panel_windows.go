@@ -177,9 +177,9 @@ func panelWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintp
 			return 0
 		}
 		if wParam == 200 {
-			// 每 2 秒刷新端口状态
-			panelState.ollamaAlive = isPortOpen("127.0.0.1", panelState.ollamaPort)
-			panelState.serverAlive = isPortOpen("127.0.0.1", panelState.serverPort)
+			// 每 2 秒刷新端口状态（Patch5 P0：用 HTTP 深度探活替代 TCP 端口探活）
+			panelState.ollamaAlive = isServiceAlive(fmt.Sprintf("http://127.0.0.1:%d/api/tags", panelState.ollamaPort), "ollama")
+			panelState.serverAlive = isServiceAlive(fmt.Sprintf("http://127.0.0.1:%d/api/status", panelState.serverPort), "python")
 			splashProcInvalidateRect.Call(uintptr(hWnd), 0, 0)
 		} else if wParam == 201 {
 			panelCheckMouseOutside(hWnd)

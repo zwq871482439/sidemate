@@ -25,9 +25,9 @@ type cmdRebuilder func() (*exec.Cmd, context.CancelFunc)
 
 // 看门狗常量
 const (
-	wdCheckInterval = 30 * time.Second // 健康检查间隔
-	wdHTTPTimeout   = 15 * time.Second // HTTP 健康检查超时
-	wdFailThreshold = 3                // 连续失败次数阈值（达到后才重启）
+	wdCheckInterval = 10 * time.Second // 健康检查间隔（Patch5 P0：30s→10s，更敏感）
+	wdHTTPTimeout   = 5 * time.Second  // HTTP 健康检查超时（Patch5 P0：15s→5s，快速失败）
+	wdFailThreshold = 2                // 连续失败次数阈值（Patch5 P0：3→2，20s 触发重启）
 	wdMaxRestarts   = 3                // 每小时最大重启次数
 	wdRestartWindow = 1 * time.Hour    // 滑动窗口大小
 	wdRestartDelay  = 2 * time.Second  // 重启前等待（让端口释放）
@@ -77,7 +77,7 @@ func startWatchdog(
 		newOllamaCmd:  ollamaRebuilder,
 	}
 
-	wd.log("INFO", "WATCHDOG", "看门狗已启动（间隔30s, 阈值3次, 上限3次/小时）")
+	wd.log("INFO", "WATCHDOG", "看门狗已启动（间隔10s, 阈值2次, 上限3次/小时）")
 
 	ticker := time.NewTicker(wdCheckInterval)
 	defer ticker.Stop()
@@ -100,16 +100,20 @@ func (wd *Watchdog) runCheckCycle() {
 
 	// ---- 检查 Python ----
 	pythonURL := fmt.Sprintf("http://127.0.0.1:%d/api/status", wd.cfg.ServerPort)
-	pythonOK := wd.healthCheck(pythonURL)
+	pythonOK, pythonDetail := wd.healthCheckDeep(pythonURL, "python")
 
 	if pythonOK {
 		if wd.pythonFailCnt > 0 {
 			wd.log("INFO", "WATCHDOG", fmt.Sprintf("Python 健康恢复（清除 %d 次失败计数）", wd.pythonFailCnt))
 		}
 		wd.pythonFailCnt = 0
+		// 周期性心跳日志（每 6 轮 = 60s 输出一次，避免日志爆炸）
+		if time.Now().Unix()%60 < 10 {
+			wd.log("INFO", "WATCHDOG", fmt.Sprintf("[心跳] Python=OK(%s) Ollama 检查中...", pythonDetail))
+		}
 	} else {
 		wd.pythonFailCnt++
-		wd.log("WARN", "WATCHDOG", fmt.Sprintf("Python 健康检查失败 %d/%d", wd.pythonFailCnt, wdFailThreshold))
+		wd.log("WARN", "WATCHDOG", fmt.Sprintf("Python 健康检查失败 %d/%d (%s)", wd.pythonFailCnt, wdFailThreshold, pythonDetail))
 
 		if wd.pythonFailCnt >= wdFailThreshold {
 			if wd.canRestart() {
@@ -130,16 +134,20 @@ func (wd *Watchdog) runCheckCycle() {
 
 	// ---- 检查 Ollama ----
 	ollamaURL := fmt.Sprintf("http://%s:%d/api/tags", wd.cfg.OllamaHost, wd.cfg.OllamaPort)
-	ollamaOK := wd.healthCheck(ollamaURL)
+	ollamaOK, ollamaDetail := wd.healthCheckDeep(ollamaURL, "ollama")
 
 	if ollamaOK {
 		if wd.ollamaFailCnt > 0 {
 			wd.log("INFO", "WATCHDOG", fmt.Sprintf("Ollama 健康恢复（清除 %d 次失败计数）", wd.ollamaFailCnt))
 		}
 		wd.ollamaFailCnt = 0
+		// 周期性心跳日志（与 Python 心跳合并，60s 一次）
+		if time.Now().Unix()%60 < 10 {
+			wd.log("INFO", "WATCHDOG", fmt.Sprintf("[心跳] Ollama=OK(%s)", ollamaDetail))
+		}
 	} else {
 		wd.ollamaFailCnt++
-		wd.log("WARN", "WATCHDOG", fmt.Sprintf("Ollama 健康检查失败 %d/%d", wd.ollamaFailCnt, wdFailThreshold))
+		wd.log("WARN", "WATCHDOG", fmt.Sprintf("Ollama 健康检查失败 %d/%d (%s)", wd.ollamaFailCnt, wdFailThreshold, ollamaDetail))
 
 		if wd.ollamaFailCnt >= wdFailThreshold {
 			if wd.canRestart() {
@@ -159,18 +167,56 @@ func (wd *Watchdog) runCheckCycle() {
 	}
 }
 
-// healthCheck HTTP 健康检查
-// 返回 true 表示健康（HTTP 200），false 表示不健康
-func (wd *Watchdog) healthCheck(url string) bool {
+// healthCheckDeep 深度健康检查（Patch5 P0）
+// 不仅检查 HTTP 200，还校验响应体关键字段，避免端口残留导致的误判。
+// 返回：(是否健康, 详细信息字符串)
+func (wd *Watchdog) healthCheckDeep(url string, kind string) (bool, string) {
 	client := &http.Client{Timeout: wdHTTPTimeout}
 	resp, err := client.Get(url)
 	if err != nil {
-		return false
+		return false, "连接失败: " + err.Error()
 	}
 	defer resp.Body.Close()
-	// 读取并丢弃 body，释放连接
-	io.ReadAll(resp.Body)
-	return resp.StatusCode == http.StatusOK
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8192)) // 最多读 8KB
+	if err != nil {
+		return false, fmt.Sprintf("HTTP %d，读 body 失败: %v", resp.StatusCode, err)
+	}
+	bodyStr := string(body)
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+
+	// 深度校验响应体（避免端口残留 + 服务实际已死的情况）
+	switch kind {
+	case "ollama":
+		// /api/tags 健康响应必须含 "models" 字段（即使是空数组也行）
+		if !contains(bodyStr, "models") {
+			return false, "HTTP 200 但响应体异常（无 models 字段）"
+		}
+	case "python":
+		// /api/status 健康响应必须含 "version" 字段
+		if !contains(bodyStr, "version") {
+			return false, "HTTP 200 但响应体异常（无 version 字段）"
+		}
+	}
+
+	return true, fmt.Sprintf("HTTP %d, body=%dB", resp.StatusCode, len(body))
+}
+
+// contains 字符串包含检查（避免引入 strings 包）
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || indexOf(s, substr) >= 0)
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }
 
 // canRestart 检查是否还可以重启（滑动窗口计数）

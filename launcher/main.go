@@ -446,6 +446,34 @@ func installCtrlHandler() {
 
 // ===== 健康检查 =====
 
+// isServiceAlive HTTP 深度健康检查（Patch5 P0：替代 isPortOpen 用于面板状态显示）
+// 不仅检查 TCP 端口，还发 HTTP 请求并校验响应体字段，避免端口残留误判。
+// 注意：超时设为 2s（面板每 2s 刷新一次，超时过长会拖慢刷新）
+func isServiceAlive(url string, kind string) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	// 读 body 校验关键字段（最多 8KB，足够判断）
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if err != nil {
+		return false
+	}
+	bodyStr := string(body)
+	switch kind {
+	case "ollama":
+		return strings.Contains(bodyStr, "models")
+	case "python":
+		return strings.Contains(bodyStr, "version")
+	}
+	return true
+}
+
 func isPortOpen(host string, port int) bool {
 	addr := fmt.Sprintf("%s:%d", host, port)
 	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
