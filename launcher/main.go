@@ -97,8 +97,10 @@ type ManagedProcess struct {
 //   2. 禁用 Breakaway → ollama spawn 的 ollama_llama_server 孙进程也被强制留在 Job 内
 //   3. SetConsoleCtrlHandler 捕获 Ctrl+C / 关闭控制台 → 调用 TerminateJobObject 全杀
 var (
-	jobObject syscall.Handle
-	k32       = syscall.NewLazyDLL("kernel32.dll")
+	jobObject      syscall.Handle
+	watchdogCtx    context.Context
+	watchdogCancel context.CancelFunc // Patch5: shutdown 时显式调用
+	k32            = syscall.NewLazyDLL("kernel32.dll")
 	procCreateJobObjectW        = k32.NewProc("CreateJobObjectW")
 	procSetInformationJobObject = k32.NewProc("SetInformationJobObject")
 	procAssignProcessToJobObject = k32.NewProc("AssignProcessToJobObject")
@@ -1214,8 +1216,7 @@ func main() {
 	stageStart = time.Now()
 
 	// 实际启动看门狗
-	watchdogCtx, watchdogCancel := context.WithCancel(context.Background())
-	_ = watchdogCancel // 主进程退出时由 Job Object 兜底清理，无需显式 cancel
+	watchdogCtx, watchdogCancel = context.WithCancel(context.Background())
 	go startWatchdog(cfg, serverProc, ollamaProc, newPythonCmd, newOllamaCmd, watchdogCtx)
 	log.Println("[Launcher] 看门狗已启动（健康监测 + 自动重启）")
 
@@ -1255,6 +1256,13 @@ func main() {
 	shutdown := func() {
 		log.Println("[Launcher] 托盘退出，正在关闭...")
 		RemoveTrayIcon()
+		// Patch5 关键修复：先停 Watchdog，再停 server，避免 watchdog 在 server 死后拉起新进程
+		// （这是"重启后老 Python 还在跑"的根因）
+		if watchdogCancel != nil {
+			log.Println("[Launcher] 停止看门狗...")
+			watchdogCancel()
+			time.Sleep(500 * time.Millisecond) // 给 watchdog 一点时间退出
+		}
 		// 反向停止：先停 Python，再停 Ollama
 		for i := len(processes) - 1; i >= 0; i-- {
 			processes[i].Stop()
