@@ -157,6 +157,32 @@ TOOL_REGISTRY = {
         },
         "stat_key": "fetches",
     },
+    # Patch5 G.一致性：上下文压缩工具（云端 Agent 用）
+    "summarize_history": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "summarize_history",
+                "description": "当对话历史很长、上下文空间紧张时调用此工具。系统会把之前的对话总结成简洁摘要，节省 token 同时保留关键信息。返回压缩后的历史摘要，可以直接基于此继续对话。建议在对话超过 30 轮或感觉自己重复阅读相同信息时调用。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "focus": {
+                            "type": "string",
+                            "description": "压缩时优先保留的主题/关键词（可选，不填则做通用摘要）"
+                        }
+                    },
+                    "required": []
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "summarizing",
+            "done": "summarize_done",
+        },
+        "stat_key": "summarizes",
+    },
     # ===== Patch4 v3：set_doc_status（接收 filename）+ list_docs + workspace 工具集 =====
     "set_doc_status": {
         "schema": {

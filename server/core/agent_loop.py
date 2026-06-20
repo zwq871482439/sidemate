@@ -66,18 +66,20 @@ def _extract_md_title(md_content):
 class AgentLoop:
     """ReAct Agent 循环 — 在线模式专用"""
 
-    def __init__(self, cloud_engine, search_engine, kb=None, chat_id=None):
+    def __init__(self, cloud_engine, search_engine, kb=None, chat_id=None, history=None):
         """
         Args:
             cloud_engine: CloudEngine 实例
             search_engine: SearchEngine 实例
             kb: KB 管理器实例（可选）
             chat_id: 会话 ID（文件夹名）— Patch4 v3：workspace 文件操作 + completed 标记
+            history: 当前轮次的历史消息列表（Patch5 G：summarize_history 工具用）
         """
         self.cloud_engine = cloud_engine
         self.search_engine = search_engine
         self.kb = kb
         self.chat_id = chat_id or ""
+        self._history_snapshot = history or []  # Patch5 G.一致性：用于 summarize_history
 
     def _workspace_error(self, tool_name, err):
         """workspace 工具的通用错误返回。"""
@@ -465,6 +467,39 @@ class AgentLoop:
                     },
                     "hint": hint,
                 }
+
+            elif tool_name == "summarize_history":
+                # Patch5 G.一致性：调用云端模型压缩历史
+                focus = args.get("focus", "")
+                stats["summarizes"] += 1
+                try:
+                    summary = self._summarize_history(focus)
+                    if summary:
+                        return {
+                            "success": True,
+                            "tool": "summarize_history",
+                            "data": {
+                                "summary": summary,
+                                "length": len(summary),
+                                "hint": "历史已压缩，后续可以基于此摘要继续对话",
+                            },
+                            "hint": "历史压缩完成",
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "tool": "summarize_history",
+                            "error": "empty_history",
+                            "message": "没有可压缩的历史（可能是首轮对话）",
+                        }
+                except Exception as e:
+                    log.warning("[AGENT] summarize_history 失败: %s", str(e)[:100])
+                    return {
+                        "success": False,
+                        "tool": "summarize_history",
+                        "error": "summarize_failed",
+                        "message": "压缩失败: %s" % str(e)[:100],
+                    }
 
             elif tool_name == "set_doc_status":
                 # Patch4 v3：模型标记某个 .md 文档为 completed → 读 .md + 生成 docx + 标记完成
@@ -921,5 +956,70 @@ class AgentLoop:
         elif tool == "set_doc_status":
             fname = data.get("data", {}).get("filename", "")
             return "标记文档完成: %s" % fname
+        elif tool == "summarize_history":
+            return "历史已压缩 (%d 字摘要)" % data.get("data", {}).get("length", 0)
         else:
             return "工具 %s 已执行" % tool
+
+    # ===== Patch5 G.一致性：summarize_history 实现 =====
+
+    def _summarize_history(self, focus: str = "") -> str:
+        """调用云端模型压缩历史消息。
+
+        Args:
+            focus: 模型可选传入的关注主题
+
+        Returns:
+            str: 压缩后的摘要文本。空字符串表示没有可压缩的历史。
+        """
+        if not self._history_snapshot:
+            return ""
+
+        # 拼装待压缩的历史文本（仅保留 user/assistant 的内容）
+        lines = []
+        for m in self._history_snapshot[-30:]:  # 最多取最近 30 条
+            role = m.get("role", "")
+            content = m.get("content", "")
+            if not content or role not in ("user", "assistant"):
+                continue
+            tag = "用户" if role == "user" else "助手"
+            # 截断过长内容（避免把整个文档原文塞进去）
+            if len(content) > 800:
+                content = content[:800] + "..."
+            lines.append("%s：%s" % (tag, content))
+        if not lines:
+            return ""
+        full_text = "\n".join(lines)
+
+        # 构造压缩 prompt
+        sys_prompt = (
+            "你是对话历史压缩助手。请把以下多轮对话总结成简洁摘要，"
+            "保留：用户意图、已确认的关键事实、未解决的问题。"
+            "目标：让后续对话能基于此摘要继续，无需重读全部历史。"
+        )
+        if focus:
+            sys_prompt += " 重点关注：%s。" % focus
+        sys_prompt += " 输出 300-500 字的中文摘要，不要分点编号，自然段落即可。"
+
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": full_text},
+        ]
+
+        # 用 CloudEngine 单轮非流式调用
+        summary_text = ""
+        try:
+            for phase, content in self.cloud_engine.run_with_tools(messages, tools=None):
+                if phase == "text":
+                    summary_text += content
+                elif phase == "raw":
+                    summary_text += content
+                elif phase == "error":
+                    log.warning("[AGENT] summarize_history 引擎错误: %s",
+                                str(content)[:100])
+                    return ""
+        except Exception as e:
+            log.warning("[AGENT] summarize_history 引擎异常: %s", str(e)[:100])
+            return ""
+
+        return summary_text.strip()

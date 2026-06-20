@@ -287,7 +287,14 @@ function onUnifiedPicked(e) {
     var formData = new FormData();
     formData.append('file', file);
     formData.append('mode', 'chat_attach');
-    fetch((typeof API !== 'undefined' ? API : '') + '/api/file_upload', {
+    // Patch5：预上传也带 chat_id，让后端把文件存到 session workspace/
+    var _preChatId = '';
+    if (typeof currentChatFile !== 'undefined' && currentChatFile) {
+      _preChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
+    }
+    var _preUrl = (typeof API !== 'undefined' ? API : '') + '/api/file_upload';
+    if (_preChatId) _preUrl += '?chat_id=' + encodeURIComponent(_preChatId);
+    fetch(_preUrl, {
       method: 'POST',
       body: formData
     }).then(function(r) { return r.json(); })

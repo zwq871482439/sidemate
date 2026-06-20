@@ -488,19 +488,26 @@ async function sendMessage() {
   var msgEl3 = document.getElementById('messages');
   if (msgEl3) { msgEl3.scrollTop = msgEl3.scrollHeight; }
 
-  // 文件上传处理（仅对真实 File 对象；KB 引用是 {path, source} 对象，跳过上传直接传 path）
+  // 文件上传处理
+  // 三种 pendingFile 形态：
+  //   1) File 对象（刚选择，未上传）→ 立即上传到 workspace/，取返回的 path
+  //   2) {path, source:'upload'}（chat-files.js 已预上传）→ 直接用 path
+  //   3) {path, source:'kb'}（KB 引用，path 是 doc_id）→ 直接用 path
   if ((typeof pendingFile !== 'undefined') && pendingFile && userMsg) {
-    var _isKbRef = (pendingFile.source === 'kb') || !(pendingFile instanceof File);
-    if (_isKbRef && pendingFile.path) {
-      // KB 文档引用：直接把 doc_id 当 file_path 传给后端，不走 /api/file_upload
+    var _alreadyHasPath = (typeof pendingFile.path === 'string') && pendingFile.path;
+    if (_alreadyHasPath) {
+      // 形态 2/3：已经上传过（upload）或不需要上传（kb）→ 直接用 path
       uploadedFilePath = pendingFile.path;
-      userMsg.content += '\n\n[用户引用了文库文档: ' + (pendingFile.name || '') + '，请读取并参考]';
+      var _refLabel = pendingFile.source === 'kb'
+        ? ('[用户引用了文库文档: ' + (pendingFile.name || '') + '，请读取并参考]')
+        : ('[用户上传了文件: ' + (pendingFile.name || '') + '，请读取并参考]');
+      userMsg.content += '\n\n' + _refLabel;
       pendingFile = null;
     } else {
+      // 形态 1：真实 File 对象，需要上传
       try {
         var fd2 = new FormData();
         fd2.append('file', pendingFile);
-        // Patch4 v3.1：传 chat_id 让后端把文件存到 session workspace/
         var _uploadChatId = '';
         if (typeof currentChatFile !== 'undefined' && currentChatFile) {
           _uploadChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
@@ -510,7 +517,7 @@ async function sendMessage() {
         var fileResp = await fetch(_uploadUrl, {method: 'POST', body: fd2});
         var fileData = await fileResp.json();
         if (fileData.path) {
-          userMsg.content += '\n\n[用户上传了文件: ' + pendingFile.name + '，请读取并参考]';
+          userMsg.content += '\n\n[用户上传了文件: ' + (pendingFile.name || '') + '，请读取并参考]';
           uploadedFilePath = fileData.path;
         }
       } catch(e) { console.error('[chat.sendMessage.fileUpload]', e); }

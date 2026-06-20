@@ -63,29 +63,22 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
     # 外层 try/finally：保护中途停止时的保存
     try:
         try:
-            # ====== 步骤 1: 云端上下文 >75% 自动压缩 ======
+            # ====== 步骤 1: 上下文使用率检测 ======
+            # Patch5 G：不再做管道侧压缩，改为 >80% 时注入提示让模型自己调用 summarize_history
             try:
-                from routers.chat import _calc_context_usage, _compress_cloud_history
+                from routers.chat import _calc_context_usage
                 ctx_usage = _calc_context_usage(chat_file)
                 ctx_pct = ctx_usage["percentage"]
 
-                if ctx_pct > 75:
-                    log.info("[CLOUD] 云端上下文 >75%% (%.1f%%)，开始自动压缩", ctx_pct)
-                    yield sse_event("compress", {
-                        "phase": "preparing",
-                        "before": ctx_pct,
+                if ctx_pct > 80:
+                    log.info("[CLOUD] 上下文 >80%% (%.1f%%)，提示 Agent 调用 summarize_history", ctx_pct)
+                    yield sse_event("context_warning", {
+                        "percentage": ctx_pct,
+                        "level": "critical",
+                        "hint": "对话历史较长，建议让助手压缩一下",
                     })
-                    try:
-                        compressed = _compress_cloud_history(mgr, history_raw, chat_file)
-                        if compressed:
-                            after_pct = _calc_context_usage(chat_file)["percentage"]
-                            yield sse_event("compress", {
-                                "phase": "done",
-                                "before": ctx_pct,
-                                "after": after_pct,
-                            })
-                    except Exception as comp_err:
-                        log.warning("[CLOUD] 云端压缩失败: %s", str(comp_err)[:100])
+                    # 把压缩提示注入到 prompt
+                    prompt = "[系统提示：对话历史已超过 80%%（当前 %.0f%%），建议立即调用 summarize_history 工具压缩历史]\n\n%s" % (ctx_pct, prompt)
             except Exception as ctx_err:
                 log.warning("[CLOUD] 上下文检测失败: %s", str(ctx_err)[:80])
 
@@ -382,7 +375,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     if chat_file:
         from core.doc_session import chat_id_from_path
         _chat_id = chat_id_from_path(chat_file)
-    agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id)
+    agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id, history=model_history)
 
     # 决定模式
     agent_mode = "doc" if action_mode == "doc" else "chat"
