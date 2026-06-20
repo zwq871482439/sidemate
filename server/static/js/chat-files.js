@@ -283,12 +283,11 @@ function onUnifiedPicked(e) {
   if (typeof showToast !== 'function') {} else showToast('已选择: ' + file.name, 'success');
 
   // Patch5 G：任何模式下都立即上传到 session workspace/，拿到真实 path 和 tokens
-  // （之前只有 currentActionMode==='chat' 才上传，导致 doc/agent 模式 file_path 退化为文件名）
-  {
+  // 没有当前会话则先新建（否则后端 fallback 到 cache/uploads，污染全局）
+  var _doUpload = function() {
     var formData = new FormData();
     formData.append('file', file);
     formData.append('mode', 'chat_attach');
-    // Patch5：预上传也带 chat_id，让后端把文件存到 session workspace/
     var _preChatId = '';
     if (typeof currentChatFile !== 'undefined' && currentChatFile) {
       _preChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
@@ -303,9 +302,8 @@ function onUnifiedPicked(e) {
         if (d.path) {
           if (typeof pendingFile !== 'undefined') pendingFile = {
             name: file.name, path: d.path, source: 'upload',
-            tokens: d.tokens || 0   // Patch5 G：后端算好的真实 token 数
+            tokens: d.tokens || 0
           };
-          // 触发指示器刷新
           if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
             TokenEstimator.updateInputDisplay();
           }
@@ -319,6 +317,19 @@ function onUnifiedPicked(e) {
         if (typeof showToast === 'function') showToast('上传失败', 'error');
         clearPendingFile();
       });
+  };
+
+  // Patch5 G：没有 session 则先新建会话再上传，避免后端 fallback 到 cache/uploads
+  if (typeof currentChatFile === 'undefined' || !currentChatFile) {
+    if (typeof newChat === 'function') {
+      newChat().then(_doUpload).catch(function() {
+        if (typeof showToast === 'function') showToast('创建会话失败，请手动新建', 'error');
+      });
+    } else {
+      _doUpload();
+    }
+  } else {
+    _doUpload();
   }
 
   // 重置 input 以便再次选择同一文件

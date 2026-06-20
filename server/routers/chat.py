@@ -854,6 +854,7 @@ async def api_file_upload(file: UploadFile = File(...), chat_id: str = ""):
         return JSONResponse({"error": "文件过大（最大50MB）"}, status_code=400)
 
     # Patch4 v3.1：优先存到 session workspace
+    # Patch5 G：彻底废弃 cache/uploads fallback，强制必须有 chat_id
     if chat_id and chat_id.replace(".json", ""):
         _cid = chat_id.replace(".json", "")
         # 安全校验：chat_id 只允许 YYYY-MM-DD_NNN 格式
@@ -866,10 +867,8 @@ async def api_file_upload(file: UploadFile = File(...), chat_id: str = ""):
         os.makedirs(ws_dir, exist_ok=True)
         save_path = os.path.join(ws_dir, safe_name)
     else:
-        # 降级：全局 UPLOAD_DIR
-        upload_dir = UPLOAD_DIR
-        os.makedirs(upload_dir, exist_ok=True)
-        save_path = os.path.join(upload_dir, safe_name)
+        # Patch5 G：拒绝无 chat_id 的上传（前端必须先新建会话）
+        return JSONResponse({"error": "缺少 chat_id，请先新建会话"}, status_code=400)
 
     with open(save_path, "wb") as f:
         f.write(content)
