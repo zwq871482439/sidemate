@@ -548,10 +548,11 @@ class _KBOpsMixin:
             ],
         }
         try:
-            # Patch5 修复 Errno 22：不用 mkstemp，用固定临时文件名 + os.replace
-            tmp_path = os.path.join(os.path.dirname(self.meta_path), "kb_meta_writing.json")
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            # Patch5 修复 Errno 22 + Errno 2：不用 mkstemp，用固定临时文件名 + os.replace
+            # 关键：写入前确保目录存在（之前 ensure_dirs 没建导致 Errno 2）
+            _meta_dir = os.path.dirname(self.meta_path)
+            os.makedirs(_meta_dir, exist_ok=True)
+            tmp_path = os.path.join(_meta_dir, "kb_meta_writing.json")
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             os.replace(tmp_path, self.meta_path)
@@ -590,15 +591,12 @@ class _KBOpsMixin:
         """保存向量索引"""
         if self.vectors is None or len(self.chunk_order) == 0:
             return
-        import tempfile
-        # Patch5 修复 Errno 22：不用 mkstemp（fd 句柄与 numpy 冲突）
-        # 改用 mktemp + os.replace（原子写入）
+        # Patch5 修复 Errno 22 + Errno 2：用固定临时文件名 + os.replace
+        # 关键：写入前确保目录存在
         tmp_dir = os.path.dirname(self.vectors_path)
+        os.makedirs(tmp_dir, exist_ok=True)
         tmp_path = os.path.join(tmp_dir, "kb_vec_writing.npz")
         try:
-            # 如果上次残留则删除
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
             np.savez_compressed(
                 tmp_path,
                 vectors=self.vectors,

@@ -442,15 +442,17 @@ class BatchQueue:
 
     # ===== Worker 消费循环 =====
 
-    def start_worker(self, kb_instance, worker_count: int = 2) -> None:
+    def start_worker(self, kb_instance, worker_count: int = 1) -> None:
         """启动 worker 消费循环（在独立线程中运行）
 
         P5 审计修复 P2-12: 支持多 worker 并行消费。
         get_pending() 已用 BEGIN IMMEDIATE 原子取任务，多 worker 天然安全。
+        Patch5 G: 默认改为 1 worker（本地嵌入模型对并发不友好，
+                  2 worker 同时 embed 会撑爆内存且无吞吐收益）
 
         Args:
             kb_instance: KnowledgeBase 实例
-            worker_count: worker 线程数（默认 2）
+            worker_count: worker 线程数（默认 1，串行处理）
         """
         self._kb_instance = kb_instance
         self._worker_stop.clear()
