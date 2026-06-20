@@ -140,13 +140,19 @@ type SplashStep struct {
 type SplashState struct {
 	hWnd    syscall.Handle
 	hIcon   syscall.Handle
-	steps   [3]SplashStep
+	steps   [3]SplashStep // 保留数组兼容旧 API（不再用于显示，但仍用于错误状态等）
 	version string
 	logPath string
 	failed  bool
 	failMsg string
 	progress       int
 	targetProgress int
+
+	// Patch5 启动重构：单行动态步骤
+	currentStepText    string // 当前步骤的文案（如"检查环境依赖..."）
+	currentStepStatus  StepStatus // 当前步骤的状态
+	currentStepName    string // 当前步骤名称（如"环境"），用于日志
+	stageStartTime     time.Time // 当前阶段开始时间（用于强制延迟）
 
 	closeBtnRect   splashRect
 	openLogBtnRect splashRect
@@ -494,11 +500,10 @@ func splashPaint(hdc syscall.Handle, ss *SplashState) {
 	splashProcSelectObj.Call(uintptr(hdc), hOldSepPen)
 	splashProcDeleteObj.Call(sepPen)
 
-	// --- 三步启动状态 ---
-	stepNames := [3]string{"Ollama 引擎", "FastAPI 服务", "打开浏览器"}
-	for i := 0; i < 3; i++ {
-		splashDrawStepRow(hdc, ss, i, stepNames[i])
-	}
+	// --- 单行动态步骤（Patch5 启动重构） ---
+	// 不再画 3 行固定步骤，改为画 1 行动态步骤 + 状态指示灯
+	stageY := sStepStartY
+	splashDrawDynamicStep(hdc, ss, stageY)
 
 	// --- 进度条（圆角 + 加宽加高 + 百分比居内） ---
 	progBarH := 22 * dpi / 96
@@ -619,6 +624,86 @@ func splashDrawStepRow(hdc syscall.Handle, ss *SplashState, idx int, stepLabel s
 	// 状态文字
 	statusFontSize := 11 * dpi / 96
 	splashDrawTextEx(hdc, statusText, statusFontSize, 76*dpi/96, rowY+16*dpi/96, 300*dpi/96, statusFontSize+4*dpi/96, dotColor, false)
+}
+
+// splashDrawDynamicStep 画单行动态步骤（Patch5 启动重构）
+// 比 splashDrawStepRow 更大、更醒目，因为只有一行
+func splashDrawDynamicStep(hdc syscall.Handle, ss *SplashState, y int32) {
+	dotCx := int32(52 * dpi / 96)
+	dotCy := y + 18*dpi/96
+	dotR := sDotR + 4*dpi/96 // 比原来大一点
+
+	status := ss.currentStepStatus
+	text := ss.currentStepText
+	if text == "" {
+		text = "准备中..."
+	}
+
+	var dotColor uintptr
+	var statusSuffix string
+	switch status {
+	case StepWaiting: // 包含未初始化（0）
+		dotColor = splashColorWait
+		statusSuffix = ""
+	case StepRunning:
+		dotColor = splashColorRun
+		statusSuffix = ""
+	case StepRetry:
+		dotColor = splashColorRetry
+		statusSuffix = ""
+	case StepDone:
+		dotColor = splashColorDone
+		statusSuffix = " ✓"
+	case StepFailed:
+		dotColor = splashColorFail
+		statusSuffix = ""
+	}
+
+	// 画圆形指示灯（Running 时加旋转动画效果用纯色实心 + 脉冲）
+	hBrush, _, _ := splashProcCreateBrush.Call(dotColor)
+	hOldB, _, _ := splashProcSelectObj.Call(uintptr(hdc), hBrush)
+	hPen, _, _ := splashProcCreatePen.Call(0, 1, dotColor)
+	hOldP, _, _ := splashProcSelectObj.Call(uintptr(hdc), hPen)
+
+	if status == StepWaiting || status == 0 {
+		// 空心圆
+		splashProcDeleteObj.Call(hBrush)
+		hBrush, _, _ = splashProcCreateBrush.Call(splashColorBodyBG)
+		splashProcSelectObj.Call(uintptr(hdc), hBrush)
+		splashProcDeleteObj.Call(hPen)
+		hPen, _, _ = splashProcCreatePen.Call(0, 2, dotColor)
+		splashProcSelectObj.Call(uintptr(hdc), hPen)
+	}
+
+	splashProcEllipse.Call(
+		uintptr(hdc),
+		uintptr(dotCx-dotR), uintptr(dotCy-dotR),
+		uintptr(dotCx+dotR), uintptr(dotCy+dotR),
+	)
+
+	// Done 时画勾号
+	if status == StepDone {
+		hWhitePen, _, _ := splashProcCreatePen.Call(0, 2, splashColorWhite)
+		splashProcSelectObj.Call(uintptr(hdc), hWhitePen)
+		ckScale := dpi / 96
+		splashProcMoveToEx.Call(uintptr(hdc), uintptr(dotCx-5*ckScale), uintptr(dotCy), 0)
+		splashProcLineTo.Call(uintptr(hdc), uintptr(dotCx-1*ckScale), uintptr(dotCy+5*ckScale))
+		splashProcMoveToEx.Call(uintptr(hdc), uintptr(dotCx-1*ckScale), uintptr(dotCy+5*ckScale), 0)
+		splashProcLineTo.Call(uintptr(hdc), uintptr(dotCx+6*ckScale), uintptr(dotCy-5*ckScale))
+		splashProcDeleteObj.Call(hWhitePen)
+	}
+
+	splashProcSelectObj.Call(uintptr(hdc), hOldB)
+	splashProcSelectObj.Call(uintptr(hdc), hOldP)
+	splashProcDeleteObj.Call(hBrush)
+	splashProcDeleteObj.Call(hPen)
+
+	// 步骤文案（大字号，因为是单行）
+	stageFontSize := 15 * dpi / 96
+	stageText := text + statusSuffix
+	textX := dotCx + dotR + 14*dpi/96
+	textW := sW - textX - 30*dpi/96
+	splashDrawTextEx(hdc, stageText, stageFontSize, textX, y+4*dpi/96, textW, stageFontSize+8*dpi/96, splashColorTitleBG, false)
 }
 
 func splashDrawErrorCard(hdc syscall.Handle, ss *SplashState) {
@@ -780,6 +865,42 @@ func UpdateSplash(ss *SplashState, stepIdx int, status StepStatus, text string) 
 		}
 	}
 	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
+}
+
+// UpdateSplashStage 更新单行动态步骤（Patch5 启动重构）
+// 参数：
+//   - ss: SplashState
+//   - status: 步骤状态（StepRunning/StepDone/StepFailed）
+//   - text: 显示文案（如"检查环境依赖..."）
+//   - targetProgress: 该步骤的目标进度百分比（0-100）
+func UpdateSplashStage(ss *SplashState, status StepStatus, text string, targetProgress int) {
+	if ss == nil {
+		return
+	}
+	ss.currentStepStatus = status
+	if text != "" {
+		ss.currentStepText = text
+	}
+	if targetProgress > 0 {
+		ss.targetProgress = targetProgress
+	}
+	if status == StepRunning && ss.stageStartTime.IsZero() {
+		ss.stageStartTime = time.Now()
+	} else if status != StepRunning {
+		ss.stageStartTime = time.Time{} // 重置
+	}
+	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
+}
+
+// UpdateSplashStageProgress 仅更新进度（不切换文案/状态）
+func UpdateSplashStageProgress(ss *SplashState, progress int) {
+	if ss == nil {
+		return
+	}
+	if progress >= 0 && progress <= 100 {
+		ss.targetProgress = progress
+		splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
+	}
 }
 
 // UpdateSplashDuration 更新步骤耗时

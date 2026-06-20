@@ -207,11 +207,12 @@ async def _lifespan(app):
             log.warning("[STARTUP] Ollama 启动失败: %s" % result.get("error", "unknown"))
 
         # 模型预热：发一次极短请求，把 GGUF 加载到显存/内存，消除首次提问延迟
-        _report_startup("model_warmup", 72, "预热 AI 模型...")
-        try:
-            import httpx as _hx
-            _warmup_model = mgr._get_default_llm()
-            if _warmup_model:
+        # Patch5 启动重构：仅当有可用 LLM 模型时才预热
+        _warmup_model = mgr._get_default_llm()
+        if _warmup_model:
+            _report_startup("model_warmup", 72, "预热 AI 模型（耗时较长）...")
+            try:
+                import httpx as _hx
                 _base_url = mgr._ollama_base_url
                 _keep_alive = _cfg_get("ollama_keep_alive", "24h")
                 _warmup_payload = {
@@ -236,11 +237,13 @@ async def _lifespan(app):
                     if _matched and _matched not in mgr._loaded:
                         mgr._loaded[_matched] = True
                 else:
-                    log.warning("[STARTUP] 模型预热请求失败: HTTP %d" % _resp.status_code)
-            else:
-                log.info("[STARTUP] 无可用 LLM 模型，跳过预热")
-        except Exception as _e:
-            log.warning("[STARTUP] 模型预热失败（不影响正常使用）: %s" % str(_e)[:120])
+                    log.warning("[STARTUP] 模型预热请求失败: HTTP %d（不影响正常使用）" % _resp.status_code)
+            except Exception as _e:
+                log.warning("[STARTUP] 模型预热失败（不影响正常使用）: %s" % str(_e)[:120])
+            _report_startup("warmup_done", 80, "模型预热完成")
+        else:
+            log.info("[STARTUP] 无可用 LLM 模型，跳过预热")
+            _report_startup("warmup_skipped", 80, "无可用模型，跳过预热")
 
     # Patch3: KB 自动初始化 — 检测扩展安装状态，若已安装则加载模型
     try:
@@ -372,6 +375,7 @@ log.info("[KB] 文库初始化完成: installed=%s, mode=%s, docs=%d, chunks=%d"
 
 # KB 模型自动加载（embedder + reranker，KB 模块无需用户手动启停）
 if _kb_installed:
+    _report_startup("kb_load", 32, "加载知识库模型...")
     try:
         embedder_ok = kb.init_embedder()
         reranker_ok = kb.init_reranker()
@@ -384,6 +388,7 @@ if _kb_installed:
             log.info("[KB] embedder + reranker 自动加载完成")
     except Exception as e:
         log.warning("[KB] 模型自动加载异常: %s", str(e)[:100])
+    _report_startup("kb_loaded", 40, "知识库模型已加载")
 
 # 录音纪要管理器（Patch 12: 从 recorder_pkg 包导入）
 _report_startup("recorder", 45, "初始化录音纪要...")
@@ -392,6 +397,7 @@ recorder = RecorderManager()
 recorder.recover_sessions()
 log.info("[RECORDER] 录音纪要初始化完成: sessions=%d, whisper=%s" % (
     len(recorder.sessions), "loaded" if recorder._whisper_loaded else "not_loaded"))
+_report_startup("recorder_loaded", 55, "录音纪要已加载")
 
 # 动态选择默认模型
 _report_startup("model_select", 50, "选择默认模型...")
