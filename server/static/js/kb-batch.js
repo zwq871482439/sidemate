@@ -640,10 +640,12 @@ function kbOnDocsRendered(docs) {
   }
 
   // 恢复 checkbox 状态
+  // Patch5 修复：_kbSelectedDocs 可能在 kb-batch.js 完全初始化前被调用
+  var _sel = (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && typeof _kbSelectedDocs.has === 'function') ? _kbSelectedDocs : null;
   var checkboxes = document.querySelectorAll('.kb-doc-checkbox');
   for (var k = 0; k < checkboxes.length; k++) {
     var cb = checkboxes[k];
-    cb.checked = _kbSelectedDocs.has(cb.getAttribute('data-doc-id'));
+    cb.checked = _sel ? _sel.has(cb.getAttribute('data-doc-id')) : false;
   }
 
   // 渲染 Tag 聚类

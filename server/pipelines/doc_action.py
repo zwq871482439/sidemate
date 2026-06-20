@@ -222,10 +222,13 @@ def _parse_markdown_to_sections(md_text: str):
     if current_heading is not None or current_body_lines:
         body = '\n'.join(current_body_lines).strip()
         if body:
-            sections.append((current_heading or "总结", body))
+            # Patch5 修复：没标题就留空，不强加"总结"
+            # 让模型自己决定要不要加标题
+            sections.append((current_heading or "", body))
 
     if not sections and md_text.strip():
-        sections.append(("正文", md_text.strip()))
+        # 兜底：纯文本无标题，整个作为正文
+        sections.append(("", md_text.strip()))
 
     return title, sections
 

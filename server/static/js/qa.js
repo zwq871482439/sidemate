@@ -124,13 +124,25 @@ async function kbRefreshDocs() {
     var stats = await statsResp.json();
 
     // Patch4 v3.1 BUG#32：折叠/展开计数器统一用 stats.ready_documents
-    // 之前展开用 stats.ready_documents，折叠用 docs.length，两者不一致
-    var _docCount = stats.ready_documents;
+    // Patch5 修复：计数器区分 ready/error/processing
+    var _readyCount = stats.ready_documents || 0;
     var _maxDocs = stats.max_documents || 200;
-    countEl.textContent = _docCount + '/' + _maxDocs;
+    // 统计各状态数量
+    var _errorCount = 0;
+    var _processingCount = 0;
+    for (var di = 0; di < docs.length; di++) {
+      var _st = docs[di].status;
+      if (_st === 'error') _errorCount++;
+      else if (_st === 'processing' || _st === 'indexing' || _st === 'summarizing') _processingCount++;
+    }
+    // 显示格式：5/200（成功）· 3 失败
+    var _countText = _readyCount + '/' + _maxDocs;
+    if (_errorCount > 0) _countText += ' · ' + _errorCount + ' 失败';
+    if (_processingCount > 0) _countText += ' · ' + _processingCount + ' 处理中';
+    countEl.textContent = _countText;
 
     var collapsedCount = document.getElementById('kbCollapsedCount');
-    if (collapsedCount) collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + _docCount + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + _maxDocs + '</div>';
+    if (collapsedCount) collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + _readyCount + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + _maxDocs + '</div>';
 
     _kbModelsLoaded = stats.models_loaded || false;
 

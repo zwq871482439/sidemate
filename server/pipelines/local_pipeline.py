@@ -262,6 +262,37 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             # ====== 步骤 7: StreamEngine → Ollama /api/chat ======
             else:
                 log.info("[LOCAL] >> 进入 chat_stream model=%s", model_choice)
+
+                # Patch5 修复：chat 模式下也读取 KB 文档引用
+                # 原先只有 doc_mode 才读 file_path，导致 chat 模式引用 KB 文档时 AI 看不到内容
+                _chat_kb_context = ""
+                if file_path and not _doc_mode:
+                    try:
+                        kb_doc_ref = kb.get_document(file_path)
+                        if kb_doc_ref and kb_doc_ref.status == "ready":
+                            _doc_texts = []
+                            for chunk in kb.chunks.values():
+                                if chunk.doc_id == file_path and chunk.text:
+                                    _doc_texts.append(chunk.text)
+                            if _doc_texts:
+                                from knowledge.file_extractor import calc_file_budget, smart_extract
+                                _full_text = "\n\n".join(_doc_texts)
+                                _hist_chars = sum(
+                                    len(m.get("content", "")) for m in history_raw
+                                ) if history_raw else 0
+                                _budget = calc_file_budget(_hist_chars)
+                                if len(_full_text) > _budget:
+                                    _full_text = smart_extract(_full_text, message or "", _budget)
+                                _chat_kb_context = _full_text
+                                log.info("[LOCAL] chat 模式 KB 引用提取: %s (%d字)",
+                                         kb_doc_ref.filename, len(_chat_kb_context))
+                    except Exception as _e:
+                        log.warning("[LOCAL] chat 模式 KB 引用提取失败: %s", str(_e)[:100])
+
+                # 如果有 KB 文档内容，注入到 prompt
+                if _chat_kb_context:
+                    prompt = "【用户引用的文档内容】\n\n" + _chat_kb_context + "\n\n【用户问题】\n" + (message or prompt)
+
                 for phase, content in mgr.chat_stream(
                     prompt, model_choice, max_tokens, model_history,
                     context_cache=context_cache,
