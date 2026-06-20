@@ -700,23 +700,49 @@ func main() {
 		}
 	}
 
+	// Patch5 新方案：托盘提前到启动期（启动期间也能退出）
+	// 启动期菜单：取消启动
+	// 启动完成后切换为：打开浏览器 / 退出
+	cancelStartup := func() {
+		log.Println("[Launcher] 用户取消启动")
+		terminateJob()
+		os.Exit(0)
+	}
+	openBrowserFn := func() { openBrowser(cfg.BrowserURL) }
+	showPanelFn := func() {
+		ShowStatusPanel(cfg.Version, cfg.BrowserURL, cfg.OllamaPort, cfg.ServerPort, trayHIcon, openBrowserFn)
+	}
+	if runtime.GOOS == "windows" && splash != nil {
+		_ = InitTray("SidemateTrayClass", "桌伴 Sidemate（启动中）", openBrowserFn, cancelStartup, showPanelFn, cfg.Version, cfg.BrowserURL)
+		log.Println("[Launcher] 启动期托盘已创建（右键可取消启动）")
+	}
+
 	// ---- 0. GPU 检测 + 三档分流（Patch5 T04）----
-	// Patch5 启动重构：单行动态步骤
-	// 阶段 1: 检查环境（0→10%，强制停留 1s 探明 KB/纪要/LLM 状态）
-	UpdateSplashStageInfo(splash, 5, 0) // 初始：5 阶段（占位，后面会动态调整），当前在第 0 阶段
-	UpdateSplashStage(splash, StepRunning, "检查环境依赖", 5)
-	UpdateSplashStageSubText(splash, "GPU 检测 + 依赖校验")
+	// ===== Patch5 4 段环形启动流程 =====
+	// 段 0: 正在初始化环境检查
+	// 段 1: 正在加载基础服务
+	// 段 2: 正在加载模型引擎
+	// 段 3: 正在加载守护进程
+
+	// ---- 段 0：正在初始化环境检查（至少 3s）----
+	SetSplashSegment(splash, 0, 1) // state=1 加载中
+	SetSplashSegmentText(splash, "正在初始化环境检查")
 	stageStart := time.Now()
 	log.Println("[Launcher] 检测 GPU 后端...")
 	gpuInfo := detectGPU()
-	ollamaBackend := setOllamaBackend(gpuInfo) // 返回 cuda/vulkan/cpu
+	ollamaBackend := setOllamaBackend(gpuInfo)
 	log.Printf("[Launcher] GPU 检测结果: %s", gpuBackendSummary(gpuInfo))
 	log.Printf("[Launcher] OLLAMA_LLM_LIBRARY = %s", ollamaBackend)
-	// 设置到当前进程环境，供 ollama serve 子进程继承
 	os.Setenv("OLLAMA_LLM_LIBRARY", ollamaBackend)
-	// Patch5 C5：把 GPU 信息写入 launcher.json，供诊断面板读取
 	saveGpuInfoToLauncherJson(appDir, gpuInfo, ollamaBackend)
+	// 段 0 完成检查通过后变绿，但至少停留 3s
+	stageMinDelay(stageStart, 3*time.Second)
+	SetSplashSegment(splash, 0, 2) // state=2 完成（变绿）
 
+	// ---- 段 1：正在加载基础服务（至少 3s）----
+	SetSplashSegment(splash, 1, 1)
+	SetSplashSegmentText(splash, "正在加载基础服务")
+	stageStart = time.Now()
 	// ---- 1. 启动 Ollama ----
 	// Patch5 启动重构：基础服务阶段（10→30%）
 	UpdateSplashStageInfo(splash, 5, 1) // 当前在第 1 阶段（基础服务）
@@ -1023,9 +1049,11 @@ func main() {
 		if waitForServerWithProgress("127.0.0.1", cfg.ServerPort, 60*time.Second) {
 			elapsed := time.Since(serverStart)
 			serverReady = true
-			// 清理进度文件（不再需要）
 			_ = os.Remove(filepath.Join(appDir, "data", "startup_progress.json"))
 			log.Printf("[Launcher] ✅ FastAPI 就绪 (%.1fs)", elapsed.Seconds())
+			// 段 1 完成，至少停留 3s
+			stageMinDelay(stageStart, 3*time.Second)
+			SetSplashSegment(splash, 1, 2) // 基础服务段变绿
 			break
 		}
 		if retry < 2 {
@@ -1071,148 +1099,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ---- Patch5 启动重构：动态阶段（KB / 纪要 / 预热）----
-	// 此时 FastAPI 已就绪，进度从 30% 开始
-	// 剩余进度区间 30→95% 按实际要做的阶段数动态分配
-	// 95→100% 留给看门狗 + 浏览器打开
-	UpdateSplashStageProgress(splash, 30)
+	// ===== Patch5 新方案：段 2 + 段 3 =====
+	// HTTP 就绪意味着 _lifespan 已完成所有初始化（KB/纪要/Ollama/预热）
+	// 不再需要轮询 startup_progress.json
 
-	// 探明有哪些扩展需要加载
-	// Patch5 修复：用 /api/kb/module-status（正确端点）而非 /api/kb/status（不存在）
-	hasKB := false
-	if resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/kb/module-status", cfg.ServerPort)); err == nil {
-		if resp.StatusCode == 200 {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			bodyStr := string(body)
-			// installed=true 才算装了
-			hasKB = strings.Contains(bodyStr, "\"installed\":true") || strings.Contains(bodyStr, "\"installed\": true")
-		}
-		resp.Body.Close()
-	}
-	hasLLM := checkLLMAvailable(cfg.OllamaHost, cfg.OllamaPort)
-	// 纪要扩展较难探明，简化处理：尝试 HTTP，失败就当没装
-	hasRecorder := false
-	if resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/recorder/status", cfg.ServerPort)); err == nil {
-		if resp.StatusCode == 200 {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			bodyStr := string(body)
-			hasRecorder = strings.Contains(bodyStr, "installed") || strings.Contains(bodyStr, "ready")
-		}
-		resp.Body.Close()
-	}
+	// ---- 段 2：正在加载模型引擎（至少 3s）----
+	// 注：实际上 _lifespan 已经在 HTTP 监听前做完了这些
+	// 但用户视觉上需要看到这个阶段（3s 最低停留）
+	SetSplashSegment(splash, 2, 1)
+	SetSplashSegmentText(splash, "正在加载模型引擎")
+	stageStart = time.Now()
+	stageMinDelay(stageStart, 3*time.Second)
+	SetSplashSegment(splash, 2, 2) // 模型引擎段变绿
 
-	// Patch5：进度区间固定分配（用户决策 2026-06-20 23:28）
-	// 不动态计算，每个阶段有固定的进度区间
-	// 未装的阶段直接跳过（不显示），但 LLM 永远从 70% 开始
-	type stageDef struct {
-		name       string
-		enabled    bool
-		startProg  int
-		endProg    int
-	}
-
-	var stages []stageDef
-	// KB: 30→50%（固定）
-	stages = append(stages, stageDef{"加载知识库模型", hasKB, 30, 50})
-	// 纪要: 50→70%（固定）
-	stages = append(stages, stageDef{"加载录音纪要", hasRecorder, 50, 70})
-	// LLM: 70→95%（固定，永远是这个区间）
-	stages = append(stages, stageDef{"预热 AI 模型", hasLLM, 70, 95})
-
-	// 过滤掉未启用的阶段（不显示）
-	var activeStages []stageDef
-	for _, s := range stages {
-		if s.enabled {
-			activeStages = append(activeStages, s)
-		}
-	}
-
-	log.Printf("[Launcher] 启动阶段规划: KB=%v 纪要=%v LLM=%v, 共 %d 个加载阶段",
-		hasKB, hasRecorder, hasLLM, len(activeStages))
-
-	// Patch5 Splash 方案 B：计算总阶段数（基础服务+加载阶段+看门狗）
-	// 用于流水指示器
-	totalStagesForIndicator := 1 + len(activeStages) + 1 // 基础服务 + 加载阶段 + 看门狗
-	UpdateSplashStageInfo(splash, totalStagesForIndicator, 1) // 当前在"基础服务"阶段
-
-	// 执行各加载阶段
-	progressFile := filepath.Join(appDir, "data", "startup_progress.json")
-	for i, stage := range activeStages {
-		// 显示该阶段开始
-		// Patch5 方案 B：更新流水指示器（index = 基础服务1 + 当前阶段 i）
-		UpdateSplashStageInfo(splash, totalStagesForIndicator, 1+i)
-		UpdateSplashStage(splash, StepRunning, stage.name, stage.startProg)
-		UpdateSplashStageSubText(splash, "") // 清空子状态
-		log.Printf("[Launcher] 进入阶段: %s (%d%%→%d%%)", stage.name, stage.startProg, stage.endProg)
-
-		// 轮询等待该阶段完成（通过 startup_progress.json）
-		stageDeadline := time.Now().Add(90 * time.Second) // 单阶段最多 90s
-		for time.Now().Before(stageDeadline) {
-			SplashPumpMessages()
-
-			// 读 Python 端进度
-			fileProgress := -1
-			filePhase := ""
-			if data, err := os.ReadFile(progressFile); err == nil {
-				var sp struct {
-					Phase    string  `json:"phase"`
-					Progress int     `json:"progress"`
-					Text     string  `json:"text"`
-					Ts       float64 `json:"ts"`
-				}
-				if json.Unmarshal(data, &sp) == nil {
-					fileProgress = sp.Progress
-					filePhase = sp.Phase
-				}
-			}
-
-			// 映射进度到当前阶段区间（Patch5：去掉子状态显示）
-			if fileProgress >= 0 {
-				localProg := stage.startProg + (stage.endProg-stage.startProg)*fileProgress/100
-				UpdateSplashStageProgress(splash, localProg)
-				// 不再显示子状态，只更新进度
-			}
-
-			// 检测该阶段是否完成（通过 phase 关键字）
-			stageDone := false
-			switch stage.name {
-			case "加载知识库模型":
-				stageDone = strings.Contains(filePhase, "kb_loaded") ||
-					strings.Contains(filePhase, "model_warmup") ||
-					strings.Contains(filePhase, "recorder") ||
-					strings.Contains(filePhase, "done")
-			case "加载录音纪要":
-				stageDone = strings.Contains(filePhase, "recorder_loaded") ||
-					strings.Contains(filePhase, "model_warmup") ||
-					strings.Contains(filePhase, "done")
-			case "预热 AI 模型":
-				stageDone = strings.Contains(filePhase, "warmup_done") ||
-					strings.Contains(filePhase, "warmup_skipped") ||
-					strings.Contains(filePhase, "ready") ||
-					strings.Contains(filePhase, "done") ||
-					fileProgress >= 100
-			}
-
-			if stageDone {
-				log.Printf("[Launcher] 阶段完成: %s", stage.name)
-				break
-			}
-
-			time.Sleep(500 * time.Millisecond)
-		}
-	}
-
-	// 如果没有任何阶段（全没装），快速冲到 95%
-	if len(stages) == 0 {
-		UpdateSplashStageProgress(splash, 95)
-		// 强制停留 1s 让用户看清"启动基础服务"完成
-		time.Sleep(1 * time.Second)
-	}
-
-	// ---- 看门狗阶段（95→100%，强制停留 3s）----
-	// Patch5 方案 B：流水指示器移到最后一格
-	UpdateSplashStageInfo(splash, totalStagesForIndicator, totalStagesForIndicator-1)
-	UpdateSplashStage(splash, StepRunning, "初始化看门狗", 96)
+	// ---- 段 3：正在加载守护进程（至少 3s）----
+	SetSplashSegment(splash, 3, 1)
+	SetSplashSegmentText(splash, "正在加载守护进程")
 	stageStart = time.Now()
 
 	// 实际启动看门狗
@@ -1220,13 +1122,14 @@ func main() {
 	go startWatchdog(cfg, serverProc, ollamaProc, newPythonCmd, newOllamaCmd, watchdogCtx)
 	log.Println("[Launcher] 看门狗已启动（健康监测 + 自动重启）")
 
-	// 强制停留 3s 让用户看清"初始化看门狗"这行
+	// 至少停留 3s
 	stageMinDelay(stageStart, 3*time.Second)
+	SetSplashSegment(splash, 3, 2) // 守护进程段变绿
 
 	// ---- 全部就绪 ----
-	UpdateSplashStage(splash, StepDone, "全部就绪", 100)
+	SetSplashSegmentText(splash, "全部就绪")
 	SplashPumpMessages()
-	time.Sleep(500 * time.Millisecond) // 停 0.5s 让用户看到 100%
+	time.Sleep(500 * time.Millisecond)
 
 	// ---- 打开浏览器 ----
 	log.Println("[Launcher] 打开浏览器...")
@@ -1287,11 +1190,11 @@ func main() {
 		ShowStatusPanel(cfg.Version, cfg.BrowserURL, cfg.OllamaPort, cfg.ServerPort, trayHIcon, openUrl)
 	}
 
+	// Patch5：启动期已创建托盘（cancelStartup），现在切换退出回调为正式 shutdown
+	// 通过修改全局回调变量实现（tray_windows.go 里 trayOnExit = onExit）
 	if runtime.GOOS == "windows" {
-		err := InitTray("SidemateTrayClass", "桌伴 Sidemate", openUrl, shutdown, showPanel, cfg.Version, cfg.BrowserURL)
-		if err != nil {
-			log.Printf("[Launcher] 托盘初始化失败: %v，使用控制台模式", err)
-		}
+		// 更新托盘提示文字和退出回调
+		UpdateTrayCallbacks("桌伴 Sidemate", openUrl, shutdown, showPanel)
 	}
 
 	log.Println("========================================")

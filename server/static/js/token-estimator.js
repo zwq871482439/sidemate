@@ -74,26 +74,27 @@ var TokenEstimator = {
     var display = document.getElementById('tokenDisplay');
     if (!display) return;
 
-    var total = this.estimateTotal();
+    // 分开计算文本和文档
+    var textTokens = this._estimateText();
+    var docTokens = this._estimateDoc();
+    var total = textTokens + docTokens;
     var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
 
-    // 构建显示文本
+    // Patch5: 统一用 K 单位
+    var fmtK = function(n) { return n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n); };
+
     var text = '';
     if (total > 0 && maxTokens > 0) {
       var ratio = total / maxTokens;
-      var totalStr = total > 1000 ? (total / 1000).toFixed(1) + 'k' : String(total);
-      var maxStr = maxTokens > 1000 ? (maxTokens / 1000).toFixed(1) + 'k' : String(maxTokens);
-      var statusText = '';
-      if (ratio < 0.5) {
-        statusText = '空间充足';
-      } else if (ratio < 0.8) {
-        statusText = '空间尚可';
+      var statusText = ratio < 0.5 ? '空间充足' : (ratio < 0.8 ? '空间尚可' : '空间不足');
+
+      if (docTokens > 0) {
+        text = '预计文本 ' + fmtK(textTokens) + ' + 文档 ' + fmtK(docTokens) + ' = ' + fmtK(total) + ' / ' + fmtK(maxTokens) + ' · ' + statusText;
       } else {
-        statusText = '空间不足';
+        text = '预计文本 ' + fmtK(total) + ' / ' + fmtK(maxTokens) + ' · ' + statusText;
       }
-      text = '预计 ' + totalStr + ' / ' + maxStr + ' tokens · ' + statusText;
     } else if (total > 0) {
-      text = '预计 ' + (total > 1000 ? (total/1000).toFixed(1)+'k' : String(total)) + ' tokens';
+      text = '预计 ' + fmtK(total) + ' tokens';
     }
     display.textContent = text;
 
@@ -101,13 +102,26 @@ var TokenEstimator = {
     display.classList.remove('token-warn', 'token-over');
     if (maxTokens > 0) {
       var ratio = total / maxTokens;
-      if (ratio >= 0.8) {
-        display.classList.add('token-over');
-      } else if (ratio >= 0.5) {
-        display.classList.add('token-warn');
-      }
+      if (ratio >= 0.8) display.classList.add('token-over');
+      else if (ratio >= 0.5) display.classList.add('token-warn');
     }
-  }
+  },
+
+  _estimateText: function() {
+    var inputText = '';
+    var inputEl = document.getElementById('msgInput');
+    if (inputEl) inputText = inputEl.value;
+    return this.estimateTokens(inputText);
+  },
+
+  _estimateDoc: function() {
+    // KB 引用文档
+    if (typeof pendingFile !== 'undefined' && pendingFile) {
+      var sizeKB = (pendingFile.size || 0) / 1024;
+      return Math.ceil(sizeKB * this.FILE_TOKENS_PER_KB);
+    }
+    return 0;
+  },
 };
 
 // 防重入标志

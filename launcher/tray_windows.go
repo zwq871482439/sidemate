@@ -224,6 +224,13 @@ func showContextMenu(hWnd syscall.Handle) {
 	}
 }
 
+// UpdateTrayCallbacks 启动完成后更新托盘回调（从 cancelStartup 切换到正式 shutdown）
+func UpdateTrayCallbacks(tip string, onOpen func(), onExit func(), onPanel func()) {
+	trayOnOpen = onOpen
+	trayOnExit = onExit
+	trayOnPanel = onPanel
+}
+
 // InitTray — 创建隐藏窗口 + 托盘图标
 func InitTray(className string, tip string, onOpen func(), onExit func(), onPanel func(), version string, browserURL string) error {
 	trayOnOpen = onOpen
