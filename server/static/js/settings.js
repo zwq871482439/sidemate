@@ -1418,17 +1418,13 @@ async function refreshAboutInfo() {
       verEl.textContent = data.version ? ('v' + data.version) : (window.APP_VERSION ? ('v' + window.APP_VERSION) : '');
     }
 
-    // 更新运行环境信息（设置页关于区域）
+    // 更新运行环境信息（设置页关于区域）— 只显示版本信息，运行状态由托盘看门狗管
     var envEl = document.getElementById('systemEnvInfo');
     if (envEl) {
-      var modeLabel = data.mode === 'cloud' ? '云端 AI' : '本地 AI';
-      var ollamaLabel = data.ollama_status === 'running' ? '运行中' : '未运行';
       envEl.innerHTML =
         '<div>版本：<strong>v' + (data.version || (window.APP_VERSION || '-')) + '</strong>（构建日期 ' + (data.build_date || '-') + '）</div>' +
         '<div>Python：' + (data.python || '-') + '</div>' +
-        '<div>Ollama：' + ollamaLabel + '（版本 ' + (data.ollama_version || '-') + '）</div>' +
-        '<div>当前模式：' + modeLabel + '</div>' +
-        '<div>GPU：' + (data.gpu_info || '无 GPU 信息') + '</div>';
+        '<div>Ollama：' + (data.ollama_version || '-') + '</div>';
     }
   } catch (e) {
     var envEl = document.getElementById('systemEnvInfo');
