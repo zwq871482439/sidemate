@@ -16,13 +16,14 @@ import (
 
 const (
 	// 基准尺寸（96 DPI 下的逻辑像素）
+	// Patch5 方案 B：紧凑布局，高度从 560 缩到 440
 	baseW          = 440
-	baseH          = 560
+	baseH          = 440
 	baseTitleH     = 42
 	baseCornerR    = 14
-	baseLogoSz     = 72
-	baseLogoBox    = 84
-	baseStepStartY = 290
+	baseLogoSz     = 56    // 从 72 缩到 56
+	baseLogoBox    = 68    // 从 84 缩到 68
+	baseStepStartY = 230   // 从 290 上移到 230
 	baseStepRowH   = 46
 	baseDotR       = 12
 	baseProgressH  = 5
@@ -648,11 +649,11 @@ func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
 		progress = 100
 	}
 	if progress > 0 {
-		// GDI Pie：画饼图扇形（从 12 点钟方向顺时针 progress%）
-		// 角度换算：0% = -90°（12点钟），100% = 270°（回到 12 点钟）
+		// GDI Pie：画饼图扇形
+		// Bug 修复：GDI Pie 从 start 到 end 是按特定方向扫描，之前的 start/end 画反了
+		// 修复方法：交换 start 和 end（让扇形从 12 点顺时针扫 progress% 的范围）
 		startAngle := -90.0
 		endAngle := -90.0 + 360.0*float64(progress)/100.0
-		// 转换为 GDI Pie 需要的"起点和终点的 xy 坐标"（不是角度）
 		startRad := startAngle * 3.14159265 / 180.0
 		endRad := endAngle * 3.14159265 / 180.0
 		startX := float64(centerX) + float64(bgR)*math.Cos(startRad)
@@ -664,11 +665,12 @@ func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
 		fgPen, _, _ := splashProcCreatePen.Call(0, 1, splashColorRun)
 		oldFgB, _, _ := splashProcSelectObj.Call(uintptr(hdc), fgBrush)
 		oldFgP, _, _ := splashProcSelectObj.Call(uintptr(hdc), fgPen)
+		// 交换 start/end 修复画反问题（GDI Pie 扫描方向）
 		splashPie.Call(uintptr(hdc),
 			uintptr(centerX-bgR), uintptr(ringCY-bgR),
 			uintptr(centerX+bgR), uintptr(ringCY+bgR),
-			intptr(startX), intptr(startY),
-			intptr(endX), intptr(endY))
+			intptr(endX), intptr(endY),
+			intptr(startX), intptr(startY))
 		splashProcSelectObj.Call(uintptr(hdc), oldFgB)
 		splashProcSelectObj.Call(uintptr(hdc), oldFgP)
 		splashProcDeleteObj.Call(fgBrush)
