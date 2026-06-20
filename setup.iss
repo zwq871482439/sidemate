@@ -70,7 +70,7 @@ Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs
 Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
 
 ; Server 源码（排除用户数据和测试注册）
-Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\deps_manifest.json,settings.json,extensions\*.json"
+Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\deps_manifest.json,settings.json,extensions\*.json,requirements.txt"
 
 ; LICENSE 和第三方许可
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion

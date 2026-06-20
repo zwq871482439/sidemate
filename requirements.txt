@@ -1,6 +1,6 @@
-# Sidemate v0.9 Patch 4 - 依赖版本锁定
+# Sidemate v0.9 Patch 5 - 依赖版本锁定
 # 安装: pip install -r requirements.txt
-# 更新日期: 2026-06-10
+# 更新日期: 2026-06-20
 # Python: 3.14 (Windows, 嵌入式)
 
 # ===== 核心运行时 =====
@@ -47,6 +47,10 @@ python-docx==1.2.0
 python-pptx==1.0.2
 openpyxl==3.1.5
 mammoth==1.11.0
+# Patch5 B2: EPUB 解析（文件类型扩展）
+ebooklib>=0.18
+# Patch5 B2: RTF 解析（文件类型扩展）
+striprtf>=0.0.26
 
 # ===== 工具 =====
 numpy==2.4.6

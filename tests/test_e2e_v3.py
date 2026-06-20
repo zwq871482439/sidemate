@@ -7,7 +7,7 @@ import sys, os, json, time, urllib.request, urllib.error
 
 BASE = "http://127.0.0.1:8976"
 CHAT_ID = "2026-06-17_006"
-CHAT_FILE = "C:\\Sidemate\\server\\data\\chats\\%s" % CHAT_ID
+CHAT_FILE = "C:\\Sidemate\\data\\chats\\%s" % CHAT_ID
 TIMEOUT = 180  # 单次请求最多 3 分钟
 
 
@@ -178,8 +178,8 @@ def check_workspace_files():
     print("\n" + "=" * 60)
     print("📂 workspace 目录检查")
     print("=" * 60)
-    ws_dir = "C:\\Sidemate\\server\\data\\chats\\%s\\workspace" % CHAT_ID
-    docs_dir = "C:\\Sidemate\\server\\data\\chats\\%s\\docs" % CHAT_ID
+    ws_dir = "C:\\Sidemate\\data\\chats\\%s\\workspace" % CHAT_ID
+    docs_dir = "C:\\Sidemate\\data\\chats\\%s\\docs" % CHAT_ID
 
     if os.path.isdir(ws_dir):
         for f in sorted(os.listdir(ws_dir)):

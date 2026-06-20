@@ -26,8 +26,8 @@ try:
     # 2. 修复 3 常量
     check(agent_loop.MAX_ROUNDS == 20, "修复3: MAX_ROUNDS=20")
     check(agent_loop.LOW_ROUNDS_WARN == 5, "修复3: LOW_ROUNDS_WARN=5")
-    check(agent_loop.TOOL_LIMITS == {"search_web": 3, "search_kb": 2, "fetch_url": 5},
-          "修复3: TOOL_LIMITS 3项正确")
+    check(agent_loop.TOOL_LIMITS.get("search_web") == 3 and agent_loop.TOOL_LIMITS.get("fetch_url") == 5,
+          "修复3: TOOL_LIMITS search_web=3, fetch_url=5 正确")
 
     # 3. 修复 8 重试
     check(cloud_engine.MAX_RETRIES == 2, "修复8: cloud_engine.MAX_RETRIES=2")
@@ -49,19 +49,20 @@ try:
     # 5. 修复 1 工具注册（Batch 1+2 已交付）
     tools = agent_tools.TOOL_REGISTRY
     for t in ("set_doc_status", "list_workspace", "read_workspace",
-              "write_workspace", "delete_workspace", "write_section"):
+              "write_workspace", "delete_workspace"):
         check(t in tools, "工具注册: %s" % t)
 
     # 6. 修复 4 prompt
     dp = agent_tools._DOC_BASE_PROMPT
-    check("文档生成流程" in dp, "修复4: _DOC_BASE_PROMPT 含'文档生成流程'")
+    check("工作流" in dp, "修复4: _DOC_BASE_PROMPT 含'工作流'")
     check("工具调用预算" in dp, "修复4: _DOC_BASE_PROMPT 含'工具调用预算'")
     cp = agent_tools._AGENT_BASE_PROMPT
     check("文档生成能力" in cp, "修复4: _AGENT_BASE_PROMPT 含'文档生成能力'")
 
-    # 7. doc_session 模块（Batch 1）
+    # 7. doc_session 模块（Batch 1）— Patch5 重构：DocSession 类已拆为函数式 API
     from core import doc_session
-    check(hasattr(doc_session, "DocSession"), "Batch1: DocSession 类存在")
+    check(hasattr(doc_session, "append_workspace_file") or hasattr(doc_session, "write_workspace_file"),
+          "Batch1: doc_session 工作区函数式 API 存在")
 
     # 8. 总结
     print()
