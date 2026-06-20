@@ -896,15 +896,22 @@ async function loadCloudConfig() {
       }
     }
     // 模型能力：从后端字典自动获取，不再手动配置
+    // Patch5 修复：只有用户实际设置了模型名称才显示能力，否则保留提示
     var capsEl = document.getElementById('cloudCapsDisplay');
-    if (capsEl && data.model) {
-      var ctxW = data.context_window || 0;
-      var maxOut = data.max_output_tokens || 0;
-      if (ctxW > 0) {
-        capsEl.innerHTML = '输入 <strong style="color:var(--text-primary)">' + ctxW.toLocaleString() + '</strong> · 输出 <strong style="color:var(--text-primary)">' + maxOut.toLocaleString() + '</strong> tokens';
-        capsEl.style.color = 'var(--text-secondary)';
+    if (capsEl) {
+      if (data.model_set === true && data.model) {
+        var ctxW = data.context_window || 0;
+        var maxOut = data.max_output_tokens || 0;
+        if (ctxW > 0) {
+          capsEl.innerHTML = '输入 <strong style="color:var(--text-primary)">' + ctxW.toLocaleString() + '</strong> · 输出 <strong style="color:var(--text-primary)">' + maxOut.toLocaleString() + '</strong> tokens';
+          capsEl.style.color = 'var(--text-secondary)';
+        } else {
+          capsEl.textContent = '输入模型名称后自动匹配';
+        }
       } else {
-        capsEl.textContent = '保存后自动识别';
+        // 没设置过模型，保留 placeholder
+        capsEl.textContent = '输入模型名称后自动匹配';
+        capsEl.style.color = 'var(--text-muted)';
       }
     }
     // API Key 已保存时显示脱敏占位

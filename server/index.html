@@ -19,8 +19,8 @@
 <script src="/static/vendor/highlight.min.js"></script>
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.12">
-<link rel="stylesheet" href="/static/css/skeleton.css?v=2.12">
+<link rel="stylesheet" href="/static/css/main.css?v=2.13">
+<link rel="stylesheet" href="/static/css/skeleton.css?v=2.13">
 </head>
 <body>
 
@@ -704,10 +704,10 @@
     <!-- 左栏：云端 AI 模型配置（纯 API 配置） -->
     <div id="cloudConfigSection" style="background:var(--bg-primary);border:0.5px solid var(--border-color);border-radius:10px;padding:14px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px">云端 AI 模型配置</div>
-      <div class="settings-row"><label>API 地址</label><input type="text" id="cloudBaseUrl" placeholder="https://api.openai.com/v1" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
-      <div class="settings-row"><label>API Key</label><input type="password" id="cloudApiKey" placeholder="输入新的 API Key（不修改请勿填写）" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><button class="settings-btn" onclick="toggleApiKeyVisibility()" style="font-size:.75em;padding:4px 10px">显示</button></div>
-      <div class="settings-row"><label>模型名称</label><input type="text" id="cloudModel" placeholder="gpt-4o-mini" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
-      <div class="settings-row"><label>模型能力</label><span id="cloudCapsDisplay" style="font-size:var(--font-sm);color:var(--text-muted)">保存后自动识别</span></div>
+      <div class="settings-row"><label>API 地址</label><input type="text" id="cloudBaseUrl" placeholder="请输入 API 地址" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
+      <div class="settings-row"><label>API Key</label><input type="password" id="cloudApiKey" placeholder="请输入 API Key" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><button class="settings-btn" onclick="toggleApiKeyVisibility()" style="font-size:.75em;padding:4px 10px">显示</button></div>
+      <div class="settings-row"><label>模型名称</label><input type="text" id="cloudModel" placeholder="请输入模型名称" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
+      <div class="settings-row"><label>模型能力</label><span id="cloudCapsDisplay" style="font-size:var(--font-sm);color:var(--text-muted)">输入模型名称后自动匹配</span></div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="settings-btn" onclick="testCloudConnection()">测试连接</button><button class="settings-btn settings-btn-primary" onclick="saveCloudConfig()">保存配置</button></div>
       <div id="cloudTestResult" style="margin-top:6px;font-size:.82em"></div>
     </div>
@@ -1112,25 +1112,25 @@ window.addEventListener('DOMContentLoaded', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.12"></script>
-<script src="/static/js/core/utils.js?v=2.12"></script>
-<script src="/static/js/core/errors.js?v=2.12"></script>
-<script src="/static/js/stream_renderer.js?v=2.12"></script>
-<script src="/static/js/settings.js?v=2.12"></script>
-<script src="/static/js/qa.js?v=2.12"></script>
-<script src="/static/js/kb-batch.js?v=2.12"></script>
-<script src="/static/js/minutes.js?v=2.12"></script>
+<script src="/static/js/core/api.js?v=2.13"></script>
+<script src="/static/js/core/utils.js?v=2.13"></script>
+<script src="/static/js/core/errors.js?v=2.13"></script>
+<script src="/static/js/stream_renderer.js?v=2.13"></script>
+<script src="/static/js/settings.js?v=2.13"></script>
+<script src="/static/js/qa.js?v=2.13"></script>
+<script src="/static/js/kb-batch.js?v=2.13"></script>
+<script src="/static/js/minutes.js?v=2.13"></script>
 <!-- Patch2 D1: chat.js 拆分为子模块（全局挂载，加载顺序敏感） -->
-<script src="/static/js/chat-session.js?v=2.12"></script>
-<script src="/static/js/chat-actions.js?v=2.12"></script>
-<script src="/static/js/chat-files.js?v=2.12"></script>
-<script src="/static/js/chat-export.js?v=2.12"></script>
-<script src="/static/js/chat-ui.js?v=2.12"></script>
-<script src="/static/js/chat.js?v=2.12"></script>
+<script src="/static/js/chat-session.js?v=2.13"></script>
+<script src="/static/js/chat-actions.js?v=2.13"></script>
+<script src="/static/js/chat-files.js?v=2.13"></script>
+<script src="/static/js/chat-export.js?v=2.13"></script>
+<script src="/static/js/chat-ui.js?v=2.13"></script>
+<script src="/static/js/chat.js?v=2.13"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.12"></script>
-<script src="/static/js/skeleton.js?v=2.12"></script>
-<script src="/static/js/ui-enhance.js?v=2.12"></script>
+<script src="/static/js/token-estimator.js?v=2.13"></script>
+<script src="/static/js/skeleton.js?v=2.13"></script>
+<script src="/static/js/ui-enhance.js?v=2.13"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====
