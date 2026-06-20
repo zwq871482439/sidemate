@@ -501,6 +501,10 @@ func openBrowser(url string) {
 	switch runtime.GOOS {
 	case "windows":
 		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+		}
 	case "darwin":
 		cmd = exec.Command("open", url)
 	default:
@@ -1066,22 +1070,12 @@ func checkAndRepairEnv(appDir string, splash *SplashState) {
 		return
 	}
 
-	// 3. 快速校验：文件数 + 总大小
-	log.Printf("[ENV-CHECK] 校验环境指纹（期望: %d 文件, %d 字节）...", fp.TotalFiles, fp.TotalBytes)
-	actualFiles, actualBytes := countSitePackages(sitePackagesDir)
-
-	tolerance := 0.02 // 2% 容差（允许少量文件变化）
-	fileOk := float64(actualFiles) >= float64(fp.TotalFiles)*(1-tolerance)
-	bytesOk := float64(actualBytes) >= float64(fp.TotalBytes)*(1-tolerance)
-
-	if !fileOk || !bytesOk {
-		log.Printf("[ENV-CHECK] ⚠ 文件数/大小不匹配 (实际: %d/%d vs 期望: %d/%d)，需要恢复",
-			actualFiles, actualBytes, fp.TotalFiles, fp.TotalBytes)
-		restoreFromSnapshot(appDir, splash, snapshotPath, sitePackagesDir, pythonDir)
-		return
-	}
-
-	// 4. 核心包 SHA256 校验
+	// 3. 快速校验：核心包 SHA256（P5 优化：跳过全量文件遍历，39043 文件太慢）
+	// 之前用 countSitePackages 遍历全部文件做数量/大小比对，启动卡 10+ 秒
+	// 现在直接走核心包 SHA256 校验（5 个包，前 1MB，毫秒级）
+	// 如果核心包校验通过，说明环境基本完整；失败才走 restoreFromSnapshot
+	log.Printf("[ENV-CHECK] 跳过全量遍历，直接核心包 SHA256 校验（期望: %d 文件, %d 字节）...",
+		fp.TotalFiles, fp.TotalBytes)
 	allMatch := true
 	for pkg, expectedHash := range fp.CoreHashes {
 		if expectedHash == "" {
