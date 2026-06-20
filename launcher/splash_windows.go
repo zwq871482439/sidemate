@@ -283,11 +283,10 @@ func splashWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uint
 		mx := int32(uint16(lParam))
 		my := int32(uint16(lParam >> 16))
 		if splashPtInRect(mx, my, ss.closeBtnRect) {
-			log.Println("[Splash] 用户点击关闭")
-			terminateJob()
-			splashProcKillTimer.Call(uintptr(ss.hWnd), splashTimerID, 0, 0)
-			procDestroyWindow.Call(uintptr(ss.hWnd))
-			os.Exit(0)
+			// Patch5：X 按钮改为"最小化到托盘"（不再杀进程）
+			// 原行为 os.Exit(0) 会让用户误以为"关掉窗口=正常"，实际杀掉所有子进程
+			log.Println("[Splash] 用户点击最小化，启动继续在后台进行")
+			splashProcShowWindow.Call(uintptr(ss.hWnd), 0) // SW_HIDE = 0
 			return 0
 		}
 		if ss.failed {
@@ -454,9 +453,9 @@ func splashPaint(hdc syscall.Handle, ss *SplashState) {
 	titleFontSize := 18 * dpi / 96
 	splashDrawTextEx(hdc, "桌伴 · Sidemate", titleFontSize, 16*dpi/96, 0, sW-42*dpi/96, sTitleH, splashColorWhite, false)
 
-	// 关闭按钮
+	// 最小化按钮（Patch5：从 ✕ 改为 —，语义改为"最小化到托盘"）
 	closeSize := 16 * dpi / 96
-	splashDrawTextEx(hdc, "✕", closeSize, sW-42*dpi/96, 6*dpi/96, 36*dpi/96, sTitleH-6*dpi/96, splashColorWhite, true)
+	splashDrawTextEx(hdc, "—", closeSize, sW-42*dpi/96, 6*dpi/96, 36*dpi/96, sTitleH-6*dpi/96, splashColorWhite, true)
 
 	// --- Logo 区域 ---
 	logoX := (sW - sLogoBox) / 2
