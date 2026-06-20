@@ -1178,6 +1178,7 @@ func main() {
 
 	// ---- 全部就绪 ----
 	UpdateSplashStage(splash, StepDone, "全部就绪", 100)
+	UpdateSplashStageSubText(splash, "") // 清空子状态，避免残留"启动健康监测服务"
 	SplashPumpMessages()
 	time.Sleep(500 * time.Millisecond) // 停 0.5s 让用户看到 ✓
 

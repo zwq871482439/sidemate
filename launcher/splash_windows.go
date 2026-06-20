@@ -616,11 +616,11 @@ func splashDrawStepRow(hdc syscall.Handle, ss *SplashState, idx int, stepLabel s
 func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
 	sc := func(v int32) int32 { return v * dpi / 96 }
 
-	// 区域参数
+	// 区域参数（Patch5 调整：圆环放上方居中，跟阶段名上下排列）
 	centerX := sW / 2
-	ringR := sc(46) // 环形半径
+	ringR := sc(40) // 环形半径（略缩小避免溢出）
 	ringThickness := sc(7)
-	ringCY := sStepStartY + sc(20) // 圆环垂直中心
+	ringCY := sStepStartY + sc(10) // 圆环垂直中心：靠近 Logo 下方
 
 	// === 1. 画环形进度（背景环 + 前景环） ===
 	// 用裁剪矩形的方式画弧（GDI 不直接支持 stroke arc，用两个椭圆做"环"）
@@ -696,31 +696,30 @@ func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
 		centerX-sc(40), ringCY-sc(12), sc(80), sc(24),
 		splashColorRun, true)
 
-	// === 2. 阶段名（圆环右侧） ===
+	// === 2. 阶段名（圆环下方居中，独立一行）===
 	text := ss.currentStepText
 	if text == "" {
 		text = "准备中..."
 	}
-	if ss.currentStepStatus == StepDone {
-		text = text + " ✓"
-	}
+	// Patch5：Done 状态不显示对勾符号，直接显示文案
 	stageFontSize := 16 * dpi / 96
-	textX := centerX + ringR + sc(24)
-	textW := sW - textX - sc(24)
-	splashDrawTextEx(hdc, text, stageFontSize,
-		textX, ringCY-sc(16), textW, stageFontSize+sc(6),
-		splashColorTitleBG, false)
+	stageText := text
+	// 居中显示，宽度撑满
+	splashDrawTextEx(hdc, stageText, stageFontSize,
+		sc(20), ringCY+ringR+sc(14), sW-sc(40), stageFontSize+sc(6),
+		splashColorTitleBG, true)
 
-	// === 3. 子状态文字 ===
-	if ss.stageSubText != "" {
+	// === 3. 子状态文字（阶段名下方居中）===
+	// Patch5：Done 状态下不显示子状态
+	if ss.stageSubText != "" && ss.currentStepStatus != StepDone {
 		subFontSize := 11 * dpi / 96
 		var subColor uintptr = splashColorSubtitle
 		if ss.currentStepStatus == StepRunning {
 			subColor = splashColorRun
 		}
 		splashDrawTextEx(hdc, ss.stageSubText, subFontSize,
-			textX, ringCY+sc(8), textW, subFontSize+sc(4),
-			subColor, false)
+			sc(20), ringCY+ringR+sc(14)+stageFontSize+sc(6), sW-sc(40), subFontSize+sc(4),
+			subColor, true)
 	}
 
 	// === 4. 流水指示器（5 个小条，水平居中，底部） ===
