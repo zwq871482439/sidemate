@@ -127,6 +127,10 @@ var (
 	trayHIcon   syscall.Handle
 	trayVersion string
 	trayBrowserURL string
+
+	// Patch5: 启动期标志 + 取消启动回调（直接调用，不等 TrayMessageLoop）
+	trayStartupPhase    bool
+	trayCancelStartup   func()
 )
 
 // trayWndProc — 窗口过程
@@ -140,6 +144,12 @@ func trayWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintpt
 			}
 		case IDM_EXIT:
 			RemoveTrayIcon()
+			// Patch5: 启动期点"取消启动"→立即杀进程，不等 TrayMessageLoop
+			if trayStartupPhase && trayCancelStartup != nil {
+				trayCancelStartup()
+				return 0 // cancelStartup 内部调用 os.Exit(0)，不会返回
+			}
+			// 运行期点"退出"→正常 shutdown（由 TrayMessageLoop 后调用 trayOnExit）
 			procPostQuitMessage.Call(0)
 			shouldExit = true
 		}
@@ -179,7 +189,12 @@ func showContextMenu(hWnd syscall.Handle) {
 	}
 
 	openStr, _ := syscall.UTF16PtrFromString("打开浏览器")
-	exitStr, _ := syscall.UTF16PtrFromString("退出")
+	var exitStr *uint16
+	if trayStartupPhase {
+		exitStr, _ = syscall.UTF16PtrFromString("取消启动")
+	} else {
+		exitStr, _ = syscall.UTF16PtrFromString("退出")
+	}
 
 	procAppendMenuW.Call(hMenu, MF_STRING, IDM_OPEN, uintptr(unsafe.Pointer(openStr)))
 	procAppendMenuW.Call(hMenu, MF_SEPARATOR, 0, 0)
@@ -219,6 +234,12 @@ func showContextMenu(hWnd syscall.Handle) {
 		}
 	case IDM_EXIT:
 		RemoveTrayIcon()
+		// Patch5: 启动期点"取消启动"→立即杀进程，不等 TrayMessageLoop
+		if trayStartupPhase && trayCancelStartup != nil {
+			trayCancelStartup()
+			return // cancelStartup 内部调用 os.Exit(0)，不会返回
+		}
+		// 运行期点"退出"→正常 shutdown（由 TrayMessageLoop 后调用 trayOnExit）
 		procPostQuitMessage.Call(0)
 		shouldExit = true
 	}
@@ -229,6 +250,7 @@ func UpdateTrayCallbacks(tip string, onOpen func(), onExit func(), onPanel func(
 	trayOnOpen = onOpen
 	trayOnExit = onExit
 	trayOnPanel = onPanel
+	trayStartupPhase = false // 启动完成，切换到运行期
 }
 
 // InitTray — 创建隐藏窗口 + 托盘图标
@@ -238,6 +260,8 @@ func InitTray(className string, tip string, onOpen func(), onExit func(), onPane
 	trayOnPanel = onPanel
 	trayVersion = version
 	trayBrowserURL = browserURL
+	trayStartupPhase = true          // 启动期
+	trayCancelStartup = onExit       // 启动期 onExit 即 cancelStartup
 
 	// 用 GetModuleHandle 获取 hInstance
 	k32 := syscall.NewLazyDLL("kernel32.dll")

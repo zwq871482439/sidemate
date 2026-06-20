@@ -513,13 +513,6 @@ func checkLLMAvailable(host string, port int) bool {
 }
 
 // stageMinDelay 强制阶段最少停留（避免秒过的阶段闪过看不清）
-func stageMinDelay(start time.Time, min time.Duration) {
-	elapsed := time.Since(start)
-	if elapsed < min {
-		time.Sleep(min - elapsed)
-	}
-}
-
 // messageBox 弹出 Windows 消息框
 // uType: 0x40 = MB_ICONINFORMATION, 0x30 = MB_ICONWARNING, 0x10 = MB_ICONERROR
 func messageBox(title, text string, uType uintptr) int {
@@ -718,7 +711,7 @@ func main() {
 	}
 
 	// ---- 0. GPU 检测 + 三档分流（Patch5 T04）----
-	// ===== Patch5 4 段环形启动流程 =====
+	// ===== Patch5 4 段启动流程（每段内 5 小节跳动）=====
 	// 段 0: 正在初始化环境检查
 	// 段 1: 正在加载基础服务
 	// 段 2: 正在加载模型引擎
@@ -744,9 +737,6 @@ func main() {
 	SetSplashSegmentText(splash, "正在加载基础服务")
 	stageStart = time.Now()
 	// ---- 1. 启动 Ollama ----
-	// Patch5 启动重构：基础服务阶段（10→30%）
-	UpdateSplashStageInfo(splash, 5, 1) // 当前在第 1 阶段（基础服务）
-	UpdateSplashStage(splash, StepRunning, "启动基础服务", 15)
 	log.Println("[Launcher] 启动 Ollama...")
 
 	// 辅助：构建 ollama 命令（启动和重试共用）
@@ -784,7 +774,6 @@ func main() {
 		return cmd, cancel
 	}
 
-	UpdateSplash(splash, 0, StepRunning, "正在启动...")
 	ollamaCmd, cancel1 := newOllamaCmd()
 	ollamaProc := &ManagedProcess{Name: "Ollama", Cmd: ollamaCmd, Cancel: cancel1}
 	if err := ollamaProc.Start(); err != nil {
@@ -792,9 +781,8 @@ func main() {
 	}
 	processes = append(processes, ollamaProc)
 
-	// 等待 Ollama 就绪（含自修复重试 + 进度提示）
+	// 等待 Ollama 就绪
 	log.Println("[Launcher] 等待 Ollama 就绪...")
-	UpdateSplashStage(splash, StepRunning, "启动 Ollama 引擎", 18)
 	ollamaReady := false
 	ollamaStart := time.Now()
 
@@ -832,13 +820,9 @@ func main() {
 			if prog > progEnd {
 				prog = progEnd
 			}
-			if splash != nil {
-				splash.targetProgress = prog
-			}
 			for _, p := range phases {
 				if elapsed >= p.after && lastPhase != p.text {
 					lastPhase = p.text
-					UpdateSplash(splash, 0, StepRunning, p.text)
 					log.Printf("[Launcher] Ollama 阶段: %s (%.1fs)", p.text, elapsed.Seconds())
 				}
 			}
@@ -866,11 +850,6 @@ func main() {
 			break
 		}
 		if retry < 2 {
-			UpdateSplash(splash, 0, StepRetry, fmt.Sprintf("自修复中 · 第 %d/3 次", retry+2))
-			// 重试时进度回落到阶段起始
-			if splash != nil {
-				splash.targetProgress = 5
-			}
 			log.Printf("[Launcher] ⚠ Ollama 启动超时，自修复第 %d/3 次...", retry+2)
 			cleanupOllama()
 			time.Sleep(3 * time.Second)
@@ -885,7 +864,6 @@ func main() {
 				processes = append(processes, ollamaProc)
 			}
 		} else {
-			UpdateSplash(splash, 0, StepFailed, "Ollama 启动失败")
 			log.Println("[Launcher] ⚠ Ollama 3次尝试均失败")
 		}
 	}
@@ -908,7 +886,6 @@ func main() {
 	}
 
 	// ---- 1.5 环境指纹校验（启动 FastAPI 之前）----
-	UpdateSplashStage(splash, StepRunning, "检查环境完整性", 22)
 	SplashPumpMessages()
 	checkAndRepairEnv(appDir, splash)
 
@@ -954,7 +931,6 @@ func main() {
 		return cmd, cancel
 	}
 
-	UpdateSplashStage(splash, StepRunning, "启动 FastAPI 服务", 25)
 	pythonCmd, cancel2 := newPythonCmd()
 	serverProc := &ManagedProcess{Name: "FastAPI", Cmd: pythonCmd, Cancel: cancel2}
 	if err := serverProc.Start(); err != nil {
@@ -1019,13 +995,10 @@ func main() {
 				splash.targetProgress = prog
 			}
 
-			// 3. 更新阶段文字（Patch5：单行动态步骤）
+			// 3. 子阶段文本（仅日志）
 			if fileText != "" && fileText != lastReportedText {
 				lastReportedText = fileText
-				UpdateSplashStage(splash, StepRunning, fileText, prog)
 				log.Printf("[Launcher] FastAPI 阶段: %s (progress=%d%%)", fileText, fileProgress)
-			} else {
-				UpdateSplashStageProgress(splash, prog)
 			}
 
 			// 4. 检测 HTTP 就绪
@@ -1057,7 +1030,6 @@ func main() {
 			break
 		}
 		if retry < 2 {
-			UpdateSplashStage(splash, StepRetry, fmt.Sprintf("自修复中 · 第 %d/3 次", retry+2), 25)
 			log.Printf("[Launcher] ⚠ FastAPI 启动超时，自修复第 %d/3 次...", retry+2)
 			serverProc.Stop()
 			// 检测端口占用并释放
@@ -1083,7 +1055,6 @@ func main() {
 				processes = append(processes, serverProc)
 			}
 		} else {
-			UpdateSplashStage(splash, StepFailed, "FastAPI 启动失败", 0)
 			log.Println("[Launcher] ⚠ FastAPI 3次尝试均失败")
 		}
 	}
@@ -1126,12 +1097,7 @@ func main() {
 	stageMinDelay(stageStart, 3*time.Second)
 	SetSplashSegment(splash, 3, 2) // 守护进程段变绿
 
-	// ---- 全部就绪 ----
-	SetSplashSegmentText(splash, "全部就绪")
-	SplashPumpMessages()
-	time.Sleep(500 * time.Millisecond)
-
-	// ---- 打开浏览器 ----
+	// 直接打开浏览器，不显示"全部就绪"
 	log.Println("[Launcher] 打开浏览器...")
 	openBrowser(cfg.BrowserURL)
 
@@ -1276,16 +1242,14 @@ func checkAndRepairEnv(appDir string, splash *SplashState) {
 }
 
 // restoreFromSnapshot 从 backup/site_packages.zip 恢复 site-packages
-func restoreFromSnapshot(appDir string, splash *SplashState, snapshotPath, sitePackagesDir, pythonDir string) {
+func restoreFromSnapshot(appDir string, _ *SplashState, snapshotPath, sitePackagesDir, pythonDir string) {
 	if _, err := os.Stat(snapshotPath); err != nil {
 		log.Printf("[ENV-CHECK] ⚠ snapshot 不存在: %s，无法自动恢复", snapshotPath)
-		UpdateSplash(splash, 1, StepRunning, "环境异常，建议重新安装")
 		return
 	}
 
-	UpdateSplash(splash, 1, StepRunning, "正在恢复依赖环境...")
-	SplashPumpMessages()
 	log.Printf("[ENV-CHECK] 从 snapshot 恢复: %s", snapshotPath)
+	SplashPumpMessages()
 
 	// 1. 删除当前 site-packages
 	os.RemoveAll(sitePackagesDir)
@@ -1295,7 +1259,6 @@ func restoreFromSnapshot(appDir string, splash *SplashState, snapshotPath, siteP
 	err := unzipToDir(snapshotPath, sitePackagesDir)
 	if err != nil {
 		log.Printf("[ENV-CHECK] ⚠ 解压 snapshot 失败: %v", err)
-		UpdateSplash(splash, 1, StepRunning, "恢复失败，建议重新安装")
 		return
 	}
 
@@ -1338,7 +1301,6 @@ print(f"OK: {total_files} files, {total_bytes} bytes")
 	}
 
 	log.Printf("[ENV-CHECK] ✅ 环境已从备份恢复")
-	UpdateSplash(splash, 1, StepRunning, "环境已恢复，正在启动...")
 	SplashPumpMessages()
 }
 

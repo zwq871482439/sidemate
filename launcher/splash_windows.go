@@ -15,14 +15,14 @@ import (
 
 const (
 	// 基准尺寸（96 DPI 下的逻辑像素）
-	// Patch5 方案 B：紧凑布局，高度从 560 缩到 440
+	// Patch5 最终：紧凑均衡布局
 	baseW          = 440
-	baseH          = 440
+	baseH          = 320
 	baseTitleH     = 42
 	baseCornerR    = 14
-	baseLogoSz     = 56    // 从 72 缩到 56
-	baseLogoBox    = 68    // 从 84 缩到 68
-	baseStepStartY = 230   // 从 290 上移到 230
+	baseLogoSz     = 56
+	baseLogoBox    = 68
+	baseStepStartY = 200   // 进度条区域起点
 	baseStepRowH   = 46
 	baseDotR       = 12
 	baseProgressH  = 5
@@ -158,10 +158,11 @@ type SplashState struct {
 	totalStages        int    // 总阶段数（动态计算，去掉未装的扩展）
 	currentStageIdx    int    // 当前阶段索引（0-based）
 	stageSubText       string // 阶段子状态（如"正在加载 bge-m3"）
-	// Patch5 新方案：4 段环形
+	// Patch5 新方案：4 段进度条（每段内 5 小节循环跳动）
 	currentSegment int    // 当前段（0-3）
 	segmentStates  [4]int // 段状态：0=未到 1=加载中 2=完成
-	animTick       int32  // 动画 tick（用于呼吸闪烁）
+	animTick       int32  // 动画 tick（驱动小节跳动）
+	segmentText    string // 当前阶段名
 
 	closeBtnRect   splashRect
 	openLogBtnRect splashRect
@@ -257,25 +258,28 @@ func splashWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uint
 		return 1
 
 	case splashWM_TIMER:
-		// 平滑进度动画：每 100ms 向 targetProgress 逼近
+		// 平滑进度动画 + 光泽扫动 tick
 		ss := splashFindState(hWnd)
-		if ss != nil && ss.progress < ss.targetProgress {
-			gap := ss.targetProgress - ss.progress
-			// 大跳跃（>15）立即跟上，小步缓慢逼近
-			var step int
-			if gap > 30 {
-				step = gap // 立即到位
-			} else if gap > 15 {
-				step = gap * 2 / 3
-			} else {
-				step = gap / 3
-				if step < 2 {
-					step = 2
+		if ss != nil {
+			ss.animTick++ // 光泽动画每 100ms 前进一步
+			if ss.progress < ss.targetProgress {
+				gap := ss.targetProgress - ss.progress
+				// 大跳跃（>15）立即跟上，小步缓慢逼近
+				var step int
+				if gap > 30 {
+					step = gap // 立即到位
+				} else if gap > 15 {
+					step = gap * 2 / 3
+				} else {
+					step = gap / 3
+					if step < 2 {
+						step = 2
+					}
 				}
-			}
-			ss.progress += step
-			if ss.progress > ss.targetProgress {
-				ss.progress = ss.targetProgress
+				ss.progress += step
+				if ss.progress > ss.targetProgress {
+					ss.progress = ss.targetProgress
+				}
 			}
 		}
 		splashProcInvalidateRect.Call(uintptr(hWnd), 0, 0)
@@ -488,19 +492,14 @@ func splashPaint(hdc syscall.Handle, ss *SplashState) {
 		)
 	}
 
-	// --- 副标题 ---
-	verY := logoY + sLogoBox + 14*dpi/96
-	subFontSize := 20 * dpi / 96
-	splashDrawTextEx(hdc, "桌伴 · Sidemate", subFontSize, 0, verY, sW, subFontSize+8*dpi/96, splashColorTitleBG, true)
-
-	// 版本标签（纯文字，无底色）
-	pillY := verY + subFontSize + 8*dpi/96
-	pillText := ss.version
-	pillFontSize := 12 * dpi / 96
-	splashDrawTextEx(hdc, pillText, pillFontSize, 0, pillY, sW, pillFontSize+8*dpi/96, splashColorSubtitle, true)
+	// --- 版本行 ---
+	verY := logoY + sLogoBox + 18*dpi/96 // 与 Logo 拉开间距
+	verFontSize := 16 * dpi / 96
+	verText := "桌伴 · Sidemate · " + ss.version
+	splashDrawTextEx(hdc, verText, verFontSize, 0, verY, sW, verFontSize+8*dpi/96, splashColorTitleBG, true)
 
 	// --- 分隔线 ---
-	sepY := pillY + pillFontSize + 12*dpi/96
+	sepY := verY + verFontSize + 20*dpi/96 // 版本行与分隔线拉开
 	sepPen, _, _ := splashProcCreatePen.Call(0, 1, splashColorWait)
 	hOldSepPen, _, _ := splashProcSelectObj.Call(uintptr(hdc), sepPen)
 	splashProcMoveToEx.Call(uintptr(hdc), uintptr(40*dpi/96), uintptr(sepY), 0)
@@ -606,78 +605,62 @@ func splashDrawStepRow(hdc syscall.Handle, ss *SplashState, idx int, stepLabel s
 	splashDrawTextEx(hdc, statusText, statusFontSize, 76*dpi/96, rowY+16*dpi/96, 300*dpi/96, statusFontSize+4*dpi/96, dotColor, false)
 }
 
-// splashDrawSegmentProgress 画 4 段横向圆角进度条（Patch5 最终方案）
-//
-// 视觉效果：
-//   ┌───────────────────────────────┐
-//   │  ████████  ████████  ▒▒▒▒▒▒▒▒  ░░░░░░░░  │
-//   │        正在加载模型引擎          │
-//   └───────────────────────────────┘
-//
-// 已完成段 = 绿色
-// 加载中段 = 蓝色 + 光泽扫过动画
-// 未到段   = 灰色
+// splashDrawSegmentProgress 画 4 段进度条（每段内 5 小节循环跳动）
 func splashDrawSegmentProgress(hdc syscall.Handle, ss *SplashState) {
 	sc := func(v int32) int32 { return v * dpi / 96 }
 
-	segY := sStepStartY + sc(15) // 4段横条垂直位置
-	segH := sc(10)                // 高度
-	segW := sc(110)               // 每段宽度
-	segGap := sc(8)               // 间距
-	segR := sc(5)                 // 圆角
+	const segCount = 4             // 4 大段
+	const subCount = 5             // 每段内 5 小节
+	segW := sc(90)                 // 每大段总宽
+	segH := sc(8)                  // 高度
+	segGap := sc(8)                // 大段间距
+	segR := sc(4)                  // 大段圆角（所有段统一）
+	subW := (segW - sc(2)*2) / subCount  // 小节宽
+	subR := sc(1)                  // 小节微圆角
 
-	totalW := 4*segW + 3*segGap
+	totalW := int32(segCount)*segW + int32(segCount-1)*segGap
 	segStartX := (sW - totalW) / 2
 
-	// 光泽动画：亮色条纹在加载中段内左右移动
-	shimmerPos := (ss.animTick % 100) // 周期 100 tick (约1.6s)
-	shimmerFrac := float64(shimmerPos) / 100.0
-	shimmerXRel := int32(float64(segW)*shimmerFrac) // 光泽在段内的相对位置
-	shimmerW := sc(3) // 光泽宽度
-
-	for seg := 0; seg < 4; seg++ {
-		state := ss.segmentStates[seg]
-		x := segStartX + int32(seg)*(segW+segGap)
-
-		var baseColor uintptr
-		switch state {
-		case 2: // 完成
-			baseColor = splashColorDone
-		case 1: // 加载中
-			baseColor = splashColorRun
-		default:
-			baseColor = splashColorProgBG
-		}
-
-		// 画底色段（圆角矩形）
-		splashFillRoundRect(hdc, x, segY, x+segW, segY+segH, segR, baseColor)
-
-		// 加载中段：光泽扫过效果
-		if state == 1 {
-			// 光泽颜色：蓝色调亮
-			shimmerX := x + shimmerXRel
-			// 限制在段内
-			if shimmerX > x {
-				shimmerEnd := shimmerX + shimmerW
-				if shimmerEnd > x+segW {
-					shimmerEnd = x + segW
-				}
-				// 光泽用更亮的蓝色
-				shimmerColor := uintptr(0x00bb8844) // #4488bb 亮蓝
-				splashFillRoundRect(hdc, shimmerX, segY+sc(1), shimmerEnd, segY+segH-sc(1), segR, shimmerColor)
-			}
-		}
-	}
-
-	// 阶段名（横条下方居中）
-	text := ss.currentStepText
+	// 阶段名（横条上方居中）
+	text := ss.segmentText
 	if text == "" {
 		text = "准备中"
 	}
-	stageFontSize := 16 * dpi / 96
+	stageFontSize := 14 * dpi / 96 // 比版本行小一号
+	barAreaTop := sStepStartY + sc(15)
+	textY := barAreaTop - stageFontSize - sc(10)
 	splashDrawTextEx(hdc, text, stageFontSize,
-		sc(20), segY+segH+sc(14), sW-sc(40), stageFontSize+sc(6),
+		sc(20), textY, sW-sc(40), stageFontSize+sc(6),
 		splashColorTitleBG, true)
+
+	segY := barAreaTop + sc(4)
+
+	// 小节跳动索引：用 animTick 除以速度得到当前亮的小节
+	subSpeed := int32(12) // 每 ~120ms 跳一次
+	currentSub := (ss.animTick / subSpeed) % subCount
+
+	for seg := 0; seg < segCount; seg++ {
+		state := ss.segmentStates[seg]
+		segX := segStartX + int32(seg)*(segW+segGap)
+
+		switch state {
+		case 2: // 完成 → 整段绿色
+			splashFillRoundRect(hdc, segX, segY, segX+segW, segY+segH, segR, splashColorDone)
+
+		case 1: // 加载中 → 先画圆角底板，再画5小节（保持整体圆角一致）
+			bgColor := uintptr(0x00e8e8e8) // 浅灰底板
+			splashFillRoundRect(hdc, segX, segY, segX+segW, segY+segH, segR, bgColor)
+			for sub := int32(0); sub < subCount; sub++ {
+				subX := segX + sc(2) + sub*subW
+				if sub == currentSub {
+					splashFillRoundRect(hdc, subX, segY+sc(1), subX+subW, segY+segH-sc(1), subR, splashColorRun)
+				}
+			}
+
+		default: // 0 未到 → 整段灰色
+			splashFillRoundRect(hdc, segX, segY, segX+segW, segY+segH, segR, splashColorProgBG)
+		}
+	}
 }
 
 // ===== 保留的旧函数（不再使用，但可能被引用） =====
@@ -903,7 +886,7 @@ func SetSplashSegmentText(ss *SplashState, text string) {
 	if ss == nil {
 		return
 	}
-	ss.currentStepText = text
+	ss.segmentText = text
 	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
 }
 
