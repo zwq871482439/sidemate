@@ -417,6 +417,11 @@ def api_kb_module_status():
     embedder_path_flat = os.path.join(_project_dir, "models", "embedding")
     reranker_path_flat = os.path.join(_project_dir, "models", "reranker")
 
+    def _has_model_weight(dir_path):
+        """检查目录是否有任意一种模型权重文件"""
+        return any(os.path.exists(os.path.join(dir_path, f)) for f in
+                   ("model.safetensors", "pytorch_model.bin", "model.bin"))
+
     result["models"]["embedder"]["present"] = (
         (os.path.isdir(embedder_path) and
          os.path.exists(os.path.join(embedder_path, "config.json")))
@@ -424,10 +429,10 @@ def api_kb_module_status():
         (os.path.isdir(embedder_path_legacy) and
          os.path.exists(os.path.join(embedder_path_legacy, "config.json")))
         or
-        # 扁平格式：config.json 直接在 models/embedding/ 下
+        # 扁平格式：config.json + 任意权重文件
         (os.path.isdir(embedder_path_flat) and
          os.path.exists(os.path.join(embedder_path_flat, "config.json")) and
-         os.path.exists(os.path.join(embedder_path_flat, "model.safetensors")))
+         _has_model_weight(embedder_path_flat))
     )
     result["models"]["reranker"]["present"] = (
         (os.path.isdir(reranker_path) and
@@ -439,7 +444,7 @@ def api_kb_module_status():
         # 扁平格式
         (os.path.isdir(reranker_path_flat) and
          os.path.exists(os.path.join(reranker_path_flat, "config.json")) and
-         os.path.exists(os.path.join(reranker_path_flat, "model.safetensors")))
+         _has_model_weight(reranker_path_flat))
     )
 
     if installed:
