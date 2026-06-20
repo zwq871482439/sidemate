@@ -446,6 +446,24 @@ async function sendMessage() {
     return;
   }
 
+  // Patch5 修复：空状态发消息时自动新建 session
+  if (typeof currentChatFile === 'undefined' || !currentChatFile) {
+    if (typeof newChat === 'function') {
+      try {
+        await newChat();
+      } catch (e) {
+        console.warn('[sendMessage] 自动新建会话失败:', e.message);
+        showToast('创建会话失败，请手动点击「新对话」', 'error');
+        return;
+      }
+    }
+    // newChat 完成后再次检查
+    if (typeof currentChatFile === 'undefined' || !currentChatFile) {
+      showToast('会话未就绪，请手动点击「新对话」', 'warning');
+      return;
+    }
+  }
+
   // 提前捕获文件名和来源（在 clear 之前）
   var uploadedFilePath = null;
   var _sentFileName = (typeof _pendingFileName !== 'undefined') ? _pendingFileName : '';

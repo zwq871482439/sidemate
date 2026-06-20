@@ -413,6 +413,9 @@ def api_kb_module_status():
     # 兼容旧路径（models/ 直接下放模型）
     embedder_path_legacy = os.path.join(_project_dir, "models", embedder_basename)
     reranker_path_legacy = os.path.join(_project_dir, "models", reranker_basename)
+    # Patch5 修复：兼容新格式（模型直接放在 models/embedding/ 而非 models/embedding/bge-m3/）
+    embedder_path_flat = os.path.join(_project_dir, "models", "embedding")
+    reranker_path_flat = os.path.join(_project_dir, "models", "reranker")
 
     result["models"]["embedder"]["present"] = (
         (os.path.isdir(embedder_path) and
@@ -420,6 +423,11 @@ def api_kb_module_status():
         or
         (os.path.isdir(embedder_path_legacy) and
          os.path.exists(os.path.join(embedder_path_legacy, "config.json")))
+        or
+        # 扁平格式：config.json 直接在 models/embedding/ 下
+        (os.path.isdir(embedder_path_flat) and
+         os.path.exists(os.path.join(embedder_path_flat, "config.json")) and
+         os.path.exists(os.path.join(embedder_path_flat, "model.safetensors")))
     )
     result["models"]["reranker"]["present"] = (
         (os.path.isdir(reranker_path) and
@@ -427,6 +435,11 @@ def api_kb_module_status():
         or
         (os.path.isdir(reranker_path_legacy) and
          os.path.exists(os.path.join(reranker_path_legacy, "config.json")))
+        or
+        # 扁平格式
+        (os.path.isdir(reranker_path_flat) and
+         os.path.exists(os.path.join(reranker_path_flat, "config.json")) and
+         os.path.exists(os.path.join(reranker_path_flat, "model.safetensors")))
     )
 
     if installed:
