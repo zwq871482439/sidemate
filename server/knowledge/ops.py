@@ -595,8 +595,9 @@ class _KBOpsMixin:
             return
         try:
             import tempfile
+            # Patch5 修复：tempfile 用 .npz 后缀，避免 numpy 内部判断错误
             tmp_fd, tmp_path = tempfile.mkstemp(
-                suffix=".tmp", dir=os.path.dirname(self.vectors_path), prefix="kb_vec_"
+                suffix=".npz.tmp", dir=os.path.dirname(self.vectors_path), prefix="kb_vec_"
             )
             try:
                 os.close(tmp_fd)
@@ -605,6 +606,9 @@ class _KBOpsMixin:
                     vectors=self.vectors,
                     chunk_order=np.array(self.chunk_order),
                 )
+                # 验证文件大小（防止 savez 写出 0 字节）
+                if os.path.getsize(tmp_path) == 0:
+                    raise IOError("np.savez_compressed 写出 0 字节文件")
                 os.replace(tmp_path, self.vectors_path)
             except Exception:
                 try:
@@ -849,7 +853,10 @@ class _KBOpsMixin:
             doc.progress = 0.0
             self._save_meta()
         except Exception as e:
+            # Patch5 修复：记录完整 traceback 帮助定位 Errno 22 根因
+            import traceback
             log.error("[KB] 文档处理失败: %s - %s", doc_id, str(e))
+            log.error("[KB] 完整堆栈:\n%s", traceback.format_exc())
             doc.status = "error"
             doc.error_msg = str(e)[:200]
             doc.progress = 0.0

@@ -121,7 +121,7 @@ function kbUpdateBatchToolbar() {
  * 批量删除文档
  */
 async function kbBatchDelete() {
-  var docIds = Array.from(_kbSelectedDocs);
+  var docIds = Array.from(_ensureSelectedDocs());
   if (docIds.length === 0) return;
 
   var confirmed = await showDialog('批量删除', '确定删除选中的 ' + docIds.length + ' 个文档？删除后无法恢复。', {type: 'danger', confirm: true, confirmLabel: '删除', cancelLabel: '取消'});
@@ -154,7 +154,7 @@ async function kbBatchDelete() {
  * 批量重新打标
  */
 async function kbBatchRetag() {
-  var docIds = Array.from(_kbSelectedDocs);
+  var docIds = Array.from(_ensureSelectedDocs());
   if (docIds.length === 0) return;
 
   var confirmed = await showDialog('批量重标', '确定对选中的 ' + docIds.length + ' 个文档重新生成 AI 标签？', {confirm: true, confirmLabel: '重标', cancelLabel: '取消'});
@@ -184,7 +184,7 @@ async function kbBatchRetag() {
  * @param {boolean} isPrivate - true=设为私密, false=取消私密
  */
 async function kbBatchPrivacy(isPrivate) {
-  var docIds = Array.from(_kbSelectedDocs);
+  var docIds = Array.from(_ensureSelectedDocs());
   if (docIds.length === 0) return;
 
   var label = isPrivate ? '设为私密' : '取消私密';
