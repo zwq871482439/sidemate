@@ -5,22 +5,20 @@
 var _apiBase = (typeof API !== 'undefined' ? API : '');
 
 // ===== 全局状态 =====
-// Patch5 修复：延迟初始化，确保即使脚本加载顺序有问题也不会崩溃
-// _ensureSelectedDocs() 返回一个有效的 Set（懒初始化）
-function _ensureSelectedDocs() {
-  if (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && typeof _ensureSelectedDocs().add === 'function') {
-    return _kbSelectedDocs;
-  }
-  // 懒初始化：如果还是老 Set，就复用；否则重建
-  if (!(typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs instanceof Set)) {
-    _kbSelectedDocs = new Set();
-  }
-  return _kbSelectedDocs;
-}
 var _kbSelectedDocs = new Set();     // 选中的文档 ID 集合
 var _kbTagClusters = [];             // Tag 聚类结果缓存
 var _kbHeatmapData = [];             // 热力图数据缓存
 var _kbLastDocs = [];                // 上次获取的文档列表（供聚类和渲染使用）
+
+// Patch5 修复：懒初始化 helper
+// 防止 _kbSelectedDocs 被外部代码覆盖为非 Set 时崩溃
+function _ensureSelectedDocs() {
+  if (_kbSelectedDocs && typeof _kbSelectedDocs.add === 'function') {
+    return _kbSelectedDocs;
+  }
+  _kbSelectedDocs = new Set();
+  return _kbSelectedDocs;
+}
 
 // ============================================================
 //  B1: 文档选中操作（checkbox 全选/反选/单选）
