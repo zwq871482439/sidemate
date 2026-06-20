@@ -115,7 +115,19 @@ var TokenEstimator = {
   },
 
   _estimateDoc: function() {
-    // KB 引用文档：从 window._kbSelectedFiles 获取文件大小
+    // Patch5 G：优先用后端算好的真实 tokens
+    // 1. 普通上传：chat-files.js 预上传后 pendingFile.tokens 由 /api/file_upload 返回
+    // 2. KB 引用：window._kbSelectedFiles[].file_size 粗估
+    if (typeof pendingFile !== 'undefined' && pendingFile) {
+      if (typeof pendingFile.tokens === 'number' && pendingFile.tokens > 0) {
+        return pendingFile.tokens;
+      }
+      // File 对象未走预上传（不在 chat 模式或被跳过）
+      if (pendingFile instanceof File || (pendingFile.size && !pendingFile.path)) {
+        var sizeKB = (pendingFile.size || 0) / 1024;
+        return Math.ceil(sizeKB * this.FILE_TOKENS_PER_KB);
+      }
+    }
     if (typeof window !== 'undefined' && window._kbSelectedFiles && window._kbSelectedFiles.length > 0) {
       var totalSize = 0;
       for (var i = 0; i < window._kbSelectedFiles.length; i++) {
@@ -123,11 +135,6 @@ var TokenEstimator = {
         totalSize += (d.file_size || d.size || 0);
       }
       return Math.ceil(totalSize / 1024 * this.FILE_TOKENS_PER_KB);
-    }
-    // 上传文件：按文件大小估算
-    if (typeof pendingFile !== 'undefined' && pendingFile) {
-      var sizeKB = (pendingFile.size || 0) / 1024;
-      return Math.ceil(sizeKB * this.FILE_TOKENS_PER_KB);
     }
     return 0;
   },

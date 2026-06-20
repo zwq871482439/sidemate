@@ -719,6 +719,13 @@ function updateModeTagUI(mode, cloudConfigured, ctxWindow, maxHistChars) {
   var sub = document.getElementById('modeSubTag');
   if (!tag) return;
   var ctxWin = ctxWindow || 16384;
+  // Patch5 G：同步刷新全局 _maxPromptTokens，让 token 指示器知道当前模式的上下文窗口
+  if (typeof _maxPromptTokens !== 'undefined') {
+    _maxPromptTokens = ctxWin;
+    if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+      TokenEstimator.updateInputDisplay();
+    }
+  }
   // 保留 dropdown DOM 不被 innerHTML 覆盖
   var dd = document.getElementById('modeDropdown');
   if (mode === 'local') {

@@ -242,16 +242,10 @@ async def api_chat_stream(request: Request):
     file_info = None
     if file_path:
         if os.path.exists(file_path):
-            # 普通文件上传路径 — 动态计算注入预算
-            from knowledge.file_extractor import process_uploaded_file, calc_file_budget
-            history_chars = sum(len(m.get("content", "")) for m in history_raw) if history_raw else 0
-            file_budget = calc_file_budget(history_chars)
-            log.info("[CHAT] 文件注入预算: history=%d字 → file_budget=%d字" % (history_chars, file_budget))
-            file_info = process_uploaded_file(file_path, message or "", max_chars=file_budget)
-            if file_info["status"] == "ok":
-                prompt = (message or "") + "\n\n[用户上传了文件 %s，内容如下：]\n%s" % (
-                    file_info["filename"], file_info["text"])
-            elif file_info["status"] == "truncated":
+            # Patch5 G：上传文件不再截断，前端预检已确保 token 在预算内
+            from knowledge.file_extractor import process_uploaded_file
+            file_info = process_uploaded_file(file_path, message or "", max_chars=10**9)
+            if file_info["status"] in ("ok", "truncated"):
                 prompt = (message or "") + "\n\n[用户上传了文件 %s，内容如下：]\n%s" % (
                     file_info["filename"], file_info["text"])
         else:
@@ -879,7 +873,23 @@ async def api_file_upload(file: UploadFile = File(...), chat_id: str = ""):
 
     with open(save_path, "wb") as f:
         f.write(content)
+
+    # Patch5 G.一致性：上传即算 token，前端用于预检
+    file_tokens = 0
+    try:
+        from knowledge.file_extractor import process_uploaded_file
+        _info = process_uploaded_file(save_path, "", max_chars=10**9)  # 不截断，全量
+        if _info.get("status") in ("ok", "truncated"):
+            _text = _info.get("text", "")
+            # 粗估：中文 1.5字/token，英文 4字/token
+            _cn = sum(1 for c in _text if '\u4e00' <= c <= '\u9fff')
+            _other = len(_text) - _cn
+            file_tokens = int(_cn / 1.5 + _other / 4.0)
+    except Exception as _e:
+        log.warning("[UPLOAD] token 估算失败: %s", str(_e)[:80])
+
     return {"path": save_path, "filename": safe_name, "size": len(content),
+            "tokens": file_tokens,
             "in_workspace": bool(chat_id)}
 
 

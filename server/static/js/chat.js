@@ -446,6 +446,20 @@ async function sendMessage() {
     return;
   }
 
+  // Patch5 G：文档 token 预检 — 超过当前模型上下文窗口 95% 直接拒绝发送
+  if (typeof TokenEstimator !== 'undefined') {
+    var _docTok = TokenEstimator._estimateDoc();
+    var _maxTok = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
+    // 预留至少 2000 token 给 system + history + 输出
+    var _threshold = Math.max(2000, _maxTok - 2000);
+    if (_docTok > _threshold) {
+      var _overBy = _docTok - _threshold;
+      showToast('文档过大（约 ' + (_docTok/1000).toFixed(1) + 'K tokens，超过可用空间 ' + (_overBy/1000).toFixed(1) + 'K）。请换更小的文档，或切换到云端模式', 'error', 6000);
+      console.warn('[sendMessage] 文档 token 超阈值: doc=%d threshold=%d max=%d', _docTok, _threshold, _maxTok);
+      return;
+    }
+  }
+
   // Patch5 修复：空状态发消息时自动新建 session
   if (typeof currentChatFile === 'undefined' || !currentChatFile) {
     if (typeof newChat === 'function') {

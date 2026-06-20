@@ -300,7 +300,14 @@ function onUnifiedPicked(e) {
     }).then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.path) {
-          if (typeof pendingFile !== 'undefined') pendingFile = {name: file.name, path: d.path, source: 'upload'};
+          if (typeof pendingFile !== 'undefined') pendingFile = {
+            name: file.name, path: d.path, source: 'upload',
+            tokens: d.tokens || 0   // Patch5 G：后端算好的真实 token 数
+          };
+          // 触发指示器刷新
+          if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+            TokenEstimator.updateInputDisplay();
+          }
           if (typeof showToast === 'function') showToast('文件已上传', 'success');
         } else {
           if (typeof showToast === 'function') showToast(d.error || '上传失败', 'error');
