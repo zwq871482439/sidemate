@@ -663,7 +663,7 @@ func main() {
 	// Patch5 启动重构：单行动态步骤
 	// 阶段 1: 检查环境（0→10%，强制停留 1s 探明 KB/纪要/LLM 状态）
 	UpdateSplashStageInfo(splash, 5, 0) // 初始：5 阶段（占位，后面会动态调整），当前在第 0 阶段
-	UpdateSplashStage(splash, StepRunning, "检查环境依赖...", 5)
+	UpdateSplashStage(splash, StepRunning, "检查环境依赖", 5)
 	UpdateSplashStageSubText(splash, "GPU 检测 + 依赖校验")
 	stageStart := time.Now()
 	log.Println("[Launcher] 检测 GPU 后端...")
@@ -677,8 +677,7 @@ func main() {
 	// ---- 1. 启动 Ollama ----
 	// Patch5 启动重构：基础服务阶段（10→30%）
 	UpdateSplashStageInfo(splash, 5, 1) // 当前在第 1 阶段（基础服务）
-	UpdateSplashStage(splash, StepRunning, "启动基础服务...", 15)
-	UpdateSplashStageSubText(splash, "启动 Ollama 引擎...")
+	UpdateSplashStage(splash, StepRunning, "启动基础服务", 15)
 	log.Println("[Launcher] 启动 Ollama...")
 
 	// 辅助：构建 ollama 命令（启动和重试共用）
@@ -726,7 +725,7 @@ func main() {
 
 	// 等待 Ollama 就绪（含自修复重试 + 进度提示）
 	log.Println("[Launcher] 等待 Ollama 就绪...")
-	UpdateSplashStage(splash, StepRunning, "启动 Ollama 引擎...", 18)
+	UpdateSplashStage(splash, StepRunning, "启动 Ollama 引擎", 18)
 	ollamaReady := false
 	ollamaStart := time.Now()
 
@@ -840,7 +839,7 @@ func main() {
 	}
 
 	// ---- 1.5 环境指纹校验（启动 FastAPI 之前）----
-	UpdateSplashStage(splash, StepRunning, "检查环境完整性...", 22)
+	UpdateSplashStage(splash, StepRunning, "检查环境完整性", 22)
 	SplashPumpMessages()
 	checkAndRepairEnv(appDir, splash)
 
@@ -886,7 +885,7 @@ func main() {
 		return cmd, cancel
 	}
 
-	UpdateSplashStage(splash, StepRunning, "启动 FastAPI 服务...", 25)
+	UpdateSplashStage(splash, StepRunning, "启动 FastAPI 服务", 25)
 	pythonCmd, cancel2 := newPythonCmd()
 	serverProc := &ManagedProcess{Name: "FastAPI", Cmd: pythonCmd, Cancel: cancel2}
 	if err := serverProc.Start(); err != nil {
@@ -1067,15 +1066,15 @@ func main() {
 
 	var stages []stageDef
 	if hasKB {
-		stages = append(stages, stageDef{"加载知识库模型...", true, stageCursor, stageCursor+perStage, 0})
+		stages = append(stages, stageDef{"加载知识库模型", true, stageCursor, stageCursor+perStage, 0})
 		stageCursor += perStage
 	}
 	if hasRecorder {
-		stages = append(stages, stageDef{"加载录音纪要...", true, stageCursor, stageCursor+perStage, 0})
+		stages = append(stages, stageDef{"加载录音纪要", true, stageCursor, stageCursor+perStage, 0})
 		stageCursor += perStage
 	}
 	if hasLLM {
-		stages = append(stages, stageDef{"预热 AI 模型...", true, stageCursor, 95, 0})
+		stages = append(stages, stageDef{"预热 AI 模型", true, stageCursor, 95, 0})
 		// LLM 预热占到最后（95%）
 	}
 
@@ -1108,7 +1107,6 @@ func main() {
 			// 读 Python 端进度
 			fileProgress := -1
 			filePhase := ""
-			fileText := ""
 			if data, err := os.ReadFile(progressFile); err == nil {
 				var sp struct {
 					Phase    string  `json:"phase"`
@@ -1119,50 +1117,29 @@ func main() {
 				if json.Unmarshal(data, &sp) == nil {
 					fileProgress = sp.Progress
 					filePhase = sp.Phase
-					fileText = sp.Text
 				}
 			}
 
-			// 映射进度到当前阶段区间
+			// 映射进度到当前阶段区间（Patch5：去掉子状态显示）
 			if fileProgress >= 0 {
-				// Python 进度 0-100 映射到当前阶段的 startProg→endProg
 				localProg := stage.startProg + (stage.endProg-stage.startProg)*fileProgress/100
 				UpdateSplashStageProgress(splash, localProg)
-				// Patch5：子状态去括号
-				// Python 端的 _report_startup.text 偶尔有（耗时较长）等括号注释，去掉
-				if fileText != "" {
-					cleanText := fileText
-					// 去掉中文和英文括号
-					for _, pair := range [][2]string{{"（", "）"}, {"(", ")"}} {
-						for {
-							start := indexOfStr(cleanText, pair[0])
-							end := indexOfStr(cleanText, pair[1])
-							if start >= 0 && end > start {
-								cleanText = cleanText[:start] + cleanText[end+1:]
-							} else {
-								break
-							}
-						}
-					}
-					// 去掉尾部多余的空格和省略号
-					cleanText = trimRightSpace(cleanText)
-					UpdateSplashStageSubText(splash, cleanText)
-				}
+				// 不再显示子状态，只更新进度
 			}
 
 			// 检测该阶段是否完成（通过 phase 关键字）
 			stageDone := false
 			switch stage.name {
-			case "加载知识库模型...":
+			case "加载知识库模型":
 				stageDone = strings.Contains(filePhase, "kb_loaded") ||
 					strings.Contains(filePhase, "model_warmup") ||
 					strings.Contains(filePhase, "recorder") ||
 					strings.Contains(filePhase, "done")
-			case "加载录音纪要...":
+			case "加载录音纪要":
 				stageDone = strings.Contains(filePhase, "recorder_loaded") ||
 					strings.Contains(filePhase, "model_warmup") ||
 					strings.Contains(filePhase, "done")
-			case "预热 AI 模型...":
+			case "预热 AI 模型":
 				stageDone = strings.Contains(filePhase, "warmup_done") ||
 					strings.Contains(filePhase, "warmup_skipped") ||
 					strings.Contains(filePhase, "ready") ||
@@ -1189,8 +1166,7 @@ func main() {
 	// ---- 看门狗阶段（95→100%，强制停留 3s）----
 	// Patch5 方案 B：流水指示器移到最后一格
 	UpdateSplashStageInfo(splash, totalStagesForIndicator, totalStagesForIndicator-1)
-	UpdateSplashStage(splash, StepRunning, "初始化看门狗...", 96)
-	UpdateSplashStageSubText(splash, "启动健康监测服务")
+	UpdateSplashStage(splash, StepRunning, "初始化看门狗", 96)
 	stageStart = time.Now()
 
 	// 实际启动看门狗
@@ -1204,9 +1180,8 @@ func main() {
 
 	// ---- 全部就绪 ----
 	UpdateSplashStage(splash, StepDone, "全部就绪", 100)
-	UpdateSplashStageSubText(splash, "") // 清空子状态，避免残留"启动健康监测服务"
 	SplashPumpMessages()
-	time.Sleep(500 * time.Millisecond) // 停 0.5s 让用户看到 ✓
+	time.Sleep(500 * time.Millisecond) // 停 0.5s 让用户看到 100%
 
 	// ---- 打开浏览器 ----
 	log.Println("[Launcher] 打开浏览器...")

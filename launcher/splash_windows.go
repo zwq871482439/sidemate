@@ -712,8 +712,9 @@ func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
 		splashColorTitleBG, true)
 
 	// === 3. 子状态文字（阶段名下方居中）===
-	// Patch5：Done 状态下不显示子状态
-	if ss.stageSubText != "" && ss.currentStepStatus != StepDone {
+	// Patch5 用户决策：不要子状态，太累赘
+	// 此处保留代码骨架但不绘制
+	if false && ss.stageSubText != "" && ss.currentStepStatus != StepDone {
 		subFontSize := 11 * dpi / 96
 		var subColor uintptr = splashColorSubtitle
 		if ss.currentStepStatus == StepRunning {
