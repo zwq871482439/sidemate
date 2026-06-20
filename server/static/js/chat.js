@@ -653,7 +653,9 @@ async function sendMessage() {
       history: history,
       chat_file: currentChatFile,
       action_mode: _actionModeForBackend,
-      file_path: uploadedFilePath || _savedRefPath || window._docPhase2FilePath || null,
+      // Patch5 G：file_path 只认真实路径（上传返回的）或 KB doc_id，
+      // 不再 fallback 到 _savedRefPath（文件名，会导致后端 os.path.exists 失败）
+      file_path: uploadedFilePath || window._docPhase2FilePath || null,
     };
     if (window._docContinueOutline) {
       reqBody.doc_continue = window._docContinueOutline;

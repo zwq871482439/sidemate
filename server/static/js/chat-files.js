@@ -280,10 +280,11 @@ function onUnifiedPicked(e) {
   if (typeof pendingFile !== 'undefined') pendingFile = file;
 
   showFileIndicator(file.name, 'upload');
-  if (typeof showToast === 'function') showToast('已选择: ' + file.name, 'success');
+  if (typeof showToast !== 'function') {} else showToast('已选择: ' + file.name, 'success');
 
-  // 触发上传（如果是 chat 模式下的文件附件）
-  if (typeof currentActionMode !== 'undefined' && currentActionMode === 'chat') {
+  // Patch5 G：任何模式下都立即上传到 session workspace/，拿到真实 path 和 tokens
+  // （之前只有 currentActionMode==='chat' 才上传，导致 doc/agent 模式 file_path 退化为文件名）
+  {
     var formData = new FormData();
     formData.append('file', file);
     formData.append('mode', 'chat_attach');
