@@ -68,23 +68,32 @@ var TokenEstimator = {
   /**
    * 更新输入框右下角的 token 显示
    * 读取 #msgInput，写入 #tokenDisplay
-   * 超 _maxPromptTokens*0.8 变橙色 class token-warn
-   * 超 100% 变红色 class token-over
+   * Patch5 用户反馈：显示"预计使用 Xk tokens · 空间充足/尚可/不足"
    */
   updateInputDisplay: function() {
     var display = document.getElementById('tokenDisplay');
     if (!display) return;
 
     var total = this.estimateTotal();
-    var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 0;
+    var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
 
     // 构建显示文本
     var text = '';
-    if (total > 0) {
-      text = '≈ ' + this.formatCount(total).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' tokens';
-      if (maxTokens > 0) {
-        text += ' / ' + this.formatCount(maxTokens);
+    if (total > 0 && maxTokens > 0) {
+      var ratio = total / maxTokens;
+      var totalStr = total > 1000 ? (total / 1000).toFixed(1) + 'k' : String(total);
+      var maxStr = maxTokens > 1000 ? (maxTokens / 1000).toFixed(1) + 'k' : String(maxTokens);
+      var statusText = '';
+      if (ratio < 0.5) {
+        statusText = '空间充足';
+      } else if (ratio < 0.8) {
+        statusText = '空间尚可';
+      } else {
+        statusText = '空间不足';
       }
+      text = '预计 ' + totalStr + ' / ' + maxStr + ' tokens · ' + statusText;
+    } else if (total > 0) {
+      text = '预计 ' + (total > 1000 ? (total/1000).toFixed(1)+'k' : String(total)) + ' tokens';
     }
     display.textContent = text;
 
@@ -92,9 +101,9 @@ var TokenEstimator = {
     display.classList.remove('token-warn', 'token-over');
     if (maxTokens > 0) {
       var ratio = total / maxTokens;
-      if (ratio >= 1.0) {
+      if (ratio >= 0.8) {
         display.classList.add('token-over');
-      } else if (ratio >= 0.8) {
+      } else if (ratio >= 0.5) {
         display.classList.add('token-warn');
       }
     }

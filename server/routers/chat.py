@@ -452,6 +452,9 @@ def api_chats_delete(chat_name: str):
         filepath = folder_path
     elif os.path.isfile(json_path):
         filepath = json_path
+    elif os.path.isfile(folder_path):
+        # Patch5 兼容：旧格式文件无 .json 后缀
+        filepath = folder_path
     else:
         return JSONResponse({"error": "文件不存在"}, status_code=404)
 
@@ -542,6 +545,9 @@ async def api_chats_append(chat_name: str, request: Request):
         filepath = folder_path
     elif os.path.isfile(json_path):
         filepath = json_path
+    elif os.path.isfile(folder_path):
+        # Patch5 兼容：旧格式文件无 .json 后缀
+        filepath = folder_path
     else:
         return JSONResponse({"error": "文件不存在"}, status_code=404)
 
@@ -659,6 +665,9 @@ async def api_chats_enrich(chat_name: str, request: Request):
         filepath = folder_path
     elif os.path.isfile(json_path):
         filepath = json_path
+    elif os.path.isfile(folder_path):
+        # Patch5 兼容：旧格式文件无 .json 后缀
+        filepath = folder_path
     else:
         return JSONResponse({"error": "文件不存在"}, status_code=404)
 

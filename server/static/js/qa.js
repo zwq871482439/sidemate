@@ -158,8 +158,8 @@ async function kbRefreshDocs() {
         if (panel) panel.classList.add('collapsed');
         var collapsedCount = document.getElementById('kbCollapsedCount');
         if (collapsedCount) {
-          // Patch4 v3.1 BUG#32：跟展开时用同一个变量（stats.ready_documents）
-          collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + _docCount + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + _maxDocs + '</div>';
+          // Patch4 v3.1 BUG#32：跟展开时用同一个变量
+          collapsedCount.innerHTML = '<div style="font-weight:600;font-size:1.1em;color:var(--text-primary);line-height:1.2">' + _readyCount + '</div><div style="font-size:.6em;color:var(--text-muted)">/ ' + _maxDocs + '</div>';
         }
       }, 300);
     } else if (docs.length === 0 && _kbPanelCollapsed) {

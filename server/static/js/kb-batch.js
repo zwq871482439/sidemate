@@ -5,6 +5,18 @@
 var _apiBase = (typeof API !== 'undefined' ? API : '');
 
 // ===== 全局状态 =====
+// Patch5 修复：延迟初始化，确保即使脚本加载顺序有问题也不会崩溃
+// _ensureSelectedDocs() 返回一个有效的 Set（懒初始化）
+function _ensureSelectedDocs() {
+  if (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && typeof _ensureSelectedDocs().add === 'function') {
+    return _kbSelectedDocs;
+  }
+  // 懒初始化：如果还是老 Set，就复用；否则重建
+  if (!(typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs instanceof Set)) {
+    _kbSelectedDocs = new Set();
+  }
+  return _kbSelectedDocs;
+}
 var _kbSelectedDocs = new Set();     // 选中的文档 ID 集合
 var _kbTagClusters = [];             // Tag 聚类结果缓存
 var _kbHeatmapData = [];             // 热力图数据缓存
@@ -19,10 +31,11 @@ var _kbLastDocs = [];                // 上次获取的文档列表（供聚类�
  * @param {string} docId - 文档 ID
  */
 function kbToggleSelect(docId) {
-  if (_kbSelectedDocs.has(docId)) {
-    _kbSelectedDocs.delete(docId);
+  var _sel = _ensureSelectedDocs();
+  if (_sel.has(docId)) {
+    _sel.delete(docId);
   } else {
-    _kbSelectedDocs.add(docId);
+    _sel.add(docId);
   }
   kbUpdateBatchToolbar();
 }
@@ -31,10 +44,11 @@ function kbToggleSelect(docId) {
  * 全选所有 ready 状态的文档
  */
 function kbSelectAll() {
+  var _sel = _ensureSelectedDocs();
   for (var i = 0; i < _kbLastDocs.length; i++) {
     var d = _kbLastDocs[i];
     if (d.status === 'ready' || d.status === 'error' || d.status === 'cancelled') {
-      _kbSelectedDocs.add(d.doc_id);
+      _sel.add(d.doc_id);
     }
   }
   // 更新所有 checkbox
@@ -53,7 +67,7 @@ function kbSelectInvert() {
   for (var i = 0; i < _kbLastDocs.length; i++) {
     var d = _kbLastDocs[i];
     if (d.status === 'ready' || d.status === 'error' || d.status === 'cancelled') {
-      if (!_kbSelectedDocs.has(d.doc_id)) {
+      if (!_ensureSelectedDocs().has(d.doc_id)) {
         newSet.add(d.doc_id);
       }
     }
@@ -63,7 +77,7 @@ function kbSelectInvert() {
   var checkboxes = document.querySelectorAll('.kb-doc-checkbox');
   for (var j = 0; j < checkboxes.length; j++) {
     var cb = checkboxes[j];
-    cb.checked = _kbSelectedDocs.has(cb.getAttribute('data-doc-id'));
+    cb.checked = _ensureSelectedDocs().has(cb.getAttribute('data-doc-id'));
   }
   kbUpdateBatchToolbar();
 }
@@ -72,7 +86,7 @@ function kbSelectInvert() {
  * 清空选中
  */
 function kbClearSelection() {
-  _kbSelectedDocs.clear();
+  _ensureSelectedDocs().clear();
   var checkboxes = document.querySelectorAll('.kb-doc-checkbox');
   for (var j = 0; j < checkboxes.length; j++) {
     checkboxes[j].checked = false;
@@ -88,7 +102,7 @@ function kbUpdateBatchToolbar() {
   var toolbar = document.getElementById('kbBatchToolbar');
   if (!toolbar) return;
 
-  var count = _kbSelectedDocs.size;
+  var count = _ensureSelectedDocs().size;
   if (countEl) countEl.textContent = count;
 
   // 选中数 > 0 时显示工具栏
@@ -128,7 +142,7 @@ async function kbBatchDelete() {
         msg += '，' + data.failed.length + ' 个失败';
       }
       showToast(msg, data.failed && data.failed.length > 0 ? 'warning' : 'success');
-      _kbSelectedDocs.clear();
+      _ensureSelectedDocs().clear();
       kbRefreshDocs();
     } else {
       showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
@@ -157,7 +171,7 @@ async function kbBatchRetag() {
     var data = await resp.json();
     if (data.success) {
       showToast('已对 ' + data.affected + ' 个文档重新打标', 'success');
-      _kbSelectedDocs.clear();
+      _ensureSelectedDocs().clear();
       kbRefreshDocs();
     } else {
       showToast('批量重标失败: ' + (data.error || '未知错误'), 'error');
@@ -188,7 +202,7 @@ async function kbBatchPrivacy(isPrivate) {
     var data = await resp.json();
     if (data.success) {
       showToast('已对 ' + data.affected + ' 个文档' + label, 'success');
-      _kbSelectedDocs.clear();
+      _ensureSelectedDocs().clear();
       kbRefreshDocs();
     } else {
       showToast(label + '失败: ' + (data.error || '未知错误'), 'error');
@@ -632,16 +646,16 @@ function kbOnDocsRendered(docs) {
     currentDocIds[docs[i].doc_id] = true;
   }
   var toRemove = [];
-  _kbSelectedDocs.forEach(function(id) {
+  _ensureSelectedDocs().forEach(function(id) {
     if (!currentDocIds[id]) toRemove.push(id);
   });
   for (var j = 0; j < toRemove.length; j++) {
-    _kbSelectedDocs.delete(toRemove[j]);
+    _ensureSelectedDocs().delete(toRemove[j]);
   }
 
   // 恢复 checkbox 状态
   // Patch5 修复：_kbSelectedDocs 可能在 kb-batch.js 完全初始化前被调用
-  var _sel = (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && typeof _kbSelectedDocs.has === 'function') ? _kbSelectedDocs : null;
+  var _sel = (typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && typeof _ensureSelectedDocs().has === 'function') ? _kbSelectedDocs : null;
   var checkboxes = document.querySelectorAll('.kb-doc-checkbox');
   for (var k = 0; k < checkboxes.length; k++) {
     var cb = checkboxes[k];
