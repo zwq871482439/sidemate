@@ -1415,7 +1415,7 @@ async function refreshAboutInfo() {
     // 更新版本号
     var verEl = document.getElementById('versionDisplay');
     if (verEl) {
-      verEl.textContent = data.version ? ('v' + data.version) : 'v0.9.4';
+      verEl.textContent = data.version ? ('v' + data.version) : 'v0.9.5';
     }
 
     // 更新运行环境信息（设置页关于区域）

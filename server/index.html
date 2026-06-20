@@ -1004,8 +1004,8 @@ async function _loadVersionDisplay() {
     var data = await resp.json();
     var el = document.getElementById('versionDisplay');
     if (el) {
-      // 优先使用统一版本号（如 "0.9.4"），其次使用 version_display
-      el.textContent = data.version ? ('v' + data.version) : (data.version_display || 'v0.9.4');
+      // 优先使用统一版本号（如 "0.9.5"），其次使用 version_display
+      el.textContent = data.version ? ('v' + data.version) : (data.version_display || 'v0.9.5');
     }
     var titleEl = document.getElementById('settingsTitleVersion');
     if (titleEl && data.version_display) {
@@ -1013,7 +1013,7 @@ async function _loadVersionDisplay() {
     }
   } catch (e) {
     var el = document.getElementById('versionDisplay');
-    if (el) el.textContent = 'v0.9.4';
+    if (el) el.textContent = 'v0.9.5';
   }
 }
 
