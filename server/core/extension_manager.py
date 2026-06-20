@@ -29,6 +29,57 @@ from typing import Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
+# Patch5 D3: 扩展"模型存在性兜底"——注册表丢失时（如 D1 重构误删运行时数据）
+# 通过检查关键模型文件是否存在来判断扩展是否已实际安装。
+# 命中后自动补登记到注册表，下次直接走快路径。
+# 关键文件用 all() 判断，缺一个就视为未装，避免半装状态误展示。
+REQUIRED_FILES_BY_EXT = {
+    "knowledge": [
+        # 主权重（兼容 safetensors 与 pytorch bin 两种格式之一）
+        ("models/embedding/model.safetensors", "models/embedding/pytorch_model.bin"),
+        "models/embedding/config.json",
+        "models/embedding/tokenizer.json",
+        ("models/reranker/model.safetensors", "models/reranker/pytorch_model.bin"),
+        "models/reranker/config.json",
+    ],
+    "recorder": [
+        # Whisper 模型主权重（CTranslate2 格式或 pytorch 格式）
+        ("models/whisper/model.bin", "models/whisper/pytorch_model.bin"),
+    ],
+    # llm 走 Ollama，blob 文件名是 hash，无法用固定路径校验，不参与兜底
+}
+
+
+def _project_root() -> str:
+    """获取项目根目录（data/extensions 的父目录的父目录）"""
+    # extension_manager.py 位于 server/core/，项目根是 server 的父目录
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(os.path.dirname(here))
+
+
+def _file_exists_any(variants, root: str) -> bool:
+    """检查变体文件中任一存在（元组表示"或"关系）"""
+    if isinstance(variants, tuple):
+        return any(os.path.exists(os.path.join(root, v)) for v in variants)
+    return os.path.exists(os.path.join(root, variants))
+
+
+def _check_required_files(ext_id: str) -> bool:
+    """检查扩展的关键模型文件是否全部存在
+
+    Args:
+        ext_id: 扩展 ID
+        root: 项目根目录
+
+    Returns:
+        True 如果所有关键文件都存在（元组表示"或"关系，至少一个存在即满足）
+    """
+    required = REQUIRED_FILES_BY_EXT.get(ext_id)
+    if not required:
+        return False  # 未配置关键文件的扩展不参与兜底
+    root = _project_root()
+    return all(_file_exists_any(item, root) for item in required)
+
 
 class ExtensionRegistry:
     """扩展注册中心 — 管理已安装的扩展"""
@@ -56,25 +107,70 @@ class ExtensionRegistry:
         """
         return os.path.join(self.extensions_dir, "%s.json" % ext_id)
 
-    def is_installed(self, ext_id: str) -> bool:
-        """检查扩展是否已安装
+    def is_installed(self, ext_id: str, _auto_repair: bool = True) -> bool:
+        """检查扩展是否已安装（带模型存在性兜底）
+
+        检查顺序：
+          1. 注册表 JSON 存在且可解析 → True
+          2. 兜底：关键模型文件全部存在 → True（并自动补登记）
+          3. 否则 False
 
         Args:
-            ext_id: 扩展 ID（"knowledge" | "recorder"）
+            ext_id: 扩展 ID（"knowledge" | "recorder" | "llm"）
+            _auto_repair: 兜底命中时是否自动写回注册表（默认 True，避免下次重复检查）
 
         Returns:
-            True 如果注册文件存在且可解析
+            True 如果扩展已安装
         """
+        # 1. 注册表查
         path = self._registry_path(ext_id)
-        if not os.path.exists(path):
-            return False
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return isinstance(data, dict) and data.get("id") == ext_id
-        except Exception as e:
-            log.warning("[EXT-REG] 解析注册文件失败 %s: %s", ext_id, str(e)[:80])
-            return False
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and data.get("id") == ext_id:
+                    return True
+            except Exception as e:
+                log.warning("[EXT-REG] 解析注册文件失败 %s: %s", ext_id, str(e)[:80])
+
+        # 2. 兜底：关键模型文件检查（仅 knowledge / recorder，llm 走 Ollama 不兜底）
+        if _check_required_files(ext_id):
+            if _auto_repair:
+                # 自动补登记，下次直接走快路径
+                default_info = self._default_register_info(ext_id)
+                try:
+                    self.register(ext_id, default_info)
+                    log.info("[EXT-REG] 模型存在性兜底命中，已自动补登记 %s", ext_id)
+                except Exception as e:
+                    log.warning("[EXT-REG] 自动补登记失败 %s: %s", ext_id, str(e)[:80])
+            return True
+
+        return False
+
+    def _default_register_info(self, ext_id: str) -> dict:
+        """兜底自动补登记时使用的默认注册信息"""
+        from datetime import datetime
+        defaults = {
+            "knowledge": {
+                "id": "knowledge",
+                "version": "auto-detected",
+                "models": {
+                    "embedding": "models/embedding",
+                    "reranker": "models/reranker",
+                },
+            },
+            "recorder": {
+                "id": "recorder",
+                "version": "auto-detected",
+                "models": {
+                    "whisper": "models/whisper",
+                },
+            },
+        }
+        info = defaults.get(ext_id, {"id": ext_id, "version": "auto-detected"})
+        info["installed_at"] = datetime.now().isoformat()
+        info["auto_detected"] = True  # 标记为兜底自动登记
+        return info
 
     def get_info(self, ext_id: str) -> dict:
         """获取扩展注册信息
