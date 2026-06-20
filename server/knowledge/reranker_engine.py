@@ -46,12 +46,13 @@ class RerankerEngine:
         model_path = None
         try:
             from core.extension_manager import ExtensionRegistry
-            from config import ROOT_DIR, EXTENSIONS_DIR
+            from config import PROJECT_ROOT, EXTENSIONS_DIR
             registry = ExtensionRegistry(EXTENSIONS_DIR)
             if registry.is_installed("knowledge"):
                 registered_path = registry.get_model_path("knowledge", "reranker")
                 if registered_path:
-                    candidate = os.path.join(ROOT_DIR, registered_path)
+                    # Patch5 修复：用 PROJECT_ROOT（项目根）而非 ROOT_DIR（server/）
+                    candidate = os.path.join(PROJECT_ROOT, registered_path)
                     if os.path.isdir(candidate):
                         model_path = candidate
                         log.info("[KB-Reranker] 从扩展注册表获取 reranker 模型路径: %s", model_path)
@@ -61,10 +62,15 @@ class RerankerEngine:
         # 降级：使用默认路径（按优先级逐级尝试）
         if model_path is None:
             model_basename = self.model_name.split("/")[-1]
+            # Patch5 修复：_project_dir 是 server/，模型实际在 PROJECT_ROOT（server 的父目录）
+            try:
+                from config import PROJECT_ROOT as _proj_root
+            except ImportError:
+                _proj_root = os.path.dirname(_project_dir)
             candidates = [
-                os.path.join(_project_dir, "models", "reranker", model_basename),  # models/reranker/bge-reranker-base
-                os.path.join(_project_dir, "models", "reranker"),                    # models/reranker/（文件直接放此）
-                os.path.join(_project_dir, "models", model_basename),                 # models/bge-reranker-base
+                os.path.join(_proj_root, "models", "reranker", model_basename),  # models/reranker/bge-reranker-base
+                os.path.join(_proj_root, "models", "reranker"),                    # models/reranker/（文件直接放此）
+                os.path.join(_proj_root, "models", model_basename),                 # models/bge-reranker-base
             ]
             for c in candidates:
                 if os.path.isdir(c) and os.path.exists(os.path.join(c, "config.json")):

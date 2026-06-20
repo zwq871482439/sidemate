@@ -561,7 +561,7 @@ class _KBSearchMixin:
             )
 
             if use_sparse:
-                # ===== Patch5 T03: dense + sparse 融合路径 =====
+                # ===== Patch5 T03: dense + sparse 融合路径（唯一主路径）=====
                 vec_results = []
                 sparse_results = []
 
@@ -641,91 +641,16 @@ class _KBSearchMixin:
                 return merged
 
             else:
-                # ===== 降级路径：BM25 + RRF（保留旧逻辑做 fallback）=====
-                vec_results = []
-                bm25_results = []
-
-                # 向量检索
-                if self.vectors is not None and len(self.chunk_order) > 0:
-                    if not self._embedder_loaded:
-                        self.init_embedder()
-                    vec_results = self._search_vector(query, top_k=int(math.ceil(top_k * 1.5)))
-
-                # BM25 检索（deprecated，P6 将移除）
-                if self._bm25 and self._bm25_chunk_ids:
-                    bm25_results = self._search_bm25(query, top_k=int(math.ceil(top_k * 1.5)))
-
-        # 融合 + Reranker精排 + 自适应融合 + MMR多样性重排序（BM25 fallback 路径）
-        if not use_sparse:
-            if vec_results and bm25_results:
-                merged = self._rrf_merge(vec_results, bm25_results, top_k=int(math.ceil(top_k * 1.5)))
-                # Reranker 打分（不改变排序）— 通过 _ensure_reranker 懒加载
-                reranker_ok = self._ensure_reranker()
-                if reranker_ok and self.reranker.available:
-                    merged = self.reranker.rerank(query, merged, top_k=int(math.ceil(top_k * 1.5)))
-                    # 自适应融合：高一致信Reranker，低一致回退RRF
-                    merged = self._blend_with_reranker(merged, top_k=int(math.ceil(top_k * 1.5)))
-                # MMR 重排序（用融合分数做relevance，只算diversity）
-                merged = self._mmr_rerank(query, merged, top_k=top_k)
-                # 检索后调度空闲卸载
-                self._schedule_reranker_unload()
-                log.info("[KB] Hybrid+Reranker+Blend+MMR: 向量%d条 + BM25%d条 → %d条, 来源=%s",
-                         len(vec_results), len(bm25_results), len(merged),
-                         [r["source_label"] for r in merged[:3]])
-            elif vec_results:
-                # 纯向量路径也走 Reranker 打分 + 自适应融合
-                reranker_ok = self._ensure_reranker()
-                if reranker_ok and self.reranker.available:
-                    vec_results = self.reranker.rerank(query, vec_results[:int(math.ceil(top_k * 1.5))], top_k=int(math.ceil(top_k * 1.5)))
-                    vec_results = self._blend_with_reranker(vec_results, top_k=int(math.ceil(top_k * 1.5)))
-                vec_results = self._mmr_rerank(query, vec_results, top_k=top_k)
-                # 检索后调度空闲卸载
-                self._schedule_reranker_unload()
-                for r in vec_results:
-                    r["search_method"] = "vector"
-                merged = vec_results
-                log.info("[KB] 向量+Reranker+MMR: %d条, 来源=%s",
-                         len(merged),
-                         [r["source_label"] for r in merged[:3]])
-            elif bm25_results:
-                bm25_results = self._diversify_results(bm25_results[:top_k], max_per_doc=3)
-                for r in bm25_results:
-                    r["search_method"] = "bm25"
-                merged = bm25_results
-                log.info("[KB] 纯BM25检索: %d条, 来源=%s",
-                         len(merged),
-                         [r["source_label"] for r in merged[:3]])
-            else:
-                merged = []
-
-            # Patch5 T03: 私密文档过滤
-            if accessible_doc_ids is not None:
-                merged = [r for r in merged if r.get("doc_id", "") in accessible_doc_ids]
-
-            # Patch5 B1: 检索热力图 — 命中的文档 hit_count += 1（按文档去重）
-            hit_doc_ids = set(r.get("doc_id", "") for r in merged if r.get("doc_id", ""))
-            for hit_doc_id in hit_doc_ids:
-                doc = self.documents.get(hit_doc_id)
-                if doc is not None:
-                    doc.hit_count = getattr(doc, "hit_count", 0) + 1
-
-            # Patch5 审计修复 P0-3: hit_count 批量延迟持久化
-            _dirty = getattr(self, '_hit_count_dirty', 0) + len(hit_doc_ids)
-            _last_flush = getattr(self, '_last_hit_flush', 0.0)
-            _now = time.time()
-            if _dirty >= 10 or (_now - _last_flush) > 60:
-                try:
-                    self._save_meta()
-                    self._hit_count_dirty = 0
-                    self._last_hit_flush = _now
-                except Exception as e:
-                    log.warning("[KB] hit_count 持久化失败: %s", e)
-            else:
-                self._hit_count_dirty = _dirty
-
-            if not merged:
-                log.warning("[KB] search() 无结果: query=%s", query[:50])
-            return merged
+                # ===== Patch5 决策：bge-m3 sparse 不可用时不再降级 BM25 =====
+                # 用户决策（2026-06-20）：如果 m3 挂了，直接提示用户重新导入 .sidemate 扩展包
+                # 不再走 BM25 降级路径，避免"看起来能用但检索质量差"的灰色状态
+                log.error("[KB] bge-m3 sparse 不可用，请重新导入知识库扩展包")
+                log.error("[KB] _embedder_loaded=%s, sparse_available=%s, _sparse_index=%s",
+                          self._embedder_loaded,
+                          getattr(self.embedder, 'sparse_available', False),
+                          getattr(self, '_sparse_index', None) is not None)
+                # 返回空结果，前端会显示"检索失败，请重新导入扩展包"
+                return []
 
     def get_context(self, query: str, top_k: int = None, max_chars: int = None,
                     ai_mode: str = None, accessible_doc_ids: set = None) -> Tuple[str, List[Dict]]:
