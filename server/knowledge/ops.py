@@ -75,10 +75,11 @@ class _KBOpsMixin:
         self._paused_event.set()                       # 初始不暂停
         self._global_paused = False                    # D31: 录音时全局暂停
 
-        # BM25 索引（Hybrid Search 用）
-        self._bm25 = None          # BM25Okapi 实例
-        self._bm25_tokens = []     # 分词后的 chunk 列表，与 chunk_order 对齐
-        self._bm25_chunk_ids = []  # BM25 索引对应的 chunk_id 列表
+        # Patch5: BM25 索引已彻底移除（bge-m3 sparse 替代）
+        # 保留三个空字段只是为了兼容 __getattr__ 防止老代码 AttributeError
+        self._bm25 = None
+        self._bm25_tokens = []
+        self._bm25_chunk_ids = []
 
         # Patch5 T03: bge-m3 sparse 索引（dense+sparse 检索用）
         # 格式：{chunk_id: {token_id: weight}}
@@ -90,8 +91,7 @@ class _KBOpsMixin:
 
         # 加载已有数据
         self._load_meta()
-        # 初始化 BM25 索引（从已有 chunks 构建）
-        self._build_bm25_index()
+        # Patch5: BM25 索引构建已移除（bge-m3 sparse 替代）
 
     # ===== 文档状态机 =====
     # 合法状态转换：current → {allowed_next}
@@ -824,8 +824,7 @@ class _KBOpsMixin:
                     except Exception as e:
                         log.warning("[KB] sparse 索引构建失败（不影响 dense 检索）: %s", str(e)[:100])
 
-                # BM25 索引重建（新增 chunk 后）
-                self._build_bm25_index()
+                # Patch5: BM25 索引重建已移除（bge-m3 sparse 替代）
 
             # === 4. 摘要：用文档前200字直接填充（不再调 LLM） ===
             # LLM 摘要功能已移除：Qwen3 think 模式导致空输出 + GPU 占用 + 几乎零检索提升
@@ -875,53 +874,8 @@ class _KBOpsMixin:
         "嗯", "嘛", "哈", "哪", "谁", "多", "些", "每", "之", "等", "及", "于", "中",
     })
 
-    def _tokenize_zh(self, text: str) -> List[str]:
-        """中文分词：jieba 切词 + 过滤停用词/单字符"""
-        import jieba
-        words = jieba.lcut(text)
-        return [w.strip() for w in words if len(w.strip()) > 1 and w.strip() not in self._STOP_WORDS]
-
-    def _build_bm25_index(self):
-        """从所有 chunks 构建 BM25 索引"""
-        if not self.chunk_order:
-            self._bm25 = None
-            self._bm25_tokens = []
-            self._bm25_chunk_ids = []
-            return
-
-        try:
-            from rank_bm25 import BM25Okapi
-        except ImportError:
-            log.warning("[KB] rank_bm25 未安装，Hybrid Search 不可用")
-            self._bm25 = None
-            return
-
-        self._bm25_chunk_ids = list(self.chunk_order)
-        self._bm25_tokens = []
-        for cid in self._bm25_chunk_ids:
-            chunk = self.chunks.get(cid)
-            if chunk and chunk.text:
-                self._bm25_tokens.append(self._tokenize_zh(chunk.text))
-            else:
-                self._bm25_tokens.append([])
-
-        if any(t for t in self._bm25_tokens):
-            self._bm25 = BM25Okapi(self._bm25_tokens)
-            log.info("[KB] BM25 索引构建完成: %d chunks", len(self._bm25_chunk_ids))
-        else:
-            self._bm25 = None
-
-    # 查询精炼：去除口语化前缀（BM25 增强用）
-    _QUERY_NOISE = re.compile(
-        r'(请|麻烦|帮我|帮忙|帮我查|查一下|看一下|告诉我|说明一下|解释一下|什么是|什么叫|'
-        r'了解|想知道|问一下|请问|能不能|可以|为什么|怎么|如何|怎样|呢|吗|吧|啊|呀|哦|嗯|嘛|的|了|是|在|有|还|和|与|或)'
-    )
-
-    def _refine_for_bm25(self, query: str) -> str:
-        """精炼查询文本用于 BM25 检索：去除口语化噪声"""
-        cleaned = self._QUERY_NOISE.sub('', query).strip()
-        # 如果清理后太短（<2字），保留原始 query
-        return cleaned if len(cleaned) >= 2 else query
+    # Patch5: _tokenize_zh / _build_bm25_index / _refine_for_bm25 / _QUERY_NOISE 已全部删除
+    # bge-m3 sparse 替代了 BM25，不再需要 jieba 分词和查询精炼
 
     def _build_source_label(self, filename: str, heading: str) -> str:
         """构建来源标注"""

@@ -40,8 +40,7 @@ REQUIRED_DEPS: List[Tuple[str, str, str]] = [
     ("scipy", "scipy", "kb"),
     ("sklearn", "scikit_learn", "kb"),
     ("faiss", "faiss_cpu", "kb"),
-    ("rank_bm25", "rank_bm25", "kb"),  # Hybrid Search BM25 检索
-    ("jieba", "jieba", "kb"),  # BM25 中文分词
+    # Patch5: rank_bm25 + jieba 已移除（bge-m3 sparse 替代）
     # ── 纪要依赖 ──
     ("faster_whisper", "faster_whisper", "recorder"),
 ]

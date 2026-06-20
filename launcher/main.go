@@ -518,6 +518,43 @@ func stageMinDelay(start time.Time, min time.Duration) {
 	}
 }
 
+// messageBox 弹出 Windows 消息框
+// uType: 0x40 = MB_ICONINFORMATION, 0x30 = MB_ICONWARNING, 0x10 = MB_ICONERROR
+func messageBox(title, text string, uType uintptr) int {
+	titlePtr, _ := syscall.UTF16PtrFromString(title)
+	textPtr, _ := syscall.UTF16PtrFromString(text)
+	ret, _, _ := user32.NewProc("MessageBoxW").Call(
+		0,
+		uintptr(unsafe.Pointer(textPtr)),
+		uintptr(unsafe.Pointer(titlePtr)),
+		uType,
+	)
+	return int(ret)
+}
+
+// saveGpuInfoToLauncherJson 把 GPU 信息写入 data/launcher.json 供诊断面板读取
+func saveGpuInfoToLauncherJson(appDir string, gpuInfo GPUInfo, backend string) {
+	jsonPath := filepath.Join(appDir, "data", "launcher.json")
+
+	// 先读现有内容（保留其他字段）
+	existing := map[string]interface{}{}
+	if data, err := os.ReadFile(jsonPath); err == nil {
+		_ = json.Unmarshal(data, &existing)
+	}
+
+	existing["last_gpu_info"] = map[string]interface{}{
+		"device":  gpuInfo.Name,
+		"vendor":  gpuInfo.Vendor,
+		"backend": backend,
+		"cuda":    gpuInfo.HasCUDA,
+		"vulkan":  gpuInfo.HasVulkan,
+	}
+
+	if data, err := json.MarshalIndent(existing, "", "  "); err == nil {
+		_ = os.WriteFile(jsonPath, data, 0644)
+	}
+}
+
 // indexOfStr 字符串包含查找
 func indexOfStr(s, sub string) int {
 	return strings.Index(s, sub)
@@ -634,8 +671,10 @@ func main() {
 	// 单实例检测（Windows 命名互斥体）
 	if runtime.GOOS == "windows" {
 		if !ensureSingleInstance() {
-			// 已有实例在运行，打开浏览器后退出
-			log.Println("[Launcher] ⚠ 已有 Sidemate 实例在运行，打开浏览器后退出")
+			// Patch5 修复：已有实例在运行时，弹窗提示用户，不再静默打开浏览器
+			// （静默行为会让用户误以为"重启了"，实际老进程一个没动）
+			log.Println("[Launcher] ⚠ 已有 Sidemate 实例在运行")
+			messageBox("桌伴 Sidemate", "桌伴 Sidemate 已经在运行中。\n\n如需重启：\n1. 右键托盘图标 → 退出\n2. 再重新双击 Sidemate.exe", 0x40)
 			openBrowser(cfg.BrowserURL)
 			return
 		}
@@ -673,6 +712,8 @@ func main() {
 	log.Printf("[Launcher] OLLAMA_LLM_LIBRARY = %s", ollamaBackend)
 	// 设置到当前进程环境，供 ollama serve 子进程继承
 	os.Setenv("OLLAMA_LLM_LIBRARY", ollamaBackend)
+	// Patch5 C5：把 GPU 信息写入 launcher.json，供诊断面板读取
+	saveGpuInfoToLauncherJson(appDir, gpuInfo, ollamaBackend)
 
 	// ---- 1. 启动 Ollama ----
 	// Patch5 启动重构：基础服务阶段（10→30%）

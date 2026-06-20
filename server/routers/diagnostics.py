@@ -64,10 +64,10 @@ def _collect_model_status() -> dict:
 
 
 def _collect_system_info() -> dict:
-    """收集操作系统与硬件信息
+    """收集操作系统与硬件信息（含 GPU）
 
     Returns:
-        dict: {os, python_version, ram_total_gb, ram_available_gb, disk_free_gb}
+        dict: {os, python_version, ram_total_gb, ram_available_gb, disk_free_gb, gpu}
     """
     info = {
         "os": platform.platform(),
@@ -75,6 +75,7 @@ def _collect_system_info() -> dict:
         "ram_total_gb": 0,
         "ram_available_gb": 0,
         "disk_free_gb": 0,
+        "gpu": _collect_gpu_info(),  # Patch5 C5: 新增 GPU 信息
     }
     try:
         import psutil
@@ -86,6 +87,55 @@ def _collect_system_info() -> dict:
     except Exception as e:
         log.warning("[DIAG] psutil 信息获取失败: %s" % str(e)[:80])
     return info
+
+
+def _collect_gpu_info() -> dict:
+    """收集 GPU 信息（Patch5 C5：诊断报告新增）
+
+    数据来源（按优先级）：
+      1. launcher.json 的 last_gpu_info（Go Launcher 启动时写入）
+      2. 环境变量 OLLAMA_LLM_LIBRARY（启动时设置）
+      3. 兜底：返回 unknown
+
+    Returns:
+        dict: {device, vendor, backend, cuda_available, vulkan_available}
+    """
+    gpu_info = {
+        "device": "unknown",
+        "vendor": "unknown",
+        "backend": "unknown",  # cuda / vulkan / cpu
+        "cuda_available": False,
+        "vulkan_available": False,
+    }
+
+    # 1. 优先读 launcher.json
+    try:
+        launcher_json = os.path.join(PROJECT_ROOT, "data", "launcher.json")
+        if os.path.exists(launcher_json):
+            import json
+            with open(launcher_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            last_gpu = data.get("last_gpu_info", {})
+            if last_gpu:
+                gpu_info["device"] = last_gpu.get("device", gpu_info["device"])
+                gpu_info["vendor"] = last_gpu.get("vendor", gpu_info["vendor"])
+                gpu_info["backend"] = last_gpu.get("backend", gpu_info["backend"])
+                gpu_info["cuda_available"] = last_gpu.get("cuda", False)
+                gpu_info["vulkan_available"] = last_gpu.get("vulkan", False)
+                return gpu_info
+    except Exception as e:
+        log.debug("[DIAG] launcher.json 读取失败: %s" % str(e)[:80])
+
+    # 2. 兜底：环境变量
+    backend = os.environ.get("OLLAMA_LLM_LIBRARY", "").lower()
+    if backend:
+        gpu_info["backend"] = backend
+        if backend == "cuda":
+            gpu_info["cuda_available"] = True
+        elif backend == "vulkan":
+            gpu_info["vulkan_available"] = True
+
+    return gpu_info
 
 
 def _collect_extensions() -> list:
@@ -159,6 +209,19 @@ def _format_report(info: dict) -> str:
     lines.append("可用内存:   %s GB" % sys_info.get("ram_available_gb", 0))
     lines.append("磁盘可用:   %s GB" % sys_info.get("disk_free_gb", 0))
     lines.append("")
+
+    # GPU 信息（Patch5 C5 新增）
+    gpu = sys_info.get("gpu", {})
+    if gpu and gpu.get("device") != "unknown":
+        lines.append("-" * 40)
+        lines.append("GPU 信息")
+        lines.append("-" * 40)
+        lines.append("设备:       %s" % gpu.get("device", "unknown"))
+        lines.append("厂商:       %s" % gpu.get("vendor", "unknown"))
+        lines.append("推理后端:   %s" % gpu.get("backend", "unknown"))
+        lines.append("CUDA:       %s" % ("可用" if gpu.get("cuda_available") else "不可用"))
+        lines.append("Vulkan:     %s" % ("可用" if gpu.get("vulkan_available") else "不可用"))
+        lines.append("")
 
     # 模型状态
     lines.append("-" * 40)

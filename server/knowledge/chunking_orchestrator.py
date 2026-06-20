@@ -100,7 +100,7 @@ class ChunkingOrchestrator:
 
     def __init__(self, model_manager, model_name: str,
                  mode: str = "extract",
-                 max_chunk_context_chars: int = 2500,
+                 max_chunk_context_chars: int = 500,  # Patch5 A4: 2500→500 小 chunk
                  memory_max_chars: int = 800,
                  device: str = None):
         """

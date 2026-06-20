@@ -16,49 +16,7 @@ log = logging.getLogger(__name__)
 
 
 class _KBSearchMixin:
-    """文库检索：BM25 + 向量 + RRF + Reranker + MMR"""
-
-    def _search_bm25(self, query: str, top_k: int = None) -> List[Dict]:
-        """BM25 关键词检索"""
-        if not self._bm25 or not self._bm25_chunk_ids:
-            log.debug("[KB] BM25 跳过: 索引不可用")
-            return []
-
-        top_k = top_k or self.search_top_k
-        # 查询精炼：去除口语化噪声后再分词
-        refined_query = self._refine_for_bm25(query)
-        query_tokens = self._tokenize_zh(refined_query)
-        if not query_tokens:
-            log.debug("[KB] BM25 跳过: 分词结果为空 (query=%s)", query[:50])
-            return []
-
-        scores = self._bm25.get_scores(query_tokens)
-        top_indices = np.argsort(scores)[::-1][:top_k]
-
-        results = []
-        for idx in top_indices:
-            if idx >= len(self._bm25_chunk_ids):
-                continue
-            chunk_id = self._bm25_chunk_ids[idx]
-            chunk = self.chunks.get(chunk_id)
-            if not chunk:
-                continue
-            score = float(scores[idx])
-            if score <= 0:
-                continue  # BM25 无关结果跳过
-            results.append({
-                "chunk_id": chunk_id,
-                "text": chunk.text,  # 不截断，由 get_context() 的 max_chars 控制总长度
-                "score": score,
-                "source_label": chunk.source_label,
-                "doc_id": chunk.doc_id,
-                "heading": chunk.heading,
-                "index": chunk.index,
-            })
-        log.info("[KB] BM25 检索: query=%s, tokens=%s, 命中%d条, top3分数=%s",
-                 query[:50], query_tokens[:5], len(results),
-                 [round(r["score"], 4) for r in results[:3]])
-        return results
+    """文库检索：bge-m3 dense+sparse + Reranker + MMR（Patch5：BM25 已彻底移除）"""
 
     def _search_vector(self, query: str, top_k: int = None) -> List[Dict]:
         """纯向量检索（原 search 逻辑，抽取为独立方法）"""
@@ -264,44 +222,7 @@ class _KBSearchMixin:
 
         return results
 
-    @staticmethod
-    def _rrf_merge(vector_results: List[Dict], bm25_results: List[Dict],
-                   k: int = 60, vector_weight: float = 0.7, bm25_weight: float = 0.3,
-                   top_k: int = None) -> List[Dict]:
-        """Reciprocal Rank Fusion 融合排序
-
-        score = vector_weight * Σ(1/(k+rank_vec)) + bm25_weight * Σ(1/(k+rank_bm25))
-        保留原始向量分数 vector_score 供前端置信度等级判断。
-        """
-        scores_map: Dict[str, float] = {}
-
-        for rank, item in enumerate(vector_results):
-            cid = item["chunk_id"]
-            scores_map.setdefault(cid, {"score": 0.0, "data": item, "vector_score": item.get("score", 0)})
-            scores_map[cid]["score"] += vector_weight / (k + rank + 1)
-            # 保留最高向量分数
-            if item.get("score", 0) > scores_map[cid].get("vector_score", 0):
-                scores_map[cid]["vector_score"] = item["score"]
-
-        for rank, item in enumerate(bm25_results):
-            cid = item["chunk_id"]
-            scores_map.setdefault(cid, {"score": 0.0, "data": item, "vector_score": 0})
-            scores_map[cid]["score"] += bm25_weight / (k + rank + 1)
-
-        # 按融合分数降序排列
-        sorted_items = sorted(scores_map.values(), key=lambda x: x["score"], reverse=True)
-        if top_k:
-            sorted_items = sorted_items[:top_k]
-
-        results = []
-        for item in sorted_items:
-            r = dict(item["data"])
-            r["rrf_score"] = round(item["score"], 6)  # RRF 融合分数
-            r["vector_score"] = round(item.get("vector_score", 0), 4)  # 原始向量分数
-            r["score"] = round(item["score"], 6)       # 保持兼容
-            r["search_method"] = "hybrid"
-            results.append(r)
-        return results
+    # Patch5：_rrf_merge 已删除（bge-m3 dense+sparse 是唯一路径，不再需要 RRF 融合 BM25）
 
     @staticmethod
     def _diversify_results(results: List[Dict], max_per_doc: int = 3) -> List[Dict]:

@@ -255,16 +255,21 @@ def _split_fixed(text: str, max_chars: int, overlap_chars: int) -> List[tuple]:
     return chunks
 
 
-def chunk_text(text: str, max_chars: int = 2500, overlap_chars: int = 200,
+def chunk_text(text: str, max_chars: int = 500, overlap_chars: int = 50,
                max_chunks: int = 30, strategy: str = "auto") -> ChunkPlan:
     """将长文本分段
+
+    Patch5 A4 决策：chunk 大小从 2500 改为 500（隐私边界 + 检索精度）
+    - 500 字小 chunk 让 bge-m3 dense+sparse 检索更精准
+    - 5 次搜索覆盖率仅 22.9%（小 chunk 更利于稀疏匹配）
+    - overlap 从 200 改为 50（适配 500 字 chunk）
 
     Args:
         text: 原始文本
         max_chars: 每段目标字数
         overlap_chars: 段间重叠字数
-        max_chunks: 最大分段数（安全上限）
-        strategy: "auto"（自动选择）| "section" | "paragraph" | "fixed"
+        max_chunks: 最大分段数 (安全上限)
+        strategy: auto/section/paragraph/fixed
 
     Returns:
         ChunkPlan 分段计划
