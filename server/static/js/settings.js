@@ -877,9 +877,24 @@ async function loadCloudConfig() {
     var urlEl = document.getElementById('cloudBaseUrl');
     var modelEl = document.getElementById('cloudModel');
     var keyEl = document.getElementById('cloudApiKey');
-    // 只有 API 返回了有效值才填充，否则保留 placeholder 提示
-    if (urlEl) urlEl.value = data.base_url || '';
-    if (modelEl) modelEl.value = data.model || '';
+    // Patch5 修复：不预填默认值，让 placeholder 提示用户输入
+    // 后端返回的 base_url 是 'https://api.openai.com/v1'（DEFAULTS 默认值），
+    // 如果用户没保存过，不预填，保留 placeholder
+    if (urlEl) {
+      // 只有后端明确有非默认值才填充（避免覆盖 placeholder）
+      if (data.base_url && data.base_url_set === true) {
+        urlEl.value = data.base_url;
+      } else {
+        urlEl.value = '';
+      }
+    }
+    if (modelEl) {
+      if (data.model && data.model_set === true) {
+        modelEl.value = data.model;
+      } else {
+        modelEl.value = '';
+      }
+    }
     // 模型能力：从后端字典自动获取，不再手动配置
     var capsEl = document.getElementById('cloudCapsDisplay');
     if (capsEl && data.model) {
@@ -1004,17 +1019,18 @@ async function saveCloudConfig() {
   var policy = document.querySelector('input[name="contextPolicy"]:checked');
   var rounds = document.getElementById('slimHistoryRounds');
   var kbPermEl = document.getElementById('kbPermissionSelect');
-  var body = {
-    base_url: document.getElementById('cloudBaseUrl').value,
-    model: document.getElementById('cloudModel').value,
-    context_policy: policy ? policy.value : 'full',
-    slim_history_rounds: parseInt(rounds ? rounds.value : 6) || 6,
-    kb_permission: kbPermEl ? kbPermEl.value : 'full',
-  };
+  var body = {};
+  // Patch5 修复：只有用户实际填写了才发送，避免空值覆盖
+  var baseUrl = document.getElementById('cloudBaseUrl').value.trim();
+  var modelName = document.getElementById('cloudModel').value.trim();
+  if (baseUrl) body.base_url = baseUrl;
+  if (modelName) body.model = modelName;
+  body.context_policy = policy ? policy.value : 'full';
+  body.slim_history_rounds = parseInt(rounds ? rounds.value : 6) || 6;
+  body.kb_permission = kbPermEl ? kbPermEl.value : 'full';
   // 上下文窗口已移除（自动从字典获取）
   var keyEl = document.getElementById('cloudApiKey');
   // Patch4 v3.1 BUG#20：只有用户实际输入了新 key（不是空、不是脱敏占位）才发送
-  // 不发 api_key 字段时，后端应保留已有 key（saveSettings 必须支持部分更新）
   if (keyEl && keyEl.value) {
     var hasExisting = keyEl.getAttribute('data-has-key') === 'true';
     var val = keyEl.value;

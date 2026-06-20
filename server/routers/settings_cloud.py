@@ -115,6 +115,25 @@ async def api_mode_switch(request: Request):
     }
 
 
+def _is_explicit_key(key: str) -> bool:
+    """检查 key 是否在 settings.json 中显式存在（用户手动保存过）"""
+    try:
+        import json
+        import os
+        _config_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "..", "data", "settings.json"
+        )
+        _config_file = os.path.normpath(_config_file)
+        if not os.path.exists(_config_file):
+            return False
+        with open(_config_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return key in data
+    except Exception:
+        return False
+
+
 @router.get("/api/cloud/config")
 def api_cloud_config():
     """获取云端配置（API Key 脱敏显示）"""
@@ -134,9 +153,11 @@ def api_cloud_config():
 
     return {
         "base_url": cfg_get("cloud_base_url", "https://api.openai.com/v1"),
+        "base_url_set": _is_explicit_key("cloud_base_url"),
         "api_key_set": bool(raw_key),
         "api_key_preview": masked_key,
         "model": cloud_model,
+        "model_set": _is_explicit_key("cloud_model"),
         "context_window": context_window,
         "context_window_user": user_ctx,
         "max_output_tokens": caps["max_output"],
