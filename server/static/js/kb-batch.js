@@ -20,6 +20,12 @@ function _ensureSelectedDocs() {
   return _kbSelectedDocs;
 }
 
+// Patch5 修复：clear 后强制重建 Set，防止某些情况下 .clear() 不生效
+function _resetSelectedDocs() {
+  _kbSelectedDocs = new Set();
+  return _kbSelectedDocs;
+}
+
 // ============================================================
 //  B1: 文档选中操作（checkbox 全选/反选/单选）
 // ============================================================
@@ -84,7 +90,7 @@ function kbSelectInvert() {
  * 清空选中
  */
 function kbClearSelection() {
-  _ensureSelectedDocs().clear();
+  _resetSelectedDocs();
   var checkboxes = document.querySelectorAll('.kb-doc-checkbox');
   for (var j = 0; j < checkboxes.length; j++) {
     checkboxes[j].checked = false;
@@ -140,8 +146,9 @@ async function kbBatchDelete() {
         msg += '，' + data.failed.length + ' 个失败';
       }
       showToast(msg, data.failed && data.failed.length > 0 ? 'warning' : 'success');
-      _ensureSelectedDocs().clear();
-      kbRefreshDocs();
+      _resetSelectedDocs();
+      kbUpdateBatchToolbar();  // Patch5: 立即刷新工具栏
+      await kbRefreshDocs();    // Patch5: await 等 DOM 刷新完成
     } else {
       showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
     }
@@ -169,8 +176,9 @@ async function kbBatchRetag() {
     var data = await resp.json();
     if (data.success) {
       showToast('已对 ' + data.affected + ' 个文档重新打标', 'success');
-      _ensureSelectedDocs().clear();
-      kbRefreshDocs();
+      _resetSelectedDocs();
+      kbUpdateBatchToolbar();
+      await kbRefreshDocs();
     } else {
       showToast('批量重标失败: ' + (data.error || '未知错误'), 'error');
     }
@@ -200,8 +208,9 @@ async function kbBatchPrivacy(isPrivate) {
     var data = await resp.json();
     if (data.success) {
       showToast('已对 ' + data.affected + ' 个文档' + label, 'success');
-      _ensureSelectedDocs().clear();
-      kbRefreshDocs();
+      _resetSelectedDocs();
+      kbUpdateBatchToolbar();
+      await kbRefreshDocs();
     } else {
       showToast(label + '失败: ' + (data.error || '未知错误'), 'error');
     }
