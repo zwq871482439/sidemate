@@ -26,6 +26,9 @@ import (
 
 // ===== 配置 =====
 
+// 版本号（编译时通过 -ldflags 注入，默认值兜底）
+var AppVersion = "v0.9.5"
+
 type Config struct {
 	AppDir       string // 应用根目录
 	OllamaExe    string // ollama.exe 路径
@@ -53,7 +56,7 @@ func loadConfig() *Config {
 		PythonExe:    filepath.Join(appDir, "python", "python.exe"),
 		ServerScript: filepath.Join(appDir, "server", "server.py"),
 		ServerPort:   8976,
-		Version:      "v0.9-patch4",
+		Version:      AppVersion,
 	}
 
 	configFile := filepath.Join(appDir, "launcher.json")
@@ -533,7 +536,7 @@ func main() {
 		log.SetOutput(lf)
 	}
 
-	log.Println("[Launcher] 桌伴 Sidemate v0.9 Patch4 — Launcher")
+	log.Println("[Launcher] 桌伴 Sidemate " + AppVersion + " — Launcher")
 	log.Println("========================================")
 
 	cfg := loadConfig()

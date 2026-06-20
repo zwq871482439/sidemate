@@ -646,6 +646,10 @@ async function updateTabVisibility() {
     if (qaBtn) qaBtn.style.display = hasKB ? '' : 'none';
     if (minutesBtn) minutesBtn.style.display = hasRecorder ? '' : 'none';
 
+    // 对话附件菜单中"引用文库文档"按钮：KB 未安装时隐藏
+    var kbRefItem = document.getElementById('kbRefMenuItem');
+    if (kbRefItem) kbRefItem.style.display = hasKB ? '' : 'none';
+
     // 同步更新系统状态卡片中的文库/语音引擎状态
     var kbStatusEl = document.getElementById('settingsKBStatus');
     var whisperStatusEl = document.getElementById('settingsWhisperStatus');

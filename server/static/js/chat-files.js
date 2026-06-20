@@ -287,12 +287,12 @@ function onUnifiedPicked(e) {
     var formData = new FormData();
     formData.append('file', file);
     formData.append('mode', 'chat_attach');
-    fetch((typeof API !== 'undefined' ? API : '') + '/api/upload', {
+    fetch((typeof API !== 'undefined' ? API : '') + '/api/file_upload', {
       method: 'POST',
       body: formData
     }).then(function(r) { return r.json(); })
       .then(function(d) {
-        if (d.ok) {
+        if (d.path) {
           if (typeof pendingFile !== 'undefined') pendingFile = {name: file.name, path: d.path, source: 'upload'};
           if (typeof showToast === 'function') showToast('文件已上传', 'success');
         } else {
