@@ -1075,8 +1075,18 @@ func main() {
 	// 95→100% 留给看门狗 + 浏览器打开
 	UpdateSplashStageProgress(splash, 30)
 
-	// 探明有哪些扩展需要加载（通过 HTTP 查询 FastAPI）
-	hasKB := isServiceAlive(fmt.Sprintf("http://127.0.0.1:%d/api/kb/status", cfg.ServerPort), "kb_check")
+	// 探明有哪些扩展需要加载
+	// Patch5 修复：用 /api/kb/module-status（正确端点）而非 /api/kb/status（不存在）
+	hasKB := false
+	if resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/kb/module-status", cfg.ServerPort)); err == nil {
+		if resp.StatusCode == 200 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			bodyStr := string(body)
+			// installed=true 才算装了
+			hasKB = strings.Contains(bodyStr, "\"installed\":true") || strings.Contains(bodyStr, "\"installed\": true")
+		}
+		resp.Body.Close()
+	}
 	hasLLM := checkLLMAvailable(cfg.OllamaHost, cfg.OllamaPort)
 	// 纪要扩展较难探明，简化处理：尝试 HTTP，失败就当没装
 	hasRecorder := false
@@ -1089,50 +1099,43 @@ func main() {
 		resp.Body.Close()
 	}
 
-	// 动态计算各阶段进度区间（30 → 95，平均分配给真实存在的阶段）
+	// Patch5：进度区间固定分配（用户决策 2026-06-20 23:28）
+	// 不动态计算，每个阶段有固定的进度区间
+	// 未装的阶段直接跳过（不显示），但 LLM 永远从 70% 开始
 	type stageDef struct {
 		name       string
 		enabled    bool
 		startProg  int
 		endProg    int
-		minDelay   time.Duration // 强制最少停留时间
 	}
-	enabledCount := 0
-	if hasKB { enabledCount++ }
-	if hasRecorder { enabledCount++ }
-	if hasLLM { enabledCount++ }
-	if enabledCount == 0 { enabledCount = 1 } // 避免除零
-	perStage := (95 - 30) / enabledCount
-	stageCursor := 30
 
 	var stages []stageDef
-	if hasKB {
-		stages = append(stages, stageDef{"加载知识库模型", true, stageCursor, stageCursor+perStage, 0})
-		stageCursor += perStage
-	}
-	if hasRecorder {
-		stages = append(stages, stageDef{"加载录音纪要", true, stageCursor, stageCursor+perStage, 0})
-		stageCursor += perStage
-	}
-	if hasLLM {
-		stages = append(stages, stageDef{"预热 AI 模型", true, stageCursor, 95, 0})
-		// LLM 预热占到最后（95%）
+	// KB: 30→50%（固定）
+	stages = append(stages, stageDef{"加载知识库模型", hasKB, 30, 50})
+	// 纪要: 50→70%（固定）
+	stages = append(stages, stageDef{"加载录音纪要", hasRecorder, 50, 70})
+	// LLM: 70→95%（固定，永远是这个区间）
+	stages = append(stages, stageDef{"预热 AI 模型", hasLLM, 70, 95})
+
+	// 过滤掉未启用的阶段（不显示）
+	var activeStages []stageDef
+	for _, s := range stages {
+		if s.enabled {
+			activeStages = append(activeStages, s)
+		}
 	}
 
 	log.Printf("[Launcher] 启动阶段规划: KB=%v 纪要=%v LLM=%v, 共 %d 个加载阶段",
-		hasKB, hasRecorder, hasLLM, len(stages))
+		hasKB, hasRecorder, hasLLM, len(activeStages))
 
 	// Patch5 Splash 方案 B：计算总阶段数（基础服务+加载阶段+看门狗）
 	// 用于流水指示器
-	totalStagesForIndicator := 1 + len(stages) + 1 // 基础服务 + 加载阶段 + 看门狗
-	UpdateSplashStageInfo(splash, totalStagesForIndicator, 1) // 当前在"基础服务"阶段（已完成 → index=1 进入加载阶段）
+	totalStagesForIndicator := 1 + len(activeStages) + 1 // 基础服务 + 加载阶段 + 看门狗
+	UpdateSplashStageInfo(splash, totalStagesForIndicator, 1) // 当前在"基础服务"阶段
 
 	// 执行各加载阶段
-	// 这些加载实际上由 Python 端在 lifespan 内同步完成的（我们之前已经改过）
-	// 这里只需要显示进度并等待 Python 端报告完成
-	// 通过轮询 startup_progress.json 获取真实进度
 	progressFile := filepath.Join(appDir, "data", "startup_progress.json")
-	for i, stage := range stages {
+	for i, stage := range activeStages {
 		// 显示该阶段开始
 		// Patch5 方案 B：更新流水指示器（index = 基础服务1 + 当前阶段 i）
 		UpdateSplashStageInfo(splash, totalStagesForIndicator, 1+i)
