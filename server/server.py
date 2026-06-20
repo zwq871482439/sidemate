@@ -210,7 +210,7 @@ async def _lifespan(app):
         # Patch5 启动重构：仅当有可用 LLM 模型时才预热
         _warmup_model = mgr._get_default_llm()
         if _warmup_model:
-            _report_startup("model_warmup", 72, "预热 AI 模型（耗时较长）...")
+            _report_startup("model_warmup", 72, "预热 AI 模型...")
             try:
                 import httpx as _hx
                 _base_url = mgr._ollama_base_url

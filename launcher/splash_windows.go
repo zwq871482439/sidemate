@@ -621,7 +621,7 @@ func splashDrawRingProgress(hdc syscall.Handle, ss *SplashState) {
 	centerX := sW / 2
 	ringR := sc(40) // 环形半径（略缩小避免溢出）
 	ringThickness := sc(7)
-	ringCY := sStepStartY + sc(10) // 圆环垂直中心：靠近 Logo 下方
+	ringCY := sStepStartY + sc(50) // Patch5：圆环垂直中心下移（避开 Logo 区域）
 
 	// === 1. 画环形进度（背景环 + 前景环） ===
 	// 用裁剪矩形的方式画弧（GDI 不直接支持 stroke arc，用两个椭圆做"环"）

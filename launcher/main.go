@@ -518,6 +518,16 @@ func stageMinDelay(start time.Time, min time.Duration) {
 	}
 }
 
+// indexOfStr 字符串包含查找
+func indexOfStr(s, sub string) int {
+	return strings.Index(s, sub)
+}
+
+// trimRightSpace 去掉右侧空格和点
+func trimRightSpace(s string) string {
+	return strings.TrimRight(s, " .")
+}
+
 func waitForOllama(host string, port int, timeout time.Duration) bool {
 	url := fmt.Sprintf("http://%s:%d/api/tags", host, port)
 	deadline := time.Now().Add(timeout)
@@ -1065,7 +1075,7 @@ func main() {
 		stageCursor += perStage
 	}
 	if hasLLM {
-		stages = append(stages, stageDef{"预热 AI 模型（耗时较长）...", true, stageCursor, 95, 0})
+		stages = append(stages, stageDef{"预热 AI 模型...", true, stageCursor, 95, 0})
 		// LLM 预热占到最后（95%）
 	}
 
@@ -1118,9 +1128,25 @@ func main() {
 				// Python 进度 0-100 映射到当前阶段的 startProg→endProg
 				localProg := stage.startProg + (stage.endProg-stage.startProg)*fileProgress/100
 				UpdateSplashStageProgress(splash, localProg)
-				// Patch5 修复：用 fileText 作为子状态（人类可读），不再拼接 phase 名
+				// Patch5：子状态去括号
+				// Python 端的 _report_startup.text 偶尔有（耗时较长）等括号注释，去掉
 				if fileText != "" {
-					UpdateSplashStageSubText(splash, fileText)
+					cleanText := fileText
+					// 去掉中文和英文括号
+					for _, pair := range [][2]string{{"（", "）"}, {"(", ")"}} {
+						for {
+							start := indexOfStr(cleanText, pair[0])
+							end := indexOfStr(cleanText, pair[1])
+							if start >= 0 && end > start {
+								cleanText = cleanText[:start] + cleanText[end+1:]
+							} else {
+								break
+							}
+						}
+					}
+					// 去掉尾部多余的空格和省略号
+					cleanText = trimRightSpace(cleanText)
+					UpdateSplashStageSubText(splash, cleanText)
 				}
 			}
 
@@ -1136,7 +1162,7 @@ func main() {
 				stageDone = strings.Contains(filePhase, "recorder_loaded") ||
 					strings.Contains(filePhase, "model_warmup") ||
 					strings.Contains(filePhase, "done")
-			case "预热 AI 模型（耗时较长）...":
+			case "预热 AI 模型...":
 				stageDone = strings.Contains(filePhase, "warmup_done") ||
 					strings.Contains(filePhase, "warmup_skipped") ||
 					strings.Contains(filePhase, "ready") ||
