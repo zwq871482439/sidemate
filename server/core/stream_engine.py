@@ -31,7 +31,7 @@ class StreamEngine:
 
     def run(self, message: str, model: str = None,
             max_tokens: int = None, history: Optional[List] = None,
-            context_cache: str = None, drift_hint: str = None,
+            context_cache: str = None,
             _agent_mode: bool = False, override_task_type: str = None,
             strategy_enhancement: str = "",
             kb_mode: bool = False,
@@ -157,7 +157,7 @@ class StreamEngine:
         # 构建 messages
         messages = mm._build_prompt(None, message, history, model_name=matched_name,
                                      context_cache=context_cache, task_type=task_type,
-                                     drift_hint=drift_hint, signals=classify_signals,
+                                     signals=classify_signals,
                                      kb_mode=kb_mode,
                                      strategy_enhancement=strategy_enhancement,
                                      kb_history_turns=kb_history_turns,

@@ -349,7 +349,7 @@ class CloudEngine:
         return self._lookup_capabilities(model)["context_window"]
 
     def _build_messages(self, message: str, history: Optional[List] = None,
-                        context_cache: str = None, drift_hint: str = None,
+                        context_cache: str = None,
                         kb_mode: bool = False, strategy_enhancement: str = "",
                         kb_history_turns: int = 0, task_type: str = None,
                         _cloud_kb_mode: bool = False) -> list:
@@ -377,8 +377,6 @@ class CloudEngine:
         extras = []
         if task_type and task_type != "text":
             extras.append("当前任务类型: %s" % task_type)
-        if drift_hint:
-            extras.append(drift_hint)
         if strategy_enhancement:
             extras.append(strategy_enhancement)
         if extras:
@@ -425,7 +423,7 @@ class CloudEngine:
         return messages
 
     def run(self, message: str, model=None, max_tokens=None, history=None,
-            context_cache=None, drift_hint: str = None,
+            context_cache=None,
             _agent_mode: bool = False, override_task_type: str = None,
             strategy_enhancement: str = "",
             kb_mode: bool = False,
@@ -474,7 +472,7 @@ class CloudEngine:
         # ===== 构建 messages =====
         messages = self._build_messages(
             message, history=history, context_cache=context_cache,
-            drift_hint=drift_hint, kb_mode=kb_mode,
+            kb_mode=kb_mode,
             strategy_enhancement=strategy_enhancement,
             kb_history_turns=kb_history_turns, task_type=task_type,
             _cloud_kb_mode=_cloud_kb_mode,

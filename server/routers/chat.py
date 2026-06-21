@@ -329,8 +329,7 @@ async def api_chat_stream(request: Request):
 
     llm_history = _clean_history_for_model(history_raw, ai_mode=_ai_mode)
 
-    # Patch5: drift 检测取消（误报率高，砍掉，不再注入 drift_hint）
-    drift_result = {"drift": False}
+    # P6: drift 检测已彻底移除（全链路清理）
 
     # 检查模型是否加载（云模式跳过；并行模式需要本地模型）
     if _ai_mode != "cloud":
@@ -378,7 +377,6 @@ async def api_chat_stream(request: Request):
         prompt=prompt,
         llm_history=llm_history,
         context_cache=context_cache,
-        drift_result=drift_result,
         model_choice=model_choice,
         doc_continue=body.get("doc_continue", ""),
         body=body,
@@ -968,80 +966,7 @@ async def api_doc_download(filename: str):
 #  A10 — 云端上下文自动压缩
 # ============================================================
 
-def _compress_cloud_history(mgr, history_raw: list, chat_file: str):
-    """A10: 用云端模型压缩历史消息，保留最近几轮 + 压缩摘要
-
-    Args:
-        mgr: ModelManager 实例
-        history_raw: 原始历史消息列表
-        chat_file: 当前会话文件路径
-
-    Returns:
-        bool: 是否成功压缩
-    """
-    if not history_raw or len(history_raw) < 6:
-        return False
-
-    # 保留最近 3 轮（6 条消息）
-    keep_recent = 6
-    old_messages = history_raw[:-keep_recent]
-    recent_messages = history_raw[-keep_recent:]
-
-    if not old_messages:
-        return False
-
-    # 构建压缩 prompt
-    old_text_parts = []
-    for msg in old_messages:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-        if role in ("user", "assistant") and content:
-            old_text_parts.append("%s: %s" % ("用户" if role == "user" else "助手", content[:300]))
-
-    old_text = "\n".join(old_text_parts)
-    if len(old_text) > 4000:
-        old_text = old_text[:4000] + "...[截断]"
-
-    compress_prompt = (
-        "请将以下对话历史压缩为简洁的摘要（不超过 500 字），保留关键信息和结论：\n\n"
-        "---\n%s\n---\n\n"
-        "摘要：" % old_text
-    )
-
-    try:
-        if hasattr(mgr, '_cloud_engine'):
-            cloud = mgr._cloud_engine
-        else:
-            from core.cloud_engine import CloudEngine
-            cloud = CloudEngine(mgr)
-
-        # 非流式调用获取压缩结果
-        summary_text = ""
-        for phase, content in cloud.run(
-            compress_prompt,
-            override_task_type="text",
-            history=[],
-        ):
-            if phase == "text":
-                summary_text += content
-
-        if not summary_text.strip():
-            return False
-
-        # 构建压缩后的消息列表
-        compressed_messages = [
-            {"role": "system", "content": "[历史对话摘要]\n" + summary_text.strip()},
-        ] + recent_messages
-
-        # 保存压缩后的会话
-        save_chat(chat_file, compressed_messages)
-        log.info("[CTX] 云端历史压缩完成: %d条 → %d条 (摘要 %d 字)",
-                 len(history_raw), len(compressed_messages), len(summary_text))
-        return True
-
-    except Exception as e:
-        log.warning("[CTX] 云端压缩失败: %s", str(e)[:100])
-        return False
+# P6: _compress_cloud_history 已移除（死代码，无调用方）
 
 def _calc_context_usage(chat_file: str = None):
     """计算当前会话的上下文使用量

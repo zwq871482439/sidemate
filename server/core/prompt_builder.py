@@ -50,7 +50,6 @@ class PromptBuilder:
 
     def _build_system_prompt(self, kb_mode: bool, strategy_name: str,
                               context_cache: str = None,
-                              drift_hint: str = None,
                               kb_context: str = None) -> str:
         """构建 system prompt，V5.1 两段式（通用+场景一句话）。
 
@@ -58,7 +57,6 @@ class PromptBuilder:
             kb_mode: 文库问答模式
             strategy_name: 策略名称
             context_cache: session 级压缩摘要
-            drift_hint: 话题漂移纠正提示
             kb_context: KB 检索到的上下文
         """
         if kb_mode:
@@ -85,10 +83,6 @@ class PromptBuilder:
         # 会话摘要（如有）
         if context_cache:
             parts.append("[本会话较早的对话摘要] " + context_cache)
-
-        # 话题切换提示（如有）
-        if drift_hint:
-            parts.append("[话题切换提醒] " + drift_hint)
 
         return "\n".join(parts)
 
@@ -143,7 +137,7 @@ class PromptBuilder:
 
     def build(self, pipe, message: str, history: Optional[List] = None,
               model_name: str = None, context_cache: str = None,
-              task_type: str = None, drift_hint: str = None,
+              task_type: str = None,
               signals: dict = None, kb_mode: bool = False,
               strategy_enhancement: str = "",
               kb_history_turns: int = 0,
@@ -159,7 +153,6 @@ class PromptBuilder:
             model_name: 模型名
             context_cache: session 级压缩摘要
             task_type: "reasoning"|"code"|"text"
-            drift_hint: 话题漂移纠正提示
             signals: 分类信号
             kb_mode: 文库问答模式
             strategy_enhancement: 策略增强注入（V2 由 _build_system_prompt 自动处理）
@@ -197,7 +190,6 @@ class PromptBuilder:
             kb_mode=kb_mode,
             strategy_name=strategy_name,
             context_cache=context_cache,
-            drift_hint=drift_hint,
             kb_context=kb_context,
         )
 

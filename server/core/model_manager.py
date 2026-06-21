@@ -131,7 +131,7 @@ class ModelManager:
 
     def _build_prompt(self, pipe, message: str, history: Optional[List] = None,
                       model_name: str = None, context_cache: str = None,
-                      task_type: str = None, drift_hint: str = None,
+                      task_type: str = None,
                       signals: dict = None, kb_mode: bool = False,
                       strategy_enhancement: str = "",
                       kb_history_turns: int = 0,
@@ -139,7 +139,7 @@ class ModelManager:
         """构建 OpenAI messages 数组（pipe 参数保留签名兼容，内部不使用）"""
         return self._prompt_builder.build(pipe, message, history, model_name=model_name,
                                            context_cache=context_cache, task_type=task_type,
-                                           drift_hint=drift_hint, signals=signals,
+                                           signals=signals,
                                            kb_mode=kb_mode,
                                            strategy_enhancement=strategy_enhancement,
                                            kb_history_turns=kb_history_turns,
@@ -149,7 +149,7 @@ class ModelManager:
 
     def chat_stream(self, message: str, model: str = None,
                     max_tokens: int = None, history: Optional[List] = None,
-                    context_cache: str = None, drift_hint: str = None,
+                    context_cache: str = None,
                     _agent_mode: bool = False, override_task_type: str = None,
                     strategy_enhancement: str = "",
                     kb_mode: bool = False,
@@ -163,7 +163,7 @@ class ModelManager:
                 self._cloud_engine = CloudEngine(self)
             yield from self._cloud_engine.run(message, model=model, max_tokens=max_tokens,
                                                history=history, context_cache=context_cache,
-                                               drift_hint=drift_hint, _agent_mode=_agent_mode,
+                                               _agent_mode=_agent_mode,
                                                override_task_type=override_task_type,
                                                strategy_enhancement=strategy_enhancement,
                                                kb_mode=kb_mode,
@@ -172,7 +172,7 @@ class ModelManager:
         else:
             yield from self._stream_engine.run(message, model=model, max_tokens=max_tokens,
                                                 history=history, context_cache=context_cache,
-                                                drift_hint=drift_hint, _agent_mode=_agent_mode,
+                                                _agent_mode=_agent_mode,
                                                 override_task_type=override_task_type,
                                                 strategy_enhancement=strategy_enhancement,
                                                 kb_mode=kb_mode,

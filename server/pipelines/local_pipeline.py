@@ -95,7 +95,6 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
     prompt = ctx.prompt or message
     llm_history = ctx.llm_history
     context_cache = ctx.context_cache
-    drift_result = ctx.drift_result or {}
     model_choice = ctx.model_choice
 
     # ====== 初始化状态变量 ======
@@ -116,10 +115,6 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
     _ai_mode = _cfg_get("ai_mode", "local")
 
     t0 = time.time()
-
-    # Patch5: drift 检测取消（90%场景误报，效果太差，砍掉）
-    drift_hint = ""
-    drift_result = drift_result or {}
 
     # ====== 步骤 2: context guard → 上下文 >85% 警告 / >95% 新建 ======
     try:
@@ -220,7 +215,6 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                     history=model_history,
                     kb=kb,
                     context_cache=context_cache,
-                    drift_hint=drift_hint,
                     strategy_enhancement=strategy.get("system_enhancement", ""),
                     doc_continue=doc_continue_text,
                     kb_doc_content=_kb_doc_content,
@@ -291,7 +285,6 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 for phase, content in mgr.chat_stream(
                     prompt, model_choice, max_tokens, model_history,
                     context_cache=context_cache,
-                    drift_hint=drift_hint,
                     strategy_enhancement=strategy.get("system_enhancement", ""),
                     kb_mode=_kb_mode,
                 ):

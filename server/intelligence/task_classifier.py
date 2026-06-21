@@ -171,108 +171,12 @@ def check_mode_hint(current_scene: str, message: str) -> str:
     """向后兼容：返回空字符串"""
     return ""
 
-def check_topic_drift(message: str, history: list, **kwargs) -> dict:
-    """话题漂移检测（关键词重叠度 + 消息数量）
-
-    检测逻辑：
-    1. 消息数量 < 3 → 不检测（太短无意义）
-    2. 提取当前消息关键词和最近 N 轮对话的关键词
-    3. 计算关键词重叠度 overlap = 交集 / 并集
-    4. overlap < 0.15 且消息数 >= 4 → hard drift
-    5. overlap < 0.25 且消息数 >= 6 → moderate drift
-    6. 消息数 >= swell_threshold → swell（内容膨胀）
-
-    Args:
-        message: 当前用户消息
-        history: 对话历史列表 [{"role": "user"|"assistant", "content": "..."}]
-        **kwargs: model_max_rounds 模型最大轮数（默认 6）
-
-    Returns:
-        {
-            "drift": bool,
-            "reason": str | None,
-            "drift_level": "none"|"moderate"|"hard"|"swell",
-            "overlap": float (0.0~1.0),
-            "msg_count": int,
-            "swell_threshold": int,
-            "suggestion": str
-        }
-    """
-    max_rounds = kwargs.get("model_max_rounds", 6)
-    swell_threshold = max(max_rounds * 2, 10)
-
-    # 统计消息数（只算 user 消息 = 轮次）
-    user_msgs = [m for m in history if m.get("role") == "user" and m.get("content")]
-    msg_count = len(user_msgs)
-
-    result = {
-        "drift": False, "reason": None, "drift_level": "none",
-        "overlap": 1.0, "msg_count": msg_count,
-        "swell_threshold": swell_threshold, "suggestion": ""
-    }
-
-    # 太短不检测（至少 2 轮用户消息才值得检测）
-    if msg_count < 2 or not message.strip():
-        return result
-
-    # 提取当前消息关键词
-    current_kw = extract_keywords(message, top_n=8)
-    if not current_kw:
-        return result
-
-    # 提取最近 3 轮对话的关键词（user + assistant）
-    recent_msgs = []
-    for m in history[-6:]:
-        content = m.get("content", "")
-        if content and m.get("role") in ("user", "assistant"):
-            recent_msgs.append(content)
-
-    if not recent_msgs:
-        return result
-
-    recent_text = " ".join(recent_msgs)
-    recent_kw = extract_keywords(recent_text, top_n=15)
-    if not recent_kw:
-        return result
-
-    # 计算重叠度（Jaccard 系数）
-    intersection = current_kw & recent_kw
-    union = current_kw | recent_kw
-    overlap = len(intersection) / len(union) if union else 0.0
-    result["overlap"] = round(overlap, 3)
-
-    # 膨胀检测：消息数超过阈值
-    if msg_count >= swell_threshold:
-        result["drift"] = True
-        result["drift_level"] = "swell"
-        result["reason"] = "对话已超过 %d 轮（%d 轮），上下文可能过长" % (swell_threshold, msg_count)
-        result["suggestion"] = "对话较长，建议新建对话以获得更好的回答质量"
-        return result
-
-    # 硬漂移：关键词几乎无重叠
-    if overlap < 0.20 and msg_count >= 3:
-        result["drift"] = True
-        result["drift_level"] = "hard"
-        result["reason"] = "当前话题与最近对话关联度很低（%.0f%%）" % (overlap * 100)
-        result["suggestion"] = "检测到话题切换，建议新建对话"
-        return result
-
-    # 中等漂移：关键词重叠度较低
-    if overlap < 0.30 and msg_count >= 4:
-        result["drift"] = True
-        result["drift_level"] = "moderate"
-        result["reason"] = "话题可能与之前对话略有不同（%.0f%%）" % (overlap * 100)
-        result["suggestion"] = "如需切换话题，可以新建对话"
-        return result
-
-    return result
+# P6: check_topic_drift 已移除（死代码，误报率高，全链路清理）
+# P6: extract_keywords 已移除（仅被 check_topic_drift 调用）
 
 def get_agent_hint(message: str) -> dict:
     """向后兼容：返回默认 agent hint"""
     return {"task_type": "agent", "suggested_tools": [], "hint": "",
             "estimated_steps": 0, "sub_intent": "unknown"}
 
-def extract_keywords(text: str, top_n: int = 5) -> set:
-    """向后兼容：委托给 common.text_utils.extract_keywords"""
-    from common.utils import extract_keywords as _extract_keywords
-    return _extract_keywords(text, top_n=top_n)
+# P6: extract_keywords 已移除（仅被 check_topic_drift 调用，已随该函数删除）

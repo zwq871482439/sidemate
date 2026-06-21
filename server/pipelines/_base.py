@@ -50,8 +50,6 @@ class StreamContext:
     prompt: str = ""
     llm_history: Optional[List[dict]] = None
     context_cache: Optional[str] = None
-    drift_hint: str = ""
-    drift_result: dict = field(default_factory=dict)
     strategy: dict = field(default_factory=dict)
     model_choice: str = ""
     doc_continue: str = ""  # Doc action Phase 2: 用户确认的提纲内容
@@ -303,7 +301,6 @@ def handle_doc_action(ctx: StreamContext) -> Generator[str, None, None]:
         history=ctx.llm_history,
         kb=kb,
         context_cache=ctx.context_cache,
-        drift_hint=ctx.drift_hint,
         strategy_enhancement=ctx.strategy.get("system_enhancement", ""),
         doc_continue=doc_continue_text,
         kb_doc_content=_kb_doc_content,

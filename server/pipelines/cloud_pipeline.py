@@ -149,7 +149,7 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                 for phase, content in run_doc_action(
                     message=message, mgr=mgr, model_name=model_choice,
                     max_tokens=ctx.max_tokens, history=model_history,
-                    kb=kb, context_cache=context_cache, drift_hint="",
+                    kb=kb, context_cache=context_cache,
                     strategy_enhancement="", doc_continue=doc_continue_text,
                     kb_doc_content=_kb_doc_content,
                 ):

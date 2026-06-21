@@ -36,7 +36,6 @@ def run_doc_action(
     history: list = None,
     kb=None,       # KnowledgeBase 实例
     context_cache: dict = None,
-    drift_hint: str = "",
     strategy_enhancement: str = "",
     doc_continue: str = "",  # Phase 2: 用户确认的提纲内容
     kb_doc_content: str = "",  # 用户引用的 KB 文档全文
@@ -60,7 +59,7 @@ def run_doc_action(
     if doc_continue:
         yield from _run_phase2(
             message, mgr, model_name, max_tokens, history,
-            context_cache, drift_hint, strategy_enhancement, doc_continue,
+            context_cache, strategy_enhancement, doc_continue,
             kb_doc_content=kb_doc_content
         )
         return
@@ -68,14 +67,14 @@ def run_doc_action(
     # ====== Phase 1: 生成提纲 ======
     yield from _run_phase1(
         message, mgr, model_name, max_tokens, history,
-        kb, context_cache, drift_hint, strategy_enhancement,
+        kb, context_cache, strategy_enhancement,
         kb_doc_content=kb_doc_content
     )
 
 
 def _run_phase1(
     message, mgr, model_name, max_tokens, history,
-    kb, context_cache, drift_hint, strategy_enhancement,
+    kb, context_cache, strategy_enhancement,
     kb_doc_content=""
 ):
     """Phase 1: KB搜索 → 生成提纲 → yield doc_outline"""
@@ -126,7 +125,6 @@ def _run_phase1(
     for phase, content in mgr.chat_stream(
         outline_prompt, model_name, max_tokens or 1024, history,
         context_cache=context_cache,
-        drift_hint=drift_hint,
         strategy_enhancement=strategy_enhancement,
     ):
         if phase == "text":
@@ -151,7 +149,7 @@ def _run_phase1(
 
 def _run_phase2(
     message, mgr, model_name, max_tokens, history,
-    context_cache, drift_hint, strategy_enhancement, outline,
+    context_cache, strategy_enhancement, outline,
     kb_doc_content=""
 ):
     """Phase 2: 基于已确认的提纲生成完整文档"""
@@ -178,7 +176,6 @@ def _run_phase2(
     for phase, content in mgr.chat_stream(
         full_prompt, model_name, max_tokens, history,
         context_cache=context_cache,
-        drift_hint=drift_hint,
         strategy_enhancement=strategy_enhancement,
     ):
         yield (phase, content)
