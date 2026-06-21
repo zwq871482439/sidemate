@@ -27,6 +27,9 @@ class TaggingScheduler:
         # Patch5 G：batch_queue 引用，gating 用（None 时不 gating）
         self._batch_queue = None
         self._pending_ready = set()  # 已 ready 但还没入队的 doc_id（等 batch 空闲）
+        # P6 审计修复：记录启动时间，用于 batch_queue 注入超时判断
+        import time as _time
+        self._started_at = _time.time()
 
     def set_batch_queue(self, batch_queue):
         """注入 BatchQueue 实例，用于 gating 判断"""
@@ -43,12 +46,17 @@ class TaggingScheduler:
     def _is_batch_idle(self) -> bool:
         """检查 batch_queue 是否空闲（无 pending/processing 任务）
 
-        P6 审计修复 M2：batch_queue 未注入时返回 False（保守 gating），
-        避免启动早期 worker 立即处理 LLM 导致 GPU 抢占。
-        worker 会等到 set_batch_queue() 注入后才解锁处理。
+        P6 审计修复 M2 + 超时兜底：
+        - batch_queue 已注入：按实际状态判断
+        - batch_queue 未注入但启动超过 60 秒：认为不会有 batch_queue，放行
+        - batch_queue 未注入且启动未超 60 秒：保守 gating
         """
         if self._batch_queue is None:
-            return False  # P6 修复：未注入时保守 gating
+            # 超过 60 秒还没注入，认为不会有 batch_queue（单文档/普通上传场景）
+            import time as _time
+            if _time.time() - self._started_at > 60:
+                return True
+            return False  # 启动窗口期内保守 gating
         try:
             stats = self._batch_queue.get_stats()
             pending = stats.get("pending", 0)

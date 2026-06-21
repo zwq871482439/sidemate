@@ -636,9 +636,13 @@ async function sendMessage() {
   document.getElementById('sendBtn').style.display = 'none';
   document.getElementById('stopBtn').style.display = '';
   input.disabled = true;
-  document.getElementById('sessionSelect').disabled = true;
-  document.getElementById('newChatBtn').disabled = true;
-  document.getElementById('delChatBtn').disabled = true;
+  // P6 审计修复：DOM 元素可能已被移除（sessionSelect 等在 P6 重构中删除）
+  var _ss = document.getElementById('sessionSelect');
+  if (_ss) _ss.disabled = true;
+  var _nc = document.getElementById('newChatBtn');
+  if (_nc) _nc.disabled = true;
+  var _dc = document.getElementById('delChatBtn');
+  if (_dc) _dc.disabled = true;
 
   _agentTimelineEl = null;  // 重置 Agent 时间线容器
   _agentTimelineData = [];  // 重置时间线数据收集
