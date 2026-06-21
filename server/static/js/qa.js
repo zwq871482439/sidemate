@@ -16,6 +16,7 @@ function _kbStopPolling() {
 var _kbModelsLoaded = false;
 var _kbTagClusters = [];
 var _kbLastDocs = [];
+var _kbViewMode = 'card';  // P6: 'card' | 'list'
 var _kbQueueItems = [];  // P6 B4: 处理队列 [{{docId, filename, phase, pct, error}}]
 
 // 标签分组（LLM 语义归并）
@@ -220,15 +221,19 @@ async function kbRefreshDocs() {
     var hasSummarizing = (stats.summarizing_documents || 0) > 0;
     _kbBusyProcessing = hasSummarizing;
 
+    // P6: 侧栏按文档 category 分组（不再依赖 tag_groups API）
+    _kbRenderCategoryTree(docs);
+
     // 更新侧栏底部统计
     var ft = document.getElementById('kbSidebarFt');
     if (ft) {
-      var tagCount = 0;
-      for (var gi = 0; gi < _kbTagGroups.length; gi++) {
-        tagCount += _kbTagGroups[gi].members.length;
+      var catCount = 0;
+      var seenCats = {};
+      for (var ci = 0; ci < docs.length; ci++) {
+        var cat = docs[ci].category || '';
+        if (cat && !seenCats[cat]) { seenCats[cat] = 1; catCount++; }
       }
-      tagCount += _kbGroupUngrouped.length;
-      ft.textContent = _readyCount + '篇 · ' + tagCount + '标签';
+      ft.textContent = docs.length + '篇 · ' + catCount + '分类';
     }
 
     // 更新设置页知识库统计
@@ -261,17 +266,15 @@ async function kbRefreshDocs() {
     for (var di = 0; di < docs.length; di++) {
       var d = docs[di];
 
-      // 应用标签筛选（P6 B2: 父标签匹配自身+所有子标签，子标签精确匹配）
+      // P6: 按 category 筛选（一个文档只属于一个分类）
       if (_kbActiveTagFilter) {
-        var tagMatch = false;
-        if (d.tags && d.tags.length > 0) {
-          // 构建匹配标签集合：若筛选的是父标签，包含自身+所有子孙
-          var matchTags = _kbCollectMatchTags(_kbActiveTagFilter);
-          for (var ti = 0; ti < d.tags.length; ti++) {
-            if (matchTags.has(d.tags[ti])) { tagMatch = true; break; }
-          }
+        if (_kbActiveTagFilter === '__uncategorized__') {
+          // 未分类：category 为空的文档
+          if (d.category) continue;
+        } else {
+          // 精确匹配 category
+          if (d.category !== _kbActiveTagFilter) continue;
         }
-        if (!tagMatch) continue;
       }
 
       // 应用名称搜索筛选
@@ -375,7 +378,12 @@ async function kbRefreshDocs() {
       html += '</div>';
     }
 
-    if (gridEl) gridEl.innerHTML = html;
+    var gridEl = document.getElementById('kbDocGrid');
+    if (gridEl) {
+      // P6: 根据 _kbViewMode 切换 class
+      gridEl.className = _kbViewMode === 'list' ? 'kb-doc-list' : 'kb-doc-grid';
+      gridEl.innerHTML = html;
+    }
 
     // 通知 kb-batch.js
     if (typeof kbOnDocsRendered === 'function') kbOnDocsRendered(docs);
@@ -439,150 +447,62 @@ var _kbNameFilter = '';
 
 var _kbExpandedGroups = new Set();  // 展开的分组名集合
 
-// 获取标签分组
-async function kbFetchTagGroups() {
-  try {
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/tags/groups');
-    var data = await resp.json();
-    _kbTagGroups = data.groups || [];
-    _kbGroupUngrouped = data.ungrouped || [];
-  } catch (e) {
-    silentLog('[KB] 获取标签分组失败:', e);
-  }
-}
-
-// 触发 LLM 分组
-async function kbTriggerGrouping() {
-  // Fix F: 用 10 秒冷却替代一次性标记
-  if (Date.now() - _kbLastGroupTrigger < 10000) return;
-  _kbLastGroupTrigger = Date.now();
-  try {
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/tags/group', { method: 'POST' });
-    var data = await resp.json();
-    if (data.groups) {
-      _kbTagGroups = data.groups;
-      _kbGroupUngrouped = data.ungrouped || [];
-      _kbRenderTagTree();
-    }
-  } catch (e) {
-    silentLog('[KB] 触发分组失败:', e);
-  }
-}
-
-// 渲染标签树（基于分组数据）
-function _kbRenderTagTree() {
+// P6 重构：按文档 category 字段分组渲染侧栏（一个文档一个分类）
+function _kbRenderCategoryTree(docs) {
   var listEl = document.getElementById('kbSidebarList');
   if (!listEl) return;
+  docs = docs || _kbLastDocs || [];
 
-  // 构建标签→文档计数映射
-  var tagCounts = {};
-  var docs = _kbLastDocs;
-  var totalDocs = docs.length;
+  // 统计每个 category 下的文档数
+  var catGroups = {};   // {category: [doc_id, ...]}
+  var noCategoryCount = 0;
   for (var i = 0; i < docs.length; i++) {
     var d = docs[i];
-    if (d.tag_status === 'done' && d.tags && d.tags.length > 0) {
-      for (var j = 0; j < d.tags.length; j++) {
-        var t = d.tags[j];
-        tagCounts[t] = (tagCounts[t] || 0) + 1;
-      }
+    var cat = d.category || '';
+    if (cat) {
+      if (!catGroups[cat]) catGroups[cat] = [];
+      catGroups[cat].push(d.doc_id);
+    } else {
+      noCategoryCount++;
     }
   }
 
-  // 构建分组总计数
-  var groupCounts = {};
-  for (var gi = 0; gi < _kbTagGroups.length; gi++) {
-    var g = _kbTagGroups[gi];
-    var sum = 0;
-    for (var mi = 0; mi < g.members.length; mi++) {
-      sum += (tagCounts[g.members[mi]] || 0);
-    }
-    groupCounts[g.group] = sum;
-  }
+  // 排序：按文档数倒序
+  var catNames = Object.keys(catGroups);
+  catNames.sort(function(a, b) { return catGroups[b].length - catGroups[a].length; });
 
-  // 未分组标签计数
-  for (var ui = 0; ui < _kbGroupUngrouped.length; ui++) {
-    var ut = _kbGroupUngrouped[ui];
-    groupCounts[ut] = tagCounts[ut] || 0;
-  }
-
+  var totalDocs = docs.length;
   var html = '<div class="kb-tag all' + (_kbActiveTagFilter === null ? ' sel' : '') +
     '" data-tag="__all__" onclick="kbFilterByTag(null,this)"><span class="dot"></span>全部文档<span class="cnt">' +
     totalDocs + '</span></div>';
 
-  // Fix D: 分组为空时显示提示
-  if (_kbTagGroups.length === 0 && _kbGroupUngrouped.length === 0) {
-    html += '<div class="kb-group-hint">点击 AI 概览刷新生成标签分组</div>';
-    listEl.innerHTML = html;
-    // 更新侧栏底部统计
-    var ft2 = document.getElementById('kbSidebarFt');
-    if (ft2) ft2.textContent = totalDocs + '篇 · 0标签';
-    return;
+  // 渲染每个分类
+  for (var ci = 0; ci < catNames.length; ci++) {
+    var catName = catNames[ci];
+    var count = catGroups[catName].length;
+    var isSel = _kbActiveTagFilter === catName;
+    var cls = 'kb-tag cat' + (isSel ? ' sel' : '');
+    var escapedCat = catName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    html += '<div class="' + cls + '" data-tag="' + esc(catName) + '" onclick="kbFilterByTag(\'' + escapedCat + '\',this)">' +
+      '<span class="dot"></span>' + esc(catName) +
+      '<span class="cnt">' + count + '</span></div>';
   }
 
-  // 渲染分组
-  for (var gIdx = 0; gIdx < _kbTagGroups.length; gIdx++) {
-    var group = _kbTagGroups[gIdx];
-    var gName = group.group;
-    var isExpanded = _kbExpandedGroups.has(gName);
-    var isSel = _kbActiveTagFilter === gName;
-    var gCount = groupCounts[gName] || 0;
-
-    var cls = 'kb-group';
-    if (isSel) cls += ' sel';
-    if (isExpanded) cls += ' expanded';
-
-    // JS 安全转义
-    var escapedGName = gName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-    html += '<div class="' + cls + '" data-group="' + esc(gName) + '"';
-    html += ' onclick="kbToggleGroup(\'' + escapedGName + '\',event)">';
-    html += '<span class="arrow">▶</span>';
-    html += '<span class="dot"></span>' + esc(gName);
-    html += '<span class="cnt">' + gCount + '</span></div>';
-
-    // 渲染组内标签
-    for (var mi = 0; mi < group.members.length; mi++) {
-      var tagName = group.members[mi];
-      var tCount = tagCounts[tagName] || 0;
-      var tIsSel = _kbActiveTagFilter === tagName;
-      var tCls = 'kb-group-tag';
-      if (tIsSel) tCls += ' sel';
-      if (isExpanded) tCls += ' show';
-
-      var escapedTag = tagName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-      html += '<div class="' + tCls + '" data-tag="' + esc(tagName) + '"';
-      html += ' onclick="event.stopPropagation();kbFilterByTag(\'' + escapedTag + '\',this)">';
-      html += '<span class="dot"></span>' + esc(tagName);
-      html += '<span class="cnt">' + tCount + '</span></div>';
-    }
-  }
-
-  // 渲染未分组标签（放在最后）
-  for (var uIdx = 0; uIdx < _kbGroupUngrouped.length; uIdx++) {
-    var uTag = _kbGroupUngrouped[uIdx];
-    var uCount = tagCounts[uTag] || 0;
-    var uIsSel = _kbActiveTagFilter === uTag;
-    var escapedTag = uTag.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-    html += '<div class="kb-group-tag show' + (uIsSel ? ' sel' : '') + '" data-tag="' + esc(uTag) + '"';
-    html += ' onclick="kbFilterByTag(\'' + escapedTag + '\',this)">';
-    html += '<span class="dot"></span>' + esc(uTag);
-    html += '<span class="cnt">' + uCount + '</span></div>';
+  // 没有 category 的文档（tag_status != done 的）
+  if (noCategoryCount > 0) {
+    var isUnSel = _kbActiveTagFilter === '__uncategorized__';
+    html += '<div class="kb-tag cat' + (isUnSel ? ' sel' : '') + '" style="opacity:.6" data-tag="__uncategorized__" onclick="kbFilterByTag(\'__uncategorized__\',this)">' +
+      '<span class="dot"></span>未分类' +
+      '<span class="cnt">' + noCategoryCount + '</span></div>';
   }
 
   listEl.innerHTML = html;
-
-  // 更新侧栏底部统计
-  var allTags = [];
-  for (var ati = 0; ati < _kbTagGroups.length; ati++) {
-    for (var atj = 0; atj < _kbTagGroups[ati].members.length; atj++) {
-      allTags.push(_kbTagGroups[ati].members[atj]);
-    }
-  }
-  var ft = document.getElementById('kbSidebarFt');
-  if (ft) ft.textContent = totalDocs + '篇 · ' + (allTags.length + _kbGroupUngrouped.length) + '标签';
 }
+
+// 兼容旧接口（保留空实现防止报错）
+async function kbFetchTagGroups() { return Promise.resolve(); }
+async function kbTriggerGrouping() { return Promise.resolve(); }
+function _kbRenderTagTree() { _kbRenderCategoryTree(_kbLastDocs); }
 
 // 切换分组展开/折叠
 function kbToggleGroup(groupName, event) {
@@ -1240,6 +1160,19 @@ function _fallbackCopy(text) {
 
 // --- 暴露到全局 ---
 window.kbRouteState = kbRouteState;
+
+// P6: 视图切换（卡片/列表）
+function kbSwitchView(mode, btn) {
+  _kbViewMode = mode;
+  // 更新按钮高亮
+  var btns = document.querySelectorAll('.kb-view-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.remove('sel');
+  if (btn) btn.classList.add('sel');
+  // 重新渲染
+  kbRefreshDocs();
+}
+window.kbSwitchView = kbSwitchView;
+
 window.kbInstallModule = kbInstallModule;
 window.kbOnModuleFilePicked = kbOnModuleFilePicked;
 window.kbOnModuleDrop = kbOnModuleDrop;

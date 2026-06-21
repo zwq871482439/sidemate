@@ -202,8 +202,9 @@ class TaggingScheduler:
         # 6. 解析输出
         tags = []
         summary = ""
+        category = ""
         try:
-            tags, summary = self._parse_tagging_response(response)
+            tags, summary, category = self._parse_tagging_response(response)
         except Exception as e:
             log.warning("[TAG] 解析失败: doc_id=%s, response=%s, error=%s",
                         doc_id, response[:200], str(e)[:100])
@@ -211,15 +212,18 @@ class TaggingScheduler:
             return  # 避免同时触发"解析结果为空"重入队
 
         # 7. 更新文档元数据
-        if tags or summary:
+        if tags or summary or category:
             from knowledge.tags import normalize_tag
             doc.tags = [normalize_tag(t) for t in tags if t.strip()]
             if summary:
                 doc.summary = summary
+            # P6: 保存主题分类（一个文档一个分类，用于侧栏分组）
+            if category:
+                doc.category = category
             doc.tag_status = "done"
             kb._save_meta()
-            log.info("[TAG] 打标完成: doc_id=%s, tags=%s, summary=%s",
-                     doc_id, doc.tags, doc.summary[:80])
+            log.info("[TAG] 打标完成: doc_id=%s, category=%s, tags=%s, summary=%s",
+                     doc_id, category, doc.tags, doc.summary[:80])
         else:
             log.warning("[TAG] 解析结果为空，跳过: doc_id=%s", doc_id)
             self._re_enqueue(doc_id, "解析结果为空")
@@ -248,10 +252,12 @@ class TaggingScheduler:
         """解析 LLM 打标输出
 
         Returns:
-            (tags: list, summary: str)
+            (tags: list, summary: str, category: str)
+            P6: 新增 category 字段（文档级单一主题分类）
         """
         tags = []
         summary = ""
+        category = ""
 
         # 按行解析
         for line in response.split('\n'):
@@ -259,12 +265,16 @@ class TaggingScheduler:
             if not line:
                 continue
 
+            # P6: 匹配主题行（新增）
+            cat_match = re.match(r'主题[：:]\s*(.+)', line)
+            if cat_match:
+                category = cat_match.group(1).strip()
+                continue
+
             # 匹配标签行
             tag_match = re.match(r'标签[：:]\s*(.+)', line)
             if tag_match:
                 tag_str = tag_match.group(1)
-                # Patch4 v3.1 BUG#25：兼容中英文逗号、顿号、空格分隔
-                # LLM 有时候返回 "养生 运动 健康习惯"（空格分隔），原正则不支持
                 tags = [t.strip() for t in re.split(r'[，,、\s]+', tag_str) if t.strip()]
                 continue
 
@@ -274,7 +284,7 @@ class TaggingScheduler:
                 summary = summary_match.group(1).strip()
                 continue
 
-        return tags, summary
+        return tags, summary, category
 
     def start(self):
         """启动后台 worker 线程"""

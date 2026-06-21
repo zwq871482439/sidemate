@@ -1579,7 +1579,24 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 [data-theme="dark"] .kb-summary .s-refresh{color:#a5b4fc}
 
 /* 卡片网格 */
-.kb-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(195px, 1fr));gap:8px;align-content:start}
+.kb-grid,.kb-doc-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(195px, 1fr));gap:8px;align-content:start}
+
+/* P6: 列表视图 */
+.kb-doc-list{display:flex;flex-direction:column;gap:4px}
+.kb-doc-list .kb-card{flex-direction:row;align-items:center;gap:12px;padding:8px 12px}
+.kb-doc-list .kb-card .cbar{flex:1;min-width:0}
+.kb-doc-list .kb-card .cpreview{flex:2;-webkit-line-clamp:1;min-width:0}
+.kb-doc-list .kb-card .ctags{flex:1;min-width:0;overflow:hidden}
+.kb-doc-list .kb-card .cstats{flex-shrink:0;gap:8px}
+
+/* P6: 视图切换按钮 */
+.kb-view-toggle{display:flex;border:0.5px solid var(--border-color);border-radius:6px;overflow:hidden}
+.kb-view-btn{padding:4px 8px;border:none;background:transparent;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center}
+.kb-view-btn.sel{background:var(--bg-info);color:var(--color-accent)}
+.kb-view-btn:hover{background:var(--bg-tertiary)}
+
+/* P6: 分类标签（侧栏） */
+.kb-tag.cat{padding:5px 10px;cursor:pointer;font-size:12px}
 
 /* 文档卡片 */
 .kb-card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;position:relative;transition:border-color .15s}

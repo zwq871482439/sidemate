@@ -267,6 +267,15 @@
             上传文档
           </button>
           <span style="flex:1"></span>
+          <!-- P6: 视图切换（卡片/列表） -->
+          <div class="kb-view-toggle" id="kbViewToggle">
+            <button class="kb-view-btn sel" data-view="card" onclick="kbSwitchView('card',this)" title="卡片视图">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/><rect x="8.5" y="1.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/><rect x="1.5" y="8.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/><rect x="8.5" y="8.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/></svg>
+            </button>
+            <button class="kb-view-btn" data-view="list" onclick="kbSwitchView('list',this)" title="列表视图">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4 3.5h8M4 7h8M4 10.5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="2" cy="3.5" r="0.5" fill="currentColor"/><circle cx="2" cy="7" r="0.5" fill="currentColor"/><circle cx="2" cy="10.5" r="0.5" fill="currentColor"/></svg>
+            </button>
+          </div>
           <button class="btn" onclick="kbShowDuplicates()" title="重复检测">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.1"/><path d="M4 5h6M6 3v4" stroke="currentColor" stroke-width="0.8" stroke-linecap="round"/></svg>
             诊断
