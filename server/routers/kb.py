@@ -855,11 +855,12 @@ async def api_kb_upload(file: UploadFile = File(...)):
                     if doc:
                         doc.tag_status = "pending"
                         kb._save_meta()
-                        # P6 修复：等所有同批上传文档都完成向量化后才通知 scheduler
-                        # 避免 LLM tagging 和 vectorization 抢 GPU
+                        # P6 审计修复 C5：等到所有其他文档都完成向量化（>=1 而非 >1）
+                        # 注：当前文档自己 process_document 已完成，状态为 ready，不计入 active_count
+                        # 使用 >= 1 等待所有其他活跃文档
                         import time as _time
                         _wait_count = 0
-                        while kb.active_vectorization_count > 1 and _wait_count < 600:
+                        while kb.active_vectorization_count >= 1 and _wait_count < 600:
                             _time.sleep(1)
                             _wait_count += 1
                         if hasattr(scheduler, 'notify_doc_ready'):

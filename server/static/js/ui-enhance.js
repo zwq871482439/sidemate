@@ -242,11 +242,11 @@ function showModeConfirmModal(mode, callback) {
   var cfg = configs[mode] || configs.offline;
 
   var featHtml = cfg.features.map(function(f) {
-    return '<div class="modal-feat"><span class="modal-feat-icon">✓</span><span>' + f + '</span></div>';
+    return '<div class="modal-feat"><span class="modal-feat-icon"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M4 7l2.5 2.5L10 5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>' + f + '</span></div>';
   }).join('');
 
   var riskHtml = cfg.risk
-    ? '<div class="modal-confirm-risk"><span>⚠️</span><span>' + cfg.risk + '</span></div>'
+    ? '<div class="modal-confirm-risk"><span><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1L1 12h12L7 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 5v3M7 10v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span>' + cfg.risk + '</span></div>'
     : '';
 
   var backdrop = document.createElement('div');
@@ -314,7 +314,7 @@ function _renderGearMenu(bar) {
   var btn = document.createElement('button');
   btn.className = 'gear-btn';
   btn.title = '并行模式设置';
-  btn.innerHTML = '⚙';
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M7 1v2M7 11v2M1 7h2M11 7h2M2.5 2.5l1.5 1.5M10 10l1.5 1.5M2.5 11.5L4 10M10 4l1.5-1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
   btn.onclick = function(e) {
     e.stopPropagation();
     var dd = menu.querySelector('.gear-dropdown');
@@ -351,12 +351,14 @@ function _renderGearMenu(bar) {
 
   menu.appendChild(dropdown);
 
-  // 点击其他地方关闭
-  document.addEventListener('click', function _closeGear(e) {
+  // P6 审计修复 M4：命名 close handler 以便移除，防止多次切换累积泄漏
+  var _closeGearHandler = function(e) {
     if (!menu.contains(e.target)) {
       dropdown.style.display = 'none';
     }
-  });
+  };
+  menu._closeGearHandler = _closeGearHandler;  // 保存引用以便卸载
+  document.addEventListener('click', _closeGearHandler);
 
   bar.appendChild(menu);
   return menu;

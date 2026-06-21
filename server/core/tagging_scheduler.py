@@ -41,9 +41,14 @@ class TaggingScheduler:
         self._has_work.set()
 
     def _is_batch_idle(self) -> bool:
-        """检查 batch_queue 是否空闲（无 pending/processing 任务）"""
+        """检查 batch_queue 是否空闲（无 pending/processing 任务）
+
+        P6 审计修复 M2：batch_queue 未注入时返回 False（保守 gating），
+        避免启动早期 worker 立即处理 LLM 导致 GPU 抢占。
+        worker 会等到 set_batch_queue() 注入后才解锁处理。
+        """
         if self._batch_queue is None:
-            return True  # 没注入就不 gating
+            return False  # P6 修复：未注入时保守 gating
         try:
             stats = self._batch_queue.get_stats()
             pending = stats.get("pending", 0)
@@ -51,7 +56,7 @@ class TaggingScheduler:
             return pending == 0 and processing == 0
         except Exception as e:
             log.warning("[TAG] batch_queue 状态查询失败: %s", str(e)[:80])
-            return True  # 失败时不卡 worker
+            return False  # P6 修复：失败时保守 gating
 
     def enqueue(self, doc_id: str):
         """文档上传后调用，加入打标队列"""

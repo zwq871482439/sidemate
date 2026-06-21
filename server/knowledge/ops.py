@@ -25,6 +25,9 @@ from knowledge.reranker_engine import RerankerEngine
 
 log = logging.getLogger(__name__)
 
+# P6 审计修复 M6：标签分组操作的并发锁
+_tag_group_lock = threading.Lock()
+
 
 class _KBOpsMixin:
     """文库核心操作：初始化、持久化、文档管理、处理控制"""
@@ -556,13 +559,12 @@ class _KBOpsMixin:
                 log.error("[KB] 向量索引自动重建失败: %s, 将在首次搜索时重建", str(e))
 
     def _save_meta(self):
-        """保存元数据"""
-        # P6 防护：空 documents 时，如果磁盘上已有 kb_meta.json 则拒绝写入
-        # 防止 LLM 分组等操作在文档未加载时意外覆盖已有数据
-        if not self.documents and os.path.exists(self.meta_path):
-            log.warning("[KB] 拒绝保存空元数据：documents 为空但磁盘文件存在，跳过写入")
-            return
+        """保存元数据
 
+        P6 审计修复 C4：移除"空 documents 拒绝写入"守卫。
+        原守卫导致删除最后一个文档后磁盘数据不更新（重启后已删文档回来）。
+        分组操作路径已经在 set_tag_group 内通过检查 self.documents 做保护。
+        """
         data = {
             "version": 1,
             "documents": [asdict(d) for d in self.documents.values()],
@@ -603,34 +605,42 @@ class _KBOpsMixin:
             group: 目标分组名
             source: "manual" | "ai"
         """
-        # 从所有现有分组中移除此 tag
-        for g in self.tag_groups:
-            members = g.get("members", [])
-            if tag in members:
-                members.remove(tag)
+        # P6 审计修复 C4 + M6：分组操作路径守卫 + 加锁防并发
+        with _tag_group_lock:
+            # 守卫：documents 为空时拒绝写入（防止 LLM 分组在文档未加载时清空）
+            if not self.documents and os.path.exists(self.meta_path):
+                log.warning("[KB] 拒绝保存分组（documents 为空但磁盘文件存在）")
+                return False
 
-        # 清理空分组
-        self.tag_groups = [g for g in self.tag_groups if g.get("members")]
+            # 从所有现有分组中移除此 tag
+            for g in self.tag_groups:
+                members = g.get("members", [])
+                if tag in members:
+                    members.remove(tag)
 
-        # 添加到目标分组
-        found = False
-        for g in self.tag_groups:
-            if g.get("group") == group:
-                if tag not in g["members"]:
-                    g["members"].append(tag)
-                g["source"] = source
-                found = True
-                break
+            # 清理空分组
+            self.tag_groups = [g for g in self.tag_groups if g.get("members")]
 
-        if not found:
-            self.tag_groups.append({
-                "group": group,
-                "members": [tag],
-                "source": source,
-            })
+            # 添加到目标分组
+            found = False
+            for g in self.tag_groups:
+                if g.get("group") == group:
+                    if tag not in g["members"]:
+                        g["members"].append(tag)
+                    g["source"] = source
+                    found = True
+                    break
 
-        self._save_meta()
-        log.info("[KB] 标签分组: tag=%s → group=%s (source=%s)", tag, group, source)
+            if not found:
+                self.tag_groups.append({
+                    "group": group,
+                    "members": [tag],
+                    "source": source,
+                })
+
+            self._save_meta()
+            log.info("[KB] 标签分组: tag=%s → group=%s (source=%s)", tag, group, source)
+            return True
 
     def _rebuild_all_vectors(self):
         """重建全部向量索引（模型升级后维度变化时调用）"""

@@ -5,6 +5,14 @@
 var _kbPollTimer = null;
 var _kbModuleStatus = null;
 var _kbBusyProcessing = false;
+
+// P6 审计修复 M5：切出 KB Tab 时清理轮询定时器，防止泄漏
+function _kbStopPolling() {
+  if (_kbPollTimer) {
+    clearInterval(_kbPollTimer);
+    _kbPollTimer = null;
+  }
+}
 var _kbModelsLoaded = false;
 var _kbTagClusters = [];
 var _kbLastDocs = [];
@@ -798,7 +806,7 @@ function _kbSyncQueueWithDocs(docs) {
   if (changed) _kbRenderQueue();
 }
 
-/** 解决重复冲突 */
+/** 解决重复冲突（P6 审计修复 M1：replace 后给一个合法 phase，避免僵尸） */
 function kbResolveConflict(docId, action) {
   var apiBase = (typeof API !== 'undefined') ? API : '';
   if (action === 'replace') {
@@ -808,8 +816,11 @@ function kbResolveConflict(docId, action) {
         var existingDocId = _kbQueueItems[i].conflict_info.existing_doc_id;
         fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(existingDocId), { method: 'DELETE' })
           .then(function() { kbRefreshDocs(); });
+        // M1 修复：清除 conflict 标志后给个 queued phase，让它跟着 SSE 流转
         _kbQueueItems[i].conflict = false;
         _kbQueueItems[i].conflict_info = null;
+        _kbQueueItems[i].phase = 'queued';
+        _kbQueueItems[i].pct = 0;
         break;
       }
     }
@@ -817,10 +828,12 @@ function kbResolveConflict(docId, action) {
     // 删除新上传，保留已有
     fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(docId), { method: 'DELETE' })
       .then(function() { _kbRemoveFromQueue(docId); kbRefreshDocs(); });
+    return;  // 已从队列移除，无需再渲染
   } else {
     // cancel — 删除新上传
     fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(docId), { method: 'DELETE' })
       .then(function() { _kbRemoveFromQueue(docId); kbRefreshDocs(); });
+    return;
   }
   _kbRenderQueue();
 }
@@ -966,9 +979,9 @@ function kbSubscribeProgress(docId, filename) {
 
       if (typeof showToast === 'function') {
         if (d.phase === 'done') {
-          showToast('✓ ' + (filename || '') + ' 处理完成' + detail, 'success', 3000);
+          showToast((filename || '') + ' 处理完成' + detail, 'success', 3000);
         } else if (d.phase === 'error') {
-          showToast('✗ ' + (filename || '') + ' 处理失败', 'error', 5000);
+          showToast((filename || '') + ' 处理失败', 'error', 5000);
         }
       }
       if (d.phase === 'done' || d.phase === 'error' || d.phase === 'timeout') {

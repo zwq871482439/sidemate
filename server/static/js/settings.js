@@ -959,12 +959,12 @@ async function testCloudConnection() {
     clearTimeout(timer);
     var data = await resp.json();
     if (result) {
-      result.textContent = data.ok ? '✓ 连接成功 — 延迟 ' + data.latency_ms + 'ms' : '✗ ' + (data.error || '连接失败');
+      result.textContent = data.ok ? '连接成功 — 延迟 ' + data.latency_ms + 'ms' : (data.error || '连接失败');
       result.className = data.ok ? 'success' : 'error';
     }
   } catch(e) {
     if (result) {
-      result.textContent = e.name === 'AbortError' ? '✗ 连接超时：服务器响应时间过长' : '✗ 连接失败: ' + e.message;
+      result.textContent = e.name === 'AbortError' ? '连接超时：服务器响应时间过长' : '连接失败: ' + e.message;
       result.className = 'error';
     }
   }
@@ -1339,12 +1339,12 @@ function loadPrivacyDetail() {
   var summary =
     '<div style="line-height:1.8">' +
     '<div style="font-weight:600;color:var(--text-primary);margin-bottom:6px">桌伴隐私承诺</div>' +
-    '<div style="margin-bottom:4px">✅ <b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在您的电脑本地。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>不主动上传</b>：程序不会主动上传任何用户数据到任何服务器。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时与外部通信。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>文库权限保护</b>：文档受 full/search/none 三级令牌授权保护。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>开源组件透明</b>：所有第三方组件遵循原始开源许可证。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>随时可清除</b>：删除安装目录即可彻底卸载，数据随之清除。</div>' +
+    '<div style="margin-bottom:4px"><b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在您的电脑本地。</div>' +
+    '<div style="margin-bottom:4px"><b>不主动上传</b>：程序不会主动上传任何用户数据到任何服务器。</div>' +
+    '<div style="margin-bottom:4px"><b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时与外部通信。</div>' +
+    '<div style="margin-bottom:4px"><b>文库权限保护</b>：文档受 full/search/none 三级令牌授权保护。</div>' +
+    '<div style="margin-bottom:4px"><b>开源组件透明</b>：所有第三方组件遵循原始开源许可证。</div>' +
+    '<div style="margin-bottom:4px"><b>随时可清除</b>：删除安装目录即可彻底卸载，数据随之清除。</div>' +
     '</div>';
   el.innerHTML = summary;
 }

@@ -940,10 +940,12 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   localStorage.setItem('_activeTab', name);  // 记住当前 Tab
-  if (name === 'settings') { refreshStatus(); loadRecorderResident(); loadAutoWarmupSetting(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); switchSettingsTab('general'); }
+  if (name === 'settings') { refreshStatus(); loadRecorderResident(); loadAutoWarmupSetting(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); switchSettingsTab('general', document.querySelector('.settings-nav-item[data-stab="general"]')); }
   if (name === 'qa') kbRouteState();  // Patch 7: 三级状态路由（安装/激活/就绪）
   // P6: minutes tab 已移除
   if (name === 'chat') updateChatOverlay();  // 切换到对话 Tab 时同步模型锁状态
+  // P6 审计修复 M5：切出 KB Tab 时停轮询
+  if (name !== 'qa' && typeof _kbStopPolling === 'function') _kbStopPolling();
 }
 
 // 滚动检测（事件绑定，保留在内联）

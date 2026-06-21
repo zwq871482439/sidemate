@@ -602,8 +602,9 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
              "chars": len(final_response),
              "time": elapsed,
              "task_type": "parallel",
-             # P6: 双线记忆
-             "memory_local": merge_text or local_answer or "",
+             # P6 审计修复 C6：memory_local 存本地原始回答（非融合结果）
+             # 防止下一轮本地列收到混淆了云端内容的"历史回答"
+             "memory_local": local_answer or "",
              "memory_cloud": cloud_answer or "",
              "agent_timeline": agent_timeline,
              },

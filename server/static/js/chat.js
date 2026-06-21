@@ -105,12 +105,12 @@ function _handleAgentTimelineSSE(d) {
   var label = _agentTimelineStepLabels[step] || (d.label || step);
 
   if (phase === 'start') {
-    // 创建新步骤节点
+    // 创建新步骤节点 — P6 审计修复：用 SVG 圆环替代实心圆，让 spin 动画有视觉反馈
     var stepEl = document.createElement('div');
     stepEl.className = 'agent-tl-step';
     stepEl.setAttribute('data-step', step);
     stepEl.innerHTML =
-      '<span class="agent-tl-icon spin">●</span>' +
+      '<span class="agent-tl-icon spin"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5" opacity="0.3"/><path d="M7 2a5 5 0 015 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>' +
       '<span class="agent-tl-label">' + _esc(label) + '</span>' +
       '<span class="agent-tl-time"></span>';
     container.appendChild(stepEl);

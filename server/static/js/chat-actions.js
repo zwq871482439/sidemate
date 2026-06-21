@@ -10,6 +10,13 @@ async function refreshActionBar() {
     var _apiBase = (typeof API !== 'undefined' ? API : '');
     var curMode = (typeof _currentMode !== 'undefined') ? _currentMode : 'local';
 
+    // P6 审计修复 M3：缓存 key 必须包含 mode，否则切换后不重渲染
+    var _modeKey = curMode || 'local';
+    if (_lastActionMode !== _modeKey) {
+      _lastActionIds = '';  // 强制刷新
+      _lastActionMode = _modeKey;
+    }
+
     // ===== 在线模式：硬编码 2 个按钮 =====
     if (curMode === 'cloud') {
       var cacheKey = 'cloud|agent|doc';

@@ -77,6 +77,9 @@ class AccessTokenManager:
         self._tokens_cache: Dict[str, AccessToken] = {}
         # doc_id → {token_string} 的反向索引（方便按 doc_id 撤销）
         self._doc_tokens: Dict[str, set] = {}
+        # P6 审计修复 C7：并发锁，所有读写操作必须持锁
+        import threading as _threading
+        self._lock = _threading.Lock()
 
     def _generate_token_string(self) -> str:
         """生成随机令牌字符串（32 字节 hex = 64 字符）
@@ -88,10 +91,11 @@ class AccessTokenManager:
 
     def _create_token(self, doc_id: str, level: str, ttl: float = None,
                       session_id: str = "") -> AccessToken:
-        """创建令牌并存入缓存
+        """创建令牌并存入缓存（线程安全）
 
         P5 审计修复 P2-13: 每个 doc_id 最多保留 MAX_TOKENS_PER_DOC 个令牌，
         超限时 LRU 淘汰最旧的令牌。
+        P6 审计修复 C7：所有读写操作加 self._lock 保护
 
         Args:
             doc_id: 绑定的文档 ID
@@ -102,38 +106,40 @@ class AccessTokenManager:
         Returns:
             AccessToken 对象
         """
-        now = time.time()
-        effective_ttl = self._default_ttl if ttl is None else ttl
-        expires_at = now + effective_ttl if effective_ttl > 0 else 0
+        with self._lock:
+            now = time.time()
+            effective_ttl = self._default_ttl if ttl is None else ttl
+            expires_at = now + effective_ttl if effective_ttl > 0 else 0
 
-        # P2-13: LRU 淘汰 — 每个 doc_id 最多 MAX_TOKENS_PER_DOC 个令牌
-        MAX_TOKENS_PER_DOC = 1000
-        doc_token_set = self._doc_tokens.setdefault(doc_id, set())
-        if len(doc_token_set) >= MAX_TOKENS_PER_DOC:
-            # 淘汰最旧的令牌（按 created_at 排序）
-            oldest_token = min(doc_token_set,
-                               key=lambda t: self._tokens_cache[t].created_at
-                               if t in self._tokens_cache else float('inf'))
-            self._remove_token(oldest_token)
+            # P2-13: LRU 淘汰 — 每个 doc_id 最多 MAX_TOKENS_PER_DOC 个令牌
+            MAX_TOKENS_PER_DOC = 1000
+            doc_token_set = self._doc_tokens.setdefault(doc_id, set())
+            if len(doc_token_set) >= MAX_TOKENS_PER_DOC:
+                # P6 审计修复 LOW: 过滤掉已不在缓存的 token 再 min
+                valid_tokens = [t for t in doc_token_set if t in self._tokens_cache]
+                if valid_tokens:
+                    oldest_token = min(valid_tokens,
+                                       key=lambda t: self._tokens_cache[t].created_at)
+                    self._remove_token_unlocked(oldest_token)
 
-        token_str = self._generate_token_string()
-        access_token = AccessToken(
-            token=token_str,
-            doc_id=doc_id,
-            level=level,
-            session_id=session_id or "",
-            created_at=now,
-            expires_at=expires_at,
-        )
-        self._tokens_cache[token_str] = access_token
-        # 反向索引
-        if doc_id not in self._doc_tokens:
-            self._doc_tokens[doc_id] = set()
-        self._doc_tokens[doc_id].add(token_str)
+            token_str = self._generate_token_string()
+            access_token = AccessToken(
+                token=token_str,
+                doc_id=doc_id,
+                level=level,
+                session_id=session_id or "",
+                created_at=now,
+                expires_at=expires_at,
+            )
+            self._tokens_cache[token_str] = access_token
+            # 反向索引
+            if doc_id not in self._doc_tokens:
+                self._doc_tokens[doc_id] = set()
+            self._doc_tokens[doc_id].add(token_str)
 
-        log.info("[ACCESS_TOKEN] 生成令牌: doc_id=%s, level=%s, expires_at=%s",
-                 doc_id, level, "never" if expires_at == 0 else str(expires_at))
-        return access_token
+            log.info("[ACCESS_TOKEN] 生成令牌: doc_id=%s, level=%s, expires_at=%s",
+                     doc_id, level, "never" if expires_at == 0 else str(expires_at))
+            return access_token
 
     def generate_full_token(self, doc_id: str, ttl: float = None,
                             session_id: str = "") -> str:
@@ -166,7 +172,7 @@ class AccessTokenManager:
         return token.token
 
     def verify_token(self, token: str, doc_id: str = None) -> Tuple[bool, str]:
-        """验证令牌有效性
+        """验证令牌有效性（线程安全）
 
         Args:
             token: 令牌字符串
@@ -180,27 +186,28 @@ class AccessTokenManager:
         if not token:
             return False, "none"
 
-        access_token = self._tokens_cache.get(token)
-        if access_token is None:
-            return False, "none"
+        with self._lock:
+            access_token = self._tokens_cache.get(token)
+            if access_token is None:
+                return False, "none"
 
-        # 检查过期
-        if access_token.expires_at > 0 and time.time() > access_token.expires_at:
-            # 过期令牌自动清理
-            self._remove_token(token)
-            log.info("[ACCESS_TOKEN] 令牌已过期: doc_id=%s", access_token.doc_id)
-            return False, "none"
+            # 检查过期
+            if access_token.expires_at > 0 and time.time() > access_token.expires_at:
+                # 过期令牌自动清理
+                self._remove_token_unlocked(token)
+                log.info("[ACCESS_TOKEN] 令牌已过期: doc_id=%s", access_token.doc_id)
+                return False, "none"
 
-        # 检查 doc_id 绑定（如果提供了 doc_id）
-        if doc_id is not None and access_token.doc_id != doc_id:
-            log.warning("[ACCESS_TOKEN] 令牌 doc_id 不匹配: expected=%s, actual=%s",
-                        doc_id, access_token.doc_id)
-            return False, "none"
+            # 检查 doc_id 绑定（如果提供了 doc_id）
+            if doc_id is not None and access_token.doc_id != doc_id:
+                log.warning("[ACCESS_TOKEN] 令牌 doc_id 不匹配: expected=%s, actual=%s",
+                            doc_id, access_token.doc_id)
+                return False, "none"
 
-        return True, access_token.level
+            return True, access_token.level
 
     def revoke_token(self, token: str) -> bool:
-        """撤销指定令牌
+        """撤销指定令牌（线程安全）
 
         Args:
             token: 令牌字符串
@@ -208,10 +215,11 @@ class AccessTokenManager:
         Returns:
             是否撤销成功
         """
-        return self._remove_token(token)
+        with self._lock:
+            return self._remove_token_unlocked(token)
 
     def revoke_doc_tokens(self, doc_id: str) -> int:
-        """撤销某文档的所有令牌
+        """撤销某文档的所有令牌（线程安全）
 
         Args:
             doc_id: 文档 ID
@@ -219,34 +227,36 @@ class AccessTokenManager:
         Returns:
             撤销的令牌数量
         """
-        token_set = self._doc_tokens.pop(doc_id, set())
-        count = 0
-        for token_str in token_set:
-            self._tokens_cache.pop(token_str, None)
-            count += 1
-        if count > 0:
-            log.info("[ACCESS_TOKEN] 撤销文档 %s 的 %d 个令牌", doc_id, count)
-        return count
+        with self._lock:
+            token_set = self._doc_tokens.pop(doc_id, set())
+            count = 0
+            for token_str in token_set:
+                self._tokens_cache.pop(token_str, None)
+                count += 1
+            if count > 0:
+                log.info("[ACCESS_TOKEN] 撤销文档 %s 的 %d 个令牌", doc_id, count)
+            return count
 
     def list_tokens(self) -> list:
-        """列出所有活跃令牌
+        """列出所有活跃令牌（线程安全）
 
         Returns:
             [{"doc_id": "...", "level": "...", "session_id": "...", "created_at": N}, ...]
         """
-        result = []
-        for token_str, access_token in self._tokens_cache.items():
-            result.append({
-                "token": token_str,
-                "doc_id": access_token.doc_id,
-                "level": access_token.level,
-                "session_id": access_token.session_id or "",
-                "created_at": access_token.created_at,
-            })
-        return result
+        with self._lock:
+            result = []
+            for token_str, access_token in self._tokens_cache.items():
+                result.append({
+                    "token": token_str,
+                    "doc_id": access_token.doc_id,
+                    "level": access_token.level,
+                    "session_id": access_token.session_id or "",
+                    "created_at": access_token.created_at,
+                })
+            return result
 
     def revoke_all_for_session(self, session_id: str) -> int:
-        """撤销某会话的所有令牌
+        """撤销某会话的所有令牌（线程安全）
 
         Args:
             session_id: 会话 ID
@@ -256,20 +266,29 @@ class AccessTokenManager:
         """
         if not session_id:
             return 0
-        to_revoke = []
-        for token_str, access_token in list(self._tokens_cache.items()):
-            if access_token.session_id == session_id:
-                to_revoke.append(token_str)
-        count = 0
-        for token_str in to_revoke:
-            if self._remove_token(token_str):
-                count += 1
-        if count > 0:
-            log.info("[ACCESS_TOKEN] 撤销会话 %s 的 %d 个令牌", session_id, count)
+        with self._lock:
+            to_revoke = []
+            for token_str, access_token in list(self._tokens_cache.items()):
+                if access_token.session_id == session_id:
+                    to_revoke.append(token_str)
+            count = 0
+            for token_str in to_revoke:
+                if self._remove_token_unlocked(token_str):
+                    count += 1
+            if count > 0:
+                log.info("[ACCESS_TOKEN] 撤销会话 %s 的 %d 个令牌", session_id, count)
         return count
 
     def _remove_token(self, token: str) -> bool:
-        """从缓存中移除令牌
+        """从缓存中移除令牌（线程安全版本，对外接口）"""
+        with self._lock:
+            return self._remove_token_unlocked(token)
+
+    def _remove_token_unlocked(self, token: str) -> bool:
+        """从缓存中移除令牌（无锁版本，调用方必须持锁）
+
+        P6 审计修复 C7：拆分为 locked/unlocked 两个版本，
+        避免在已持锁的方法里再次获取锁导致死锁。
 
         Args:
             token: 令牌字符串
