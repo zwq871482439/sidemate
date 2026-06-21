@@ -178,8 +178,12 @@ function _renderSingleMsg(m, idx) {
   var ts = m.ts ? '<div class="ts">' + esc(m.ts) + '</div>' : '';
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
+  // Patch5 C7：如果页面上已有活跃的 AgentTimeline（流式时建的），
+  // 不重复渲染 m.agent_timeline（否则鱼骨出现两份）
+  var _hasLiveTimeline = (_agentTimelineEl && _agentTimelineEl.parentNode);
+  var timelineHtml = _hasLiveTimeline ? '' : _buildAgentTimelineHtml(m.agent_timeline);
   var html = '<div class="msg-copy-wrap">'
-    + _buildAgentTimelineHtml(m.agent_timeline) + ts + bodyHtml;
+    + timelineHtml + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
   if (m.doc_url) {
     var _dlUrl = m.doc_url;
