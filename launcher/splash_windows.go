@@ -22,7 +22,7 @@ const (
 	baseCornerR    = 14
 	baseLogoSz     = 56
 	baseLogoBox    = 68
-	baseStepStartY = 200   // 进度条区域起点
+	baseStepStartY = 230   // 进度条区域起点（下移以均衡上下留白）
 	baseStepRowH   = 46
 	baseDotR       = 12
 	baseProgressH  = 5
@@ -492,14 +492,18 @@ func splashPaint(hdc syscall.Handle, ss *SplashState) {
 		)
 	}
 
-	// --- 版本行 ---
-	verY := logoY + sLogoBox + 18*dpi/96 // 与 Logo 拉开间距
+	// --- 版本行（拆两行：产品名 + 版本号）---
+	verY := logoY + sLogoBox + 14*dpi/96 // 与 Logo 拉开间距（两行更高，上间距略缩）
 	verFontSize := 16 * dpi / 96
-	verText := "桌伴 · Sidemate · " + ss.version
-	splashDrawTextEx(hdc, verText, verFontSize, 0, verY, sW, verFontSize+8*dpi/96, splashColorTitleBG, true)
+	// 第一行：产品名（主标题色）
+	splashDrawTextEx(hdc, "桌伴 Sidemate", verFontSize, 0, verY, sW, verFontSize+8*dpi/96, splashColorTitleBG, true)
+	// 第二行：版本号（灰色副标题色，小一号）
+	verFontSize2 := 13 * dpi / 96
+	verY2 := verY + verFontSize + 2*dpi/96
+	splashDrawTextEx(hdc, ss.version, verFontSize2, 0, verY2, sW, verFontSize2+6*dpi/96, splashColorSubtitle, true)
 
 	// --- 分隔线 ---
-	sepY := verY + verFontSize + 20*dpi/96 // 版本行与分隔线拉开
+	sepY := verY2 + verFontSize2 + 14*dpi/96 // 适配两行版本行的新高度
 	sepPen, _, _ := splashProcCreatePen.Call(0, 1, splashColorWait)
 	hOldSepPen, _, _ := splashProcSelectObj.Call(uintptr(hdc), sepPen)
 	splashProcMoveToEx.Call(uintptr(hdc), uintptr(40*dpi/96), uintptr(sepY), 0)

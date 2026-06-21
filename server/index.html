@@ -19,8 +19,8 @@
 <script src="/static/vendor/highlight.min.js"></script>
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.25">
-<link rel="stylesheet" href="/static/css/skeleton.css?v=2.25">
+<link rel="stylesheet" href="/static/css/main.css?v=2.26">
+<link rel="stylesheet" href="/static/css/skeleton.css?v=2.26">
 </head>
 <body>
 
@@ -630,6 +630,14 @@
         <!-- 无模型时显示引导提示 -->
         <div id="noModelHint" style="display:none;padding:10px 14px;background:var(--bg-secondary);border-radius:8px;font-size:12px;color:var(--text-muted)">暂未安装模型。请导入 .sidemate 模型包，或点击右上角「扫描模型」检测已有模型。</div>
       </div>
+      <!-- 启动时自动加载模型开关 -->
+      <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border-color)">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary)">
+          <input type="checkbox" id="autoWarmupChk" onchange="saveAutoWarmup(this.checked)" style="width:15px;height:15px">
+          启动时自动加载模型（推荐）
+        </label>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px;padding-left:23px">勾选后启动器会在启动阶段自动加载 LLM，省去首次问答的等待</div>
+      </div>
       <pre id="statusText" style="display:none"></pre>
     </div>
 
@@ -1111,25 +1119,25 @@ window.addEventListener('DOMContentLoaded', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.25"></script>
-<script src="/static/js/core/utils.js?v=2.25"></script>
-<script src="/static/js/core/errors.js?v=2.25"></script>
-<script src="/static/js/stream_renderer.js?v=2.25"></script>
-<script src="/static/js/settings.js?v=2.25"></script>
-<script src="/static/js/qa.js?v=2.25"></script>
-<script src="/static/js/kb-batch.js?v=2.25"></script>
-<script src="/static/js/minutes.js?v=2.25"></script>
+<script src="/static/js/core/api.js?v=2.26"></script>
+<script src="/static/js/core/utils.js?v=2.26"></script>
+<script src="/static/js/core/errors.js?v=2.26"></script>
+<script src="/static/js/stream_renderer.js?v=2.26"></script>
+<script src="/static/js/settings.js?v=2.26"></script>
+<script src="/static/js/qa.js?v=2.26"></script>
+<script src="/static/js/kb-batch.js?v=2.26"></script>
+<script src="/static/js/minutes.js?v=2.26"></script>
 <!-- Patch2 D1: chat.js 拆分为子模块（全局挂载，加载顺序敏感） -->
-<script src="/static/js/chat-session.js?v=2.25"></script>
-<script src="/static/js/chat-actions.js?v=2.25"></script>
-<script src="/static/js/chat-files.js?v=2.25"></script>
-<script src="/static/js/chat-export.js?v=2.25"></script>
-<script src="/static/js/chat-ui.js?v=2.25"></script>
-<script src="/static/js/chat.js?v=2.25"></script>
+<script src="/static/js/chat-session.js?v=2.26"></script>
+<script src="/static/js/chat-actions.js?v=2.26"></script>
+<script src="/static/js/chat-files.js?v=2.26"></script>
+<script src="/static/js/chat-export.js?v=2.26"></script>
+<script src="/static/js/chat-ui.js?v=2.26"></script>
+<script src="/static/js/chat.js?v=2.26"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.25"></script>
-<script src="/static/js/skeleton.js?v=2.25"></script>
-<script src="/static/js/ui-enhance.js?v=2.25"></script>
+<script src="/static/js/token-estimator.js?v=2.26"></script>
+<script src="/static/js/skeleton.js?v=2.26"></script>
+<script src="/static/js/ui-enhance.js?v=2.26"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====
@@ -1139,7 +1147,7 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   localStorage.setItem('_activeTab', name);  // 记住当前 Tab
-  if (name === 'settings') { refreshStatus(); loadRecorderResident(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); }
+  if (name === 'settings') { refreshStatus(); loadRecorderResident(); loadAutoWarmupSetting(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); }
   if (name === 'qa') kbRouteState();  // Patch 7: 三级状态路由（安装/激活/就绪）
   if (name === 'minutes') minutesRouteState();  // Patch 6: 纪要Tab三阶段状态路由
   if (name === 'chat') updateChatOverlay();  // 切换到对话 Tab 时同步模型锁状态

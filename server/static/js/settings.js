@@ -164,7 +164,7 @@ async function refreshStatus() {
         sourceTag.style.background = '';
         sourceTag.style.color = '';
       } else if (hasModels) {
-        sourceTag.textContent = '模型已就绪，预热后使用';
+        sourceTag.textContent = '模型已就绪，加载后使用';
         sourceTag.className = 'tag online off';
         sourceTag.style.background = '';
         sourceTag.style.color = '';
@@ -239,16 +239,16 @@ function updateWarmupBtn(modelsData) {
     btn.style.borderColor = '';
     btn.disabled = false;
   } else if (isLoaded) {
-    // S2: 已完成预热 → 卸载模型
-    btn.textContent = '卸载模型';
+    // S2: 已完成预热 → 取消加载
+    btn.textContent = '取消加载';
     btn.onclick = function() { handleUnload(); };
     btn.style.background = 'transparent';
     btn.style.color = 'var(--error-color)';
     btn.style.borderColor = 'var(--error-color)';
     btn.disabled = false;
   } else {
-    // S1: 已安装未预热 → 预热模型
-    btn.textContent = '预热模型';
+    // S1: 已安装未预热 → 加载模型
+    btn.textContent = '加载模型';
     btn.onclick = function() { handleWarmup(); };
     btn.style.background = '';
     btn.style.color = '';
@@ -260,13 +260,13 @@ function updateWarmupBtn(modelsData) {
 // ===== 模型预热 =====
 async function handleWarmup() {
   var btn = document.getElementById('modelActionBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '预热中...'; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
+  if (btn) { btn.disabled = true; btn.textContent = '加载中...'; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
 
   try {
     var resp = await fetch(_apiBase + '/api/warmup', {method: 'POST'});
     var data = await resp.json();
     if (!data.ok) {
-      if (btn) { btn.disabled = false; btn.textContent = '预热模型'; }
+      if (btn) { btn.disabled = false; btn.textContent = '加载模型'; }
       return;
     }
     if (data.already_warm) {
@@ -281,7 +281,7 @@ async function handleWarmup() {
     }
 
     // 后台加载中 → 显示全局覆层 + 轮询状态
-    if (typeof showModuleLoading === 'function') showModuleLoading('模型预热中', 'model', '首次加载约需 10-30 秒');
+    if (typeof showModuleLoading === 'function') showModuleLoading('模型加载中', 'model', '首次加载约需 10-30 秒');
     var _poll = setInterval(async function() {
       try {
         var r = await fetch(_apiBase + '/api/models');
@@ -303,7 +303,7 @@ async function handleWarmup() {
     }, 1500);
   } catch(e) {
     if (typeof hideModuleLoading === 'function') hideModuleLoading();
-    if (btn) { btn.disabled = false; btn.textContent = '预热模型'; }
+    if (btn) { btn.disabled = false; btn.textContent = '加载模型'; }
   }
 }
 
@@ -331,23 +331,23 @@ async function rescanModels() {
 
 // ===== 模型卸载 =====
 async function handleUnload() {
-  if (!(await showDialog('卸载模型', '确定卸载当前模型？卸载后需要重新预热才能使用对话功能。', {type: 'danger', confirm: true, confirmLabel: '卸载', cancelLabel: '取消'}))) return;
+  if (!(await showDialog('取消加载', '确定取消加载当前模型？取消加载后需要重新加载才能使用对话功能。', {type: 'danger', confirm: true, confirmLabel: '确认', cancelLabel: '取消'}))) return;
   var btn = document.getElementById('modelActionBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '卸载中...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '取消加载中...'; }
   try {
     var resp = await fetch(_apiBase + '/api/model/unload', {method: 'POST'});
     var data = await resp.json();
     if (data.ok) {
-      if (typeof showToast === 'function') showToast('模型已卸载，资源已释放', 'success');
+      if (typeof showToast === 'function') showToast('已取消加载，资源已释放', 'success');
       refreshStatus();
       refreshResourcePanel();
     } else {
-      if (typeof showToast === 'function') showToast('卸载失败: ' + (data.error || '未知错误'), 'error');
+      if (typeof showToast === 'function') showToast('取消加载失败: ' + (data.error || '未知错误'), 'error');
     }
   } catch(e) {
-    if (typeof showToast === 'function') showToast('卸载失败: ' + e.message, 'error');
+    if (typeof showToast === 'function') showToast('取消加载失败: ' + e.message, 'error');
   }
-  if (btn) { btn.disabled = false; btn.textContent = '卸载模型'; }
+  if (btn) { btn.disabled = false; btn.textContent = '取消加载'; }
 }
 
 // ===== 删除已安装的 LLM 模型 =====
@@ -451,6 +451,33 @@ async function loadRecorderResident() {
     var chk = document.getElementById('recorderResidentChk');
     if (chk) chk.checked = !!cfg.recorder_resident;
   } catch(e) { console.error('[settings.loadRecorderResident]', e); }
+}
+
+// ===== 启动时自动加载模型开关（auto_warmup_llm）=====
+async function loadAutoWarmupSetting() {
+  try {
+    var resp = await fetch(_apiBase + '/api/config');
+    var result = await resp.json();
+    var cfg = result.config || result;
+    var chk = document.getElementById('autoWarmupChk');
+    if (chk) chk.checked = cfg.auto_warmup_llm !== false; // 默认 true
+  } catch(e) { console.error('[settings.loadAutoWarmupSetting]', e); }
+}
+
+async function saveAutoWarmup(checked) {
+  try {
+    await fetch(_apiBase + '/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({auto_warmup_llm: checked})
+    });
+    if (typeof showToast === 'function') {
+      showToast(checked ? '已开启自动加载' : '已关闭自动加载', 'success');
+    }
+  } catch(e) {
+    console.error('[settings.saveAutoWarmup]', e);
+    if (typeof showToast === 'function') showToast('保存失败', 'error');
+  }
 }
 
 // ===== 扩展中心 =====
@@ -740,8 +767,8 @@ function updateModeTagUI(mode, cloudConfigured, ctxWindow, maxHistChars) {
       tag.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#4caf50"/></svg> 正在使用本地AI模型 ▾';
       sub.textContent = '数据不上网 模型跑本地';
     } else {
-      tag.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#f59e0b"/></svg> 本地AI模型已就绪，预热后使用 ▾';
-      sub.textContent = '前往设置页面预热模型';
+      tag.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#f59e0b"/></svg> 本地AI模型已就绪，加载后使用 ▾';
+      sub.textContent = '前往设置页面加载模型';
     }
   } else {
     tag.className = 'tag-mode tag-cloud';
@@ -1250,6 +1277,8 @@ window.handleUnload = handleUnload;
 window.handleDeleteModel = handleDeleteModel;
 window.saveRecorderResident = saveRecorderResident;
 window.loadRecorderResident = loadRecorderResident;
+window.saveAutoWarmup = saveAutoWarmup;
+window.loadAutoWarmupSetting = loadAutoWarmupSetting;
 window.refreshExtensions = refreshExtensions;
 window.installExtension = installExtension;
 window.uninstallExtension = uninstallExtension;
