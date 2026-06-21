@@ -42,21 +42,22 @@ var MessageStyleManager = {
   },
 
   /**
-   * 应用当前模式到 DOM（给 #messages 加或移除 class msg-list-mode）
+   * 应用当前模式到 DOM（A2 论坛风列表 / E3 圆角气泡）
    */
   applyMode: function() {
     var msgs = document.getElementById('messages');
     if (!msgs) return;
     if (this.getMode() === 'list') {
       msgs.classList.add('msg-list-mode');
+      msgs.classList.remove('msg-bubble-mode');
     } else {
       msgs.classList.remove('msg-list-mode');
+      msgs.classList.add('msg-bubble-mode');
     }
-    // Patch5 C7：同步切换按钮的文案
+    // 同步切换按钮的文案
     var btn = document.getElementById('msgStyleToggle');
     if (btn) {
-      var label = btn.querySelector('.ms-label');
-      if (label) label.textContent = (this.getMode() === 'list') ? '列表' : '气泡';
+      btn.textContent = (this.getMode() === 'list') ? '列表' : '气泡';
     }
   }
 };

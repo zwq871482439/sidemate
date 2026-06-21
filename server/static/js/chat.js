@@ -6,6 +6,7 @@ var _cloudThinking = false;     // 是否正在云端推理中
 var _agentTimelineEl = null;    // Agent 工具时间线容器 DOM（全局，跨函数共享）
 var _agentTimelineData = [];    // Agent 时间线数据收集（用于持久化到消息对象）
 var _agentCurrentStepEl = null; // Patch4 v3：当前进行中的步骤 DOM（新步骤开始时它变 done，治闪烁）
+var _thinkingTimerInterval = null; // Patch5 C7 B3：思考态计时器
 var _agentCurrentStepStartTs = 0; // 当前步骤开始时间戳（用于计算 elapsed）
 
 // ===== 统一渲染器：消息体 HTML 生成 =====
@@ -290,14 +291,26 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
 
   var html = '';
   if (isThinking) {
-    // Patch4 v3.1 BUG#10 终极根治：
-    // 用全局 _currentMode 判断（task_type 可能还没到，_cloudThinking 时序不稳）
-    // 云端模式 → 不显示 thinking-indicator（AgentTimeline 负责）
-    // 本地模式 → 显示 thinking-indicator
+    // Patch5 C7 B3：本地模式也用动画点替代 spinner+文案
+    // 云端模式由 AgentTimeline 负责（也用动画点）
     var _isCloudMode = (typeof _currentMode !== 'undefined' && _currentMode === 'cloud');
     if (!_isCloudMode) {
-      // 本地模式：显示 thinking-indicator
-      html += '<div class="thinking-indicator">' + iconSvg('spin','14') + ' 正在思考</div>';
+      // 本地模式：动画点 + "思考中" + 计时
+      html += '<div class="thinking-indicator"><span class="thinking-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> 思考中 <span class="thinking-timer" data-start="' + Date.now() + '">0.0s</span></div>';
+      // 启动计时器
+      if (typeof _thinkingTimerInterval !== 'undefined' && _thinkingTimerInterval) clearInterval(_thinkingTimerInterval);
+      _thinkingTimerInterval = setInterval(function() {
+        var timers = document.querySelectorAll('.thinking-timer');
+        if (!timers.length) {
+          clearInterval(_thinkingTimerInterval);
+          _thinkingTimerInterval = null;
+          return;
+        }
+        timers.forEach(function(t) {
+          var start = parseInt(t.getAttribute('data-start') || '0', 10);
+          if (start) t.textContent = ((Date.now() - start) / 1000).toFixed(1) + 's';
+        });
+      }, 100);
     }
     if (content) {
       html += '<div style="color:var(--text-muted);font-style:italic;font-size:.85em">' + md(content, false) + '</div>';
@@ -764,8 +777,15 @@ async function sendMessage() {
           } else if (d.type === 'pipeline_progress') {
           } else if (d.type === 'token') {
             fullText += d.content;
-            // Patch5 C7: 收到首个有内容的 token 时隐藏骨架屏
+            // Patch5 C7: 收到首个有内容的 token 时隐藏骨架屏 + 停止思考态计时
             if (typeof Skeleton !== 'undefined' && fullText.length > 0) Skeleton.hide(document.getElementById('messages'));
+            if (fullText.length > 0 && _thinkingTimerInterval) {
+              clearInterval(_thinkingTimerInterval);
+              _thinkingTimerInterval = null;
+              // 思考态指示器移除
+              var _ti = document.querySelector('.thinking-indicator');
+              if (_ti) _ti.remove();
+            }
             var noThinkTypes = ['text', 'code', 'agent'];
             if (!thinkingPhase && !thinkText && !noThinkTypes.includes(currentTaskType)) {
               thinkingPhase = true;
@@ -1590,8 +1610,8 @@ function _finalizeCurrentStep(nowTs) {
 function _agentStepHtml(data) {
   switch (data.status) {
     case 'thinking':
-      // Patch4 v3.1 BUG#10：思考中用 spin 旋转圈（与"正在思考"旁的图标一致）
-      return '<span class="agent-icon agent-spin">' + iconSvg('spin','14') + '</span> <span class="agent-label">思考中...</span>';
+      // Patch5 C7 B3：动画点 + 计时（替代 spinner + 文案）
+      return '<span class="agent-icon"><span class="thinking-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></span> <span class="agent-label">思考中</span>';
     case 'searching':
       return '<span class="agent-icon agent-spin">' + iconSvg('books','14') + '</span> <span class="agent-label">正在搜索「' + _esc(data.query || '') + '」</span>';
     case 'search_done':

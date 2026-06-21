@@ -193,25 +193,12 @@ async function refreshStatus() {
     if (typeof refreshActionBar === 'function') refreshActionBar();
     refreshTokenBudget(data);
     updateTabVisibility();
-    // Patch5 C7: 模型加载后显示清除上下文按钮（带 SVG icon）
-    var _ccBtn = document.getElementById('clearContextBtn');
-    if (_ccBtn) {
-      _ccBtn.style.display = hasLoaded ? 'inline-flex' : 'none';
-      if (hasLoaded && typeof iconSvg === 'function') {
-        _ccBtn.innerHTML = iconSvg('trash', 11) + ' <span>清除上下文</span>';
-      }
-    }
-    // Patch5 C7: 消息样式切换按钮也注入 SVG icon
+    // Patch5 C7: 清除上下文按钮已下线，不再注入
+    // Patch5 C7: 消息样式切换按钮文案随 localStorage 模式刷新
     var _msBtn = document.getElementById('msgStyleToggle');
-    if (_msBtn && typeof iconSvg === 'function' && !_msBtn.dataset.iconInjected) {
-      _msBtn.innerHTML = iconSvg('pause', 11) + ' <span class="ms-label">气泡</span>';
-      _msBtn.dataset.iconInjected = '1';
-    }
-    // 根据 localStorage 模式刷新文案
     if (_msBtn && typeof MessageStyleManager !== 'undefined') {
-      var _mode = MessageStyleManager.getMode();
-      var _label = _msBtn.querySelector('.ms-label');
-      if (_label) _label.textContent = (_mode === 'list') ? '列表' : '气泡';
+      var _curMode = MessageStyleManager.getMode();
+      _msBtn.textContent = (_curMode === 'list') ? '列表' : '气泡';
     }
     // refreshStatus 完成后 _loadedModelId 已更新，重新刷新 modeTag 文案
     if (typeof initModeTag === 'function') initModeTag();

@@ -1149,10 +1149,60 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .code-block:not(:has(.code-header)) .code-copy-btn { position: absolute; top: 6px; right: 6px; opacity: 0; }
 .code-block:not(:has(.code-header)):hover .code-copy-btn { opacity: 1; }
 
-/* 消息列表模式 */
-#messages.msg-list-mode .msg { max-width: 100%; border-left: 2px solid var(--border-color); padding-left: 12px; margin: 8px 0; border-radius: 0; }
-#messages.msg-list-mode .msg.user { border-left-color: var(--primary-500); background: transparent; }
-#messages.msg-list-mode .msg.ai { border-left-color: var(--accent-400); background: transparent; }
+/* 消息列表模式 A2 论坛风（仿 ChatGPT）：小头像 + 角色 + 内容 */
+/* E3 气泡模式：圆角统一 12px + 收紧间距 */
+#messages.msg-bubble-mode .msg {
+  border-radius: 12px !important;
+  margin: 6px 0 !important;
+  padding: 10px 14px !important;
+}
+#messages.msg-bubble-mode .msg.user {
+  border-radius: 12px 12px 4px 12px !important;
+}
+#messages.msg-bubble-mode .msg.ai {
+  border-radius: 12px 12px 12px 4px !important;
+}
+
+/* A2 论坛风列表模式 */
+#messages.msg-list-mode .msg {
+  max-width: 100%;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 12px 0 !important;
+  margin: 0 !important;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+#messages.msg-list-mode .msg:last-child { border-bottom: none !important; }
+/* 头像（用 ::before 模拟，不动 DOM 结构） */
+#messages.msg-list-mode .msg.user::before {
+  content: '你';
+  grid-column: 1;
+  width: 32px; height: 32px;
+  background: var(--accent-color);
+  color: var(--text-on-accent);
+  border-radius: 50%;
+  font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 500;
+}
+#messages.msg-list-mode .msg.ai::before {
+  content: '伴';
+  grid-column: 1;
+  width: 32px; height: 32px;
+  background: var(--gray-200);
+  color: var(--text-primary);
+  border-radius: 50%;
+  font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 500;
+}
+#messages.msg-list-mode .msg > *:not(::before) {
+  grid-column: 2;
+}
 
 /* Token 显示状态 */
 #tokenDisplay.token-warn { color: #d97706; }
@@ -1164,6 +1214,35 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 [data-theme="dark"] .code-toggle:hover, [data-theme="dark"] .code-copy-btn:hover { background: var(--bg-tertiary); }
 [data-theme="dark"] #messages.msg-list-mode .msg.user { border-left-color: var(--accent-color); }
 [data-theme="dark"] #messages.msg-list-mode .msg.ai { border-left-color: var(--accent-400); }
+
+/* Patch5 C7 B3: 统一思考态 — 动画点 + 计时 */
+.thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+.thinking-dots .dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  animation: thinking-bounce 1.4s infinite ease-in-out both;
+}
+.thinking-dots .dot:nth-child(1) { animation-delay: -0.32s; }
+.thinking-dots .dot:nth-child(2) { animation-delay: -0.16s; }
+@keyframes thinking-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.thinking-timer {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+.agent-icon .thinking-dots .dot {
+  background: var(--text-secondary);
+}
 
 /* Patch5 C7 T5: 骨架屏 Skeleton */
 @keyframes skeleton-pulse {

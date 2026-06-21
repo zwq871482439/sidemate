@@ -413,54 +413,12 @@ async def api_chats_switch(request: Request):
 
 @router.post("/api/chats/clear_context")
 async def api_chats_clear_context(request: Request):
-    """清除上下文：给当前会话最新一条消息打 context_cutoff 标记。
+    """[Patch5 C7 已下线] 清除上下文按钮已移除，接口保留备用。
 
-    保留消息但让模型从下一轮重新开始（不读历史）。
-    后续 chat stream 时 routers/chat.py 会自动截断。
-
-    Body: {"chat_file": "...", "msg_idx": -1}  // -1 表示最新一条
+    保留原因：未来 P6 重做模式系统时可能复用 context_cutoff 机制。
+    当前调用方已无（前端按钮已删除）。
     """
-    body = await request.json()
-    chat_file = body.get("chat_file") or get_current_chat()
-    msg_idx = int(body.get("msg_idx", -1))
-
-    if not chat_file:
-        return JSONResponse({"error": "无当前会话"}, status_code=400)
-
-    real_path = _resolve_real_path(chat_file)
-    if not os.path.exists(real_path):
-        return JSONResponse({"error": "会话不存在"}, status_code=404)
-
-    messages = load_chat(real_path)
-    if not messages:
-        return JSONResponse({"error": "会话为空，无需清除"}, status_code=400)
-
-    # msg_idx = -1 表示最后一条
-    if msg_idx < 0:
-        msg_idx = len(messages) + msg_idx
-    if msg_idx < 0 or msg_idx >= len(messages):
-        return JSONResponse({"error": "msg_idx 超出范围"}, status_code=400)
-
-    # 清除其他消息的 context_cutoff 标记，只在目标消息上打标
-    cutoff_count = 0
-    for i, m in enumerate(messages):
-        if not isinstance(m, dict):
-            continue
-        if i == msg_idx:
-            m["context_cutoff"] = True
-            cutoff_count += 1
-        elif m.get("context_cutoff"):
-            m.pop("context_cutoff", None)
-
-    save_chat(real_path, messages)
-    log.info("[CHAT] context_cutoff 设置在 %s 的第 %d 条消息", os.path.basename(real_path), msg_idx)
-    return {
-        "ok": True,
-        "chat_file": chat_file,
-        "msg_idx": msg_idx,
-        "total_messages": len(messages),
-        "cutoff_count": cutoff_count,
-    }
+    return JSONResponse({"error": "此功能已下线", "deprecated": True}, status_code=410)
 
 
 @router.delete("/api/chats/{chat_name}")
