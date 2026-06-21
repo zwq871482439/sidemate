@@ -68,13 +68,15 @@ def api_mode():
 
 @router.post("/api/mode/switch")
 async def api_mode_switch(request: Request):
-    """切换 AI 模式（先测试云端连接，失败不允许切换到 cloud）"""
+    """切换 AI 模式（先测试云端连接，失败不允许切换到 cloud/parallel）"""
     body = await request.json()
     target = body.get("mode", "local")
-    if target not in ("local", "cloud"):
-        return JSONResponse({"ok": False, "error": "无效模式，支持: local, cloud"}, status_code=400)
+    # P6: 支持 parallel 模式（同样需要云端配置）
+    if target not in ("local", "cloud", "parallel"):
+        return JSONResponse({"ok": False, "error": "无效模式，支持: local, cloud, parallel"}, status_code=400)
 
-    if target == "cloud":
+    # cloud 和 parallel 都需要云端配置
+    if target in ("cloud", "parallel"):
         from core.cloud_engine import CloudEngine
         engine = CloudEngine(get_mgr())
         ok, latency, error = engine.test_connection()
