@@ -562,16 +562,44 @@ class _KBSearchMixin:
                 return merged
 
             else:
-                # ===== Patch5 决策：bge-m3 sparse 不可用时不再降级 BM25 =====
-                # 用户决策（2026-06-20）：如果 m3 挂了，直接提示用户重新导入 .sidemate 扩展包
-                # 不再走 BM25 降级路径，避免"看起来能用但检索质量差"的灰色状态
-                log.error("[KB] bge-m3 sparse 不可用，请重新导入知识库扩展包")
-                log.error("[KB] _embedder_loaded=%s, sparse_available=%s, _sparse_index=%s",
-                          self._embedder_loaded,
-                          getattr(self.embedder, 'sparse_available', False),
-                          getattr(self, '_sparse_index', None) is not None)
-                # 返回空结果，前端会显示"检索失败，请重新导入扩展包"
-                return []
+                # ===== P6 审计修复：sparse 不可用时降级到纯向量检索 =====
+                # 原决策（bge-m3 sparse 挂了就返回空）在 bge（非 m3）模式下永久失效
+                # 新策略：
+                #   - 如果有向量索引 → 走纯 dense 检索（接受召回率下降但不空）
+                #   - 如果连向量都没有 → 才返回空 + 错误日志
+                log.warning("[KB] sparse 不可用，降级到纯向量检索（embedder=%s, sparse_available=%s）",
+                          self.embedder.mode if self._embedder_loaded else "not_loaded",
+                          getattr(self.embedder, 'sparse_available', False))
+
+                # 纯 dense 检索
+                merged = []
+                if self.vectors is not None and len(self.chunk_order) > 0:
+                    if not self._embedder_loaded:
+                        self.init_embedder()
+                    merged = self._search_vector(query, top_k=top_k)
+
+                if not merged:
+                    log.error("[KB] 纯向量检索也无结果: query=%s, vectors=%s, chunks=%d",
+                              query[:50],
+                              "ok" if self.vectors is not None else "None",
+                              len(self.chunk_order))
+                    return []
+
+                # Reranker 精排（如果有）
+                reranker_ok = self._ensure_reranker()
+                if reranker_ok and self.reranker.available:
+                    merged = self.reranker.rerank(query, merged, top_k=top_k)
+
+                # MMR
+                merged = self._mmr_rerank(query, merged, top_k=top_k)
+                self._schedule_reranker_unload()
+
+                # 私密文档过滤
+                if accessible_doc_ids is not None:
+                    merged = [r for r in merged if r.get("doc_id", "") in accessible_doc_ids]
+
+                log.info("[KB] 纯向量+Reranker+MMR (sparse 降级): %d条", len(merged))
+                return merged
 
     def get_context(self, query: str, top_k: int = None, max_chars: int = None,
                     ai_mode: str = None, accessible_doc_ids: set = None) -> Tuple[str, List[Dict]]:

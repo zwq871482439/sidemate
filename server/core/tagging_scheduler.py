@@ -47,7 +47,7 @@ class TaggingScheduler:
         """检查 batch_queue 是否空闲（无 pending/processing 任务）
 
         P6 审计修复 M2 + 超时兜底：
-        - batch_queue 已注入：按实际状态判断
+        - batch_queue 已注入：按实际状态判断（直接查 SQLite）
         - batch_queue 未注入但启动超过 60 秒：认为不会有 batch_queue，放行
         - batch_queue 未注入且启动未超 60 秒：保守 gating
         """
@@ -58,9 +58,15 @@ class TaggingScheduler:
                 return True
             return False  # 启动窗口期内保守 gating
         try:
-            stats = self._batch_queue.get_stats()
-            pending = stats.get("pending", 0)
-            processing = stats.get("processing", 0)
+            # P6 审计修复：BatchQueue 没有 get_stats()，直接查数据库
+            conn = self._batch_queue._get_conn()
+            row = conn.execute(
+                "SELECT status, COUNT(*) as cnt FROM batch_task WHERE status IN ('pending','processing') GROUP BY status"
+            ).fetchall()
+            pending = processing = 0
+            for r in row:
+                if r["status"] == "pending": pending = r["cnt"]
+                elif r["status"] == "processing": processing = r["cnt"]
             return pending == 0 and processing == 0
         except Exception as e:
             log.warning("[TAG] batch_queue 状态查询失败: %s", str(e)[:80])
