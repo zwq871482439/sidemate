@@ -613,7 +613,7 @@ async function sendMessage() {
   // Patch4 修复 5：重置文档进度面板
   if (typeof _resetDocProgress === 'function') _resetDocProgress();
   var thinkingPhase = false;
-  var currentTaskType = '';
+  var currentTaskType = 'text';  // Patch5 C7：默认设为 text，避免首帧因空字符串误进 thinkingPhase
   var localMaxPromptTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 0;
 
   var lastRender = 0;
