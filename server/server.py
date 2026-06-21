@@ -187,9 +187,11 @@ _bg_init_thread = None
 
 def _set_bg_phase(phase: str):
     """更新后台初始化阶段（线程安全）"""
+    global _bg_init_state
     with _bg_init_lock:
         _bg_init_state["bg_phase"] = phase
-    log.info("[STARTUP] 后台阶段: %s" % phase)
+        _bg_init_state_copy = dict(_bg_init_state)  # for logging
+    log.info("[STARTUP] 后台阶段: %s (ready=%s)" % (phase, _bg_init_state_copy.get("ready")))
 
 
 def _set_bg_ready(error: str = None):
@@ -198,12 +200,16 @@ def _set_bg_ready(error: str = None):
     error 非空时累积到 load_error（不覆盖已有错误）。
     无论成败，ready 最终一定变 True。
     """
+    global _bg_init_state
     with _bg_init_lock:
         _bg_init_state["ready"] = True
+        _bg_init_state["bg_phase"] = "done"
         if error:
             existing = _bg_init_state.get("load_error")
             _bg_init_state["load_error"] = (existing + "; " + error) if existing else error
-    log.info("[STARTUP] 后台初始化完成 (ready=true, error=%s)" % (_bg_init_state.get("load_error")))
+        snapshot = dict(_bg_init_state)
+    log.info("[STARTUP] 后台初始化完成 (ready=%s, error=%s, phase=%s)" % (
+        snapshot.get("ready"), snapshot.get("load_error"), snapshot.get("bg_phase")))
 
 
 def _add_bg_error(error: str):
