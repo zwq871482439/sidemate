@@ -1651,5 +1651,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   background:var(--bg-primary); border:0.5px solid var(--border-color); border-radius:8px;
   font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:8px;
   z-index:10; box-shadow:0 -2px 8px rgba(0,0,0,.06); }
-.kb-float-bar .kb-float-list { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kb-float-bar .kb-float-list { flex:1; width:100%; }
+.kb-qitem { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:11px; color:var(--text-secondary); }
+.kb-qitem:not(:last-child) { border-bottom:0.5px solid var(--border-color); }
+.kb-qconflict .btn-xs { font-size:10px; padding:2px 8px; border:0.5px solid var(--border-color); border-radius:3px; cursor:pointer; }
 

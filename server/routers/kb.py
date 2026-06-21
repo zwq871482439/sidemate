@@ -858,6 +858,11 @@ async def api_kb_upload(file: UploadFile = File(...)):
                         # 通知 scheduler 有新 ready 文档（让它的 watcher 自动入队）
                         if hasattr(scheduler, 'notify_doc_ready'):
                             scheduler.notify_doc_ready(doc_id)
+                            # GPU gating: check batch_queue is connected
+                            if hasattr(scheduler, '_batch_queue') and scheduler._batch_queue is not None:
+                                log.info("[KB] TaggingScheduler batch_queue connected: batch_idle=%s", scheduler._is_batch_idle())
+                            else:
+                                log.warning("[KB] TaggingScheduler batch_queue NOT connected — LLM may run during vectorization!")
                 except Exception as _e:
                     log.warning("[KB] 标记 tag_status=pending 失败: %s", str(_e)[:80])
             else:

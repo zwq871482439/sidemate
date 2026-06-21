@@ -83,10 +83,6 @@ if '--serve' not in sys.argv:
 from config import ROOT_DIR, WORKSPACE_DIR, DATA_DIR, CHAT_DIR, LOG_DIR, UPLOAD_DIR, CACHE_DIR, DOCS_DIR, BACKUP_DIR, ensure_dirs
 ensure_dirs()
 
-# P4 首次启动迁移
-from core.data_migrator import migrate_data_layout
-migrate_data_layout(DATA_DIR)
-
 # ===== 配置常量 =====
 HOST = os.environ.get("LOCAL_AI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LOCAL_AI_PORT", "8976"))

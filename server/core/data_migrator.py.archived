@@ -41,7 +41,10 @@ def migrate_data_layout(data_dir: str):
             log.info("[DATA-MIGRATE] 合并 %s → %s（新目录已存在）", old_name, new_rel)
 
     # === P5 D1 新增：从旧路径迁移 ===
-    server_dir = os.path.dirname(data_dir)  # data_dir=C:\Sidemate\data, server_dir=C:\Sidemate\server
+    # P6 修复：server_dir 必须指向 server/ 目录，不是项目根
+    # data_dir=C:\Sidemate\data, PROJECT_ROOT=C:\Sidemate\, ROOT_DIR=C:\Sidemate\server
+    from config import ROOT_DIR
+    server_dir = ROOT_DIR  # C:\Sidemate\server
 
     # 1. settings.json: server/settings.json → data/settings.json
     old_settings = os.path.join(server_dir, "settings.json")

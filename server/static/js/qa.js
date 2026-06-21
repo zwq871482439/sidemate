@@ -736,12 +736,17 @@ async function kbRefreshAIOverview() {
 // --- P6 B4: 处理队列管理 ---
 
 /** 向队列添加条目 */
-function _kbAddToQueue(docId, filename) {
+function _kbAddToQueue(docId, filename, conflictInfo) {
   // 去重
   for (var i = 0; i < _kbQueueItems.length; i++) {
     if (_kbQueueItems[i].docId === docId) return;
   }
-  _kbQueueItems.push({docId: docId, filename: filename || docId, phase: 'queued', pct: 0, error: false});
+  var item = {docId: docId, filename: filename || docId, phase: 'queued', pct: 0, error: false};
+  if (conflictInfo) {
+    item.conflict = true;
+    item.conflict_info = conflictInfo;
+  }
+  _kbQueueItems.push(item);
   _kbRenderQueue();
 }
 
@@ -764,6 +769,33 @@ function _kbRemoveFromQueue(docId) {
   _kbRenderQueue();
 }
 
+/** 解决重复冲突 */
+function kbResolveConflict(docId, action) {
+  var apiBase = (typeof API !== 'undefined') ? API : '';
+  if (action === 'replace') {
+    // 删除旧文档，保留新上传
+    for (var i = 0; i < _kbQueueItems.length; i++) {
+      if (_kbQueueItems[i].docId === docId && _kbQueueItems[i].conflict_info) {
+        var existingDocId = _kbQueueItems[i].conflict_info.existing_doc_id;
+        fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(existingDocId), { method: 'DELETE' })
+          .then(function() { kbRefreshDocs(); });
+        _kbQueueItems[i].conflict = false;
+        _kbQueueItems[i].conflict_info = null;
+        break;
+      }
+    }
+  } else if (action === 'keep') {
+    // 删除新上传，保留已有
+    fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(docId), { method: 'DELETE' })
+      .then(function() { _kbRemoveFromQueue(docId); kbRefreshDocs(); });
+  } else {
+    // cancel — 删除新上传
+    fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(docId), { method: 'DELETE' })
+      .then(function() { _kbRemoveFromQueue(docId); kbRefreshDocs(); });
+  }
+  _kbRenderQueue();
+}
+
 /** 渲染队列浮动底栏 */
 function _kbRenderQueue() {
   var floatBar = document.getElementById('kbFloatBar');
@@ -782,7 +814,19 @@ function _kbRenderQueue() {
   var listHtml = '';
   for (var i = 0; i < _kbQueueItems.length; i++) {
     var item = _kbQueueItems[i];
-    // Fix A: 两阶段标签
+
+    // Fix 4: conflict items get special rendering
+    if (item.conflict && item.conflict_info) {
+      listHtml += '<div class="kb-qitem kb-qconflict">';
+      listHtml += '<span>' + esc(item.filename) + ' — 检测到重复</span>';
+      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + esc(item.docId) + '\',\'replace\')">替换</button>';
+      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + esc(item.docId) + '\',\'keep\')">保留</button>';
+      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + esc(item.docId) + '\',\'cancel\')">取消</button>';
+      listHtml += '</div>';
+      continue;
+    }
+
+    // Fix 2: only keep chunking, embedding, queued phases
     var phaseLabel;
     if (item.phase === 'chunking') {
       phaseLabel = '切块 (' + item.pct + '%)';
@@ -791,15 +835,12 @@ function _kbRenderQueue() {
     } else if (item.phase === 'queued') {
       phaseLabel = '排队中';
     } else {
-      phaseLabel = {
-        'subscribed': '准备中', 'chunking_done': '切块完成',
-        'done': '完成', 'error': '失败', 'timeout': '超时', 'unknown': '等待中'
-      }[item.phase] || item.phase;
+      continue; // skip unknown/completed phases, don't show
     }
-    if (i > 0) listHtml += '  ';
-    listHtml += '· ' + esc(item.filename) + ' — ' + phaseLabel;
+
+    listHtml += '<div class="kb-qitem">' + esc(item.filename) + ' <span class="qi-pct">' + phaseLabel + '</span></div>';
   }
-  if (floatList) floatList.textContent = listHtml;
+  if (floatList) floatList.innerHTML = listHtml;
 }
 
 // --- 文件上传 ---
@@ -837,7 +878,11 @@ async function kbUploadFile(f) {
       kbRefreshDocs();
 
       if (data.doc_id) {
-        _kbAddToQueue(data.doc_id, f.name);
+        var conflictInfo = null;
+        if (data.duplicate_detected && data.duplicate_info) {
+          conflictInfo = data.duplicate_info;
+        }
+        _kbAddToQueue(data.doc_id, f.name, conflictInfo);
         kbSubscribeProgress(data.doc_id, f.name);
       }
     } else {
@@ -891,8 +936,6 @@ function kbSubscribeProgress(docId, filename) {
           showToast('✓ ' + (filename || '') + ' 处理完成' + detail, 'success', 3000);
         } else if (d.phase === 'error') {
           showToast('✗ ' + (filename || '') + ' 处理失败', 'error', 5000);
-        } else if (pct > 0 && pct < 100) {
-          showToast('⏳ ' + (filename || '') + ' · ' + phaseText + ' · ' + pct + '%' + detail, 'info', 2000);
         }
       }
       if (d.phase === 'done' || d.phase === 'error' || d.phase === 'timeout') {
@@ -1177,6 +1220,7 @@ window.kbGenerateToken = kbGenerateToken;
 window.kbRevokeToken = kbRevokeToken;
 window.kbRevokeAllTokens = kbRevokeAllTokens;
 window.kbCopyToken = kbCopyToken;
+window.kbResolveConflict = kbResolveConflict;
 
 // _kbBusyProcessing getter
 try { Object.defineProperty(window, '_kbBusyProcessing', { get: function() { return _kbBusyProcessing; }, configurable: true }); } catch(e) { window._kbBusyProcessing = _kbBusyProcessing; }
