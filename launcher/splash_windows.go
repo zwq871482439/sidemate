@@ -271,9 +271,10 @@ func splashWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uint
 				} else if gap > 15 {
 					step = gap * 2 / 3
 				} else {
-					step = gap / 3
-					if step < 2 {
-						step = 2
+					// Patch5: 小步速度加快（gap/2 替代 gap/3），并提升最低 step 到 3
+					step = gap / 2
+					if step < 3 {
+						step = 3
 					}
 				}
 				ss.progress += step
@@ -436,7 +437,8 @@ func CreateSplashWindow(appDir string, version string, logPath string) *SplashSt
 
 	splashStateList = append(splashStateList, ss)
 
-	splashProcSetTimer.Call(hWnd, splashTimerID, 100, 0)
+	// Patch5: 滑条速度从 100ms 加快到 50ms，小步逼近时只跳 2 点会显得过慢
+	splashProcSetTimer.Call(hWnd, splashTimerID, 50, 0)
 	log.Println("[Splash] Timer 已设置，准备 ShowWindow")
 	splashProcShowWindow.Call(hWnd, 1) // SW_SHOWNORMAL
 	log.Println("[Splash] ShowWindow 已调用")

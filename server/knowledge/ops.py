@@ -621,6 +621,7 @@ class _KBOpsMixin:
 
     def _save_chunk_text(self, chunk: KBChunk):
         """保存 chunk 原文到文件"""
+        os.makedirs(self.texts_dir, exist_ok=True)
         text_path = os.path.join(self.texts_dir, chunk.chunk_id + ".txt")
         try:
             with open(text_path, "w", encoding="utf-8") as f:
