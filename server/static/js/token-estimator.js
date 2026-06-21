@@ -15,7 +15,7 @@ var TokenEstimator = {
   FILE_TOKENS_PER_KB: 200,
 
   /**
-   * 估算单段文本的 token 数
+   * 估算单段文本的 token 数（保留供内部使用）
    * @param {string} text - 输入文本
    * @returns {number} 估算 token 数
    */
@@ -26,33 +26,6 @@ var TokenEstimator = {
     var otherChars = text.length - cnChars;
     // 中文 ~1.5 字/token，英文 ~4 字/token
     return Math.ceil(cnChars / this.CHARS_PER_TOKEN_CN + otherChars / this.CHARS_PER_TOKEN_EN);
-  },
-
-  /**
-   * 合并三源估算（输入文本 + 引用文档 + 上传文件）
-   * @returns {number} 合并后的估算 token 数
-   */
-  estimateTotal: function() {
-    // 1. 输入框文本
-    var inputText = '';
-    var inputEl = document.getElementById('msgInput');
-    if (inputEl) inputText = inputEl.value;
-
-    // 2. 引用文档（_refFilePath 指向文件名，无法前端读取）
-    var refTokens = 0;
-    if (typeof _refFilePath !== 'undefined' && _refFilePath) {
-      // 引用文档按文件名长度粗估（实际内容无法前端读取）
-      refTokens = this.estimateTokens(_refFilePath);
-    }
-
-    // 3. 上传文件（按文件大小估算）
-    var fileTokens = 0;
-    if (typeof pendingFile !== 'undefined' && pendingFile) {
-      var sizeKB = (pendingFile.size || 0) / 1024;
-      fileTokens = Math.ceil(sizeKB * this.FILE_TOKENS_PER_KB);
-    }
-
-    return this.estimateTokens(inputText) + refTokens + fileTokens;
   },
 
   /**

@@ -155,7 +155,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .tabs-nav{display:flex;gap:0;border-bottom:2px solid var(--border-color);flex-shrink:0;margin-top:2px}
 .tabs-nav button{padding:6px 14px;border:none;background:none;cursor:pointer;font-size:.9em;color:var(--text-secondary);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
 .tabs-nav button:hover{color:var(--text-primary)}
-.tabs-nav button.active{color:var(--accent-color);border-bottom-color:var(--accent-color);font-weight:600}
+.tabs-nav button.active{color:var(--primary-900);border-bottom-color:var(--primary-900);font-weight:600}
 
 /* Tab 内容 */
 .tab-content{flex:1;overflow:hidden;display:none;flex-direction:column;min-height:0}
@@ -208,12 +208,6 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .task-chip.thinking{background:var(--chip-reasoning-bg);color:var(--chip-reasoning-text)}
 .task-chip.logic{background:var(--chip-text-bg);color:var(--chip-text-text)}
 .task-chip.fast{background:var(--chip-code-bg);color:var(--chip-code-text)}
-.drift-bar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg-secondary);border:0.5px solid var(--border-color);border-left:3px solid var(--warning-color);border-radius:8px;font-size:.85em;color:var(--text-primary);margin:4px 0;animation:slideDown .3s ease}
-[data-theme="dark"] .drift-bar{background:var(--bg-secondary);border-color:var(--border-color);border-left:3px solid var(--warning-color)}
-.drift-bar button{padding:3px 10px;border-radius:5px;border:0.5px solid var(--border-color);cursor:pointer;font-size:.85em;background:var(--bg-primary);color:var(--text-primary)}
-.drift-bar button:hover{background:var(--bg-secondary)}
-.drift-bar .drift-dismiss{margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1em}
-@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 
 /* ===== Code Block Styles ===== */
@@ -287,21 +281,7 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 #scrollBottomBtn{position:absolute;bottom:70px;right:20px;width:36px;height:36px;border-radius:50%;background:var(--accent-color);color:var(--text-on-accent);border:none;cursor:pointer;font-size:1.1em;display:none;box-shadow:0 2px 8px var(--shadow-light);z-index:10;transition:opacity .2s}
 #scrollBottomBtn:hover{background:var(--accent-hover)}
 
-/* ===== 全局按钮体系 ===== */
-.btn{padding:5px 14px;border:0.5px solid var(--border-color);border-radius:8px;cursor:pointer;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary);transition:all .15s;white-space:nowrap}
-.btn:hover{border-color:var(--accent-color);color:var(--accent-color)}
-.btn-primary{background:var(--accent-color);color:var(--text-on-accent);border-color:var(--accent-color)}
-.btn-primary:hover{background:var(--accent-hover);color:var(--text-on-accent)}
-.btn-danger{color:var(--error-color);border-color:var(--error-color)}
-.btn-danger:hover{background:var(--error-color);color:var(--text-on-accent)}
-.btn-ghost{background:transparent;border:none;color:var(--text-secondary)}
-.btn-ghost:hover{color:var(--text-primary)}
-.btn-xs{font-size:var(--font-xs);padding:3px 10px}
-.btn-sm{font-size:var(--font-sm);padding:4px 12px}
-[data-theme="dark"] .btn{background:var(--bg-primary);border-color:var(--border-color);color:var(--text-primary)}
-[data-theme="dark"] .btn:hover{border-color:var(--accent-color);color:var(--accent-color)}
-[data-theme="dark"] .btn-primary{background:var(--accent-color);color:var(--text-on-accent)}
-[data-theme="dark"] .btn-primary:hover{background:var(--accent-hover)}
+/* ===== 全局按钮体系（统一定义见下方 #7 统一按钮系统）===== */
 
 /* ===== 通用卡片 ===== */
 .card{background:var(--bg-primary);border:0.5px solid var(--border-color);border-radius:10px;padding:14px 16px;margin-bottom:12px}
@@ -807,26 +787,7 @@ body.has-offline-banner #app{padding-top:44px}
   .chat-sidebar-toggle{display:block}
 }
 
-/* ===== Patch2 A3: 模式切换 ===== */
-.tag-mode{cursor:pointer;font-size:.75em;padding:3px 10px;border-radius:4px;font-weight:500;display:inline-flex;align-items:center;gap:5px;user-select:none;white-space:nowrap;position:relative}
-.tag-local{background:var(--tag-local-bg,#e8f5e9);color:var(--tag-local-text,#2e7d32);border:1px solid var(--tag-local-border,#a5d6a7)}
-.tag-cloud{background:var(--tag-cloud-bg,#fce4ec);color:var(--tag-cloud-text,#c62828);border:1px solid var(--tag-cloud-border,#ef9a9a)}
-.tag-sub{font-size:.7em;color:var(--text-muted);padding:2px 6px;background:var(--bg-tertiary);border-radius:3px;white-space:nowrap}
-.mode-dropdown{position:absolute;top:100%;left:0;margin-top:6px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;box-shadow:0 4px 16px var(--shadow-light);min-width:240px;z-index:100;overflow:hidden}
-.mode-option{padding:10px 14px;cursor:pointer;display:flex;flex-direction:column;gap:2px;transition:background .15s}
-.mode-option:hover{background:var(--bg-secondary)}
-.mode-option-title{font-size:var(--font-sm);font-weight:600;display:flex;align-items:center;gap:6px}
-.mode-option-desc{font-size:.75em;color:var(--text-muted)}
-/* 确认弹窗 */
-.modal-overlay{background:rgba(0,0,0,.45);position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:200}
-.modal-card{background:var(--bg-primary);border-radius:12px;padding:24px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18)}
-.modal-card h3{font-size:1.05em;font-weight:600;margin-bottom:10px}
-.modal-warning{font-size:.85em;color:var(--text-secondary);line-height:1.6;margin-bottom:12px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;border-left:3px solid var(--warning-color)}
-.modal-meta{font-size:.8em;color:var(--text-muted);margin-bottom:16px}
-.modal-actions{display:flex;gap:8px;justify-content:flex-end}
-.modal-actions .btn-cancel{padding:7px 18px;border-radius:6px;border:0.5px solid var(--border-color);cursor:pointer;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-secondary)}
-.modal-actions .btn-confirm{padding:7px 18px;border-radius:6px;border:none;cursor:pointer;font-size:var(--font-sm);background:var(--accent-color);color:#fff}
-.modal-actions .btn-confirm.danger{background:var(--error-color)}
+/* ===== P6: 模式切换（三段按钮）— 见文末新样式 ===== */
 
 /* ===== Patch2 A7: 上下文圆环 ===== */
 .context-ring-wrap{display:flex;align-items:center;gap:5px;cursor:default;padding:2px 6px;border-radius:6px;flex-shrink:0}
@@ -1246,21 +1207,53 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   background: var(--text-secondary);
 }
 
-/* Patch5 C7 T5: 骨架屏 Skeleton */
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+[data-theme="dark"] .agent-icon .thinking-dots .dot {
+  background: var(--text-secondary);
 }
-.skeleton-wrap { padding: 14px 16px; }
-.skeleton-msg { display: flex; gap: 10px; margin-bottom: 18px; }
-.skeleton-msg.right { flex-direction: row-reverse; }
-.skeleton-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--gray-200); animation: skeleton-pulse 1.5s ease-in-out infinite; flex-shrink: 0; }
-[data-theme="dark"] .skeleton-avatar { background: var(--bg-tertiary); }
-.skeleton-body { flex: 1; display: flex; flex-direction: column; gap: 6px; }
-.skeleton-msg.right .skeleton-body { align-items: flex-end; }
-.skeleton-line { height: 8px; border-radius: 4px; background: var(--gray-200); animation: skeleton-pulse 1.5s ease-in-out infinite; }
-[data-theme="dark"] .skeleton-line { background: var(--bg-tertiary); }
-.skeleton-line.w-60 { width: 60%; }
-.skeleton-line.w-80 { width: 80%; }
-.skeleton-line.w-95 { width: 95%; }
+
+/* ============================================================
+   P6: 三段模式按钮组
+   ============================================================ */
+.mode{display:flex;border-radius:8px;border:0.5px solid var(--border-color);overflow:hidden;background:var(--bg-primary)}
+.mode button{padding:5px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text-secondary);border-right:0.5px solid var(--border-color);transition:all .15s;white-space:nowrap;position:relative}
+.mode button:last-child{border-right:none}
+.mode button:hover{background:var(--primary-50);color:var(--primary-900)}
+.mode button.sel{background:var(--primary-50);color:var(--primary-900);font-weight:500}
+
+/* ============================================================
+   P6: Token 条
+   ============================================================ */
+.token-bar{margin:0 0 6px 0;padding:5px 12px;background:var(--bg-secondary);border-radius:8px;border:0.5px solid var(--border-color);display:flex;align-items:center;gap:0;font-size:11px}
+.token-bar .seg{display:flex;align-items:center;gap:4px;padding:0 10px}
+.token-bar .seg:first-child{padding-left:0}
+.token-bar .divider{width:1px;height:12px;background:var(--border-color)}
+.token-bar .val{font-weight:500;color:var(--text-primary)}
+.token-bar .status-ok{color:var(--success-color);font-weight:500}
+
+/* ============================================================
+   P6: 融合输入框
+   ============================================================ */
+.input-box{display:flex;align-items:flex-end;gap:0;border:0.5px solid var(--border-color);border-radius:12px;background:var(--bg-primary);overflow:hidden;min-height:44px}
+.input-box:focus-within{border-color:var(--primary-900)}
+.input-box .attach-btn{padding:10px 12px;border:none;background:transparent;cursor:pointer;color:var(--text-muted);font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center}
+.input-box .attach-btn:hover{color:var(--primary-900);background:rgba(127,119,221,.05)}
+.input-box textarea{flex:1;padding:10px 0;border:none;font-size:13px;background:transparent;resize:none;min-height:44px;max-height:120px;font-family:inherit;outline:none}
+.input-box textarea::placeholder{color:var(--text-muted)}
+.input-box .send-btn{padding:0 16px;border:none;background:var(--primary-900);color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;height:44px}
+.input-box .send-btn:hover{opacity:.9}
+
+/* ============================================================
+   P6: 模式确认弹窗
+   ============================================================ */
+.modal-back{position:absolute;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-back.show{display:flex}
+.modal-confirm-card{background:var(--bg-primary);border-radius:12px;border:0.5px solid var(--border-color);width:380px;padding:20px 24px}
+.modal-confirm-card h3{font-size:15px;font-weight:500;margin:0 0 4px 0}
+.modal-desc{font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:12px}
+.modal-features{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.modal-feat{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-secondary)}
+.modal-risk{margin-top:10px;padding:8px 10px;background:#FCEBEB;border-radius:6px;font-size:11px;color:#A32D2D;line-height:1.5;display:flex;align-items:flex-start;gap:6px}
+.modal-acts{display:flex;gap:8px;justify-content:flex-end}
+.modal-acts .cancel-btn{padding:6px 16px;border-radius:8px;cursor:pointer;font-size:12px;border:0.5px solid var(--border-color);background:transparent;color:var(--text-secondary)}
+.modal-acts .confirm-btn{padding:6px 16px;border-radius:8px;cursor:pointer;font-size:12px;border:none;background:var(--primary-900);color:#fff;font-weight:500}
 

@@ -64,55 +64,7 @@ function _fallbackCopyMsg(text, btn) {
   }
 }
 
-// ===== 话题漂移提示条 =====
-function showDriftBar(reason, msgCount, swellThreshold, driftLevel, suggestion) {
-  var old = document.querySelector('.drift-bar');
-  if (old) old.remove();
-  var el = document.getElementById('messages');
-  if (!el) return;
-  var level = driftLevel || 'moderate';
-  var isSwell = level === 'swell';
-  var bar = document.createElement('div');
-  bar.className = 'drift-bar';
-  if (isSwell) {
-    bar.innerHTML = iconSvg('doc','14') + ' 当前对话已较长（' + msgCount + ' 条），建议新建对话以保持回复质量 ' +
-      '<button onclick="driftNewChat(this)">新建对话</button>' +
-      '<button onclick="driftDismiss(this)">继续当前</button>';
-  } else if (level === 'hard') {
-    bar.innerHTML = iconSvg('spin','14') + ' 检测到话题完全切换，已自动调整回复策略 ' +
-      '<button onclick="driftNewChat(this)">新建对话</button>' +
-      '<button onclick="driftDismiss(this)">继续当前</button>';
-    bar.style.borderLeft = '3px solid var(--error-color)';
-  } else {
-    bar.innerHTML = iconSvg('spin','14') + ' 检测到话题可能切换，建议新建对话 ' +
-      '<button onclick="driftNewChat(this)">新建对话</button>' +
-      '<button onclick="driftDismiss(this)">继续当前</button>';
-    bar.style.borderLeft = '3px solid var(--warning-color)';
-  }
-  el.appendChild(bar);
-  el.scrollTop = el.scrollHeight;
-}
-
-async function driftNewChat(btn) {
-  var bar = btn.closest('.drift-bar');
-  var lastUserMsg = currentMessages.filter(function(m) { return m.role === 'user'; }).pop();
-  var msgText = lastUserMsg ? lastUserMsg.content : '';
-  if (bar) bar.remove();
-  if (typeof generating !== 'undefined' && generating) {
-    await stopGenerationAndWait();
-    await new Promise(function(r) { setTimeout(r, 200); });
-  }
-  await newChat();
-  if (msgText) {
-    document.getElementById('msgInput').value = msgText;
-    sendMessage();
-  }
-}
-
-function driftDismiss(btn) {
-  var bar = btn.closest('.drift-bar');
-  if (bar) bar.remove();
-}
+// ===== 话题漂移提示条（P6 已移除 drift 机制）=====
 
 // ===== 模型覆盖层 =====
 async function updateChatOverlay() {
@@ -172,9 +124,6 @@ function clearFileRef() {
 }
 
 window.copyMsgContent = copyMsgContent;
-window.showDriftBar = showDriftBar;
-window.driftNewChat = driftNewChat;
-window.driftDismiss = driftDismiss;
 window.updateChatOverlay = updateChatOverlay;
 window.updateKbLockBar = updateKbLockBar;
 window.scrollToBottom = scrollToBottom;

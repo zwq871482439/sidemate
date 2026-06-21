@@ -19,8 +19,7 @@
 <script src="/static/vendor/highlight.min.js"></script>
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.28">
-<link rel="stylesheet" href="/static/css/skeleton.css?v=2.28">
+<link rel="stylesheet" href="/static/css/main.css?v=2.29">
 </head>
 <body>
 
@@ -37,31 +36,21 @@
   <!-- 标题 -->
   <div class="header">
     <img src="/static/img/logo.jpg" alt="Logo" style="height:28px;width:28px;border-radius:6px;margin-right:8px;object-fit:cover">
-    <h1>桌伴 · Sidemate <span id="settingsTitleVersion" style="font-size:.7em;color:var(--text-muted);font-weight:400"></span></h1>
-    <!-- Patch2 A3: 模式切换 Tag（由 initModeTag() 动态更新） -->
-    <span class="tag-mode" id="modeTag" style="cursor:pointer">
-      <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#4caf50"/></svg>
-      正在使用本地AI模型 ▾
-      <!-- 模式下拉菜单（放在 modeTag 内部以正确定位） -->
-      <div class="mode-dropdown" id="modeDropdown" style="display:none" onclick="event.stopPropagation()">
-        <div class="mode-option" data-mode="local" onclick="selectMode('local')">
-          <div class="mode-option-title"><svg width="10" height="10" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#4caf50"/></svg> 本地 AI 模型</div>
-          <div class="mode-option-desc">数据不上网 模型跑本地</div>
-        </div>
-        <div class="mode-option" data-mode="cloud" onclick="selectMode('cloud')">
-          <div class="mode-option-title"><svg width="10" height="10" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#f44336"/></svg> 云端 AI 模型</div>
-          <div class="mode-option-desc">核心数据本地存储</div>
-        </div>
-      </div>
-    </span>
-    <span class="tag-sub" id="modeSubTag">数据不上网 模型跑本地</span>
+    <h1>桌伴 · Sidemate</h1>
+    <!-- P6: 三段模式按钮组 -->
+    <div class="mode" id="chatMode">
+      <button class="sel" data-mode="offline">离线</button>
+      <button data-mode="online">在线</button>
+      <button data-mode="parallel">并行</button>
+    </div>
+    <span style="flex:1"></span>
+    <span id="settingsTitleVersion" style="font-size:11px;color:var(--text-muted);font-weight:400"></span>
   </div>
 
   <!-- Tab 导航 -->
   <div class="tabs-nav">
     <button class="active" onclick="switchTab('chat',this)"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:3px"><path d="M1.5 2.5h11a1 1 0 011 1v6a1 1 0 01-1 1H5l-3 2.5V11h-.5a1 1 0 01-1-1v-6a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4 6h6M4 8.5h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>对话</button>
-    <button onclick="switchTab('qa',this)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" style="vertical-align:-2px;margin-right:3px"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>文库</button>
-    <button onclick="switchTab('minutes',this)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" style="vertical-align:-2px;margin-right:3px"><rect x="3" y="1.5" width="10" height="13" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 4h5M5.5 7h5M5.5 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>纪要</button>
+    <button onclick="switchTab('qa',this)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" style="vertical-align:-2px;margin-right:3px"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>知识库</button>
     <button onclick="switchTab('settings',this)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" style="vertical-align:-2px;margin-right:3px"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15M3 3l1.8 1.8M11.2 11.2L13 13M3 13l1.8-1.8M11.2 4.8L13 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>设置</button>
   </div>
 
@@ -133,30 +122,13 @@
       <div class="chat-main">
         <div class="toolbar chat-toolbar-merged">
           <span class="model-info">当前模型: <span class="model-tag none" id="modelTag">加载中</span></span>
-          <!-- Patch2 A7: 上下文圆环指示器（per-session，放在 chat toolbar） -->
-          <div class="context-ring-wrap level-normal" id="contextRing" title="对话记忆使用量">
-            <svg viewBox="0 0 40 40" width="28" height="28">
-              <circle cx="20" cy="20" r="15" fill="none" stroke="var(--bg-tertiary)" stroke-width="3"/>
-              <circle id="contextRingArc" cx="20" cy="20" r="15" fill="none" stroke="var(--accent-color)" stroke-width="3"
-                      stroke-dasharray="94.2" stroke-dashoffset="94.2" transform="rotate(-90 20 20)" stroke-linecap="round"/>
-            </svg>
-            <div class="context-ring-info">
-              <span class="context-ring-pct" id="contextPct">--</span>
-              <span class="context-ring-detail" id="contextDetail">--/--</span>
-            </div>
-          </div>
           <!-- 合并的 Action 按钮栏（由 refreshActionBar() 动态渲染） -->
           <div id="actionBar" style="display:flex;gap:4px;margin-left:auto"></div>
           <!-- Patch5 C7: 消息样式切换（纯文字按钮，无 icon） -->
           <button id="msgStyleToggle" onclick="toggleMode()" title="切换消息样式（气泡/列表）" style="font-size:.78em;padding:4px 10px;border:1px solid var(--border-color);border-radius:4px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary)">气泡</button>
           <!-- Patch5 C7: 清除上下文按钮已取消（功能下线，接口保留备用） -->
         </div>
-        <!-- 隐藏的旧 session 下拉（保持兼容，chat-session.js 仍会操作它） -->
-        <select id="sessionSelect" onchange="onSessionChange()" style="display:none"></select>
-        <!-- 隐藏的旧按钮（保持兼容） -->
-        <button id="newChatBtn" onclick="newChat()" style="display:none">＋新建</button>
-        <button id="delChatBtn" onclick="deleteChat()" style="display:none"></button>
-    <div id="messages" style="position:relative"></div>
+        <div id="messages" style="position:relative"></div>
     <button id="scrollBottomBtn" onclick="scrollToBottom()" title="跳到最新">↓</button>
     <!-- KB处理中锁定聊天 - 仅覆盖对话区（不锁 Tab 导航） -->
     <div id="kbLockOverlay" class="kb-lock-overlay" style="display:none;position:absolute;z-index:10">
@@ -198,18 +170,7 @@
     </div><!-- /chat-layout -->
   </div>
 
-  <!-- Patch2 A3: 模式切换确认弹窗 -->
-  <div id="modeConfirmModal" class="modal-overlay" style="display:none">
-    <div class="modal-card">
-      <h3 id="modeConfirmTitle"></h3>
-      <div class="modal-warning" id="modeConfirmWarning"></div>
-      <div class="modal-meta" id="modeConfirmMeta"></div>
-      <div class="modal-actions">
-        <button class="btn-cancel" onclick="cancelModeSwitch()">取消</button>
-        <button class="btn-confirm" id="modeConfirmBtn" onclick="confirmModeSwitch()">确认切换</button>
-      </div>
-    </div>
-  </div>
+  <!-- P6: 模式确认弹窗由 ui-enhance.js 动态创建 -->
 
   <!-- 问答 Tab（文库版 Patch 7: 三级状态机）-->
   <div id="tab-qa" class="tab-content">
@@ -393,166 +354,6 @@
     </div>
     </div>
   </div>
-
-  <!-- 纪要 Tab（三阶段状态：未安装/已安装未加载/就绪） -->
-  <div id="tab-minutes" class="tab-content">
-    <!-- 加载动画 -->
-    <div id="minutesLoading" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:12px">
-      <div class="kb-spinner"></div>
-      <div style="color:var(--text-secondary);font-size:.9em">正在检测语音引擎状态…</div>
-    </div>
-    <!-- State 0: 引擎未加载 -->
-    <div id="minutesIdle" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:40px 20px">
-      <div style="font-size:3em"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="5" y="1" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 5.5a4.5 4.5 0 0 0 9 0M7 8.5V12M5 12h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>️</div>
-      <h2 style="margin:0;font-size:1.3em;color:var(--text-primary)">纪要引擎</h2>
-      <p style="color:var(--text-secondary);font-size:.9em;text-align:center;max-width:400px;line-height:1.6">录音自动转文字，支持音频文件导入。<br>请先加载语音引擎以开始使用。</p>
-      <div id="whisperLoadArea" style="max-width:400px;width:100%">
-        <button id="whisperLoadBtn" onclick="reloadWhisper()" style="padding:8px 24px;border:1px solid var(--accent-color);border-radius:6px;background:var(--accent-color);color:var(--text-on-accent, #fff);cursor:pointer;font-size:.95em;font-weight:600;width:100%">加载纪要引擎</button>
-      </div>
-      <!-- 加载进度条 -->
-      <div id="whisperLoadProgress" style="display:none;max-width:400px;width:100%">
-        <div style="background:var(--bg-tertiary);height:8px;border-radius:4px;overflow:hidden">
-          <div id="whisperLoadBar" style="background:linear-gradient(90deg,var(--accent-color),var(--accent-hover));height:8px;border-radius:4px;width:0%"></div>
-        </div>
-        <div style="text-align:center;font-size:.78em;color:var(--accent-color);margin-top:6px" id="whisperLoadStatus">正在加载语音引擎…</div>
-      </div>
-    </div>
-
-    <!-- State 1: 就绪（完整功能） -->
-    <div id="minutesReady" class="panel" style="display:none;padding-top:8px">
-      <!-- 操作按钮 -->
-      <div class="row" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <button class="primary" onclick="startRecording()" id="startRecBtn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><circle cx="7" cy="7" r="4" stroke="currentColor" stroke-width="1.3" fill="currentColor" opacity=".8"/></svg> 开始录音</button>
-        <div style="position:relative">
-          <button class="secondary" onclick="document.getElementById('audioFileInput').click()"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M1.5 3.5h3.2L6.3 5.5h6.2v6a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1v-8z" stroke="currentColor" stroke-width="1.2"/></svg> 上传音频文件</button>
-          <input type="file" id="audioFileInput" accept=".mp3,.wav,.m4a,.webm,.ogg,.flac" style="display:none" onchange="importAudio(event)">
-        </div>
-      </div>
-
-      <!-- 录音进行中区域 -->
-      <div id="recordingArea" style="display:none;background:var(--bg-secondary);border:0.5px solid var(--border-color);border-left:3px solid var(--warning-color);border-radius:8px;padding:12px;margin-bottom:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-weight:600"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="5" y="1" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 5.5a4.5 4.5 0 0 0 9 0M7 8.5V12M5 12h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>️ 录音中 <span id="recTimer">00:00</span></span>
-          <div>
-            <button class="secondary" onclick="pauseRecording()" id="pauseRecBtn" style="margin-right:4px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="3" y="3" width="3" height="8" rx=".5" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="3" width="3" height="8" rx=".5" stroke="currentColor" stroke-width="1.2"/></svg> 暂停</button>
-            <button class="secondary" onclick="stopRecording()" style="color:var(--error-color)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="3" y="3" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/></svg> 停止</button>
-          </div>
-        </div>
-        <!-- 音量可视化条 -->
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <span style="font-size:.75em;color:var(--text-muted);white-space:nowrap"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M2 5h2l3-3v10L4 9H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.2"/><path d="M9 4a3 3 0 0 1 0 6M10.5 2a6 6 0 0 1 0 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 音量</span>
-          <div style="flex:1;background:var(--bg-tertiary);border-radius:4px;height:10px;overflow:hidden;position:relative">
-            <div id="volumeBar" style="height:100%;width:0%;border-radius:4px;transition:width .12s ease-out,background .3s;background:var(--success-color)"></div>
-          </div>
-          <span id="volumeDb" style="font-size:.7em;color:var(--text-muted);min-width:40px;text-align:right">-60 dB</span>
-        </div>
-        <!-- 收音增益控制 -->
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <span style="font-size:.75em;color:var(--text-muted);white-space:nowrap"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="5" y="1" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 5.5a4.5 4.5 0 0 0 9 0M7 8.5V12M5 12h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 收音增强</span>
-          <input type="range" id="gainSlider" min="1" max="3" step="0.1" value="1"
-                 style="flex:1;accent-color:var(--warning-color);cursor:pointer"
-                 oninput="updateGain(this.value)">
-          <span id="gainValue" style="font-size:.78em;color:var(--warning-color);min-width:30px;text-align:right;font-weight:600">1.0x</span>
-        </div>
-        <!-- 实时转写预览（段落气泡）-->
-        <div style="font-size:.75em;color:var(--text-muted);margin-bottom:4px"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg> 实时转写</div>
-        <div id="realtimeContainer" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:6px;max-height:200px;overflow-y:auto;min-height:44px">
-          <div id="realtimeEmpty" style="color:var(--text-muted);font-size:.82em;text-align:center;padding:12px">录音中，实时转写将在此处显示...</div>
-        </div>
-        <div style="font-size:.75em;color:var(--text-muted);margin-top:4px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v2M7 10h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 录音期间后台处理暂停，录音结束后自动恢复</div>
-      </div>
-
-      <!-- 处理队列 -->
-      <div id="processingArea" style="display:none;margin-bottom:12px">
-        <h4>处理队列</h4>
-        <div id="processingList"></div>
-      </div>
-
-      <!-- 历史记录 -->
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <h4>历史记录</h4>
-          <span style="font-size:.78em;color:var(--text-muted)" id="minutesStorageLabel"></span>
-        </div>
-        <div id="minutesHistory" style="max-height:400px;overflow-y:auto">加载中...</div>
-      </div>
-
-      <!-- 底部：释放引擎 -->
-      <div style="margin-top:16px;padding-top:12px;border-top:0.5px solid var(--border-color);display:flex;align-items:center;justify-content:space-between">
-        <button class="secondary" onclick="unloadWhisper()" style="color:var(--warning-color)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 8v4M4 5l3-3 3 3M3.5 12h7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 释放语音引擎</button>
-        <span style="font-size:.78em;color:var(--text-muted)" id="whisperBottomLabel"></span>
-      </div>
-    </div>
-
-    <!-- 转写稿查看/编辑弹窗 -->
-    <div id="transcriptModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:250;align-items:center;justify-content:center" onclick="if(event.target===this) closeTranscriptModal()">
-      <div style="background:var(--bg-primary);border-radius:12px;padding:20px;max-width:700px;width:90%;max-height:80vh;display:flex;flex-direction:column;position:relative;overflow:hidden">
-        <!-- 标题栏 -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-shrink:0">
-          <h3 id="transcriptTitle" style="margin:0;font-size:1em">查看转录原文</h3>
-          <button onclick="closeTranscriptModal()" style="background:none;border:none;font-size:1.3em;cursor:pointer;line-height:1"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
-        </div>
-
-        <!-- 可滚动内容区 -->
-        <div style="flex:1;overflow-y:auto;min-height:0">
-
-          <!-- 音频播放器 -->
-          <div id="audioPlayerSection" style="display:none;margin-bottom:10px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;flex-shrink:0">
-            <div style="display:flex;align-items:center;gap:10px">
-              <button id="playerPlayBtn" onclick="togglePlayerPlay()" style="background:var(--accent-color);color:#fff;border:none;border-radius:50%;width:36px;height:36px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><polygon points="4,1 12,7 4,13" fill="#fff"/></svg></button>
-              <div style="flex:1;display:flex;flex-direction:column;gap:4px">
-                <input type="range" id="playerProgress" min="0" max="100" value="0" step="0.1" oninput="seekPlayer(this.value)" onpointerdown="playerSeeking=true" onpointerup="playerSeeking=false;seekPlayer(this.value)" style="width:100%;height:6px;accent-color:var(--accent-color);cursor:pointer;touch-action:none">
-                <div style="display:flex;justify-content:space-between;font-size:.75em;color:var(--text-secondary)">
-                  <span id="playerCurrentTime">00:00</span>
-                  <span id="playerDuration">00:00</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 操作按钮 -->
-          <div id="transcriptActions" style="display:none;gap:6px;margin-bottom:10px;flex-wrap:wrap">
-            <button class="secondary" onclick="editTranscript()" style="font-size:.82em;padding:4px 12px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M2 10.5V12h1.5l7-7L9 3.5l-7 7zM11 5 9 3l1-1a.5.5 0 0 1 .7 0l.8.8a.5.5 0 0 1 0 .7L11 5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg> 编辑</button>
-            <button class="primary" onclick="summarizeSession()" style="font-size:.82em;padding:4px 12px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="2" y="1.5" width="10" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 4h5M4.5 7h5M4.5 10h3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg> 生成纪要</button>
-            <button id="refineCompareBtn" class="secondary" onclick="toggleRefineCompare()" style="display:none;font-size:.82em;padding:4px 12px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="1.5" y="3" width="5" height="8" rx=".5" stroke="currentColor" stroke-width="1.2"/><rect x="7.5" y="3" width="5" height="8" rx=".5" stroke="currentColor" stroke-width="1.2"/><path d="M4 5v2M10 5v2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg> 对比原文</button>
-            <button id="refineAcceptAllBtn" class="secondary" onclick="acceptAllRefine()" style="display:none;font-size:.82em;padding:4px 12px;color:var(--success-color)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><circle cx="7" cy="7" r="6" stroke="#16a34a" stroke-width="1.3"/><path d="M4 7l2.5 2.5L10 5.5" stroke="#16a34a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 全部接受</button>
-            <button class="secondary" onclick="importToKB()" style="font-size:.82em;padding:4px 12px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2v8M3.5 7L7 10l3.5-3M2 12.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 入库</button>
-            <button class="secondary" onclick="saveMinutesAs('txt')" style="font-size:.82em;padding:4px 12px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="1.5" y="1.5" width="11" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="4.5" y="4.5" width="5" height="5" rx=".5" stroke="currentColor" stroke-width="1"/><path d="M9 2v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 存为TXT</button>
-          </div>
-
-          <!-- AI 纪要卡片 -->
-          <div id="summarySection" style="display:none;margin-bottom:10px">
-            <div style="font-size:.78em;color:var(--text-secondary);margin-bottom:4px;font-weight:500"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="2" y="1.5" width="10" height="11" rx="1.5" stroke="var(--accent-color)" stroke-width="1.2"/><path d="M4.5 4.5h5M4.5 7.5h5M4.5 10.5h3" stroke="var(--accent-color)" stroke-width="1" stroke-linecap="round"/></svg> AI 会议纪要</div>
-            <div id="summaryContent" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-left:3px solid var(--accent-color);border-radius:4px;padding:10px 14px;font-size:.85em;line-height:1.8;white-space:pre-wrap;color:var(--text-primary)"></div>
-          </div>
-
-          <!-- 转写内容区 -->
-          <div id="transcriptViewMode">
-            <div id="transcriptContent" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;padding:12px;font-size:.9em;white-space:pre-wrap;line-height:1.8"></div>
-            <div id="transcriptSegments" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;padding:12px;font-size:.9em;line-height:2.0"></div>
-            <!-- 纠错对比视图 -->
-            <div id="refineCompareView" style="display:none;margin-top:10px">
-              <div style="font-size:.75em;color:var(--text-secondary);margin-bottom:4px">红字删除线 = 原文删去 / 绿字 = AI润色修正 / 点「接受」逐行合并</div>
-              <div id="refineCompareSingle" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;padding:10px 12px;font-size:.82em;line-height:2.0"></div>
-            </div>
-          </div>
-
-          <!-- 编辑模式 -->
-          <div id="transcriptEditMode" style="display:none">
-            <textarea id="transcriptEditArea" style="width:100%;min-height:200px;padding:8px;border:1px solid var(--border-color);border-radius:4px;font-size:.9em;line-height:1.6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg-primary);color:var(--text-primary);resize:vertical"></textarea>
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <button class="secondary" onclick="cancelEditTranscript()">取消</button>
-              <button class="primary" onclick="saveTranscript()"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><rect x="1.5" y="1.5" width="11" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="4.5" y="4.5" width="5" height="5" rx=".5" stroke="currentColor" stroke-width="1"/><path d="M9 2v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> 保存修改</button>
-              <button class="secondary" onclick="saveAndImportKB()">保存并入库</button>
-            </div>
-          </div>
-
-          <div id="transcriptMsg" class="result" style="margin-top:8px;font-size:.82em"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- 设置 Tab -->
   <div id="tab-settings" class="tab-content" style="overflow-y:auto;padding:8px 20px 20px">
 
@@ -896,7 +697,7 @@ let _sessionPollTimer = null;
 let pendingFile = null;
 
 // ===== 前端版本（独立于后端） =====
-const __HTML_VERSION__ = 'v2.6';
+const __HTML_VERSION__ = 'v2.7';
 
 const API = '';
 </script>
@@ -1119,25 +920,25 @@ window.addEventListener('DOMContentLoaded', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.28"></script>
-<script src="/static/js/core/utils.js?v=2.28"></script>
-<script src="/static/js/core/errors.js?v=2.28"></script>
-<script src="/static/js/stream_renderer.js?v=2.28"></script>
-<script src="/static/js/settings.js?v=2.28"></script>
-<script src="/static/js/qa.js?v=2.28"></script>
-<script src="/static/js/kb-batch.js?v=2.28"></script>
-<script src="/static/js/minutes.js?v=2.28"></script>
-<!-- Patch2 D1: chat.js 拆分为子模块（全局挂载，加载顺序敏感） -->
-<script src="/static/js/chat-session.js?v=2.28"></script>
-<script src="/static/js/chat-actions.js?v=2.28"></script>
-<script src="/static/js/chat-files.js?v=2.28"></script>
-<script src="/static/js/chat-export.js?v=2.28"></script>
-<script src="/static/js/chat-ui.js?v=2.28"></script>
-<script src="/static/js/chat.js?v=2.28"></script>
+<script src="/static/js/core/api.js?v=2.29"></script>
+<script src="/static/js/core/utils.js?v=2.29"></script>
+<script src="/static/js/core/errors.js?v=2.29"></script>
+<script src="/static/js/stream_renderer.js?v=2.29"></script>
+<script src="/static/js/settings.js?v=2.29"></script>
+<script src="/static/js/qa.js?v=2.29"></script>
+<script src="/static/js/kb-batch.js?v=2.29"></script>
+<!-- P6: 纪要模块归档，minutes.js 已移除 -->
+<!-- Patch2 D1: chat.js 拆分为子模块 -->
+<script src="/static/js/chat-session.js?v=2.29"></script>
+<script src="/static/js/chat-actions.js?v=2.29"></script>
+<script src="/static/js/chat-files.js?v=2.29"></script>
+<script src="/static/js/chat-export.js?v=2.29"></script>
+<script src="/static/js/chat-ui.js?v=2.29"></script>
+<script src="/static/js/chat.js?v=2.29"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.28"></script>
-<script src="/static/js/skeleton.js?v=2.28"></script>
-<script src="/static/js/ui-enhance.js?v=2.28"></script>
+<script src="/static/js/token-estimator.js?v=2.29"></script>
+<!-- P6: skeleton.js 已移除（去骨架屏） -->
+<script src="/static/js/ui-enhance.js?v=2.29"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====
@@ -1149,7 +950,7 @@ function switchTab(name, btn) {
   localStorage.setItem('_activeTab', name);  // 记住当前 Tab
   if (name === 'settings') { refreshStatus(); loadRecorderResident(); loadAutoWarmupSetting(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); }
   if (name === 'qa') kbRouteState();  // Patch 7: 三级状态路由（安装/激活/就绪）
-  if (name === 'minutes') minutesRouteState();  // Patch 6: 纪要Tab三阶段状态路由
+  // P6: minutes tab 已移除
   if (name === 'chat') updateChatOverlay();  // 切换到对话 Tab 时同步模型锁状态
 }
 
@@ -1161,7 +962,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ===== 初始化入口 =====
 async function init() {
-  await initModeTag();  // Patch2: 先初始化模式 Tag（设置 _currentMode），再刷新状态
+  await initModeSelector();  // P6: 初始化三段模式按钮选择器
   // 并行阶段：无依赖的请求同时发起
   var results = await Promise.allSettled([
     refreshStatus()
@@ -1242,7 +1043,7 @@ updateChatOverlay();
   if (saved && saved !== 'chat') {
     const btns = document.querySelectorAll('.tabs-nav button');
     for (const btn of btns) {
-      if (btn.textContent.trim() === {chat:'对话',qa:'文库',minutes:'纪要',settings:'设置'}[saved]) {
+      if (btn.textContent.trim() === {chat:'对话',qa:'知识库',settings:'设置'}[saved]) {
         // 只切换到可见的 tab
         if (btn.style.display !== 'none') {
           btn.click();

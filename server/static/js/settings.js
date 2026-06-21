@@ -1,6 +1,6 @@
-﻿// ===== settings.js v2.5 — 设置 Tab：模型管理、资源面板、设备切换 =====
+// ===== settings.js v2.6 — 设置 Tab：模型管理、资源面板、模式选择器 =====
 // 依赖: api.js, errors.js, utils.js, 全局变量 (API, __HTML_VERSION__, _maxPromptTokens)
-// 被引用: chat.js (updateChatOverlay), qa.js (kbRouteState), minutes.js
+// 被引用: chat.js (updateChatOverlay), qa.js (kbRouteState)
 
 // 全局：当前已加载的原始 model_id（用于按钮状态判断）
 var _loadedModelId = null;
@@ -9,7 +9,129 @@ var _loadedModelId = null;
 var _apiBase = (typeof API !== 'undefined' ? API : '');
 
 // 版本校验（帮助排查缓存问题）
-console.log('[settings.js] loaded v2.5, __HTML_VERSION__=' + (typeof __HTML_VERSION__ !== 'undefined' ? __HTML_VERSION__ : 'unknown'));
+console.log('[settings.js] loaded v2.6, __HTML_VERSION__=' + (typeof __HTML_VERSION__ !== 'undefined' ? __HTML_VERSION__ : 'unknown'));
+
+// ===== P6: 模式选择器 =====
+var _placeholders = {
+  local: '随便聊聊，AI 陪你聊天...',
+  local_doc: '描述文档主题，AI 离线撰写...',
+  local_kb: '基于知识库提问，完全本地回答...',
+  cloud: '让云端 AI 帮你搜索、阅读、推理...',
+  cloud_doc: '输入文档需求，AI 搜索资料并生成...',
+  parallel: '本地+云端各自回答，自动融合...'
+};
+
+/**
+ * P6: 初始化三段模式按钮选择器
+ * 绑定 header 中 #chatMode 的三个按钮点击事件
+ */
+function initModeSelector() {
+  var container = document.getElementById('chatMode');
+  if (!container) return;
+
+  // 绑定三段按钮点击
+  var buttons = container.querySelectorAll('button[data-mode]');
+  buttons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var mode = btn.getAttribute('data-mode');
+      selectMode(mode);
+    });
+  });
+
+  // 从后端获取当前模式并设置初始状态
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/mode')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.cloud_model) window._cloudModelName = data.cloud_model;
+      // 映射后端 mode 到前端 mode
+      var frontMode = data.mode === 'local' ? 'offline' : (data.mode === 'cloud' ? 'online' : data.mode);
+      window._currentMode = data.mode; // 保持后端值
+      window._cloudConfigured = data.cloud_configured;
+      window._contextWindow = data.context_window || 16384;
+      // 更新按钮状态
+      _updateModeButtons(frontMode);
+      // 更新 placeholder
+      _updatePlaceholder(frontMode);
+      // 同步全局 token 上限
+      if (typeof _maxPromptTokens !== 'undefined' && data.context_window) {
+        _maxPromptTokens = data.context_window;
+        if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+          TokenEstimator.updateInputDisplay();
+        }
+      }
+      // 更新上下文使用量
+      if (typeof fetchContextUsage === 'function') fetchContextUsage();
+      // 同步 KB 对比开关可见性
+      if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
+    })
+    .catch(function(e) { console.error('[initModeSelector]', e); });
+}
+
+/**
+ * P6: 切换模式（三段按钮点击处理）
+ * 1. 更新按钮高亮
+ * 2. 更新输入框 placeholder
+ * 3. 调用后端 /api/mode/switch
+ */
+function selectMode(mode) {
+  // 1. 更新按钮高亮
+  _updateModeButtons(mode);
+
+  // 2. 更新 placeholder
+  _updatePlaceholder(mode);
+
+  // 3. 调用后端 API（映射前端 mode 到后端值）
+  var backendMode = mode === 'offline' ? 'local' : (mode === 'online' ? 'cloud' : mode);
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/mode/switch', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({mode: backendMode})
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        window._currentMode = data.mode;
+        if (typeof showToast === 'function') {
+          showToast(mode === 'offline' ? '已切换到离线模式' : (mode === 'online' ? '已切换到在线模式' : '已切换到并行模式'), 'success');
+        }
+        if (typeof refreshStatus === 'function') refreshStatus();
+        if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
+        if (typeof fetchContextUsage === 'function') fetchContextUsage();
+      } else {
+        if (typeof showToast === 'function') showToast(data.error || '切换失败', 'error');
+      }
+    })
+    .catch(function(e) {
+      if (typeof showToast === 'function') showToast('切换失败: ' + e.message, 'error');
+    });
+}
+
+/**
+ * 更新三段按钮的 sel 状态
+ */
+function _updateModeButtons(mode) {
+  var container = document.getElementById('chatMode');
+  if (!container) return;
+  container.querySelectorAll('button[data-mode]').forEach(function(btn) {
+    btn.classList.toggle('sel', btn.getAttribute('data-mode') === mode);
+  });
+}
+
+/**
+ * 根据模式和当前 action 更新输入框 placeholder
+ */
+function _updatePlaceholder(mode) {
+  var input = document.getElementById('msgInput');
+  if (!input) return;
+  var action = (typeof currentActionMode !== 'undefined') ? currentActionMode : 'chat';
+  var key = mode;
+  if (mode === 'offline') {
+    key = action === 'doc' ? 'local_doc' : (action === 'kb' ? 'local_kb' : 'local');
+  } else if (mode === 'online') {
+    key = action === 'doc' ? 'cloud_doc' : 'cloud';
+  }
+  input.placeholder = _placeholders[key] || _placeholders.local;
+}
 
 // ===== 资源占用面板 =====
 async function refreshResourcePanel() {
@@ -37,15 +159,12 @@ async function refreshResourcePanel() {
     var resModules = document.getElementById('resModules');
     if (resModules && mod) {
       var parts = [];
-      // 基础：始终存在
       var baseInfo = mod.base || {};
       parts.push('基础 ' + fmtMB(baseInfo.mb || 0));
-      // LLM
       var llmInfo = mod.llm || {};
       if (llmInfo.installed) {
         parts.push(llmInfo.loaded ? ('LLM ' + fmtMB(llmInfo.mb)) : 'LLM 未加载');
       }
-      // 文库（嵌入+重排合计）
       var embedderInfo = mod.embedder || {};
       var rerankerInfo = mod.reranker || {};
       if (embedderInfo.installed) {
@@ -53,7 +172,6 @@ async function refreshResourcePanel() {
         var kbLoaded = embedderInfo.loaded || rerankerInfo.loaded;
         parts.push(kbLoaded ? ('文库 ' + fmtMB(kbTotal)) : '文库 未加载');
       }
-      // 纪要
       var recorderInfo = mod.recorder || {};
       if (recorderInfo.installed) {
         parts.push(recorderInfo.loaded ? ('纪要 ' + fmtMB(recorderInfo.mb)) : '纪要 未加载');
@@ -70,7 +188,6 @@ async function refreshResourcePanel() {
 async function refreshStatus() {
   var statusTextEl = document.getElementById('statusText');
   try {
-    // 并行请求 /api/models 和 /api/status（8s 超时防卡死）
     function fetchWithTimeout(url) {
       return new Promise(function(resolve, reject) {
         var ctrl = new AbortController();
@@ -91,7 +208,6 @@ async function refreshStatus() {
     var data = results[0];
     var info2 = results[1];
 
-    // 缓存当前模型的 token 上限
     if (typeof _maxPromptTokens !== 'undefined') {
       _maxPromptTokens = (data.profile && data.profile.max_prompt_tokens) || 0;
     }
@@ -100,24 +216,20 @@ async function refreshStatus() {
     var device = data.device || '';
 
     var hasModels = data.available && data.available.length > 0;
-    var hasLoaded = !!(data.current);  // 是否有实际预热加载的模型
-    // Debug: 帮助排查模型显示问题
+    var hasLoaded = !!(data.current);
     console.log('[ModelManager] API response:', JSON.stringify({available: data.available, loaded: data.loaded, current: data.current}));
     var modelInfoRow = document.getElementById('modelInfoRow');
     var noModelHint = document.getElementById('noModelHint');
 
-    // 模型管理区：信息行始终显示（按钮根据状态切换），无模型时显示提示+扫描按钮
     if (hasModels) {
       if (modelInfoRow) modelInfoRow.style.display = 'flex';
       if (noModelHint) noModelHint.style.display = 'none';
 
-      // 显示第一个模型的名称和来源信息
       var firstModel = data.available[0];
       var displayName = (data.available_display && data.available_display[0]) || firstModel;
       var nameEl = document.getElementById('modelNameDisplay');
       if (nameEl) nameEl.textContent = displayName;
 
-      // 来源标签：预热后显示大小，未预热只显示 Ollama
       var quantEl = document.getElementById('modelQuantTag');
       if (quantEl && hasLoaded && data.profile) {
         var sizeLabel = data.profile.model_size ? data.profile.model_size + 'B' : '';
@@ -126,7 +238,6 @@ async function refreshStatus() {
         quantEl.textContent = 'Ollama';
       }
     } else {
-      // 无模型时也显示信息行（按钮显示"扫描模型"），同时显示引导提示
       if (modelInfoRow) modelInfoRow.style.display = 'flex';
       if (noModelHint) noModelHint.style.display = '';
       var nameEl2 = document.getElementById('modelNameDisplay');
@@ -135,10 +246,8 @@ async function refreshStatus() {
       if (tagEl2) tagEl2.textContent = '';
     }
 
-    // 模型标签（显示短名，API 调用用原始 model_id）
     var currentDisplay = data.current_display || data.current;
     _loadedModelId = data.current || null;
-    // 云端模式下显示云端模型名称
     if (typeof _currentMode !== 'undefined' && _currentMode === 'cloud') {
       currentDisplay = window._cloudModelName || '云端模型';
       tag.className = 'model-tag';
@@ -155,7 +264,6 @@ async function refreshStatus() {
       stag.innerHTML = '<span class="model-tag none">未加载</span>';
     }
 
-    // 标签 1：模型来源
     var sourceTag = document.getElementById('sourceTag');
     if (sourceTag) {
       if (data.current) {
@@ -177,38 +285,29 @@ async function refreshStatus() {
       sourceTag.style.display = '';
     }
 
-    // 标签 4：隐私标签
     var privacyTag = document.getElementById('privacyTag');
     if (privacyTag) privacyTag.style.display = data.current ? '' : 'none';
 
     if (statusTextEl) statusTextEl.style.display = 'none';
 
-    // 更新预热按钮状态
     updateWarmupBtn(data);
 
-    // 同步更新其他面板
     if (typeof kbRouteState === 'function') kbRouteState();
     if (typeof updateChatOverlay === 'function') updateChatOverlay();
     refreshResourcePanel();
     if (typeof refreshActionBar === 'function') refreshActionBar();
     refreshTokenBudget(data);
     updateTabVisibility();
-    // Patch5 C7: 清除上下文按钮已下线，不再注入
-    // Patch5 C7: 消息样式切换按钮文案随 localStorage 模式刷新
     var _msBtn = document.getElementById('msgStyleToggle');
     if (_msBtn && typeof MessageStyleManager !== 'undefined') {
       var _curMode = MessageStyleManager.getMode();
       _msBtn.textContent = (_curMode === 'list') ? '列表' : '气泡';
     }
-    // refreshStatus 完成后 _loadedModelId 已更新，重新刷新 modeTag 文案
-    if (typeof initModeTag === 'function') initModeTag();
+    // P6: initModeTag 已移除，模式状态由 initModeSelector 管理
   } catch(e) {
     if (statusTextEl) statusTextEl.textContent = '刷新失败: ' + e.message;
   }
 }
-
-// ===== 设备选择器（Ollama 版：仅显示 Ollama，已移除 UI）=====
-// deviceSelect 已从 HTML 移除，此函数保留为空以防其他模块调用
 
 // ===== 预热按钮状态 =====
 function updateWarmupBtn(modelsData) {
@@ -221,7 +320,6 @@ function updateWarmupBtn(modelsData) {
   var hasModels = modelsData.available && modelsData.available.length > 0;
   var isLoaded = !!modelsData.current;
 
-  // 删除按钮：有模型时显示，无模型时隐藏
   if (delBtn) {
     delBtn.style.display = hasModels ? 'inline-block' : 'none';
     if (hasModels) {
@@ -231,7 +329,6 @@ function updateWarmupBtn(modelsData) {
   }
 
   if (!hasModels) {
-    // S0: 未安装模型 → 扫描模型
     btn.textContent = '扫描模型';
     btn.onclick = function() { rescanModels(); };
     btn.style.background = '';
@@ -239,7 +336,6 @@ function updateWarmupBtn(modelsData) {
     btn.style.borderColor = '';
     btn.disabled = false;
   } else if (isLoaded) {
-    // S2: 已完成预热 → 取消加载
     btn.textContent = '取消加载';
     btn.onclick = function() { handleUnload(); };
     btn.style.background = 'transparent';
@@ -247,7 +343,6 @@ function updateWarmupBtn(modelsData) {
     btn.style.borderColor = 'var(--error-color)';
     btn.disabled = false;
   } else {
-    // S1: 已安装未预热 → 加载模型
     btn.textContent = '加载模型';
     btn.onclick = function() { handleWarmup(); };
     btn.style.background = '';
@@ -280,7 +375,6 @@ async function handleWarmup() {
       return;
     }
 
-    // 后台加载中 → 显示全局覆层 + 轮询状态
     if (typeof showModuleLoading === 'function') showModuleLoading('模型加载中', 'model', '首次加载约需 10-30 秒');
     var _poll = setInterval(async function() {
       try {
@@ -376,18 +470,11 @@ async function handleDeleteModel(modelName) {
   if (delBtn) { delBtn.disabled = false; delBtn.textContent = '删除模型'; }
 }
 
-// ===== 切换推理设备（Ollama 版：已移除 UI，保留空函数防报错）=====
-
-// ===== Reranker 常驻开关（已废弃，KB 模型始终常驻）=====
-
-// ===== OCR (removed - no OCR DOM elements in HTML) =====
-
 // ===== Token 预算展示 =====
 async function refreshTokenBudget(modelsData) {
   var el = document.getElementById('settingsTokenBudget');
   if (!el) return;
   try {
-    // 云端模式：从字典自动获取
     if (typeof _currentMode !== 'undefined' && _currentMode === 'cloud') {
       var cloudResp = await fetch(_apiBase + '/api/cloud/config');
       var cloudData = await cloudResp.json();
@@ -404,7 +491,6 @@ async function refreshTokenBudget(modelsData) {
       }
       return;
     }
-    // 本地模式：原有逻辑
     var resp = await fetch(_apiBase + '/api/token-budget');
     var budget = await resp.json();
     if (budget.error) {
@@ -460,7 +546,7 @@ async function loadAutoWarmupSetting() {
     var result = await resp.json();
     var cfg = result.config || result;
     var chk = document.getElementById('autoWarmupChk');
-    if (chk) chk.checked = cfg.auto_warmup_llm !== false; // 默认 true
+    if (chk) chk.checked = cfg.auto_warmup_llm !== false;
   } catch(e) { console.error('[settings.loadAutoWarmupSetting]', e); }
 }
 
@@ -529,21 +615,18 @@ async function installExtension(file) {
   var progressText = document.getElementById('extProgressText');
   if (btn) { btn.disabled = true; btn.textContent = '上传中...'; }
   if (resultEl) resultEl.textContent = '';
-  // 显示进度条（上传阶段用 indeterminate 动画）
   if (progressBar) progressBar.style.display = 'block';
   if (progressFill) {
     progressFill.style.width = '30%';
     progressFill.style.animation = 'none';
-    void progressFill.offsetWidth; // 强制 reflow
+    void progressFill.offsetWidth;
     progressFill.style.animation = 'indeterminateProgress 1.5s ease-in-out infinite';
   }
   if (progressText) progressText.textContent = '准备上传...';
 
-  // 暂停心跳检测，避免安装期间误报"无法连接"
   if (typeof pauseHeartbeat === 'function') pauseHeartbeat();
 
   try {
-    // 第一步：上传文件，获取 task_id
     var fd = new FormData();
     fd.append('file', file);
     var resp = await fetch(_apiBase + '/api/extensions/upload', {method: 'POST', body: fd});
@@ -568,7 +651,6 @@ async function installExtension(file) {
 
     if (progressText) progressText.textContent = '上传完成，等待安装...';
 
-    // 第二步：通过 SSE 监听安装进度
     var es = new EventSource(_apiBase + '/api/extensions/install-progress/' + taskId);
     var done = false;
 
@@ -599,12 +681,10 @@ async function installExtension(file) {
           }
           refreshExtensions();
           updateTabVisibility();
-          // 模型类安装后刷新模型管理区
           if (typeof refreshStatus === 'function') refreshStatus();
           if (result.type === 'llm' && typeof rescanModels === 'function') {
             rescanModels();
           }
-          // 延迟隐藏进度条，恢复按钮
           setTimeout(function() {
             if (progressBar) progressBar.style.display = 'none';
             if (btn) { btn.textContent = '安装扩展'; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
@@ -641,7 +721,6 @@ async function installExtension(file) {
     if (progressBar) progressBar.style.display = 'none';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '安装扩展'; }
-    // 恢复心跳检测
     if (typeof resumeHeartbeat === 'function') resumeHeartbeat();
   }
 }
@@ -680,11 +759,9 @@ async function updateTabVisibility() {
     if (qaBtn) qaBtn.style.display = hasKB ? '' : 'none';
     if (minutesBtn) minutesBtn.style.display = hasRecorder ? '' : 'none';
 
-    // 对话附件菜单中"引用文库文档"按钮：KB 未安装时隐藏
     var kbRefItem = document.getElementById('kbRefMenuItem');
     if (kbRefItem) kbRefItem.style.display = hasKB ? '' : 'none';
 
-    // 同步更新系统状态卡片中的文库/语音引擎状态
     var kbStatusEl = document.getElementById('settingsKBStatus');
     var whisperStatusEl = document.getElementById('settingsWhisperStatus');
     if (kbStatusEl) {
@@ -710,15 +787,12 @@ async function updateTabVisibility() {
       }
     }
 
-    // 自适应内存管理：按模块安装状态显示对应行
-    // Patch3: 文库引擎常驻选项已移除（KB 模型始终常驻），只保留纪要引擎
     var recorderRow = document.getElementById('recorderResidentRow');
     var memoryEmpty = document.getElementById('memoryManageEmpty');
     if (recorderRow) recorderRow.style.display = hasRecorder ? '' : 'none';
     if (memoryEmpty) memoryEmpty.style.display = (!hasRecorder) ? '' : 'none';
   } catch(e) {
     silentLog('[settings.updateTabVisibility]', e);
-    // 请求失败时不要卡在"检测中..."
     var kbStatusEl = document.getElementById('settingsKBStatus');
     var whisperStatusEl = document.getElementById('settingsWhisperStatus');
     if (kbStatusEl && kbStatusEl.textContent.indexOf('检测中') >= 0) {
@@ -732,180 +806,7 @@ async function updateTabVisibility() {
   }
 }
 
-// ===== 模型加载（已替换为 handleWarmup 预热机制）=====
-
-// ===== Patch2 A3: 云端 AI 模式 =====
-async function initModeTag() {
-  try {
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/mode');
-    var data = await resp.json();
-    // 缓存云端模型名称（供 refreshStatus 使用，不依赖 DOM input）
-    if (data.cloud_model) window._cloudModelName = data.cloud_model;
-    updateModeTagUI(data.mode, data.cloud_configured, data.context_window, data.max_history_chars);
-  } catch(e) { console.error('[initModeTag]', e); }
-}
-
-function updateModeTagUI(mode, cloudConfigured, ctxWindow, maxHistChars) {
-  var tag = document.getElementById('modeTag');
-  var sub = document.getElementById('modeSubTag');
-  if (!tag) return;
-  var ctxWin = ctxWindow || 16384;
-  // Patch5 G：同步刷新全局 _maxPromptTokens，让 token 指示器知道当前模式的上下文窗口
-  if (typeof _maxPromptTokens !== 'undefined') {
-    _maxPromptTokens = ctxWin;
-    if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
-      TokenEstimator.updateInputDisplay();
-    }
-  }
-  // 保留 dropdown DOM 不被 innerHTML 覆盖
-  var dd = document.getElementById('modeDropdown');
-  if (mode === 'local') {
-    tag.className = 'tag-mode tag-local';
-    // 检查模型预热状态（_loadedModelId 由 refreshStatus 设置）
-    var hasLoaded = (typeof _loadedModelId !== 'undefined' && _loadedModelId);
-    if (hasLoaded) {
-      tag.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#4caf50"/></svg> 正在使用本地AI模型 ▾';
-      sub.textContent = '数据不上网 模型跑本地';
-    } else {
-      tag.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#f59e0b"/></svg> 本地AI模型已就绪，加载后使用 ▾';
-      sub.textContent = '前往设置页面加载模型';
-    }
-  } else {
-    tag.className = 'tag-mode tag-cloud';
-    tag.innerHTML = '<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5" fill="#f44336"/></svg> 正在使用云端AI模型 ▾';
-    sub.textContent = '核心数据本地存储';
-  }
-  // 把 dropdown 放回 tag 内部（innerHTML 清掉了它）
-  if (dd && !tag.contains(dd)) {
-    dd.style.display = 'none';
-    tag.appendChild(dd);
-  }
-  // 重新绑定点击事件（innerHTML 会清掉 inline onclick）
-  tag.onclick = function(e) {
-    // 不处理 dropdown 内部的点击
-    if (e.target.closest && e.target.closest('.mode-dropdown')) return;
-    toggleModeDropdown();
-  };
-  window._currentMode = mode;
-  window._cloudConfigured = cloudConfigured;
-  window._contextWindow = ctxWin;
-  // 更新圆环
-  fetchContextUsage();
-  // Patch3: 同步 KB 对比开关可见性
-  if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
-}
-
-function toggleModeDropdown() {
-  var dd = document.getElementById('modeDropdown');
-  if (!dd) return;
-  var show = dd.style.display === 'none' || !dd.style.display;
-  dd.style.display = show ? 'block' : 'none';
-  if (show) {
-    setTimeout(function() { document.addEventListener('click', function h(e) {
-      if (!e.target.closest('.mode-dropdown') && !e.target.closest('.tag-mode')) {
-        dd.style.display = 'none';
-        document.removeEventListener('click', h);
-      }
-    }); }, 10);
-  }
-}
-
-function selectMode(mode) {
-  document.getElementById('modeDropdown').style.display = 'none';
-  var isCloud = mode === 'cloud';
-  var title = document.getElementById('modeConfirmTitle');
-  var warning = document.getElementById('modeConfirmWarning');
-  var meta = document.getElementById('modeConfirmMeta');
-  var btn = document.getElementById('modeConfirmBtn');
-
-  if (isCloud) {
-    // 前置检查：如果云端未配置 API key，直接提示去设置
-    if (typeof _cloudConfigured !== 'undefined' && !_cloudConfigured) {
-      if (typeof showDialog === 'function') {
-        showDialog('云端 AI 未配置', '请先在「设置 → 云端 AI 模型配置」中填写 API Key 和模型名称，然后再切换到云端模式。', {
-          type: 'warning',
-          confirm: true,
-          confirmLabel: '前往设置',
-          cancelLabel: '取消'
-        }).then(function(confirmed) {
-          if (confirmed) {
-            switchTab('settings', document.querySelector('.tabs-nav button:last-child'));
-            // 滚动到云端配置区
-            setTimeout(function() {
-              var el = document.getElementById('cloudConfigSection');
-              if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-            }, 300);
-          }
-        });
-      }
-      return;
-    }
-    title.textContent = '切换到云端 AI 模式';
-    warning.innerHTML = '云端模式下对话内容将通过互联网发送至第三方 AI 服务。<br>引用的文库文档内容将随对话一起发送。<br>你可以在「设置 → 云端 AI 模型配置」中调整数据发送策略。';
-    meta.innerHTML = '模型：<strong id="modeConfirmModel">加载中...</strong><br>数据发送：<strong id="modeConfirmPolicy">—</strong>';
-    btn.className = 'btn-confirm danger';
-    btn.textContent = '确认切换';
-    // 异步获取云端配置信息
-    fetch((typeof API !== 'undefined' ? API : '') + '/api/cloud/config').then(function(r) { return r.json(); }).then(function(d) {
-      var m = document.getElementById('modeConfirmModel'); if (m) m.textContent = d.model || '—';
-      var p = document.getElementById('modeConfirmPolicy'); if (p) {
-        var policyMap = {full: '完整发送（默认）', current_only: '仅发送当前消息', slim_history: '精简历史 (' + (d.slim_history_rounds || 6) + '轮)'};
-        p.textContent = policyMap[d.context_policy] || d.context_policy || '—';
-      }
-    }).catch(function() {});
-  } else {
-    title.textContent = '切换到本地 AI 模型';
-    warning.textContent = '本地模式下所有数据均在本地处理，不会发送到互联网。';
-    meta.innerHTML = '';
-    btn.className = 'btn-confirm';
-    btn.textContent = '确认切换';
-  }
-  window._pendingMode = mode;
-  document.getElementById('modeConfirmModal').style.display = 'flex';
-  // 键盘快捷键：Enter 确认，Escape 取消
-  document.addEventListener('keydown', _modeSwitchKeyHandler);
-}
-
-function _modeSwitchKeyHandler(e) {
-  if (document.getElementById('modeConfirmModal').style.display === 'none') return;
-  if (e.key === 'Enter') { e.preventDefault(); document.removeEventListener('keydown', _modeSwitchKeyHandler); confirmModeSwitch(); }
-  else if (e.key === 'Escape') { e.preventDefault(); document.removeEventListener('keydown', _modeSwitchKeyHandler); cancelModeSwitch(); }
-}
-
-function cancelModeSwitch() {
-  document.getElementById('modeConfirmModal').style.display = 'none';
-  document.removeEventListener('keydown', _modeSwitchKeyHandler);
-  window._pendingMode = null;
-}
-
-async function confirmModeSwitch() {
-  var mode = window._pendingMode;
-  if (!mode) return;
-  document.getElementById('modeConfirmModal').style.display = 'none';
-  document.removeEventListener('keydown', _modeSwitchKeyHandler);
-  try {
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/mode/switch', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({mode: mode})
-    });
-    var data = await resp.json();
-    if (data.ok) {
-      updateModeTagUI(data.mode, true, data.context_window, data.max_history_chars);
-      showToast(mode === 'cloud' ? '已切换到云端 AI 模式' : '已切换到本地 AI 模式', 'success');
-      // 刷新全局状态：模型标签、overlay、sourceTag、文库/纪要遮罩、上下文圆环
-      refreshStatus();
-      // Patch3: 刷新 KB 对比开关可见性
-      if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
-    } else {
-      showToast(data.error || '切换失败', 'error');
-      if (data.error && data.error.indexOf('未配置') >= 0) {
-        setTimeout(function() { switchTab('settings', document.querySelector('.tabs-nav button:last-child')); }, 1000);
-      }
-    }
-  } catch(e) { showToast('切换失败', 'error'); }
-}
-
-// ===== Patch2 A3: 云端配置 =====
+// ===== 云端配置 =====
 var _cloudConfigLoaded = false;
 
 async function loadCloudConfig() {
@@ -915,11 +816,7 @@ async function loadCloudConfig() {
     var urlEl = document.getElementById('cloudBaseUrl');
     var modelEl = document.getElementById('cloudModel');
     var keyEl = document.getElementById('cloudApiKey');
-    // Patch5 修复：不预填默认值，让 placeholder 提示用户输入
-    // 后端返回的 base_url 是 'https://api.openai.com/v1'（DEFAULTS 默认值），
-    // 如果用户没保存过，不预填，保留 placeholder
     if (urlEl) {
-      // 只有后端明确有非默认值才填充（避免覆盖 placeholder）
       if (data.base_url && data.base_url_set === true) {
         urlEl.value = data.base_url;
       } else {
@@ -933,8 +830,6 @@ async function loadCloudConfig() {
         modelEl.value = '';
       }
     }
-    // 模型能力：从后端字典自动获取，不再手动配置
-    // Patch5 修复：只有用户实际设置了模型名称才显示能力，否则保留提示
     var capsEl = document.getElementById('cloudCapsDisplay');
     if (capsEl) {
       if (data.model_set === true && data.model) {
@@ -947,24 +842,19 @@ async function loadCloudConfig() {
           capsEl.textContent = '输入模型名称后自动匹配';
         }
       } else {
-        // 没设置过模型，保留 placeholder
         capsEl.textContent = '输入模型名称后自动匹配';
         capsEl.style.color = 'var(--text-muted)';
       }
     }
-    // API Key 已保存时显示脱敏占位
     if (keyEl) {
       if (data.api_key_set && data.api_key_preview) {
         keyEl.value = data.api_key_preview;
         keyEl.setAttribute('data-has-key', 'true');
       } else {
-        // Patch4 v3.1 BUG#20：不清空 input（保留 placeholder），只标记 has-key=false
-        // 否则用户切到设置 tab 但没填新 key 就保存，会误发空 key 覆盖已有配置
         keyEl.value = '';
         keyEl.removeAttribute('data-has-key');
       }
     }
-    // context_policy
     if (data.context_policy) {
       var radio = document.querySelector('input[name="contextPolicy"][value="' + data.context_policy + '"]');
       if (radio) radio.checked = true;
@@ -973,12 +863,10 @@ async function loadCloudConfig() {
       var sl = document.getElementById('slimHistoryRounds');
       if (sl) sl.value = data.slim_history_rounds;
     }
-    // kb_permission
     if (data.kb_permission) {
       var kbPerm = document.getElementById('kbPermissionSelect');
       if (kbPerm) kbPerm.value = data.kb_permission;
     }
-    // 绑定模型名称变化事件（实时预览能力）
     if (modelEl && !modelEl._capsBound) {
       modelEl._capsBound = true;
       modelEl.addEventListener('blur', _previewCloudCaps);
@@ -988,13 +876,11 @@ async function loadCloudConfig() {
     }
     _cloudConfigLoaded = true;
   } catch(e) {
-    // 首次配置或后端异常时，允许用户直接写入（表单保持空白/placeholder）
     console.warn('[loadCloudConfig] 加载现有配置失败，允许直接保存:', e.message || e);
     _cloudConfigLoaded = true;
   }
 }
 
-// 实时预览云端模型能力（从字典查）
 var _capsTimer = null;
 function _previewCloudCaps() {
   clearTimeout(_capsTimer);
@@ -1031,7 +917,6 @@ async function testCloudConnection() {
   try {
     var ctrl = new AbortController();
     var timer = setTimeout(function() { ctrl.abort(); }, 20000);
-    // 用表单当前值测试，不等保存
     var body = {
       base_url: (document.getElementById('cloudBaseUrl') || {}).value || '',
       model: (document.getElementById('cloudModel') || {}).value || '',
@@ -1059,13 +944,11 @@ async function testCloudConnection() {
 }
 
 async function saveCloudConfig() {
-  // 防止 loadCloudConfig 未完成时保存空值覆盖已有配置
   if (!_cloudConfigLoaded) { showToast('配置加载中，请稍后再试', 'warning'); return; }
   var policy = document.querySelector('input[name="contextPolicy"]:checked');
   var rounds = document.getElementById('slimHistoryRounds');
   var kbPermEl = document.getElementById('kbPermissionSelect');
   var body = {};
-  // Patch5 修复：只有用户实际填写了才发送，避免空值覆盖
   var baseUrl = document.getElementById('cloudBaseUrl').value.trim();
   var modelName = document.getElementById('cloudModel').value.trim();
   if (baseUrl) body.base_url = baseUrl;
@@ -1073,22 +956,16 @@ async function saveCloudConfig() {
   body.context_policy = policy ? policy.value : 'full';
   body.slim_history_rounds = parseInt(rounds ? rounds.value : 6) || 6;
   body.kb_permission = kbPermEl ? kbPermEl.value : 'full';
-  // 上下文窗口已移除（自动从字典获取）
   var keyEl = document.getElementById('cloudApiKey');
-  // Patch4 v3.1 BUG#20：只有用户实际输入了新 key（不是空、不是脱敏占位）才发送
   if (keyEl && keyEl.value) {
     var hasExisting = keyEl.getAttribute('data-has-key') === 'true';
     var val = keyEl.value;
-    // 脱敏格式: "sk-***...***abc" — 如果值包含 ***...*** 说明用户没改
     var isMaskedPlaceholder = val.indexOf('***...***') !== -1;
-    // 空字符串或纯空白不发
     var isEmpty = !val || !val.trim();
     if (!isEmpty && (!hasExisting || !isMaskedPlaceholder)) {
       body.api_key = val.trim();
     }
   }
-  // 如果 keyEl.value 为空但 has-key=true（用户主动清空）→ 不发 api_key
-  // 后端保留原 key（避免误清空）
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/cloud/config', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1097,10 +974,7 @@ async function saveCloudConfig() {
     var data = await resp.json();
     if (data.ok) {
       showToast('云端配置已保存', 'success');
-      if (typeof initModeTag === 'function') initModeTag();
-      // 刷新上下文指示器
       if (typeof fetchContextUsage === 'function') fetchContextUsage();
-      // 刷新模型能力显示
       if (data.context_window) {
         var capsEl = document.getElementById('cloudCapsDisplay');
         if (capsEl) {
@@ -1108,7 +982,6 @@ async function saveCloudConfig() {
           capsEl.style.color = 'var(--text-secondary)';
         }
       }
-      // 刷新系统状态卡片
       refreshTokenBudget();
     } else {
       showToast(data.error || '保存失败', 'error');
@@ -1116,10 +989,7 @@ async function saveCloudConfig() {
   } catch(e) { showToast('保存失败', 'error'); }
 }
 
-// ===== Patch2 A5: 搜索配置（已移除 — 本机直搜，零配置） =====
-
-
-// ===== Patch2 C2: 备份与恢复 =====
+// ===== 备份与恢复 =====
 async function exportBackup() {
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/backup/export', {method: 'POST'});
@@ -1158,10 +1028,6 @@ async function importBackup() {
 }
 
 // ===== Patch5 B3: 权限管理 =====
-
-/**
- * 加载工具级权限列表
- */
 async function loadPermissionTools() {
   var container = document.getElementById('permissionToolsList');
   if (!container) return;
@@ -1194,9 +1060,6 @@ async function loadPermissionTools() {
   }
 }
 
-/**
- * 切换单个工具权限
- */
 async function toggleToolPermission(toolId, enabled) {
   try {
     var resp = await fetch(_apiBase + '/api/permissions/tool/' + encodeURIComponent(toolId), {
@@ -1209,7 +1072,6 @@ async function toggleToolPermission(toolId, enabled) {
       showToast('已' + (enabled ? '启用' : '禁用') + '「' + toolId + '」', 'success');
     } else {
       showToast('设置失败: ' + (data.error || '未知错误'), 'error');
-      // 回滚 checkbox
       loadPermissionTools();
     }
   } catch(e) {
@@ -1218,9 +1080,6 @@ async function toggleToolPermission(toolId, enabled) {
   }
 }
 
-/**
- * 应用权限预设
- */
 async function applyPermissionPreset(presetId) {
   try {
     var resp = await fetch(_apiBase + '/api/permissions/preset/apply', {
@@ -1230,7 +1089,6 @@ async function applyPermissionPreset(presetId) {
     });
     var data = await resp.json();
     if (data.ok) {
-      // 高亮选中的预设按钮
       var btns = document.querySelectorAll('.kb-preset-btn');
       for (var i = 0; i < btns.length; i++) {
         btns[i].classList.remove('kb-preset-active');
@@ -1240,7 +1098,6 @@ async function applyPermissionPreset(presetId) {
       }
       var presetNames = {trusted: '完全信任', cautious: '谨慎模式', offline: '纯离线'};
       showToast('已应用「' + (presetNames[presetId] || presetId) + '」预设', 'success');
-      // 刷新工具列表（权限可能变了）
       loadPermissionTools();
     } else {
       showToast('应用预设失败: ' + (data.error || '未知错误'), 'error');
@@ -1250,108 +1107,7 @@ async function applyPermissionPreset(presetId) {
   }
 }
 
-// 暴露到全局
-window.initModeTag = initModeTag;
-window.updateModeTagUI = updateModeTagUI;
-window.toggleModeDropdown = toggleModeDropdown;
-window.selectMode = selectMode;
-window.cancelModeSwitch = cancelModeSwitch;
-window.confirmModeSwitch = confirmModeSwitch;
-window.loadCloudConfig = loadCloudConfig;
-window.toggleApiKeyVisibility = toggleApiKeyVisibility;
-window.testCloudConnection = testCloudConnection;
-window.saveCloudConfig = saveCloudConfig;
-// Patch5 B3: 权限管理
-window.loadPermissionTools = loadPermissionTools;
-window.applyPermissionPreset = applyPermissionPreset;
-window.toggleToolPermission = toggleToolPermission;
-// search config functions removed (zero-config)
-
-window.exportBackup = exportBackup;
-window.refreshResourcePanel = refreshResourcePanel;
-window.refreshStatus = refreshStatus;
-window.updateWarmupBtn = updateWarmupBtn;
-window.handleWarmup = handleWarmup;
-window.rescanModels = rescanModels;
-window.handleUnload = handleUnload;
-window.handleDeleteModel = handleDeleteModel;
-window.saveRecorderResident = saveRecorderResident;
-window.loadRecorderResident = loadRecorderResident;
-window.saveAutoWarmup = saveAutoWarmup;
-window.loadAutoWarmupSetting = loadAutoWarmupSetting;
-window.refreshExtensions = refreshExtensions;
-window.installExtension = installExtension;
-window.uninstallExtension = uninstallExtension;
-window.onExtFilePicked = onExtFilePicked;
-window.updateTabVisibility = updateTabVisibility;
-
-// ===== Patch5 C7 T03: 隐私声明 + 诊断报告 =====
-/**
- * 加载完整隐私声明（内嵌摘要 + 可选 fetch 完整文件）
- */
-function loadPrivacyDetail() {
-  var el = document.getElementById('privacyContent');
-  if (!el) return;
-  // 内嵌核心承诺摘要（避免依赖外部文件加载）
-  var summary =
-    '<div style="line-height:1.8">' +
-    '<div style="font-weight:600;color:var(--text-primary);margin-bottom:6px">桌伴隐私承诺</div>' +
-    '<div style="margin-bottom:4px">✅ <b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在您的电脑本地。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>不主动上传</b>：程序不会主动上传任何用户数据到任何服务器。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时与外部通信。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>文库权限保护</b>：文档受 full/search/none 三级令牌授权保护。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>开源组件透明</b>：所有第三方组件遵循原始开源许可证。</div>' +
-    '<div style="margin-bottom:4px">✅ <b>随时可清除</b>：删除安装目录即可彻底卸载，数据随之清除。</div>' +
-    '</div>';
-  el.innerHTML = summary;
-}
-
-/**
- * 导出系统诊断报告
- * fetch /api/diagnostics/export，展示在页面 + 触发浏览器下载
- */
-async function exportDiagnostics() {
-  var output = document.getElementById('diagOutput');
-  if (output) {
-    output.style.display = 'block';
-    output.textContent = '正在收集诊断信息...';
-  }
-  try {
-    var _apiBase = (typeof _apiBase !== 'undefined') ? _apiBase : '';
-    var resp = await fetch(_apiBase + '/api/diagnostics/export');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    var text = await resp.text();
-
-    // 展示在页面
-    if (output) {
-      output.textContent = text;
-    }
-
-    // 触发浏览器下载
-    var blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    var now = new Date();
-    var ts = now.getFullYear() + '' + String(now.getMonth() + 1).padStart(2, '0') + '' + String(now.getDate()).padStart(2, '0') + '_' + String(now.getHours()).padStart(2, '0') + '' + String(now.getMinutes()).padStart(2, '0') + '' + String(now.getSeconds()).padStart(2, '0');
-    a.download = 'sidemate_diagnostic_' + ts + '.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    if (typeof showToast === 'function') showToast('诊断报告已导出', 'success');
-  } catch(e) {
-    if (output) {
-      output.textContent = '导出失败: ' + e.message;
-    }
-    if (typeof showToast === 'function') showToast('诊断报告导出失败: ' + e.message, 'error');
-  }
-}
-window.loadPrivacyDetail = loadPrivacyDetail;
-window.exportDiagnostics = exportDiagnostics;
-
-// ===== Action 管理 =====
+// ===== Action / 缓存 / 关于 =====
 async function refreshCapabilities() {
   var el = document.getElementById('capabilityList');
   if (!el) return;
@@ -1370,7 +1126,6 @@ async function refreshCapabilities() {
         var label = a.label || '';
         var title = a.title || id;
         var isBuiltin = a.builtin === true;
-        // 优先使用后端 tag 字段（如"文库扩展"），否则按 builtin/扩展 分类
         var customTag = a.tag || '';
         var tag = customTag
           ? '<span style="font-size:.72em;padding:1px 6px;background:var(--bg-secondary);color:var(--success-color);border-radius:3px">' + esc(customTag) + '</span>'
@@ -1528,29 +1283,15 @@ async function clearAllCache() {
   } catch(e) { showToast('清空失败: ' + e.message, 'error'); }
 }
 
-// 暴露新函数到全局
-window.refreshCapabilities = refreshCapabilities;
-window.uninstallAction = uninstallAction;
-window.refreshCacheFiles = refreshCacheFiles;
-window.deleteCacheFile = deleteCacheFile;
-window.clearAllCache = clearAllCache;
-window.batchDeleteCache = batchDeleteCache;
-window.toggleCacheSelectAll = toggleCacheSelectAll;
-window.goCachePage = goCachePage;
-
 // ===== 关于对话框信息加载 =====
 async function refreshAboutInfo() {
   try {
     var resp = await fetch(_apiBase + '/api/system/info');
     var data = await resp.json();
-
-    // 更新版本号
     var verEl = document.getElementById('versionDisplay');
     if (verEl) {
       verEl.textContent = data.version ? ('v' + data.version) : (window.APP_VERSION ? ('v' + window.APP_VERSION) : '');
     }
-
-    // 更新运行环境信息（设置页关于区域）— 只显示版本信息，运行状态由托盘看门狗管
     var envEl = document.getElementById('systemEnvInfo');
     if (envEl) {
       envEl.innerHTML =
@@ -1563,7 +1304,105 @@ async function refreshAboutInfo() {
     if (envEl) envEl.innerHTML = '<div style="color:var(--text-muted)">环境信息加载失败</div>';
   }
 }
+
+// ===== Patch5 C7 T03: 隐私声明 + 诊断报告 =====
+function loadPrivacyDetail() {
+  var el = document.getElementById('privacyContent');
+  if (!el) return;
+  var summary =
+    '<div style="line-height:1.8">' +
+    '<div style="font-weight:600;color:var(--text-primary);margin-bottom:6px">桌伴隐私承诺</div>' +
+    '<div style="margin-bottom:4px">✅ <b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在您的电脑本地。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>不主动上传</b>：程序不会主动上传任何用户数据到任何服务器。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时与外部通信。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>文库权限保护</b>：文档受 full/search/none 三级令牌授权保护。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>开源组件透明</b>：所有第三方组件遵循原始开源许可证。</div>' +
+    '<div style="margin-bottom:4px">✅ <b>随时可清除</b>：删除安装目录即可彻底卸载，数据随之清除。</div>' +
+    '</div>';
+  el.innerHTML = summary;
+}
+
+async function exportDiagnostics() {
+  var output = document.getElementById('diagOutput');
+  if (output) {
+    output.style.display = 'block';
+    output.textContent = '正在收集诊断信息...';
+  }
+  try {
+    var _apiBaseDiag = (typeof _apiBase !== 'undefined') ? _apiBase : '';
+    var resp = await fetch(_apiBaseDiag + '/api/diagnostics/export');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var text = await resp.text();
+    if (output) {
+      output.textContent = text;
+    }
+    var blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    var now = new Date();
+    var ts = now.getFullYear() + '' + String(now.getMonth() + 1).padStart(2, '0') + '' + String(now.getDate()).padStart(2, '0') + '_' + String(now.getHours()).padStart(2, '0') + '' + String(now.getMinutes()).padStart(2, '0') + '' + String(now.getSeconds()).padStart(2, '0');
+    a.download = 'sidemate_diagnostic_' + ts + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if (typeof showToast === 'function') showToast('诊断报告已导出', 'success');
+  } catch(e) {
+    if (output) {
+      output.textContent = '导出失败: ' + e.message;
+    }
+    if (typeof showToast === 'function') showToast('诊断报告导出失败: ' + e.message, 'error');
+  }
+}
+
+// ===== 暴露到全局 =====
+// P6: 模式选择器
+window.initModeSelector = initModeSelector;
+window.selectMode = selectMode;
+// 模型管理
+window.refreshResourcePanel = refreshResourcePanel;
+window.refreshStatus = refreshStatus;
+window.updateWarmupBtn = updateWarmupBtn;
+window.handleWarmup = handleWarmup;
+window.rescanModels = rescanModels;
+window.handleUnload = handleUnload;
+window.handleDeleteModel = handleDeleteModel;
+// 配置
+window.loadRecorderResident = loadRecorderResident;
+window.saveRecorderResident = saveRecorderResident;
+window.loadAutoWarmupSetting = loadAutoWarmupSetting;
+window.saveAutoWarmup = saveAutoWarmup;
+window.loadCloudConfig = loadCloudConfig;
+window.toggleApiKeyVisibility = toggleApiKeyVisibility;
+window.testCloudConnection = testCloudConnection;
+window.saveCloudConfig = saveCloudConfig;
+// 扩展
+window.refreshExtensions = refreshExtensions;
+window.installExtension = installExtension;
+window.uninstallExtension = uninstallExtension;
+window.onExtFilePicked = onExtFilePicked;
+window.updateTabVisibility = updateTabVisibility;
+// Action
+window.refreshCapabilities = refreshCapabilities;
+window.uninstallAction = uninstallAction;
+// 缓存
+window.refreshCacheFiles = refreshCacheFiles;
+window.deleteCacheFile = deleteCacheFile;
+window.clearAllCache = clearAllCache;
+window.batchDeleteCache = batchDeleteCache;
+window.toggleCacheSelectAll = toggleCacheSelectAll;
+window.goCachePage = goCachePage;
+// 备份
+window.exportBackup = exportBackup;
+// 权限
+window.loadPermissionTools = loadPermissionTools;
+window.applyPermissionPreset = applyPermissionPreset;
+window.toggleToolPermission = toggleToolPermission;
+// 关于
 window.refreshAboutInfo = refreshAboutInfo;
+window.loadPrivacyDetail = loadPrivacyDetail;
+window.exportDiagnostics = exportDiagnostics;
 
 (function addKeyframes() {
   var style = document.createElement('style');
