@@ -199,7 +199,17 @@ async function kbRefreshDocs() {
     if (typeof updateKbLockBar === 'function') updateKbLockBar();
 
     if (!docs.length) {
-      listEl.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px 0;font-size:.82em">文库为空，点击上方「上传文档」开始添加</div>';
+      // P5 C7：KB 空状态文案增强，用 iconSvg 替代 emoji
+      listEl.innerHTML = '<div class="empty-state kb-empty-state">' +
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:36px 14px">' +
+          '<div style="opacity:.4">' + iconSvg('book','32') + '</div>' +
+          '<div style="font-weight:500;color:var(--text-primary);font-size:.95em">还没有任何文档</div>' +
+          '<div style="font-size:.82em;color:var(--text-muted);text-align:center;line-height:1.6">' +
+            '拖拽 .docx / .pdf / .txt 到这里<br>' +
+            '或点击上方「批量上传」开始添加' +
+          '</div>' +
+        '</div>' +
+      '</div>';
       document.getElementById('kbEmpty').style.display = 'flex';
       document.getElementById('kbChatArea').style.display = 'none';
       return;

@@ -202,11 +202,23 @@ function renderMessages() {
     var loaded = tag && !tag.classList.contains('none');
     if (loaded) {
       // Patch4 v3.1 文案优化：根据模式动态显示引导
+      // Patch5 C7：用 iconSvg 替代 emoji，去掉多余 💡
       var _isCloud = (typeof _currentMode !== 'undefined' && _currentMode === 'cloud');
       var _hint = _isCloud
         ? '输入问题、上传文件，或直接说「帮我写一份关于XX的文档」'
         : '输入问题或上传文件开始使用';
-      el.innerHTML = '<div class="empty-state"><div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="font-size:1.6em;opacity:.5">' + iconSvg('chat','24') + '</div><div>开始对话吧</div><div style="font-size:.92em;color:var(--text-primary);margin-top:6px;font-weight:500">' + _hint + '</div><div style="font-size:.78em;color:var(--text-muted);margin-top:10px;display:flex;gap:12px;justify-content:center"><span>💡 提示：可上传 PDF/Word/TXT 文件</span><span>·</span><span>支持引用文库文档</span></div></div></div>';
+      el.innerHTML = '<div class="empty-state">' +
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:36px 14px">' +
+          '<div style="opacity:.4">' + iconSvg('chat','32') + '</div>' +
+          '<div style="font-weight:500;color:var(--text-primary);font-size:1em">开始你的第一次对话</div>' +
+          '<div style="font-size:.92em;color:var(--text-secondary);margin-top:6px;font-weight:400">' + _hint + '</div>' +
+          '<div style="font-size:.78em;color:var(--text-muted);margin-top:10px;display:flex;gap:12px;justify-content:center;align-items:center">' +
+            '<span>' + iconSvg('file','11') + ' 可上传 PDF/Word/TXT</span>' +
+            '<span>·</span>' +
+            '<span>' + iconSvg('book','11') + ' 支持引用文库文档</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
     } else {
       // 首次/非首次无模型：留空，由 #chatModelOverlay 接管
       el.innerHTML = '';
@@ -1446,43 +1458,38 @@ async function clearContext() {
   }
   if (!confirmed) return;
 
-  // 给当前会话追加一条 context_cutoff 标记消息（system role + 特殊 content）
+  // Patch5 C7：调用新接口 /api/chats/clear_context（给最后一条消息打 context_cutoff）
   if (typeof currentChatFile !== 'undefined' && currentChatFile) {
-    var _ccName = currentChatFile.split(/[\\/]/).pop().replace('.json', '');
-    var _ccMsg = {
-      role: 'system',
-      content: '[CONTEXT_CUTOFF]',
-      ts: new Date().toTimeString().slice(0, 8),
-      context_cutoff: true
-    };
     try {
-      await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(_ccName) + '/append', {
+      var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/clear_context', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(_ccMsg)
+        body: JSON.stringify({chat_file: currentChatFile, msg_idx: -1})
       });
-      // 同步到内存中的 currentMessages
-      if (typeof currentMessages !== 'undefined') {
-        currentMessages.push(_ccMsg);
-        if (typeof _lastMsgCount !== 'undefined') _lastMsgCount = currentMessages.length;
+      var data = await resp.json();
+      if (data.ok) {
+        // 同步内存：给 currentMessages 最后一条打标
+        if (typeof currentMessages !== 'undefined' && currentMessages.length > 0) {
+          // 清除旧的 context_cutoff 标记
+          for (var i = 0; i < currentMessages.length; i++) {
+            if (currentMessages[i] && typeof currentMessages[i] === 'object') {
+              currentMessages[i].context_cutoff = (i === currentMessages.length - 1);
+            }
+          }
+          if (typeof _lastMsgCount !== 'undefined') _lastMsgCount = currentMessages.length;
+        }
+        if (typeof showToast === 'function') {
+          showToast('上下文已清除（保留 ' + (data.total_messages || 0) + ' 条消息，模型从下一轮重新开始）', 'success', 4000);
+        }
+      } else {
+        if (typeof showToast === 'function') showToast(data.error || '清除失败', 'error');
       }
     } catch(e) {
-      console.warn('[chat.clearContext] 追加标记失败:', e.message);
+      console.warn('[chat.clearContext] 调用失败:', e.message);
+      if (typeof showToast === 'function') showToast('清除失败: ' + e.message, 'error');
     }
   } else {
-    // 没有会话文件：仅在内存标记
-    if (typeof currentMessages !== 'undefined') {
-      currentMessages.push({
-        role: 'system',
-        content: '[CONTEXT_CUTOFF]',
-        ts: new Date().toTimeString().slice(0, 8),
-        context_cutoff: true
-      });
-    }
-  }
-
-  if (typeof showToast === 'function') {
-    showToast('上下文已清除，模型将从下条消息开始新对话', 'success');
+    if (typeof showToast === 'function') showToast('当前没有会话，无需清除', 'info');
   }
 }
 window.clearContext = clearContext;

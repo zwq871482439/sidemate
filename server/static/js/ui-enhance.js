@@ -52,6 +52,12 @@ var MessageStyleManager = {
     } else {
       msgs.classList.remove('msg-list-mode');
     }
+    // Patch5 C7：同步切换按钮的文案
+    var btn = document.getElementById('msgStyleToggle');
+    if (btn) {
+      var label = btn.querySelector('.ms-label');
+      if (label) label.textContent = (this.getMode() === 'list') ? '列表' : '气泡';
+    }
   }
 };
 
@@ -112,14 +118,18 @@ var CodeBlockEnhancer = {
     if (codeText.endsWith('\n')) lineCount--;
     if (lineCount < 1) lineCount = 1;
 
-    // 构建 header
+    // 构建 header（P5 C7：icon 用 iconSvg()，不用 emoji）
+    var collapseIcon = (typeof iconSvg === 'function') ? iconSvg('pause', 12) : '';
+    var copyIcon = (typeof iconSvg === 'function') ? iconSvg('file', 12) : '';
     var header = document.createElement('div');
     header.className = 'code-header';
     header.innerHTML =
       '<span class="code-lang">' + _escText(langLabel) + '</span>' +
       '<span class="code-lines">' + lineCount + ' 行</span>' +
-      '<button class="code-toggle" onclick="toggleCodeCollapse(this)">折叠</button>' +
-      '<button class="code-copy-btn" onclick="copyCode(this)">复制</button>';
+      '<span class="code-actions">' +
+        '<button class="code-toggle" onclick="toggleCodeCollapse(this)" title="折叠/展开">' + collapseIcon + ' <span class="code-toggle-text">折叠</span></button>' +
+        '<button class="code-copy-btn" onclick="copyCode(this)" title="复制代码">' + copyIcon + ' <span class="code-copy-text">复制</span></button>' +
+      '</span>';
 
     // 插入到 <pre> 之前
     var pre = block.querySelector('pre');
@@ -151,12 +161,15 @@ function toggleCodeCollapse(btn) {
   if (!block) return;
   var pre = block.querySelector('pre');
   if (!pre) return;
+  var textEl = btn.querySelector('.code-toggle-text');
   if (pre.classList.contains('collapsed')) {
     pre.classList.remove('collapsed');
-    btn.textContent = '折叠';
+    if (textEl) textEl.textContent = '折叠';
+    else btn.textContent = '折叠';
   } else {
     pre.classList.add('collapsed');
-    btn.textContent = '展开';
+    if (textEl) textEl.textContent = '展开';
+    else btn.textContent = '展开';
   }
 }
 

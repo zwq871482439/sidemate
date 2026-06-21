@@ -19,8 +19,8 @@
 <script src="/static/vendor/highlight.min.js"></script>
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.22">
-<link rel="stylesheet" href="/static/css/skeleton.css?v=2.22">
+<link rel="stylesheet" href="/static/css/main.css?v=2.23">
+<link rel="stylesheet" href="/static/css/skeleton.css?v=2.23">
 </head>
 <body>
 
@@ -147,10 +147,10 @@
           </div>
           <!-- 合并的 Action 按钮栏（由 refreshActionBar() 动态渲染） -->
           <div id="actionBar" style="display:flex;gap:4px;margin-left:auto"></div>
-          <!-- Patch5 C7: 消息样式切换 -->
-          <button id="msgStyleToggle" onclick="toggleMode()" title="切换消息样式" style="font-size:.75em;padding:3px 8px;border:1px solid var(--border-color);border-radius:4px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary)">☰</button>
-          <!-- Patch5 C7: 清除上下文 -->
-          <button id="clearContextBtn" onclick="clearContext()" title="清除上下文（保留消息，重置模型记忆）" style="display:none;font-size:.75em;padding:3px 10px;border:1px solid var(--border-color);border-radius:4px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary)">清除上下文</button>
+          <!-- Patch5 C7: 消息样式切换（SVG icon） -->
+          <button id="msgStyleToggle" onclick="toggleMode()" title="切换消息样式（气泡/列表）" style="font-size:.75em;padding:3px 8px;border:1px solid var(--border-color);border-radius:4px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary);display:inline-flex;align-items:center;gap:4px"></button>
+          <!-- Patch5 C7: 清除上下文（SVG icon） -->
+          <button id="clearContextBtn" onclick="clearContext()" title="清除上下文（保留消息，重置模型记忆）" style="display:none;font-size:.75em;padding:3px 10px;border:1px solid var(--border-color);border-radius:4px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary)"></button>
         </div>
         <!-- 隐藏的旧 session 下拉（保持兼容，chat-session.js 仍会操作它） -->
         <select id="sessionSelect" onchange="onSessionChange()" style="display:none"></select>
@@ -1112,25 +1112,25 @@ window.addEventListener('DOMContentLoaded', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.22"></script>
-<script src="/static/js/core/utils.js?v=2.22"></script>
-<script src="/static/js/core/errors.js?v=2.22"></script>
-<script src="/static/js/stream_renderer.js?v=2.22"></script>
-<script src="/static/js/settings.js?v=2.22"></script>
-<script src="/static/js/qa.js?v=2.22"></script>
-<script src="/static/js/kb-batch.js?v=2.22"></script>
-<script src="/static/js/minutes.js?v=2.22"></script>
+<script src="/static/js/core/api.js?v=2.23"></script>
+<script src="/static/js/core/utils.js?v=2.23"></script>
+<script src="/static/js/core/errors.js?v=2.23"></script>
+<script src="/static/js/stream_renderer.js?v=2.23"></script>
+<script src="/static/js/settings.js?v=2.23"></script>
+<script src="/static/js/qa.js?v=2.23"></script>
+<script src="/static/js/kb-batch.js?v=2.23"></script>
+<script src="/static/js/minutes.js?v=2.23"></script>
 <!-- Patch2 D1: chat.js 拆分为子模块（全局挂载，加载顺序敏感） -->
-<script src="/static/js/chat-session.js?v=2.22"></script>
-<script src="/static/js/chat-actions.js?v=2.22"></script>
-<script src="/static/js/chat-files.js?v=2.22"></script>
-<script src="/static/js/chat-export.js?v=2.22"></script>
-<script src="/static/js/chat-ui.js?v=2.22"></script>
-<script src="/static/js/chat.js?v=2.22"></script>
+<script src="/static/js/chat-session.js?v=2.23"></script>
+<script src="/static/js/chat-actions.js?v=2.23"></script>
+<script src="/static/js/chat-files.js?v=2.23"></script>
+<script src="/static/js/chat-export.js?v=2.23"></script>
+<script src="/static/js/chat-ui.js?v=2.23"></script>
+<script src="/static/js/chat.js?v=2.23"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.22"></script>
-<script src="/static/js/skeleton.js?v=2.22"></script>
-<script src="/static/js/ui-enhance.js?v=2.22"></script>
+<script src="/static/js/token-estimator.js?v=2.23"></script>
+<script src="/static/js/skeleton.js?v=2.23"></script>
+<script src="/static/js/ui-enhance.js?v=2.23"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====

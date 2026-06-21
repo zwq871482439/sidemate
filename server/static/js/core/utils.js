@@ -497,11 +497,20 @@ function copyCode(btn) {
   var code = block.querySelector('code');
   if (!code) return;
   var text = code.textContent || '';
+  // P5 C7：保留按钮内部结构（icon + 文本）
+  var textEl = btn.querySelector('.code-copy-text');
+  var _setBtnText = function(t) {
+    if (textEl) textEl.textContent = t;
+    else btn.textContent = t;
+  };
+  var _restoreBtn = function(orig) {
+    return function() { _setBtnText(orig); };
+  };
   if (navigator.clipboard && navigator.clipboard.writeText) {
+    var orig1 = textEl ? textEl.textContent : btn.textContent;
     navigator.clipboard.writeText(text).then(function() {
-      var orig = btn.textContent;
-      btn.textContent = '已复制';
-      setTimeout(function() { btn.textContent = orig; }, 1500);
+      _setBtnText('已复制');
+      setTimeout(_restoreBtn(orig1), 1500);
     }).catch(function() {
       fallbackCopy(text, btn);
     });
@@ -519,9 +528,14 @@ function fallbackCopy(text, btn) {
   ta.select();
   try {
     document.execCommand('copy');
-    var orig = btn.textContent;
-    btn.textContent = '已复制';
-    setTimeout(function() { btn.textContent = orig; }, 1500);
+    var textEl = btn.querySelector('.code-copy-text');
+    var orig = textEl ? textEl.textContent : btn.textContent;
+    if (textEl) textEl.textContent = '已复制';
+    else btn.textContent = '已复制';
+    setTimeout(function() {
+      if (textEl) textEl.textContent = orig;
+      else btn.textContent = orig;
+    }, 1500);
   } catch(e) {}
   document.body.removeChild(ta);
 }

@@ -1134,16 +1134,20 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .code-block { position: relative; }
 .code-header { display: flex; align-items: center; justify-content: space-between;
   padding: 6px 12px; background: var(--gray-100); border-bottom: 1px solid var(--border-color);
-  font-size: 12px; color: var(--text-muted); border-radius: 6px 6px 0 0; }
+  font-size: 12px; color: var(--text-muted); border-radius: 6px 6px 0 0; gap: 8px; }
 .code-header + pre { border-radius: 0 0 6px 6px; margin-top: 0; }
 .code-lang { font-family: monospace; font-weight: 600; }
-.code-lines { opacity: 0.7; }
+.code-lines { opacity: 0.7; flex: 1; }
+.code-actions { display: flex; gap: 6px; }
 .code-toggle, .code-copy-btn { background: none; border: 1px solid var(--border-color);
-  padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; color: var(--text-secondary); }
+  padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; color: var(--text-secondary);
+  display: inline-flex; align-items: center; gap: 4px; }
 .code-toggle:hover, .code-copy-btn:hover { background: var(--gray-200); }
+.code-toggle svg, .code-copy-btn svg { flex-shrink: 0; }
 .code-block pre.collapsed { max-height: 0; overflow: hidden; margin: 0; padding: 0; }
 /* 兼容旧的无 header 代码块（streaming 中） */
-.code-block:not(:has(.code-header)) .code-copy-btn { position: absolute; top: 6px; right: 6px; }
+.code-block:not(:has(.code-header)) .code-copy-btn { position: absolute; top: 6px; right: 6px; opacity: 0; }
+.code-block:not(:has(.code-header)):hover .code-copy-btn { opacity: 1; }
 
 /* 消息列表模式 */
 #messages.msg-list-mode .msg { max-width: 100%; border-left: 2px solid var(--border-color); padding-left: 12px; margin: 8px 0; border-radius: 0; }
@@ -1160,4 +1164,22 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 [data-theme="dark"] .code-toggle:hover, [data-theme="dark"] .code-copy-btn:hover { background: var(--bg-tertiary); }
 [data-theme="dark"] #messages.msg-list-mode .msg.user { border-left-color: var(--accent-color); }
 [data-theme="dark"] #messages.msg-list-mode .msg.ai { border-left-color: var(--accent-400); }
+
+/* Patch5 C7 T5: 骨架屏 Skeleton */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton-wrap { padding: 14px 16px; }
+.skeleton-msg { display: flex; gap: 10px; margin-bottom: 18px; }
+.skeleton-msg.right { flex-direction: row-reverse; }
+.skeleton-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--gray-200); animation: skeleton-pulse 1.5s ease-in-out infinite; flex-shrink: 0; }
+[data-theme="dark"] .skeleton-avatar { background: var(--bg-tertiary); }
+.skeleton-body { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.skeleton-msg.right .skeleton-body { align-items: flex-end; }
+.skeleton-line { height: 8px; border-radius: 4px; background: var(--gray-200); animation: skeleton-pulse 1.5s ease-in-out infinite; }
+[data-theme="dark"] .skeleton-line { background: var(--bg-tertiary); }
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-80 { width: 80%; }
+.skeleton-line.w-95 { width: 95%; }
 
