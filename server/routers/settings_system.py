@@ -143,10 +143,22 @@ def api_status():
     # 【Patch5 启动重构】后台初始化状态机（Go Launcher 段2 轮询依据）
     try:
         import server as _svr
-        with _svr._bg_init_lock:
-            result["ready"] = _svr._bg_init_state["ready"]
-            result["load_error"] = _svr._bg_init_state["load_error"]
-            result["bg_phase"] = _svr._bg_init_state["bg_phase"]
+        # P6 调试：__main__ vs server 模块别名问题
+        import sys as _sys
+        _main_mod = _sys.modules.get('__main__')
+        _srv_mod = _sys.modules.get('server')
+        _main_state = getattr(_main_mod, '_bg_init_state', None) if _main_mod else None
+        _srv_state = getattr(_srv_mod, '_bg_init_state', None) if _srv_mod else None
+        if _main_state and _main_state.get('ready') and not _srv_state.get('ready'):
+            # __main__ 已 ready 但 server 模块没同步 → 用 __main__ 的状态
+            result["ready"] = _main_state["ready"]
+            result["load_error"] = _main_state.get("load_error")
+            result["bg_phase"] = _main_state.get("bg_phase", "done")
+        else:
+            with _svr._bg_init_lock:
+                result["ready"] = _svr._bg_init_state["ready"]
+                result["load_error"] = _svr._bg_init_state["load_error"]
+                result["bg_phase"] = _svr._bg_init_state["bg_phase"]
     except Exception:
         # fallback：读取失败时默认 ready（不应发生）
         result["ready"] = True
