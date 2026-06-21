@@ -598,6 +598,18 @@ class _KBSearchMixin:
                 if accessible_doc_ids is not None:
                     merged = [r for r in merged if r.get("doc_id", "") in accessible_doc_ids]
 
+                # P6 修复：sparse 降级路径也要更新 hit_count
+                hit_doc_ids = set(r.get("doc_id", "") for r in merged if r.get("doc_id", ""))
+                for hit_doc_id in hit_doc_ids:
+                    doc = self.documents.get(hit_doc_id)
+                    if doc is not None:
+                        doc.hit_count = getattr(doc, "hit_count", 0) + 1
+                # 立即持久化（降级路径频率低，直接保存）
+                try:
+                    self._save_meta()
+                except Exception as e:
+                    log.warning("[KB] hit_count 持久化失败: %s", e)
+
                 log.info("[KB] 纯向量+Reranker+MMR (sparse 降级): %d条", len(merged))
                 return merged
 
