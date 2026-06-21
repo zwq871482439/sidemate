@@ -18,6 +18,11 @@ def create_pipeline(ctx: StreamContext) -> Generator[str, None, None]:
         from pipelines.compare_pipeline import run_compare_pipeline
         return run_compare_pipeline(ctx)
 
+    # P6: 并行模式
+    if ctx.ai_mode == "parallel":
+        from pipelines.parallel_pipeline import run_parallel_pipeline
+        return run_parallel_pipeline(ctx)
+
     if ctx.ai_mode == "cloud":
         from pipelines.cloud_pipeline import run_cloud_pipeline
         return run_cloud_pipeline(ctx)

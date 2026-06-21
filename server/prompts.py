@@ -271,6 +271,15 @@ CLOUD_KB_SYSTEM_PROMPT = (
     "4. 保持专业但易懂的语言风格"
 )
 
+# ===== 并行模式 Prompt（P6）=====
+
+PARALLEL_SYSTEM_PROMPT = (
+    "你正在并行处理模式中生成回答。\n"
+    "你的回答将和云端AI的回答进行融合。\n"
+    "严格基于知识库内容回答，不编造。\n"
+    "如果知识库没有相关内容，明确说明'未找到'。"
+)
+
 def get_module_info():
     """返回模块信息（供 API 调用）"""
     return {

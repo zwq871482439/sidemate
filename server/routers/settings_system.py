@@ -746,6 +746,40 @@ def api_license(file: str = "LICENSE"):
 
 
 # ============================================================
+#  P6: 并行模式配置
+# ============================================================
+
+@router.get("/api/parallel/config")
+def api_parallel_config_get():
+    """获取并行模式配置
+
+    Response: {"keyword_gen": false, "allow_cloud_keywords": false}
+    """
+    from config import get as _cfg_get
+    allow_cloud_keywords = _cfg_get("parallel_keyword_gen", False)
+    return {
+        "keyword_gen": allow_cloud_keywords,
+        "allow_cloud_keywords": allow_cloud_keywords,
+    }
+
+
+@router.post("/api/parallel/config")
+async def api_parallel_config_save(request: Request):
+    """设置并行模式配置
+
+    Body: {"keyword_gen": true} 或 {"allow_cloud_keywords": true}
+    Response: {"ok": true, "keyword_gen": true}
+    """
+    from config import set_value
+    body = await request.json()
+    # 支持两种字段名
+    value = body.get("keyword_gen", body.get("allow_cloud_keywords", False))
+    set_value("parallel_keyword_gen", bool(value))
+    log.info("[PARALLEL] 配置已更新: parallel_keyword_gen=%s", bool(value))
+    return {"ok": True, "keyword_gen": bool(value), "allow_cloud_keywords": bool(value)}
+
+
+# ============================================================
 #  Patch5 B3: 权限系统 API（预设 + 工具级权限）
 # ============================================================
 

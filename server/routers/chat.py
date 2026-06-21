@@ -102,6 +102,27 @@ def _is_safe_chat_id(chat_id: str) -> bool:
     return bool(re.match(r'^\d{4}-\d{2}-\d{2}_\d{3}$', cid))
 
 
+def _build_memory_local_from_history(history_raw: list) -> list:
+    """P6: 从 Chat Tab history_raw 提取 memory_local 字段构建本地列历史
+
+    遍历历史消息，对于每个 assistant 消息提取其 memory_local 字段
+    （fallback 到 content），构建精简的对话历史列表。
+
+    Returns:
+        list of {"role": "user"/"assistant", "content": ...}
+    """
+    result = []
+    for msg in history_raw:
+        role = msg.get("role", "")
+        if role == "user":
+            result.append({"role": "user", "content": msg.get("content", "")})
+        elif role == "assistant":
+            local_content = msg.get("memory_local", "") or msg.get("content", "")
+            if local_content:
+                result.append({"role": "assistant", "content": local_content})
+    return result
+
+
 def _sanitize_output(text: str) -> str:
     """轻量排版清理（不删正文内容，只做格式修整）
 
@@ -203,9 +224,13 @@ async def api_chat_stream(request: Request):
             yield 'data: [DONE]\n\n'
         return StreamingResponse(_err_gen(), media_type="text/event-stream")
 
-    # 无模型防护：云模式跳过（使用云端模型），本地模式下既没有默认模型、请求也没指定模型时返回错误
-    _ai_mode = _cfg_get("ai_mode", "local")
-    if _ai_mode != "cloud" and not DEFAULT_LLM and not body.get("model"):
+    # P6: ai_mode 优先从 body 读取（前端三段按钮控制），fallback 到 config
+    _ai_mode = body.get("ai_mode") or _cfg_get("ai_mode", "local")
+    # P6: 读取并行模式选项
+    _parallel_options = body.get("parallel_options", {}) if _ai_mode == "parallel" else {}
+
+    # 无模型防护：云模式/并行模式跳过（云端API可用），本地模式下既没有默认模型、请求也没指定模型时返回错误
+    if _ai_mode not in ("cloud", "parallel") and not DEFAULT_LLM and not body.get("model"):
         async def _no_model_gen():
             yield 'data: {"type": "error", "content": "暂无可用模型，请先启动 Ollama 并安装模型"}\n\n'
             yield 'data: [DONE]\n\n'
@@ -307,7 +332,7 @@ async def api_chat_stream(request: Request):
     # Patch5: drift 检测取消（误报率高，砍掉，不再注入 drift_hint）
     drift_result = {"drift": False}
 
-    # 检查模型是否加载（云模式跳过）
+    # 检查模型是否加载（云模式跳过；并行模式需要本地模型）
     if _ai_mode != "cloud":
         loaded = mgr.get_loaded_llms()
         if not loaded:
@@ -334,6 +359,11 @@ async def api_chat_stream(request: Request):
     kb_compare = body.get("kb_compare", False)
     _is_kb_compare = (action_mode == "kb" and _ai_mode == "cloud" and kb_compare is True)
 
+    # P6: 从 history_raw 提取 memory_local（供并行模式本地列历史注入）
+    _memory_local = []
+    if _ai_mode == "parallel" and history_raw:
+        _memory_local = _build_memory_local_from_history(history_raw)
+
     ctx = StreamContext(
         message=message,
         model_name=model_name,
@@ -353,6 +383,8 @@ async def api_chat_stream(request: Request):
         doc_continue=body.get("doc_continue", ""),
         body=body,
         is_kb_compare=_is_kb_compare,
+        memory_local=_memory_local,
+        parallel_options=_parallel_options,
     )
     # 存储管道启动时间（供 Agent Loop 计算耗时）
     ctx._pipeline_t0 = time.time()

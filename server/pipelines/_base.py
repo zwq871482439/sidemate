@@ -57,6 +57,8 @@ class StreamContext:
     doc_continue: str = ""  # Doc action Phase 2: 用户确认的提纲内容
     body: dict = field(default_factory=dict)  # 原始请求 body（供扩展字段）
     is_kb_compare: bool = False  # Patch3: 是否启用文库对比模式
+    memory_local: List[dict] = field(default_factory=list)  # P6: Chat Tab 本地列历史
+    parallel_options: dict = field(default_factory=dict)  # P6: 并行模式选项（allow_cloud_keywords 等）
 
 
 @dataclass

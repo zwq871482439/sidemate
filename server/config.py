@@ -152,6 +152,9 @@ DEFAULTS = {
     "kb_compare_enabled": False,          # 云端AI知识对比开关（半持久化）
     "kb_compare_privacy_read": False,     # 隐私弹窗已读标记
 
+    # ----- 并行模式（P6）-----
+    "parallel_keyword_gen": False,        # 并行模式云端关键词提取开关
+
     # ----- 文库（Patch 6）-----
     "kb_max_documents": 200,             # D3: 最大文档数（Patch4 v3.1：50→200，用户需求）
     "kb_max_total_chunks": 4000,         # 最大 chunk 总数（按文档数比例放大 1000→4000）
