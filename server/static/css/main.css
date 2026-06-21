@@ -458,11 +458,7 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .kb-collapsed-bar:hover{background:var(--bg-tertiary);border-radius:4px}
 /* KB Tab Loading Spinner */
 .kb-spinner{width:32px;height:32px;border:3px solid var(--border-color);border-top-color:var(--accent-color);border-radius:50%;animation:spin .8s linear infinite}
-/* KB处理中锁定聊天 - 仅覆盖对话区（不锁 Tab 导航） */
-.kb-lock-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--overlay-bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;animation:fadeIn .3s ease}
-.kb-lock-overlay .lock-icon{font-size:2em;margin-bottom:8px}
-.kb-lock-overlay .lock-msg{color:var(--text-primary);font-size:.9em;text-align:center;line-height:1.6;background:var(--bg-secondary);border:0.5px solid var(--border-color);border-left:3px solid var(--warning-color);border-radius:8px;padding:12px 20px}
-.kb-lock-overlay .lock-spinner{width:20px;height:20px;border:2px solid var(--border-color);border-top-color:var(--warning-color);border-radius:50%;animation:spin .8s linear infinite;margin-top:10px}
+/* P6: KB处理中锁定已移除 — 替换为卡片网格布局 */
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
 /* ===== Linear 风格覆层卡片 ===== */
@@ -485,30 +481,9 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 /* 保留旧兼容 */
 .chat-overlay-icon,.chat-overlay-msg{display:none}
 .chat-overlay-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;max-width:420px;padding:20px}
-/* KB问答来源卡片 */
-.kb-source-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:10px 12px;margin:4px 0;font-size:.82em;line-height:1.5;cursor:pointer;transition:all .15s}
-.kb-source-card:hover{background:var(--bg-tertiary);border-color:var(--text-muted)}
-.kb-source-card .src-label{color:var(--accent-color);font-weight:600;margin-bottom:3px}
-.kb-source-card .src-label span{color:var(--text-muted);font-weight:400;font-size:.9em}
-.kb-source-card .src-text{color:var(--text-secondary);overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-.kb-source-card .src-text.expanded{-webkit-line-clamp:unset}
-.kb-sources-header{font-size:.85em;color:var(--text-secondary);margin:12px 0 6px;display:flex;align-items:center;gap:6px}
-.kb-sources-header .badge{background:var(--kb-badge-bg);color:var(--accent-color);padding:1px 7px;border-radius:10px;font-size:.85em}
+/* P6: KB问答来源卡片样式已移除 — 知识库 Tab 不再包含对话功能 */
 
-/* KB 消息区域排版修正 */
-#kbMessages{overflow-x:hidden;padding:8px 12px}
-#kbMessages > div{max-width:100%;box-sizing:border-box;overflow-wrap:break-word;word-break:break-word;overflow-x:hidden}
-#kbMessages .md{max-width:100%;overflow-wrap:break-word;word-break:break-word;overflow-x:hidden}
-#kbMessages .md p{margin:4px 0;overflow-wrap:break-word;word-break:break-word}
-#kbMessages .md ul,#kbMessages .md ol{margin:4px 0;overflow-wrap:break-word;word-break:break-word}
-#kbMessages .md li{overflow-wrap:break-word;word-break:break-word}
-#kbMessages .md h1,#kbMessages .md h2,#kbMessages .md h3,#kbMessages .md h4{margin:6px 0 2px}
-#kbMessages .md pre,#kbMessages .md .code-block{max-width:100%;overflow-x:auto}
-#kbMessages .md table{display:block;max-width:100%;overflow-x:auto}
-/* KB 对比列内排版 */
-.kb-compare-col .md p{margin:2px 0}
-.kb-compare-col .md h1,.kb-compare-col .md h2,.kb-compare-col .md h3,.kb-compare-col .md h4{margin:4px 0 2px}
-.kb-compare-col .md ul,.kb-compare-col .md ol{margin:2px 0}
+/* P6: KB 消息区排版 + 对比列样式已移除（知识库 Tab 不再包含对话功能） */
 
 /* 离线降级横幅 */
 .offline-banner{position:fixed;top:0;left:0;right:0;z-index:200;background:var(--offline-bg);border-bottom:2px solid var(--offline-border);padding:10px 16px;display:none;align-items:center;justify-content:center;gap:12px;font-size:.9em;color:var(--offline-text);animation:slideDown .3s ease;pointer-events:auto}
@@ -1256,4 +1231,357 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .modal-acts{display:flex;gap:8px;justify-content:flex-end}
 .modal-acts .cancel-btn{padding:6px 16px;border-radius:8px;cursor:pointer;font-size:12px;border:0.5px solid var(--border-color);background:transparent;color:var(--text-secondary)}
 .modal-acts .confirm-btn{padding:6px 16px;border-radius:8px;cursor:pointer;font-size:12px;border:none;background:var(--primary-900);color:#fff;font-weight:500}
+
+/* ============================================================
+   P6 T04: AgentTimeline 步骤条（并行模式）
+   ============================================================ */
+.agent-timeline-container {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  border: 0.5px solid var(--border-color);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.agent-timeline-container::-webkit-scrollbar { display: none; }
+.agent-tl-step {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 2px 0;
+  animation: agent-tl-step-in .25s ease-out;
+}
+.agent-tl-step + .agent-tl-step {
+  margin-left: 2px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-color);
+}
+.agent-tl-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color .3s ease;
+}
+.agent-tl-icon.spin {
+  color: var(--accent-color);
+  animation: agent-tl-spin 1s linear infinite;
+}
+.agent-tl-icon.done {
+  color: var(--success-color);
+}
+.agent-tl-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color .3s ease;
+}
+.agent-tl-step.done .agent-tl-label {
+  color: var(--text-primary);
+}
+.agent-tl-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes agent-tl-step-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes agent-tl-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   P6 T04: 并行模式齿轮开关
+   ============================================================ */
+.gear-menu {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.gear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  transition: all .15s;
+}
+.gear-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.gear-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  z-index: 100;
+  overflow: hidden;
+  animation: gear-drop-in .12s ease;
+}
+@keyframes gear-drop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.gear-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background .12s;
+  gap: 10px;
+}
+.gear-toggle:hover {
+  background: var(--bg-secondary);
+}
+.gear-toggle-label {
+  flex: 1;
+  min-width: 0;
+}
+.gear-toggle-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.gear-toggle-switch input {
+  opacity: 0; width: 0; height: 0;
+}
+.gear-toggle-slider {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--bg-tertiary);
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  transition: background .2s, border-color .2s;
+  cursor: pointer;
+}
+.gear-toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform .2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,.15);
+}
+.gear-toggle-switch input:checked + .gear-toggle-slider {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+.gear-toggle-switch input:checked + .gear-toggle-slider::before {
+  transform: translateX(14px);
+}
+
+/* ============================================================
+   P6 T04: 模式确认弹窗细化
+   ============================================================ */
+.modal-confirm-h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: var(--text-primary);
+}
+.modal-confirm-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.modal-confirm-features {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.modal-confirm-features .modal-feat {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.modal-confirm-features .modal-feat-icon {
+  flex-shrink: 0;
+  color: var(--accent-color);
+  font-size: 13px;
+  width: 16px;
+}
+.modal-confirm-risk {
+  margin-bottom: 14px;
+  padding: 8px 10px;
+  background: #FEF2F2;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #991B1B;
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+[data-theme="dark"] .modal-confirm-risk {
+  background: rgba(239,68,68,.12);
+  color: #fca5a5;
+}
+.modal-confirm-acts {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.modal-confirm-acts .cancel-btn {
+  padding: 6px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 0.5px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.modal-confirm-acts .cancel-btn:hover {
+  background: var(--bg-secondary);
+}
+.modal-confirm-acts .confirm-btn {
+  padding: 6px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  border: none;
+  background: var(--primary-900);
+  color: #fff;
+  font-weight: 500;
+}
+.modal-confirm-acts .confirm-btn:hover {
+  opacity: .9;
+}
+
+/* ============================================================
+   P6 T03: 知识库 Tab — 标签侧栏 + 卡片网格 + AI 概览
+   ============================================================ */
+
+/* KB 布局：左侧标签树 + 右侧主区域 */
+.kb-layout{display:flex;flex:1;min-height:0;overflow:hidden}
+
+/* 左侧标签筛选侧栏 */
+.kb-sidebar{width:170px;flex-shrink:0;border-right:0.5px solid var(--border-color);background:var(--bg-secondary);display:flex;flex-direction:column;overflow:hidden}
+.kb-sidebar-hdr{padding:8px 10px;border-bottom:0.5px solid var(--border-color);font-size:11px;color:var(--text-muted);font-weight:500;letter-spacing:.5px;display:flex;align-items:center;gap:4px}
+.kb-sidebar-list{flex:1;overflow-y:auto;padding:4px}
+.kb-sidebar-ft{padding:6px 10px;border-top:0.5px solid var(--border-color);font-size:10px;color:var(--text-muted);display:flex;gap:6px;flex-shrink:0}
+
+/* 标签树条目 */
+.kb-tag{padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;display:flex;align-items:center;gap:6px;margin-bottom:1px;transition:background .12s}
+.kb-tag:hover{background:var(--bg-primary)}
+.kb-tag.sel{background:var(--color-background-info, #E6F1FB);color:var(--color-text-info, #185FA5);font-weight:500}
+.kb-tag .dot{width:6px;height:6px;border-radius:50%;background:#7F77DD;flex-shrink:0}
+.kb-tag .cnt{font-size:10px;color:var(--text-muted);margin-left:auto}
+.kb-tag.all .dot{background:#D3D1C7}
+.kb-tag.sub{padding-left:22px;font-size:10px}
+
+/* 右侧主区域 */
+.kb-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+
+/* 工具栏 */
+.kb-toolbar{display:flex;align-items:center;padding:6px 14px;gap:10px;border-bottom:0.5px solid var(--border-color);background:var(--bg-secondary);flex-shrink:0;flex-wrap:wrap}
+.kb-toolbar .btn{padding:4px 10px;border:0.5px solid var(--border-color);border-radius:4px;cursor:pointer;font-size:11px;background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:3px}
+.kb-toolbar .btn:hover{border-color:#B5D4F4}
+.kb-toolbar .btn.danger{color:#BA7517}
+.kb-toolbar .search-inp{padding:4px 10px;border-radius:4px;border:0.5px solid var(--border-color);font-size:11px;width:120px;background:var(--bg-primary)}
+
+/* KB 文档网格 */
+.kb-main-body{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+
+/* AI 知识库概览面板 */
+.kb-summary{background:linear-gradient(135deg, #EEEDFE 0%, #F5EBE0 100%);border-radius:var(--border-radius-md, 8px);padding:12px 14px;font-size:12px;line-height:1.6;border:0.5px solid #CECBF6}
+.kb-summary .s-hdr{display:flex;justify-content:space-between;align-items:center}
+.kb-summary .s-title{font-size:11px;font-weight:500;color:#534AB7;margin-bottom:4px}
+.kb-summary .s-body{color:var(--text-secondary)}
+.kb-summary .s-meta{margin-top:6px;display:flex;gap:12px;font-size:10px;color:var(--text-tertiary, #9ca3af)}
+.kb-summary .s-refresh{font-size:10px;color:#534AB7;cursor:pointer;border:none;background:transparent;display:flex;align-items:center;gap:2px}
+[data-theme="dark"] .kb-summary{background:linear-gradient(135deg, rgba(99,102,241,.15) 0%, rgba(201,151,108,.12) 100%);border-color:rgba(99,102,241,.25)}
+[data-theme="dark"] .kb-summary .s-title{color:#a5b4fc}
+[data-theme="dark"] .kb-summary .s-refresh{color:#a5b4fc}
+
+/* 卡片网格 */
+.kb-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(195px, 1fr));gap:8px;align-content:start}
+
+/* 文档卡片 */
+.kb-card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;position:relative;transition:border-color .15s}
+.kb-card:hover{border-color:#B5D4F4}
+.kb-card .cbar{display:flex;align-items:center;justify-content:space-between}
+.kb-card .ctitle{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.kb-card .cicons{display:flex;gap:3px;flex-shrink:0}
+.kb-card .cpreview{font-size:10px;color:var(--text-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.kb-card .ctags{display:flex;gap:3px;flex-wrap:wrap}
+.kb-card .ctag{padding:1px 6px;border-radius:8px;font-size:10px;background:#EEEDFE;color:#534AB7}
+.kb-card .cstats{display:flex;gap:10px;font-size:10px;color:var(--text-muted);flex-wrap:wrap;align-items:center}
+.kb-card .cmtime{font-size:10px;color:var(--text-muted);margin-top:auto}
+
+/* 图标颜色 */
+.ic-lock{color:#D85A30}
+.ic-dup{color:#BA7517}
+.ic-img{color:var(--text-muted)}
+
+/* 热力图彩色圆点 */
+.hm-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.hm-dot.cold{background:#D3D1C7}
+.hm-dot.warm{background:#BA7517}
+.hm-dot.hot{background:#D85A30}
+
+/* ============================================================
+   P6 T03: 设置页 — 左侧竖排 Tab 导航
+   ============================================================ */
+.settings-layout{display:flex;flex:1;min-height:0;overflow:hidden}
+.settings-nav{width:155px;flex-shrink:0;border-right:0.5px solid var(--border-color);background:var(--bg-secondary);padding:10px 8px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.settings-nav-item{padding:8px 12px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:8px;transition:background .12s}
+.settings-nav-item:hover{background:var(--bg-primary)}
+.settings-nav-item.sel{background:var(--color-background-info, #E6F1FB);color:#1E3A5F;font-weight:500}
+.settings-nav-item .ni{opacity:.5;flex-shrink:0;display:flex;align-items:center}
+.settings-nav-item.sel .ni{opacity:1}
+.settings-content{flex:1;overflow-y:auto;padding:16px;min-width:0}
+.settings-content .card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:14px;margin-bottom:10px}
+.settings-content .card h4{font-size:12px;font-weight:500;margin-bottom:8px;color:var(--text-primary)}
+.settings-content .row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px}
+.settings-content .row .lbl{color:var(--text-secondary)}
+.settings-content .row .val{font-weight:500}
+.settings-content .row .val.warn{color:#BA7517}
+.settings-content .row .val.ok{color:#1D9E75}
+.settings-content .progress{height:6px;border-radius:3px;background:var(--border-color);margin-top:4px}
+.settings-content .progress-bar{height:6px;border-radius:3px;background:#1E3A5F}
+[data-theme="dark"] .settings-nav-item.sel{background:rgba(99,102,241,.15);color:#a5b4fc}
+[data-theme="dark"] .kb-card .ctag{background:rgba(99,102,241,.15);color:#a5b4fc}
+[data-theme="dark"] .ic-lock{color:#f87171}
+[data-theme="dark"] .ic-dup{color:#fbbf24}
+[data-theme="dark"] .hm-dot.cold{background:#475569}
+[data-theme="dark"] .hm-dot.warm{background:#fbbf24}
+[data-theme="dark"] .hm-dot.hot{background:#f87171}
 

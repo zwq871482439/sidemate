@@ -18,7 +18,7 @@ var _placeholders = {
   local_kb: '基于知识库提问，完全本地回答...',
   cloud: '让云端 AI 帮你搜索、阅读、推理...',
   cloud_doc: '输入文档需求，AI 搜索资料并生成...',
-  parallel: '本地+云端各自回答，自动融合...'
+  parallel: '本地+云端协作回答，核心数据不出机器...'
 };
 
 /**
@@ -74,6 +74,30 @@ function initModeSelector() {
  * 3. 调用后端 /api/mode/switch
  */
 function selectMode(mode) {
+  // P6 T04: 首次切换到此模式时弹出确认弹窗
+  var confirmKey = 'sidemate_mode_confirm_' + mode;
+  var needsConfirm = !localStorage.getItem(confirmKey);
+
+  var _doSwitch = function() {
+    if (needsConfirm) {
+      localStorage.setItem(confirmKey, '1');
+    }
+    _executeModeSwitch(mode);
+  };
+
+  if (needsConfirm && typeof showModeConfirmModal === 'function') {
+    showModeConfirmModal(mode, function(confirmed) {
+      if (confirmed) _doSwitch();
+    });
+  } else {
+    _doSwitch();
+  }
+}
+
+/**
+ * P6 T04: 实际执行模式切换（确认后调用）
+ */
+function _executeModeSwitch(mode) {
   // 1. 更新按钮高亮
   _updateModeButtons(mode);
 
@@ -92,11 +116,14 @@ function selectMode(mode) {
       if (data.ok) {
         window._currentMode = data.mode;
         if (typeof showToast === 'function') {
-          showToast(mode === 'offline' ? '已切换到离线模式' : (mode === 'online' ? '已切换到在线模式' : '已切换到并行模式'), 'success');
+          var labels = { offline: '离线', online: '在线', parallel: '并行' };
+          showToast('已切换到' + (labels[mode] || mode) + '模式', 'success');
         }
         if (typeof refreshStatus === 'function') refreshStatus();
+        if (typeof refreshActionBar === 'function') refreshActionBar();
         if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
         if (typeof fetchContextUsage === 'function') fetchContextUsage();
+        if (typeof updateChatOverlay === 'function') updateChatOverlay();
       } else {
         if (typeof showToast === 'function') showToast(data.error || '切换失败', 'error');
       }
@@ -1360,6 +1387,7 @@ async function exportDiagnostics() {
 // P6: 模式选择器
 window.initModeSelector = initModeSelector;
 window.selectMode = selectMode;
+window._executeModeSwitch = _executeModeSwitch;
 // 模型管理
 window.refreshResourcePanel = refreshResourcePanel;
 window.refreshStatus = refreshStatus;

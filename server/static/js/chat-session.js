@@ -135,6 +135,14 @@ function _sidebarSelectChat(path) {
     _lastMsgCount = currentMessages.length;
     renderMessages();
     loadChatList();
+    // P6 T04: 切换会话后保持模式状态，刷新 action bar 和 placeholder
+    if (typeof _currentMode !== 'undefined') {
+      if (typeof refreshActionBar === 'function') refreshActionBar();
+      if (typeof _updatePlaceholder === 'function') {
+        var frontMode = _currentMode === 'local' ? 'offline' : (_currentMode === 'cloud' ? 'online' : _currentMode);
+        _updatePlaceholder(frontMode);
+      }
+    }
     // 切换会话后刷新上下文指示器
     if (typeof fetchContextUsage === 'function') fetchContextUsage();
   }).catch(function(e) {
@@ -236,6 +244,14 @@ async function onSessionChange() {
   _lastMsgCount = currentMessages.length;
   renderMessages();
   await loadChatList();
+  // P6 T04: 切换会话后保持模式状态
+  if (typeof _currentMode !== 'undefined') {
+    if (typeof refreshActionBar === 'function') refreshActionBar();
+    if (typeof _updatePlaceholder === 'function') {
+      var _fm = _currentMode === 'local' ? 'offline' : (_currentMode === 'cloud' ? 'online' : _currentMode);
+      _updatePlaceholder(_fm);
+    }
+  }
 }
 
 async function newChat() {

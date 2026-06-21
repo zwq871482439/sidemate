@@ -7,7 +7,7 @@ var _agentTimelineEl = null;    // Agent 工具时间线容器 DOM（全局，�
 var _agentTimelineData = [];    // Agent 时间线数据收集（用于持久化到消息对象）
 var _agentCurrentStepEl = null; // Patch4 v3：当前进行中的步骤 DOM（新步骤开始时它变 done，治闪烁）
 var _thinkingTimerInterval = null; // Patch5 C7 B3：思考态计时器
-var _skeletonActive = false;   // Patch5 C7 B3：骨架屏激活标记
+// P6 T04: _skeletonActive 已移除（去骨架屏）
 var _agentCurrentStepStartTs = 0; // 当前步骤开始时间戳（用于计算 elapsed）
 
 // ===== 统一渲染器：消息体 HTML 生成 =====
@@ -71,6 +71,79 @@ function _buildStats(m) {
     }
   }
   return base;
+}
+
+// ===== P6 T04: AgentTimeline SSE 事件处理 =====
+var _agentTimelineStepLabels = {
+  retrieve: '检索知识库',
+  local_gen: '本地生成答案',
+  cloud_gen: '云端补充',
+  merge: '自动融合优化'
+};
+
+function _handleAgentTimelineSSE(d) {
+  var streamEl = document.getElementById('stream-msg');
+  if (!streamEl) return;
+
+  var container = document.getElementById('agent-timeline');
+  if (!container) {
+    // 创建 AgentTimeline 容器，放在 stream-msg 最上方
+    container = document.createElement('div');
+    container.id = 'agent-timeline';
+    container.className = 'agent-timeline-container';
+    // 插入到 stream-msg 的第一个子节点位置（或 append）
+    if (streamEl.firstChild) {
+      streamEl.insertBefore(container, streamEl.firstChild);
+    } else {
+      streamEl.appendChild(container);
+    }
+    _agentTimelineEl = container;
+  }
+
+  var step = d.step;
+  var phase = d.phase;  // "start" | "done"
+  var label = _agentTimelineStepLabels[step] || (d.label || step);
+
+  if (phase === 'start') {
+    // 创建新步骤节点
+    var stepEl = document.createElement('div');
+    stepEl.className = 'agent-tl-step';
+    stepEl.setAttribute('data-step', step);
+    stepEl.innerHTML =
+      '<span class="agent-tl-icon spin">●</span>' +
+      '<span class="agent-tl-label">' + _esc(label) + '</span>' +
+      '<span class="agent-tl-time"></span>';
+    container.appendChild(stepEl);
+    _agentCurrentStepEl = stepEl;
+    // 记录开始时间
+    _agentCurrentStepStartTs = Date.now();
+  } else if (phase === 'done') {
+    // 找到对应步骤节点并标记完成
+    var stepEl2 = container.querySelector('[data-step="' + step + '"]');
+    if (stepEl2) {
+      var iconEl = stepEl2.querySelector('.agent-tl-icon');
+      var timeEl = stepEl2.querySelector('.agent-tl-time');
+      if (iconEl) {
+        iconEl.classList.remove('spin');
+        iconEl.classList.add('done');
+      }
+      if (timeEl) {
+        var elapsed = d.elapsed_ms != null ? d.elapsed_ms : (Date.now() - _agentCurrentStepStartTs);
+        if (elapsed >= 1000) {
+          timeEl.textContent = (elapsed / 1000).toFixed(1) + 's';
+        } else {
+          timeEl.textContent = elapsed + 'ms';
+        }
+      }
+      stepEl2.classList.add('done');
+    }
+    // 收集到时间线数据（用于持久化）
+    _agentTimelineData.push({
+      step: step,
+      elapsed_ms: d.elapsed_ms || (Date.now() - _agentCurrentStepStartTs),
+      count: d.count
+    });
+  }
 }
 
 function _buildAgentTimelineHtml(timelineData) {
@@ -296,11 +369,9 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
 
   var html = '';
   if (isThinking) {
-    // Patch5 C7 B3：本地模式也用动画点替代 spinner+文案
-    // 云端模式由 AgentTimeline 负责（也用动画点）
-    // 关键：骨架屏激活时不注入 thinking-indicator（避免两者同时显示）
+    // P6 T04: 骨架屏已移除，只需检查非云端模式
     var _isCloudMode = (typeof _currentMode !== 'undefined' && _currentMode === 'cloud');
-    if (!_isCloudMode && !_skeletonActive) {
+    if (!_isCloudMode) {
       // 本地模式 + 骨架屏已隐藏：动画点 + "思考中" + 计时
       html += '<div class="thinking-indicator"><span class="thinking-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> 思考中 <span class="thinking-timer" data-start="' + Date.now() + '">0.0s</span></div>';
       // 启动计时器
@@ -587,29 +658,16 @@ async function sendMessage() {
   document.getElementById('newChatBtn').disabled = true;
   document.getElementById('delChatBtn').disabled = true;
 
-  // Patch5 C7 B3: 发消息时显示骨架屏（替代 spinner 空白等待）
-  // 思考态指示器在骨架屏隐藏后才出现，避免两者同时显示
-  if (typeof Skeleton !== 'undefined') Skeleton.show(document.getElementById('messages'), 'chat');
-  _skeletonActive = true;  // 全局标记，骨架屏激活时跳过 thinking-indicator 注入
+  _agentTimelineEl = null;  // 重置 Agent 时间线容器
+  _agentTimelineData = [];  // 重置时间线数据收集
+  _agentCurrentStepEl = null;  // Patch4 v3：重置当前步骤
+  _agentCurrentStepStartTs = 0;
 
   appendStreamingMsg('', '', 0, null, true);
   var msgEl = document.getElementById('messages');
   msgEl.scrollTop = msgEl.scrollHeight;
 
   abortCtrl = new AbortController();
-  var fullText = '';
-  var thinkText = '';
-  var thinkLen = 0;
-  var finalStats = null;
-  var doneData = null;
-  var _hadError = false;       // 标记是否收到了 error 事件
-  var _abortReason = '';       // 记录 abort/error 原因（用于持久化）
-  _cloudThinking = false;   // 重置全局变量
-  _cloudThinkText = '';     // 重置全局变量
-  _agentTimelineEl = null;  // 重置 Agent 时间线容器
-  _agentTimelineData = [];  // 重置时间线数据收集
-  _agentCurrentStepEl = null;  // Patch4 v3：重置当前步骤
-  _agentCurrentStepStartTs = 0;
   // Patch4 修复 5：重置文档进度面板
   if (typeof _resetDocProgress === 'function') _resetDocProgress();
   var thinkingPhase = false;
@@ -785,11 +843,7 @@ async function sendMessage() {
           } else if (d.type === 'pipeline_progress') {
           } else if (d.type === 'token') {
             fullText += d.content;
-            // Patch5 C7 B3: 收到首个有内容的 token 时隐藏骨架屏 + 停止思考态计时 + 重置标记
-            if (typeof Skeleton !== 'undefined' && fullText.length > 0) {
-              Skeleton.hide(document.getElementById('messages'));
-              _skeletonActive = false;
-            }
+            // Patch5 C7 B3: 收到首个有内容的 token 时停止思考态计时 + 重置标记
             if (fullText.length > 0 && _thinkingTimerInterval) {
               clearInterval(_thinkingTimerInterval);
               _thinkingTimerInterval = null;
@@ -843,9 +897,7 @@ async function sendMessage() {
             appendStreamingMsg('', thinkText, thinkLen);
             lastRender = now;
           } else if (d.type === 'done') {
-            // Patch5 C7: done 事件隐藏骨架屏
-            if (typeof Skeleton !== 'undefined') Skeleton.hide(document.getElementById('messages'));
-            _skeletonActive = false;
+            // Patch5 C7: done 事件不再操作骨架屏（P6已移除）
             doneData = d;
             // 如果前面已经显示了 error 卡片，不再覆盖渲染
             if (_hadError) {
@@ -885,9 +937,7 @@ async function sendMessage() {
             thinkingPhase = false;
             appendStreamingMsg(fullText, thinkText, thinkLen);
           } else if (d.type === 'error') {
-            // Patch5 C7: error 事件隐藏骨架屏
-            if (typeof Skeleton !== 'undefined') Skeleton.hide(document.getElementById('messages'));
-            _skeletonActive = false;
+            // P6 T04: error 事件不再操作骨架屏
             thinkingPhase = false;
             // 结构化错误渲染：带类型图标 + 详情展开
             var errorType = d.error_type || 'unknown';
@@ -976,8 +1026,9 @@ async function sendMessage() {
                 streamEl2.appendChild(warnDiv);
               }
             }
-          } else if (d.type === 'topic_drift') {
-            showDriftBar(d.reason, d.msg_count, d.swell_threshold, d.drift_level, d.suggestion);
+          // P6 T04: AgentTimeline SSE 事件处理
+          } else if (d.type === 'agent_timeline') {
+            _handleAgentTimelineSSE(d);
           // Patch2 A5: Research Action SSE 事件
           } else if (d.type === 'search') {
             _appendResearchCard('search', d.query, d.results_count);
@@ -1230,9 +1281,7 @@ async function sendMessage() {
     }
     _hadError = true;  // 阻止 finally 重新 renderMessages 覆盖错误/终止提示
   } finally {
-    // Patch5 C7: 兜底隐藏骨架屏
-    if (typeof Skeleton !== 'undefined') Skeleton.hide(document.getElementById('messages'));
-    _skeletonActive = false;
+    // P6 T04: 骨架屏已移除，不再调用 Skeleton.hide
     // doc_outline 模式：保留 stream-msg 元素和确认按钮，不重新渲染
     var _isDocOutlineMode = !!window._docOutlinePending;
     if (_isDocOutlineMode) {

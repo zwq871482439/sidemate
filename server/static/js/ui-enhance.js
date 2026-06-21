@@ -192,10 +192,209 @@ function initUiEnhance() {
   MessageStyleManager.applyMode();
 }
 
-// window 挂载
+// ============================================================
+//  P6 T04: 模式确认弹窗
+// ============================================================
+
+/**
+ * 显示模式切换确认弹窗
+ * @param {string} mode - "offline" | "online" | "parallel"
+ * @param {function} callback - callback(confirmed: boolean)
+ */
+function showModeConfirmModal(mode, callback) {
+  // 移除已有弹窗
+  var existing = document.querySelector('.modal-back');
+  if (existing) existing.remove();
+
+  var configs = {
+    offline: {
+      title: '切换到离线模式',
+      desc: '所有数据在你本机处理，无任何信息离开你的电脑。',
+      features: [
+        '本地 AI 模型直接回答',
+        '支持知识库完全本地检索',
+        '无需联网，断网可用',
+      ],
+      risk: '回答质量受限于本地模型能力',
+    },
+    online: {
+      title: '切换到在线模式',
+      desc: '云端大模型联网搜索回答，你的问题会发送至云端。',
+      features: [
+        '云端大模型，能力更强',
+        '自动联网搜索补充信息',
+        '支持智能文档生成',
+      ],
+      risk: '你的提问内容将离开本机',
+    },
+    parallel: {
+      title: '切换到并行模式',
+      desc: '本地检索知识库+云端通用知识补充，两方答案自动融合。',
+      features: [
+        '本地+云端同时回答',
+        '知识库文档不出本机',
+        'AI 自动融合两方答案',
+      ],
+      risk: '你的问题会同时发给云端，但知识库文档不出本机',
+    }
+  };
+
+  var cfg = configs[mode] || configs.offline;
+
+  var featHtml = cfg.features.map(function(f) {
+    return '<div class="modal-feat"><span class="modal-feat-icon">✓</span><span>' + f + '</span></div>';
+  }).join('');
+
+  var riskHtml = cfg.risk
+    ? '<div class="modal-confirm-risk"><span>⚠️</span><span>' + cfg.risk + '</span></div>'
+    : '';
+
+  var backdrop = document.createElement('div');
+  backdrop.className = 'modal-back show';
+  backdrop.innerHTML =
+    '<div class="modal-confirm-card">' +
+    '<h3 class="modal-confirm-h3">' + cfg.title + '</h3>' +
+    '<div class="modal-confirm-desc">' + cfg.desc + '</div>' +
+    '<div class="modal-confirm-features">' + featHtml + '</div>' +
+    riskHtml +
+    '<div class="modal-confirm-acts">' +
+    '<button class="cancel-btn">取消</button>' +
+    '<button class="confirm-btn">确认切换</button>' +
+    '</div>' +
+    '</div>';
+
+  backdrop.addEventListener('click', function(e) {
+    if (e.target === backdrop) {
+      backdrop.remove();
+      if (callback) callback(false);
+    }
+  });
+
+  var cancelBtn = backdrop.querySelector('.cancel-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function() {
+      backdrop.remove();
+      if (callback) callback(false);
+    });
+  }
+
+  var confirmBtn = backdrop.querySelector('.confirm-btn');
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', function() {
+      backdrop.remove();
+      if (callback) callback(true);
+    });
+  }
+
+  // 挂载到对话 Tab 容器内（相对定位）
+  var chatTab = document.getElementById('tab-chat');
+  if (chatTab) {
+    chatTab.appendChild(backdrop);
+  } else {
+    document.body.appendChild(backdrop);
+  }
+}
+
+// ============================================================
+//  P6 T04: 并行模式齿轮开关
+// ============================================================
+
+/**
+ * 创建并行模式齿轮按钮（由 chat-actions.js 的 refreshActionBar 调用）
+ * @param {HTMLElement} bar - actionBar 容器
+ */
+function _renderGearMenu(bar) {
+  // 移除已有齿轮菜单
+  var existing = bar.querySelector('.gear-menu');
+  if (existing) return existing;
+
+  var menu = document.createElement('div');
+  menu.className = 'gear-menu';
+
+  var btn = document.createElement('button');
+  btn.className = 'gear-btn';
+  btn.title = '并行模式设置';
+  btn.innerHTML = '⚙';
+  btn.onclick = function(e) {
+    e.stopPropagation();
+    var dd = menu.querySelector('.gear-dropdown');
+    if (dd) {
+      dd.style.display = dd.style.display === 'none' ? '' : 'none';
+    }
+  };
+  menu.appendChild(btn);
+
+  // 下拉菜单
+  var dropdown = document.createElement('div');
+  dropdown.className = 'gear-dropdown';
+  dropdown.style.display = 'none';
+
+  // 读取当前 toggle 状态
+  _fetchParallelConfig(function(keywordGen) {
+    var toggle = document.createElement('label');
+    toggle.className = 'gear-toggle';
+    toggle.innerHTML =
+      '<span class="gear-toggle-label">允许云端模型生成关键词</span>' +
+      '<span class="gear-toggle-switch">' +
+      '<input type="checkbox"' + (keywordGen ? ' checked' : '') + '>' +
+      '<span class="gear-toggle-slider"></span>' +
+      '</span>';
+
+    var checkbox = toggle.querySelector('input');
+    if (checkbox) {
+      checkbox.addEventListener('change', function() {
+        _saveParallelConfig(this.checked);
+      });
+    }
+    dropdown.appendChild(toggle);
+  });
+
+  menu.appendChild(dropdown);
+
+  // 点击其他地方关闭
+  document.addEventListener('click', function _closeGear(e) {
+    if (!menu.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  bar.appendChild(menu);
+  return menu;
+}
+
+/**
+ * 从 /api/parallel/config 读取并行模式配置
+ */
+function _fetchParallelConfig(callback) {
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/parallel/config')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (callback) callback(!!data.keyword_gen);
+    })
+    .catch(function() {
+      if (callback) callback(false);
+    });
+}
+
+/**
+ * 保存并行模式配置到 /api/parallel/config
+ */
+function _saveParallelConfig(keywordGen) {
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/parallel/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({keyword_gen: !!keywordGen})
+  }).catch(function(e) {
+    console.error('[parallel.config]', e);
+  });
+}
 window.MessageStyleManager = MessageStyleManager;
 window.CodeBlockEnhancer = CodeBlockEnhancer;
 window.toggleCodeCollapse = toggleCodeCollapse;
 window.initUiEnhance = initUiEnhance;
 window.initMsgStyleToggle = initMsgStyleToggle;
 window.toggleMode = function() { MessageStyleManager.toggleMode(); };
+window.showModeConfirmModal = showModeConfirmModal;
+window._renderGearMenu = _renderGearMenu;
+window._fetchParallelConfig = _fetchParallelConfig;
+window._saveParallelConfig = _saveParallelConfig;

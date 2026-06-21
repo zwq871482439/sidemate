@@ -1,107 +1,74 @@
-%% 桌伴 Sidemate Patch5 批次 C — 关键调用序列图
-
-%% ===== 1. 统一 Token 估算流程 =====
 sequenceDiagram
-    participant U as 用户
-    participant Input as msgInput 输入框
-    participant TE as TokenEstimator
-    participant Disp as token-display 显示区
-    participant Chat as chat.js
+    actor User
+    participant FE as chat.js (前端)
+    participant Router as routers/chat.py
+    participant Pipeline as parallel_pipeline.py
+    participant LocalThread as 本地列线程
+    participant CloudThread as 云端列线程
+    participant Ollama as Ollama (Qwen3.5-4B)
+    participant CloudAPI as 云端 API
+    participant KB as KnowledgeBase
+    participant Store as chat_store
 
-    U->>Input: 输入文字 / 引用文档 / 上传文件
-    Input->>TE: oninput 触发 estimateTotal()
-    TE->>TE: 合并三源：输入文本 + _refFilePath + pendingFile
-    TE->>TE: estimateMixedTokens(combinedText)
-    Note over TE: 中文 chars/1.5 + 英文 chars/4
-    TE->>Disp: 更新显示 "≈ 1,234 tokens / 16,384"
-    Disp->>U: 实时显示（超 80% 变橙色警告）
+    User->>FE: 输入问题，点击发送
+    FE->>FE: 检查 mode="parallel"
+    FE->>FE: 显示确认弹窗（首次切换并行模式）
+    FE->>Router: POST /api/chat/stream {message, action_mode, ai_mode="parallel"}
 
-    U->>Chat: 点击发送
-    Chat->>TE: getFinalEstimate()
-    TE-->>Chat: 返回 token 数
-    Chat->>Chat: 与 _maxPromptTokens 比对
-    alt 超限
-        Chat->>U: showToast 警告"输入过长，已自动裁剪历史"
+    Router->>Router: 构建 StreamContext(ai_mode="parallel")
+    Router->>Pipeline: create_pipeline(ctx) → run_parallel_pipeline(ctx)
+
+    %% 初始化阶段
+    Pipeline->>Pipeline: 读取 kb_sessions[memory_local, memory_cloud]
+    Pipeline->>Pipeline: _build_local_history(kb_history)
+    Pipeline->>Pipeline: _build_cloud_history(kb_history)
+
+    %% 发送初始进度事件
+    Pipeline-->>FE: SSE: agent_timeline(phase=start, step=retrieve)
+    Pipeline-->>FE: SSE: agent_timeline(phase=start, step=local_gen)
+    Pipeline-->>FE: SSE: agent_timeline(phase=start, step=cloud_gen)
+
+    %% 双线程并行执行
+    par 本地列
+        Pipeline->>LocalThread: submit(_run_local_column, ctx, msg, local_q, model, local_history)
+        LocalThread->>KB: get_context(query, max_chars, ai_mode='local')
+        KB-->>LocalThread: kb_context, kb_sources
+        LocalThread-->>FE: SSE: channel=local, sources [...]
+        LocalThread-->>FE: SSE: agent_timeline(phase=done, step=retrieve, count=N)
+        LocalThread->>Ollama: chat_stream(KB prompt + local_history)
+        loop 逐 token
+            Ollama-->>LocalThread: text token
+            LocalThread-->>FE: SSE: channel=local, stream {content}
+        end
+        LocalThread-->>FE: SSE: channel=local, phase=done
+        LocalThread-->>FE: SSE: agent_timeline(phase=done, step=local_gen, elapsed_ms)
+    and 云端列
+        Pipeline->>CloudThread: submit(_run_cloud_column, ctx, msg, cloud_q, cloud_history)
+        CloudThread->>CloudAPI: chat_completion(question, cloud_history)
+        CloudThread-->>FE: SSE: channel=cloud, status=understanding
+        CloudThread-->>FE: SSE: channel=cloud, status=thinking
+        loop 逐 token
+            CloudAPI-->>CloudThread: text token
+            CloudThread-->>FE: SSE: channel=cloud, stream {content}
+        end
+        CloudThread-->>FE: SSE: channel=cloud, phase=done
+        CloudThread-->>FE: SSE: agent_timeline(phase=done, step=cloud_gen, elapsed_ms)
     end
 
-%% ===== 2. 清除上下文流程 =====
-sequenceDiagram
-    participant U as 用户
-    participant Chat as chat.js
-    participant Session as chat-session.js
-    participant API as /api/chats/append
-    participant Stream as /api/chat/stream
-
-    U->>Chat: 点击"清除上下文"按钮
-    Chat->>Chat: 确认弹窗"将重置模型记忆，消息保留但不再被参考"
-    U->>Chat: 确认
-    Chat->>Session: 给当前消息标记 context_cutoff=true
-    Session->>API: POST append {context_cutoff: true}
-    API->>API: 写入 messages.json
-
-    Note over U,Stream: 后续发送消息时
-
-    U->>Chat: 输入新问题并发送
-    Chat->>Chat: buildHistory()
-    Chat->>Chat: 找到最后一个 context_cutoff 的索引
-    Chat->>Chat: history = currentMessages.slice(cutoffIdx + 1, -1)
-    Chat->>Stream: POST {history: filteredHistory, message: text}
-    Stream->>Stream: 仅用 cutoff 后的消息构建 prompt
-    Stream-->>Chat: SSE 流式响应
-
-%% ===== 3. 骨架屏流程 =====
-sequenceDiagram
-    participant U as 用户
-    participant Chat as chat.js
-    participant Skel as skeleton.js
-    participant Stream as /api/chat/stream
-
-    U->>Chat: 点击发送
-    Chat->>Skel: show(messagesContainer, "chat-response")
-    Skel->>Skel: 渲染 3 行灰色占位块（shimmer 动画）
-    Chat->>Stream: POST 请求
-
-    alt 流式响应开始
-        Stream-->>Chat: SSE data chunk
-        Chat->>Skel: hide(messagesContainer)
-        Skel->>Skel: 移除骨架屏 DOM
-        Chat->>Chat: appendStreamingMsg(content)
-    else 超时 3s 无响应
-        Skel->>Skel: 保持骨架屏（替代 spinner）
+    %% 融合阶段
+    Pipeline-->>FE: SSE: agent_timeline(phase=start, step=merge)
+    Pipeline->>Ollama: chat_stream(MERGE_FUSION_PROMPT, history=None)
+    loop 逐 token
+        Ollama-->>Pipeline: text token
+        Pipeline-->>FE: SSE: channel=merge, stream {content}
     end
+    Pipeline-->>FE: SSE: agent_timeline(phase=done, step=merge, elapsed_ms)
 
-%% ===== 4. 诊断报告导出流程 =====
-sequenceDiagram
-    participant U as 用户
-    participant Set as settings.js
-    participant Diag as /api/diagnostics/info
-    participant Export as /api/diagnostics/export
+    %% 双线记忆更新
+    Pipeline->>Pipeline: memory_local = 融合结果, memory_cloud = 云端答案
+    Pipeline->>Store: save_chat(最终回答 + agent_timeline)
+    Pipeline-->>FE: SSE: done {model, chars, agent_timeline}
+    Pipeline-->>FE: SSE: [DONE]
 
-    U->>Set: 设置页 → 关于 → 点击"系统诊断"
-    Set->>Diag: GET /api/diagnostics/info
-    Diag->>Diag: collectSystemInfo() + collectModelInfo()
-    Diag-->>Set: 返回诊断 JSON
-    Set->>Set: 渲染诊断面板（OS/GPU/RAM/模型状态）
-
-    U->>Set: 点击"导出诊断报告"
-    Set->>Export: GET /api/diagnostics/export
-    Export->>Export: 生成完整报告文本
-    Export-->>Set: 返回报告内容
-    Set->>Set: 触发浏览器下载 diagnostic_report.txt
-
-%% ===== 5. 扩展包构建流程 =====
-sequenceDiagram
-    participant Dev as 开发者
-    participant Script as build_extensions.py
-    participant FS as 文件系统
-    participant Val as SidemateValidator
-
-    Dev->>Script: python build_extensions.py
-    Script->>FS: 读取 models/embedding/ + models/reranker/
-    Script->>FS: 读取 models/blobs/ (LLM)
-    Script->>Script: 生成 manifest.json（纯模型，无 wheels）
-    Script->>FS: 打包为 .sidemate (zip)
-    Script->>Val: 校验包完整性
-    Val-->>Script: 校验通过
-    Script->>FS: 输出到 output/
-    Note over FS: sidemate-knowledge-bge-m3.sidemate (~6GB)<br/>sidemate-llm-qwen3.5-4b.sidemate (~3GB)
+    FE->>FE: 渲染 AgentTimeline 步骤条
+    FE->>FE: 显示融合后的最终回答

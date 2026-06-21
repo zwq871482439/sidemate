@@ -64,7 +64,7 @@ function _fallbackCopyMsg(text, btn) {
   }
 }
 
-// ===== 话题漂移提示条（P6 已移除 drift 机制）=====
+// ===== P6: 话题漂移提示条已移除（T04）=====
 
 // ===== 模型覆盖层 =====
 async function updateChatOverlay() {

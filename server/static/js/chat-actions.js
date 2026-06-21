@@ -66,8 +66,9 @@ async function refreshActionBar() {
     // 缓存 key
     var ids = actions.map(function(a) { return a.id; }).sort().join(',');
     var cacheKey = ids + '|local';
-    if (cacheKey === _lastActionIds) return;
+    if (cacheKey === _lastActionIds && _lastActionMode === curMode) return;
     _lastActionIds = cacheKey;
+    _lastActionMode = curMode;
 
     var bar = document.getElementById('actionBar');
     if (!bar) return;
@@ -90,6 +91,11 @@ async function refreshActionBar() {
       btn.innerHTML = icon + ' ' + text;
       bar.appendChild(btn);
     });
+
+    // P6 T04: 并行模式下追加齿轮按钮
+    if (curMode === 'parallel' && typeof _renderGearMenu === 'function') {
+      _renderGearMenu(bar);
+    }
   } catch(e) {
     console.error('[chat.refreshActionBar]', e);
   }
