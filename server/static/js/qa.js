@@ -8,6 +8,7 @@ var _kbBusyProcessing = false;
 var _kbModelsLoaded = false;
 var _kbTagClusters = [];
 var _kbLastDocs = [];
+var _kbQueueItems = [];  // P6 B4: 处理队列 [{{docId, filename, phase, pct, error}}]
 
 // --- 二态状态路由 ---
 async function kbRouteState() {
@@ -209,7 +210,7 @@ async function kbRefreshDocs() {
     // 更新侧栏底部统计
     var ft = document.getElementById('kbSidebarFt');
     if (ft) {
-      var tagCount = _kbTagClusters.length || 0;
+      var tagCount = Object.keys(_kbTagCounts).length || 0;
       ft.textContent = _readyCount + '篇 · ' + tagCount + '标签';
     }
 
@@ -243,12 +244,14 @@ async function kbRefreshDocs() {
     for (var di = 0; di < docs.length; di++) {
       var d = docs[di];
 
-      // 应用标签筛选
+      // 应用标签筛选（P6 B2: 父标签匹配自身+所有子标签，子标签精确匹配）
       if (_kbActiveTagFilter) {
         var tagMatch = false;
         if (d.tags && d.tags.length > 0) {
+          // 构建匹配标签集合：若筛选的是父标签，包含自身+所有子孙
+          var matchTags = _kbCollectMatchTags(_kbActiveTagFilter);
           for (var ti = 0; ti < d.tags.length; ti++) {
-            if (d.tags[ti] === _kbActiveTagFilter) { tagMatch = true; break; }
+            if (matchTags.has(d.tags[ti])) { tagMatch = true; break; }
           }
         }
         if (!tagMatch) continue;
@@ -337,6 +340,8 @@ async function kbRefreshDocs() {
 
     // P6: 刷新令牌面板
     kbRefreshTokens();
+    // P6 B2: 每次轮询也刷新 AI 概览
+    kbRefreshAIOverview();
   } catch (err) {
     silentLog('[KB] 刷新文档列表失败:', err);
   }
@@ -378,47 +383,179 @@ function _updateKbSettingsStats(stats, docs) {
 var _kbActiveTagFilter = null;
 var _kbNameFilter = '';
 
+var _kbExpandedGroups = new Set();  // P6 B2: 前缀合并展开状态
+var _kbTagParentChildren = {};       // {parentTag: [childTag, ...]}
+var _kbTagCounts = {};                // {tag: rawCount} (不含子节点累计)
+
+// P6 B2: 前缀合并标签树渲染
 function kbRenderTagTree(docs) {
   var listEl = document.getElementById('kbSidebarList');
   if (!listEl) return;
 
-  // 收集所有标签及计数
+  // 1. 收集所有标签及计数
   var tagCounts = {};
-  var totalTagged = 0;
   for (var i = 0; i < docs.length; i++) {
     var d = docs[i];
     if (d.tag_status === 'done' && d.tags && d.tags.length > 0) {
       for (var j = 0; j < d.tags.length; j++) {
         var t = d.tags[j];
         tagCounts[t] = (tagCounts[t] || 0) + 1;
-        totalTagged++;
       }
     }
   }
 
-  // 按计数排序
-  var tagEntries = [];
-  for (var tagName in tagCounts) {
-    tagEntries.push({name: tagName, count: tagCounts[tagName]});
+  _kbTagCounts = tagCounts;
+
+  // 2. 按字母序排序
+  var sortedTags = Object.keys(tagCounts).sort();
+
+  // 3. 构建前缀树: parentChildren 和 childParent
+  var parentChildren = {};
+  var childParent = {};
+
+  for (var si = 0; si < sortedTags.length; si++) {
+    var tag = sortedTags[si];
+    for (var sj = 0; sj < sortedTags.length; sj++) {
+      var candidate = sortedTags[sj];
+      if (candidate.length >= tag.length) continue;
+      if (tag.indexOf(candidate) === 0) {
+        // candidate 是 tag 的前缀 → candidate 是父标签
+        if (!parentChildren[candidate]) parentChildren[candidate] = [];
+        parentChildren[candidate].push(tag);
+        childParent[tag] = candidate;
+        break; // 只取最短前缀作为直接父节点
+      }
+    }
   }
-  tagEntries.sort(function(a, b) { return b.count - a.count; });
 
-  _kbTagClusters = tagEntries;
+  _kbTagParentChildren = parentChildren;
 
-  // 渲染
-  var html = '<div class="kb-tag all' + (_kbActiveTagFilter === null ? ' sel' : '') + '" data-tag="__all__" onclick="kbFilterByTag(null,this)"><span class="dot"></span>全部文档<span class="cnt">' + docs.length + '</span></div>';
+  // 4. 递归计算父标签总计数（自身 + 所有子孙）
+  var totalCounts = {};
+  for (var t in tagCounts) totalCounts[t] = tagCounts[t];
 
-  for (var k = 0; k < tagEntries.length; k++) {
-    var te = tagEntries[k];
-    var isSel = _kbActiveTagFilter === te.name;
-    html += '<div class="kb-tag' + (isSel ? ' sel' : '') + '" data-tag="' + esc(te.name) + '" onclick="kbFilterByTag(\'' + esc(te.name) + '\',this)"><span class="dot"></span>' + esc(te.name) + '<span class="cnt">' + te.count + '</span></div>';
+  function sumChildren(parent) {
+    var kids = parentChildren[parent];
+    if (!kids) return totalCounts[parent];
+    var s = tagCounts[parent] || 0;
+    for (var ci = 0; ci < kids.length; ci++) {
+      s += sumChildren(kids[ci]);
+    }
+    totalCounts[parent] = s;
+    return s;
+  }
+
+  // 5. 找出根标签
+  var roots = [];
+  for (var ri = 0; ri < sortedTags.length; ri++) {
+    var rTag = sortedTags[ri];
+    if (!childParent[rTag]) {
+      if (parentChildren[rTag]) sumChildren(rTag);
+      roots.push(rTag);
+    }
+  }
+
+  _kbTagClusters = roots;
+
+  // 6. 渲染 HTML
+  var html = '<div class="kb-tag all' + (_kbActiveTagFilter === null ? ' sel' : '') +
+    '" data-tag="__all__" onclick="kbFilterByTag(null,this)"><span class="dot"></span>全部文档<span class="cnt">' +
+    docs.length + '</span></div>';
+
+  for (var rr = 0; rr < roots.length; rr++) {
+    html += _kbRenderTagNode(roots[rr], tagCounts, totalCounts, parentChildren, childParent, 0);
   }
 
   listEl.innerHTML = html;
 
   // 更新侧栏底部
   var ft = document.getElementById('kbSidebarFt');
-  if (ft) ft.textContent = docs.length + '篇 · ' + tagEntries.length + '标签';
+  if (ft) ft.textContent = docs.length + '篇 · ' + sortedTags.length + '标签';
+}
+
+// 递归渲染单个标签节点
+function _kbRenderTagNode(tagName, tagCounts, totalCounts, parentChildren, childParent, depth) {
+  var hasChildren = !!parentChildren[tagName];
+  var isExpanded = _kbExpandedGroups.has(tagName);
+  var isSel = _kbActiveTagFilter === tagName;
+  var count = totalCounts[tagName] || tagCounts[tagName];
+
+  var cls = 'kb-tag';
+  if (isSel) cls += ' sel';
+  if (hasChildren) cls += ' parent' + (isExpanded ? ' expanded' : '');
+  if (depth > 0) {
+    cls += ' child';
+    // 子标签的可见性取决于直接父标签是否展开
+    var directParent = childParent[tagName];
+    if (directParent && _kbExpandedGroups.has(directParent)) {
+      cls += ' show';
+    }
+  }
+
+  // JS 字符串安全转义（替换反斜杠和单引号）
+  var escapedTag = tagName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  var html = '<div class="' + cls + '" data-tag="' + esc(tagName) + '"';
+
+  if (hasChildren) {
+    html += ' data-parent="1"';
+    html += ' onclick="kbToggleTagGroup(\'' + escapedTag + '\',event)"';
+  } else {
+    // 叶子节点：点击即筛选
+    html += ' onclick="kbFilterByTag(\'' + escapedTag + '\',this)"';
+  }
+
+  html += '>';
+
+  if (hasChildren) {
+    html += '<span class="arrow">▶</span>';
+  }
+
+  html += '<span class="dot"></span>' + esc(tagName) + '<span class="cnt">' + count + '</span></div>';
+
+  // 渲染子标签
+  if (hasChildren) {
+    var children = parentChildren[tagName];
+    for (var ci = 0; ci < children.length; ci++) {
+      html += _kbRenderTagNode(children[ci], tagCounts, totalCounts, parentChildren, childParent, depth + 1);
+    }
+  }
+
+  return html;
+}
+
+// P6 B2: 切换标签组展开/折叠
+function kbToggleTagGroup(tagName, event) {
+  if (event) event.stopPropagation();
+  if (_kbExpandedGroups.has(tagName)) {
+    _kbExpandedGroups.delete(tagName);
+  } else {
+    _kbExpandedGroups.add(tagName);
+  }
+  kbRenderTagTree(_kbLastDocs);
+}
+
+// P6 B2: 递归收集父标签自身及所有子孙标签（用于筛选匹配）
+function _kbCollectMatchTags(parentTag) {
+  var result = new Set();
+  result.add(parentTag);
+  var children = _kbTagParentChildren[parentTag];
+  if (children) {
+    for (var i = 0; i < children.length; i++) {
+      _kbCollectMatchTagsRec(children[i], result);
+    }
+  }
+  return result;
+}
+
+function _kbCollectMatchTagsRec(tag, resultSet) {
+  resultSet.add(tag);
+  var children = _kbTagParentChildren[tag];
+  if (children) {
+    for (var i = 0; i < children.length; i++) {
+      _kbCollectMatchTagsRec(children[i], resultSet);
+    }
+  }
 }
 
 // --- 按标签筛选 ---
@@ -458,8 +595,12 @@ async function kbRefreshAIOverview() {
   bodyEl.textContent = '正在分析知识库...';
 
   try {
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents');
-    var docs = await resp.json();
+    // P6 B2: 使用缓存文档避免重复请求
+    var docs = _kbLastDocs.length > 0 ? _kbLastDocs : [];
+    if (docs.length === 0) {
+      var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents');
+      docs = await resp.json();
+    }
 
     if (!docs.length) {
       bodyEl.textContent = '知识库为空，请先上传文档。';
@@ -467,6 +608,16 @@ async function kbRefreshAIOverview() {
       if (sourceEl) sourceEl.textContent = '本地 AI 生成';
       if (updatedEl) updatedEl.textContent = '--';
       return;
+    }
+
+    // P6 B2: 统计排队中/处理中的文档
+    var queuedCount = 0;
+    for (var qi = 0; qi < docs.length; qi++) {
+      var _d = docs[qi];
+      if (_d.status === 'processing' || _d.status === 'indexing' || _d.status === 'summarizing' ||
+          _d.tag_status === 'pending' || _d.tag_status === 'generating') {
+        queuedCount++;
+      }
     }
 
     // 按标签分组统计
@@ -497,10 +648,17 @@ async function kbRefreshAIOverview() {
       summaryText += '。';
       bodyEl.innerHTML = summaryText;
     } else {
-      bodyEl.textContent = '已上传 ' + docs.length + ' 篇文档。AI 标签生成后可查看领域分析。';
+      // P6 B2: 有文档但无标签时显示正确数量
+      var readyCount = 0;
+      for (var ri = 0; ri < docs.length; ri++) {
+        if (docs[ri].status === 'ready') readyCount++;
+      }
+      bodyEl.textContent = docs.length + ' 篇文档已上传，等 AI 生成标签后可查看领域分析。';
     }
 
-    if (countEl) countEl.textContent = docs.length + ' 篇文档';
+    var countText = docs.length + ' 篇文档';
+    if (queuedCount > 0) countText += ' · ' + queuedCount + ' 篇排队中';
+    if (countEl) countEl.textContent = countText;
     if (sourceEl) sourceEl.textContent = '本地 AI 生成';
     if (updatedEl) {
       var now = new Date();
@@ -510,6 +668,76 @@ async function kbRefreshAIOverview() {
     bodyEl.textContent = '分析失败，请重试。';
     if (sourceEl) sourceEl.textContent = '本地 AI 生成';
   }
+}
+
+// --- P6 B4: 处理队列管理 ---
+
+/** 向队列添加条目 */
+function _kbAddToQueue(docId, filename) {
+  // 去重
+  for (var i = 0; i < _kbQueueItems.length; i++) {
+    if (_kbQueueItems[i].docId === docId) return;
+  }
+  _kbQueueItems.push({docId: docId, filename: filename || docId, phase: 'queued', pct: 0, error: false});
+  _kbRenderQueue();
+}
+
+/** 更新队列条目进度 */
+function _kbUpdateQueue(docId, phase, pct) {
+  for (var i = 0; i < _kbQueueItems.length; i++) {
+    if (_kbQueueItems[i].docId === docId) {
+      _kbQueueItems[i].phase = phase;
+      _kbQueueItems[i].pct = pct;
+      if (phase === 'error' || phase === 'timeout') _kbQueueItems[i].error = true;
+      break;
+    }
+  }
+  _kbRenderQueue();
+}
+
+/** 从队列移除已完成的条目 */
+function _kbRemoveFromQueue(docId) {
+  _kbQueueItems = _kbQueueItems.filter(function(item) { return item.docId !== docId; });
+  _kbRenderQueue();
+  // 全部完成后自动折叠
+  if (_kbQueueItems.length === 0) {
+    var panel = document.getElementById('kbQueuePanel');
+    if (panel) panel.removeAttribute('open');
+    var listEl = document.getElementById('kbQueueList');
+    if (listEl) listEl.textContent = '暂无任务';
+  }
+}
+
+/** 渲染队列面板 */
+function _kbRenderQueue() {
+  var countEl = document.getElementById('kbQueueCount');
+  var listEl = document.getElementById('kbQueueList');
+  var panel = document.getElementById('kbQueuePanel');
+  if (!listEl) return;
+
+  if (countEl) countEl.textContent = _kbQueueItems.length;
+
+  if (_kbQueueItems.length === 0) {
+    listEl.textContent = '暂无任务';
+    if (panel) panel.removeAttribute('open');
+    return;
+  }
+
+  // 有任务时自动展开
+  if (panel && !panel.hasAttribute('open')) panel.setAttribute('open', '');
+
+  var html = '';
+  for (var i = 0; i < _kbQueueItems.length; i++) {
+    var item = _kbQueueItems[i];
+    var phaseLabel = {
+      'queued': '排队中', 'subscribed': '准备中', 'chunking': '切块中', 'chunking_done': '切块完成',
+      'embedding': '正在生成向量', 'done': '完成', 'error': '失败', 'timeout': '超时', 'unknown': '等待中'
+    }[item.phase] || item.phase;
+    var pctHtml = item.pct > 0 ? ' <span class="qi-pct">' + item.pct + '%</span>' : '';
+    var errClass = item.error ? ' qi-err' : '';
+    html += '<div class="kb-queue-item' + errClass + '">· ' + esc(item.filename) + ' — ' + phaseLabel + pctHtml + '</div>';
+  }
+  listEl.innerHTML = html;
 }
 
 // --- 文件上传 ---
@@ -547,6 +775,7 @@ async function kbUploadFile(f) {
       kbRefreshDocs();
 
       if (data.doc_id) {
+        _kbAddToQueue(data.doc_id, f.name);
         kbSubscribeProgress(data.doc_id, f.name);
       }
     } else {
@@ -581,6 +810,9 @@ function kbSubscribeProgress(docId, filename) {
       if (d.chunk_total) detail = ' · ' + (d.chunk_done || 0) + '/' + d.chunk_total + ' 块';
       if (d.batch_total && d.batch_total > 1) detail += ' · 第 ' + (d.batch_idx || 0) + '/' + d.batch_total + ' 批';
 
+      // P6 B4/B5: 更新队列面板
+      _kbUpdateQueue(docId, d.phase, pct);
+
       if (typeof showToast === 'function') {
         if (d.phase === 'done') {
           showToast('✓ ' + (filename || '') + ' 处理完成' + detail, 'success', 3000);
@@ -592,6 +824,8 @@ function kbSubscribeProgress(docId, filename) {
       }
       if (d.phase === 'done' || d.phase === 'error' || d.phase === 'timeout') {
         es.close();
+        // P6 B5: 从队列移除已完成/失败/超时条目
+        _kbRemoveFromQueue(docId);
         kbRefreshDocs();
       }
     } catch (e) { console.warn('[KB] SSE 解析失败', e); }
@@ -846,6 +1080,7 @@ window.kbFilterByName = kbFilterByName;
 window.kbCardClick = kbCardClick;
 window.kbRefreshAIOverview = kbRefreshAIOverview;
 window.kbRenderTagTree = kbRenderTagTree;
+window.kbToggleTagGroup = kbToggleTagGroup;
 window.showKbInfo = showKbInfo;
 window.kbRefreshTokens = kbRefreshTokens;
 window.kbGenerateToken = kbGenerateToken;

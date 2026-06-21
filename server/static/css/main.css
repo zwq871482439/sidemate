@@ -1534,6 +1534,13 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-tag.all .dot{background:#D3D1C7}
 .kb-tag.sub{padding-left:22px;font-size:10px}
 
+/* P6 B2: 前缀合并标签树 */
+.kb-tag.parent{font-weight:500;cursor:pointer;}
+.kb-tag.parent .arrow{display:inline-block;width:12px;font-size:10px;transition:transform .15s;}
+.kb-tag.parent.expanded .arrow{transform:rotate(90deg);}
+.kb-tag.child{padding-left:20px;font-size:11px;display:none;}
+.kb-tag.child.show{display:flex;}
+
 /* 右侧主区域 */
 .kb-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
 
@@ -1624,4 +1631,12 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .policy-option:hover{background:var(--bg-secondary)}
 .policy-option input[type="radio"]{margin-right:6px}
 .warmup-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border-color);border-top-color:var(--accent-color);border-radius:50%;animation:spin .8s linear infinite}
+
+/* P6 B4: 处理队列面板 */
+.kb-queue-panel { margin:0 12px 8px; border:0.5px solid var(--color-border-secondary); border-radius:var(--border-radius-md); font-size:12px; }
+.kb-queue-panel summary { padding:6px 12px; cursor:pointer; color:var(--color-text-secondary); }
+.kb-queue-panel summary:hover { color:var(--color-text-primary); }
+.kb-queue-item { display:flex; align-items:center; gap:6px; padding:4px 12px; font-size:11px; color:var(--color-text-secondary); }
+.kb-queue-item .qi-pct { color:var(--color-accent); }
+.kb-queue-item .qi-err { color:#D85A30; }
 
