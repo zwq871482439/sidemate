@@ -551,6 +551,12 @@ class _KBOpsMixin:
 
     def _save_meta(self):
         """保存元数据"""
+        # P6 防护：空 documents 时，如果磁盘上已有 kb_meta.json 则拒绝写入
+        # 防止 LLM 分组等操作在文档未加载时意外覆盖已有数据
+        if not self.documents and os.path.exists(self.meta_path):
+            log.warning("[KB] 拒绝保存空元数据：documents 为空但磁盘文件存在，跳过写入")
+            return
+
         data = {
             "version": 1,
             "documents": [asdict(d) for d in self.documents.values()],

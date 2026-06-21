@@ -65,67 +65,37 @@ class TestParseLLMGroups:
         assert len(result) == 1
         assert result[0]["group"] == "X"
 
-    # --- Partial extraction ---
+    # --- Partial extraction (BUG-1 & BUG-2 FIXED) ---
 
-    # --- BUG: Step 2 greedy bracket extraction (KNOWN ISSUE) ---
+    def test_non_greedy_extracts_adjacent_json_objects(self):
+        """FIXED BUG-1: Non-greedy regex extracts adjacent JSON objects.
 
-    def test_partial_extraction_known_issue_greedy_bracket(self):
-        """BUG: Step 2 greedy [\s\S]* grabs too much, corrupts input for Step 4.
-
-        When input contains JSON objects with members arrays (which contain
-        [...] brackets), the greedy bracket extraction in Step 2 grabs from
-        the FIRST '[' to the LAST ']', destroying the content in between.
-
-        Expected: partial extraction via Step 4 regex should find 2 groups.
-        Actual:   Step 2 corrupts the text, Step 4 fails, fallback to '其他'.
+        The new Step 2 uses findall to extract individual {"group":...} objects,
+        then joins them into a valid JSON array. No greedy cross-object corruption.
         """
-        raw = '{"group": "中医", "members": ["中医基础", "中医诊断"]}\n{"group": "西医", "members": ["内科学"]}'
-        result = _parse_llm_groups(raw, ["中医基础", "中医诊断", "内科学"])
-        # Current behavior: falls back to 其他 (bug — should partial-extract)
-        assert len(result) == 1
-        assert result[0]["group"] == "其他"
-
-    @pytest.mark.xfail(
-        reason="BUG: Step 2 greedy bracket extraction [\\s\\S]* is too greedy. "
-               "Should use non-greedy or smarter extraction that doesn't corrupt "
-               "intermediate content. Also Step 3 doesn't validate result is "
-               "a list of group dicts before returning."
-    )
-    def test_partial_extraction_expected_behavior(self):
-        """Expected: partial extraction should handle adjacent JSON objects."""
         raw = '{"group": "中医", "members": ["中医基础", "中医诊断"]}\n{"group": "西医", "members": ["内科学"]}'
         result = _parse_llm_groups(raw, ["中医基础", "中医诊断", "内科学"])
         assert len(result) == 2
         groups_found = {g["group"] for g in result}
         assert groups_found == {"中医", "西医"}
 
-    @pytest.mark.xfail(
-        reason="BUG: Step 2 extracts brackets content '[\"t1\",\"t2\",\"t3\"]', "
-               "Step 3 json.loads returns ['t1','t2','t3'] (a flat list, not "
-               "a list of group dicts). isinstance(groups, list) is True so "
-               "it returns without validation. Should validate result structure."
-    )
-    def test_partial_extraction_expected_comma_separated(self):
-        """Expected: single JSON object with comma-separated members should parse."""
+    def test_validates_items_filter_flat_strings(self):
+        """FIXED BUG-2: Flat strings in parsed result are filtered out.
+
+        Step 3 now validates each item is a dict with 'group' and 'members' keys.
+        """
         raw = '{"group": "Test", "members": ["t1", "t2", "t3"]} extra'
         result = _parse_llm_groups(raw, ["t1", "t2", "t3"])
         assert len(result) == 1
         assert result[0]["group"] == "Test"
         assert len(result[0]["members"]) == 3
 
-    def test_partial_extraction_current_flat_list_bug(self):
-        """Current behavior: returns flat list instead of group dict (bug).
-
-        Step 2 grabs ["t1","t2","t3"], Step 3 json.loads returns a flat list.
-        """
-        raw = '{"group": "Test", "members": ["t1", "t2", "t3"]} extra'
-        result = _parse_llm_groups(raw, ["t1", "t2", "t3"])
-        # Current buggy behavior: returns flat list of strings
-        assert isinstance(result, list)
-        # Should be [{"group": "Test", "members": [...]}] but instead is ["t1", "t2", "t3"]
-        if len(result) > 0 and isinstance(result[0], str):
-            # Confirms the bug: flat string list
-            assert result == ["t1", "t2", "t3"]
+    def test_validates_items_filter_non_dict_items(self):
+        """FIXED BUG-2: Non-dict items (strings, numbers) are filtered out."""
+        raw = '[{"group":"G","members":["a"]}, "bad string", 42, null]'
+        result = _parse_llm_groups(raw, ["a"])
+        assert len(result) == 1
+        assert result[0]["group"] == "G"
 
     # --- Fallback ---
 

@@ -13,7 +13,7 @@ var _kbQueueItems = [];  // P6 B4: 处理队列 [{{docId, filename, phase, pct, 
 // 标签分组（LLM 语义归并）
 var _kbTagGroups = [];       // [{group, members, source}, ...]
 var _kbGroupUngrouped = [];  // 未分组的标签列表
-var _kbGroupingTriggered = false;  // 是否已触发过分组
+var _kbLastGroupTrigger = 0;  // 上次触发分组的时间戳 (ms)，用于冷却
 
 // --- 二态状态路由 ---
 async function kbRouteState() {
@@ -284,11 +284,36 @@ async function kbRefreshDocs() {
       var hmDotClass = hitCount >= 10 ? 'hot' : (hitCount >= 1 ? 'warm' : 'cold');
       var hmDotHtml = '<span style="display:flex;align-items:center;gap:3px"><span class="hm-dot ' + hmDotClass + '"></span>' + hitCount + '</span>';
 
-      // 内容预览
-      var previewText = d.summary || '';
-      if (!previewText && d.content_snippet) previewText = d.content_snippet;
-      if (previewText && previewText.length > 120) previewText = previewText.substring(0, 120) + '...';
-      if (!previewText) previewText = '(暂无预览)';
+      // 内容预览 (Fix B: 基于 doc status + tag_status 显示状态)
+      var previewText = '';
+      var previewExtraClass = '';
+      if (d.status === 'processing' || d.status === 'indexing') {
+        previewText = '切片+向量化中...';
+      } else if (d.status === 'ready') {
+        if (d.tag_status === 'pending') {
+          previewText = '排队等待 AI 生成摘要...';
+        } else if (d.tag_status === 'generating') {
+          previewText = 'AI 正在生成摘要...';
+          previewExtraClass = ' generating';
+        } else if (d.tag_status === 'done') {
+          previewText = d.summary || d.content_snippet || '';
+          if (previewText && previewText.length > 120) previewText = previewText.substring(0, 120) + '...';
+          if (!previewText) previewText = '暂无摘要';
+        } else if (d.tag_status === 'failed') {
+          previewText = '摘要生成失败 · 点选后可重试';
+          previewExtraClass = ' failed';
+        } else {
+          previewText = d.summary || d.content_snippet || '';
+          if (previewText && previewText.length > 120) previewText = previewText.substring(0, 120) + '...';
+          if (!previewText) previewText = '暂无摘要';
+        }
+      } else if (d.status === 'error') {
+        previewText = '处理失败';
+      } else {
+        previewText = d.summary || d.content_snippet || '';
+        if (previewText && previewText.length > 120) previewText = previewText.substring(0, 120) + '...';
+        if (!previewText) previewText = '(暂无预览)';
+      }
 
       // 标签
       var tagsHtml = '';
@@ -314,7 +339,11 @@ async function kbRefreshDocs() {
       html += '<span class="ctitle" title="' + esc(d.filename) + '">' + esc(d.filename) + '</span>';
       if (iconsHtml) html += '<div class="cicons">' + iconsHtml + '</div>';
       html += '</div>';
-      html += '<div class="cpreview">' + esc(previewText) + '</div>';
+      html += '<div class="cpreview' + previewExtraClass + '">';
+      if (d.tag_status === 'generating') {
+        html += '<span class="cpreview-spinner"></span>';
+      }
+      html += esc(previewText) + '</div>';
       if (tagsHtml) html += '<div class="ctags">' + tagsHtml + '</div>';
       html += '<div class="cstats">';
       html += '<span>' + sizeStr + '</span>';
@@ -326,6 +355,12 @@ async function kbRefreshDocs() {
       if (d.is_private) {
         html += '<div class="ctoken-act">';
         html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbGenerateToken(\'' + esc(d.doc_id) + '\')" title="生成访问令牌"><svg width="10" height="10" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg> 令牌</button>';
+        html += '</div>';
+      }
+      // Fix B: 摘要生成失败 + 文档已选中 → 显示重试按钮
+      if (d.tag_status === 'failed' && typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && _kbSelectedDocs.has(d.doc_id)) {
+        html += '<div class="ctoken-act">';
+        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbRetrySummary(\'' + esc(d.doc_id) + '\')" title="重新生成摘要">重新生成摘要</button>';
         html += '</div>';
       }
       html += '<div class="cmtime">' + uploadTime + '</div>';
@@ -408,8 +443,9 @@ async function kbFetchTagGroups() {
 
 // 触发 LLM 分组
 async function kbTriggerGrouping() {
-  if (_kbGroupingTriggered) return;
-  _kbGroupingTriggered = true;
+  // Fix F: 用 10 秒冷却替代一次性标记
+  if (Date.now() - _kbLastGroupTrigger < 10000) return;
+  _kbLastGroupTrigger = Date.now();
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/tags/group', { method: 'POST' });
     var data = await resp.json();
@@ -462,6 +498,16 @@ function _kbRenderTagTree() {
   var html = '<div class="kb-tag all' + (_kbActiveTagFilter === null ? ' sel' : '') +
     '" data-tag="__all__" onclick="kbFilterByTag(null,this)"><span class="dot"></span>全部文档<span class="cnt">' +
     totalDocs + '</span></div>';
+
+  // Fix D: 分组为空时显示提示
+  if (_kbTagGroups.length === 0 && _kbGroupUngrouped.length === 0) {
+    html += '<div class="kb-group-hint">点击 AI 概览刷新生成标签分组</div>';
+    listEl.innerHTML = html;
+    // 更新侧栏底部统计
+    var ft2 = document.getElementById('kbSidebarFt');
+    if (ft2) ft2.textContent = totalDocs + '篇 · 0标签';
+    return;
+  }
 
   // 渲染分组
   for (var gIdx = 0; gIdx < _kbTagGroups.length; gIdx++) {
@@ -593,6 +639,9 @@ function kbCardClick(docId) {
 
 // --- AI 知识库概览 ---
 async function kbRefreshAIOverview() {
+  // Fix F: 点击刷新时重置冷却，允许立即触发分组
+  _kbLastGroupTrigger = 0;
+
   var bodyEl = document.getElementById('kbOverviewBody');
   var sourceEl = document.getElementById('kbOverviewSource');
   var countEl = document.getElementById('kbOverviewDocCount');
@@ -628,13 +677,14 @@ async function kbRefreshAIOverview() {
       }
     }
 
-    // 按标签分组统计
+    // 按标签分组统计（Fix E: 统计每标签唯一文档数，而非标签实例数）
     var tagGroups = {};
     for (var i = 0; i < docs.length; i++) {
       var d = docs[i];
       if (d.tag_status === 'done' && d.tags) {
         for (var j = 0; j < d.tags.length; j++) {
-          tagGroups[d.tags[j]] = (tagGroups[d.tags[j]] || 0) + 1;
+          if (!tagGroups[d.tags[j]]) tagGroups[d.tags[j]] = new Set();
+          tagGroups[d.tags[j]].add(d.doc_id);
         }
       }
     }
@@ -642,7 +692,7 @@ async function kbRefreshAIOverview() {
     // 取 top 3 领域
     var topTags = [];
     for (var k in tagGroups) {
-      topTags.push({name: k, count: tagGroups[k]});
+      topTags.push({name: k, count: tagGroups[k].size});
     }
     topTags.sort(function(a, b) { return b.count - a.count; });
     topTags = topTags.slice(0, 3);
@@ -673,7 +723,7 @@ async function kbRefreshAIOverview() {
       updatedEl.textContent = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ' 更新';
     }
 
-    // 触发标签分组（如果有标签但尚未分组）
+    // Fix F: 如果有标签但尚未分组，自动触发分组
     if (topTags.length > 0 && _kbTagGroups.length === 0 && _kbGroupUngrouped.length === 0) {
       kbTriggerGrouping();
     }
@@ -712,45 +762,44 @@ function _kbUpdateQueue(docId, phase, pct) {
 function _kbRemoveFromQueue(docId) {
   _kbQueueItems = _kbQueueItems.filter(function(item) { return item.docId !== docId; });
   _kbRenderQueue();
-  // 全部完成后自动折叠
-  if (_kbQueueItems.length === 0) {
-    var panel = document.getElementById('kbQueuePanel');
-    if (panel) panel.removeAttribute('open');
-    var listEl = document.getElementById('kbQueueList');
-    if (listEl) listEl.textContent = '暂无任务';
-  }
 }
 
-/** 渲染队列面板 */
+/** 渲染队列浮动底栏 */
 function _kbRenderQueue() {
-  var countEl = document.getElementById('kbQueueCount');
-  var listEl = document.getElementById('kbQueueList');
-  var panel = document.getElementById('kbQueuePanel');
-  if (!listEl) return;
-
-  if (countEl) countEl.textContent = _kbQueueItems.length;
+  var floatBar = document.getElementById('kbFloatBar');
+  var floatText = document.getElementById('kbFloatText');
+  var floatList = document.getElementById('kbFloatList');
+  if (!floatBar) return;
 
   if (_kbQueueItems.length === 0) {
-    listEl.textContent = '暂无任务';
-    if (panel) panel.removeAttribute('open');
+    floatBar.style.display = 'none';
     return;
   }
 
-  // 有任务时自动展开
-  if (panel && !panel.hasAttribute('open')) panel.setAttribute('open', '');
+  floatBar.style.display = 'flex';
+  if (floatText) floatText.textContent = '处理中 ' + _kbQueueItems.length + ' 项';
 
-  var html = '';
+  var listHtml = '';
   for (var i = 0; i < _kbQueueItems.length; i++) {
     var item = _kbQueueItems[i];
-    var phaseLabel = {
-      'queued': '排队中', 'subscribed': '准备中', 'chunking': '切块中', 'chunking_done': '切块完成',
-      'embedding': '正在生成向量', 'done': '完成', 'error': '失败', 'timeout': '超时', 'unknown': '等待中'
-    }[item.phase] || item.phase;
-    var pctHtml = item.pct > 0 ? ' <span class="qi-pct">' + item.pct + '%</span>' : '';
-    var errClass = item.error ? ' qi-err' : '';
-    html += '<div class="kb-queue-item' + errClass + '">· ' + esc(item.filename) + ' — ' + phaseLabel + pctHtml + '</div>';
+    // Fix A: 两阶段标签
+    var phaseLabel;
+    if (item.phase === 'chunking') {
+      phaseLabel = '切块 (' + item.pct + '%)';
+    } else if (item.phase === 'embedding') {
+      phaseLabel = '向量 (' + item.pct + '%)';
+    } else if (item.phase === 'queued') {
+      phaseLabel = '排队中';
+    } else {
+      phaseLabel = {
+        'subscribed': '准备中', 'chunking_done': '切块完成',
+        'done': '完成', 'error': '失败', 'timeout': '超时', 'unknown': '等待中'
+      }[item.phase] || item.phase;
+    }
+    if (i > 0) listHtml += '  ';
+    listHtml += '· ' + esc(item.filename) + ' — ' + phaseLabel;
   }
-  listEl.innerHTML = html;
+  if (floatList) floatList.textContent = listHtml;
 }
 
 // --- 文件上传 ---
@@ -813,12 +862,23 @@ function kbSubscribeProgress(docId, filename) {
   es.onmessage = function(ev) {
     try {
       var d = JSON.parse(ev.data);
-      var phaseText = {
-        'subscribed': '准备中', 'chunking_done': '切块完成', 'embedding': '正在生成向量',
-        'done': '完成', 'error': '失败', 'timeout': '超时', 'unknown': '等待中'
-      }[d.phase] || d.phase;
+      // Fix A: 两阶段进度映射 — chunking: 0-5%, embedding: 5-100%
+      var phaseText;
+      var pct;
+      if (d.phase === 'chunking') {
+        phaseText = '切片中...';
+        pct = Math.round((d.progress || 0) * 100);  // 0-5%
+      } else if (d.phase === 'embedding') {
+        phaseText = '生成向量...';
+        pct = Math.round((d.progress || 0) * 100);  // 5-100%
+      } else {
+        phaseText = {
+          'subscribed': '准备中', 'chunking_done': '切块完成',
+          'done': '完成', 'error': '失败', 'timeout': '超时', 'unknown': '等待中'
+        }[d.phase] || d.phase;
+        pct = Math.round((d.progress || 0) * 100);
+      }
 
-      var pct = Math.round((d.progress || 0) * 100);
       var detail = '';
       if (d.chunk_total) detail = ' · ' + (d.chunk_done || 0) + '/' + d.chunk_total + ' 块';
       if (d.batch_total && d.batch_total > 1) detail += ' · 第 ' + (d.batch_idx || 0) + '/' + d.batch_total + ' 批';
@@ -870,6 +930,20 @@ async function kbCancelDoc(docId) {
   if (!(await showDialog('确认取消', '确定取消处理？已处理的部分将被清理。', {type: 'danger', confirm: true, confirmLabel: '取消处理', cancelLabel: '返回'}))) return;
   try { await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + docId + '/cancel', { method: 'POST' }); kbRefreshDocs(); }
   catch (err) { showToast('操作失败: ' + err.message, 'error'); }
+}
+
+// Fix B: 重新生成摘要
+async function kbRetrySummary(docId) {
+  try {
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + encodeURIComponent(docId) + '/retry-summary', { method: 'POST' });
+    var data = await resp.json();
+    if (data.ok) {
+      showToast('已重新触发摘要生成');
+      kbRefreshDocs();
+    } else {
+      showToast('重试失败: ' + (data.error || '未知错误'), 'error');
+    }
+  } catch (err) { showToast('重试失败: ' + err.message, 'error'); }
 }
 
 // --- 文库功能说明弹窗 ---
@@ -1088,6 +1162,7 @@ window.kbDeleteDoc = kbDeleteDoc;
 window.kbPauseDoc = kbPauseDoc;
 window.kbResumeDoc = kbResumeDoc;
 window.kbCancelDoc = kbCancelDoc;
+window.kbRetrySummary = kbRetrySummary;
 window.kbFilterByTag = kbFilterByTag;
 window.kbFilterByName = kbFilterByName;
 window.kbCardClick = kbCardClick;

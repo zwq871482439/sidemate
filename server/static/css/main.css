@@ -1548,6 +1548,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-group-tag .dot{width:6px;height:6px;border-radius:50%;background:#7F77DD;flex-shrink:0}
 .kb-group-tag .cnt{font-size:10px;color:var(--text-muted);margin-left:auto}
 .kb-group-tag.show{display:flex;}
+/* Fix D: 分组为空时的提示 */
+.kb-group-hint{padding:12px 10px;font-size:10px;color:var(--text-muted);text-align:center;line-height:1.5;}
 
 /* 右侧主区域 */
 .kb-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
@@ -1583,6 +1585,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-card .ctitle{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .kb-card .cicons{display:flex;gap:3px;flex-shrink:0}
 .kb-card .cpreview{font-size:10px;color:var(--text-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+/* Fix B: 摘要状态样式 */
+.kb-card .cpreview.generating{color:var(--color-accent)}
+.kb-card .cpreview.failed{color:#D85A30}
+.cpreview-spinner{display:inline-block;width:9px;height:9px;border:1.5px solid var(--border-color);border-top-color:var(--accent-color);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:4px}
 .kb-card .ctags{display:flex;gap:3px;flex-wrap:wrap}
 .kb-card .ctag{padding:1px 6px;border-radius:8px;font-size:10px;background:#EEEDFE;color:#534AB7}
 .kb-card .cstats{display:flex;gap:10px;font-size:10px;color:var(--text-muted);flex-wrap:wrap;align-items:center}
@@ -1640,11 +1646,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .policy-option input[type="radio"]{margin-right:6px}
 .warmup-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border-color);border-top-color:var(--accent-color);border-radius:50%;animation:spin .8s linear infinite}
 
-/* P6 B4: 处理队列面板 */
-.kb-queue-panel { margin:0 12px 8px; border:0.5px solid var(--color-border-secondary); border-radius:var(--border-radius-md); font-size:12px; }
-.kb-queue-panel summary { padding:6px 12px; cursor:pointer; color:var(--color-text-secondary); }
-.kb-queue-panel summary:hover { color:var(--color-text-primary); }
-.kb-queue-item { display:flex; align-items:center; gap:6px; padding:4px 12px; font-size:11px; color:var(--color-text-secondary); }
-.kb-queue-item .qi-pct { color:var(--color-accent); }
-.kb-queue-item .qi-err { color:#D85A30; }
+/* Fix C: 浮动处理底栏 */
+.kb-float-bar { position:sticky; bottom:0; margin:0 12px 8px; padding:8px 14px;
+  background:var(--bg-primary); border:0.5px solid var(--border-color); border-radius:8px;
+  font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:8px;
+  z-index:10; box-shadow:0 -2px 8px rgba(0,0,0,.06); }
+.kb-float-bar .kb-float-list { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
