@@ -677,5 +677,92 @@
 
 ---
 
+## 七、P5 遗留技术债清理（2026-06-21 从 P5 推迟）
+
+> 来源：P5-010 全代码审查发现的死代码 + 冗余 + 隐式逻辑
+> 严重度：P2/P3（不影响功能，但增加维护负担和包体积）
+
+### 7.1 P2 死代码（删除即可）
+
+#### 7.1.1 `_compress_cloud_history` 函数
+- **位置**：`routers/chat.py:929`
+- **现状**：cloud_pipeline.py 删除调用后无任何调用方
+- **处理**：直接删除函数定义
+
+#### 7.1.2 `check_topic_drift` 函数
+- **位置**：`intelligence/task_classifier.py:174`
+- **现状**：routers/chat.py 删除 drift 调用后无调用方，整个 drift 检测机制已废弃
+- **处理**：
+  - 删除函数定义
+  - 删除相关辅助函数
+  - 评估是否删除整个 `task_classifier.py` 模块
+
+### 7.2 P3 全链路冗余
+
+#### 7.2.1 `drift_hint` 参数链路
+**涉及 ~30 个文件**：
+- `pipelines/_base.py` — StreamContext.drift_hint/drift_result 字段
+- `pipelines/doc_action.py` — run_doc_action 参数链
+- `pipelines/local_pipeline.py` / `cloud_pipeline.py`
+- `core/prompt_builder.py` / `model_manager.py` / `cloud_engine.py` / `stream_engine.py`
+
+**处理**：批量删除所有 drift_hint 形参 + 实参
+
+#### 7.2.2 前端 `topic_drift` 事件残留
+- `chat.js` onmessage 处理
+- `chat-ui.js` showDriftBar 函数
+- `main.css` `.drift-bar` 样式
+- **处理**：后端不再发该事件，前端可安全删除
+
+#### 7.2.3 `server.py` 顶层 `_report_startup` 注释不符
+- 注释："顶层不写进度" vs 实际：仍有 6+ 处调用
+- **处理**：改注释或彻底移入 _lifespan
+
+#### 7.2.4 `_refFilePath` 混合语义
+- KB 引用时赋值为 `doc_id`，普通上传时赋值为 `file.name`
+- **处理**：拆成 `_kbRefDocId` 和 `_uploadedFileName`
+
+#### 7.2.5 `token-estimator.js` 重复逻辑
+- `estimateTotal` 和 `_estimateDoc` 对 pendingFile.size 的 fallback 重复
+- **处理**：删除 estimateTotal，统一用 _estimateDoc
+
+### 7.3 依赖清理
+
+详见独立文档（P6 单独规划）。当前已识别可删的包：
+
+| 包 | 说明 |
+|---|---|
+| `jieba` | Patch5 已移除，仅剩注释 |
+| `rank_bm25` | 被 bge-m3 sparse 替代 |
+| `av` | 录音用 faster_whisper 自带音频处理 |
+| `onnxruntime` | 无任何引用 |
+| `networkx` | 无引用（torch 间接依赖，可保留） |
+| `mpmath` / `sympy` | 无引用（torch 间接依赖，可保留） |
+| `mdurl` / `markdown_it` / `mdit_py_plugins` | 无引用 |
+| `jiter` | 无引用（pydantic v2 可选加速） |
+| `click` / `typer` / `shellingham` | 无引用（CLI 库） |
+| `websockets` / `httptools` | 无引用（uvicorn 未启用对应 worker） |
+| `watchfiles` | 无引用（uvicorn reload 用） |
+| `rich` / `pygments` | 无引用 |
+| `google` | 无引用 |
+
+**必须保留的间接依赖**（不能删）：
+- `ctranslate2` — faster_whisper 推理后端
+- `faiss` / `scipy` / `sklearn` — sentence_transformers + FlagEmbedding 间接依赖
+- `huggingface_hub` / `hf_xet` / `fsspec` / `filelock` — transformers 间接依赖
+- `colorama` — tqdm/openai Windows 间接依赖
+- `threadpoolctl` — sklearn 间接依赖
+
+### 7.4 实施优先级
+
+| 优先级 | 任务 | 工作量 |
+|--------|------|--------|
+| 🥇 P0 | 7.1.1 + 7.1.2 删除死函数 | 0.5h |
+| 🥇 P0 | 7.2.1 drift_hint 全链路清 | 2h（30+ 文件） |
+| 🥈 P1 | 7.2.2 + 7.2.3 + 7.2.4 + 7.2.5 | 1h |
+| 🥉 P2 | 7.3 依赖清理（需回归测试） | 4h+ |
+
+---
+
 *本文档为头脑风暴草稿，待 P6 实施时细化。*
 
