@@ -64,7 +64,7 @@ DEFAULTS = {
     # ----- 应用版本号（唯一权威来源 single source of truth）-----
     # 其他所有模块/前端/launcher 均从此处取版本号，禁止在其他地方硬编码版本字面量。
     # launcher/build.bat 通过 findstr 解析此行抽取版本号。
-    "version": "0.9.5",
+    "version": "0.9.6",
 
     # ----- 通用 -----
     # 沙盒清理策略: "on_start" | "24h" | "7d" | "never"

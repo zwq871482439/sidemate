@@ -254,7 +254,6 @@
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 8l4-6 4 6v4a1 1 0 01-1 1H4a1 1 0 01-1-1V8z" stroke="currentColor" stroke-width="1.2"/><path d="M5 10l2-2 2 2" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
             上传文档
           </button>
-          <button class="btn" onclick="kbBatchDelete()">批量操作</button>
           <span style="flex:1"></span>
           <button class="btn" onclick="kbShowDuplicates()" title="重复检测">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.1"/><path d="M4 5h6M6 3v4" stroke="currentColor" stroke-width="0.8" stroke-linecap="round"/></svg>
@@ -280,6 +279,12 @@
             <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbSelectInvert()">反选</button>
             <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbClearSelection()">清除</button>
           </div>
+
+          <!-- P6 B4: 处理队列面板 -->
+          <details class="kb-queue-panel" id="kbQueuePanel" open>
+            <summary>⏳ 处理队列 <span id="kbQueueCount">0</span></summary>
+            <div id="kbQueueList" style="font-size:12px;color:var(--text-secondary);padding:4px 12px 8px">暂无任务</div>
+          </details>
 
           <!-- AI 知识库概览面板 -->
           <div class="kb-summary" id="kbAIOverview">

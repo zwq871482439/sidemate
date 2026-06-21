@@ -1534,12 +1534,20 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-tag.all .dot{background:#D3D1C7}
 .kb-tag.sub{padding-left:22px;font-size:10px}
 
-/* P6 B2: 前缀合并标签树 */
-.kb-tag.parent{font-weight:500;cursor:pointer;}
-.kb-tag.parent .arrow{display:inline-block;width:12px;font-size:10px;transition:transform .15s;}
-.kb-tag.parent.expanded .arrow{transform:rotate(90deg);}
-.kb-tag.child{padding-left:20px;font-size:11px;display:none;}
-.kb-tag.child.show{display:flex;}
+/* P6 B2: 标签分组树（LLM 语义归并） */
+.kb-group{padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;display:flex;align-items:center;gap:6px;margin-bottom:1px;transition:background .12s;font-weight:500;}
+.kb-group:hover{background:var(--bg-primary)}
+.kb-group.sel{background:var(--color-background-info, #E6F1FB);color:var(--color-text-info, #185FA5);font-weight:500}
+.kb-group .dot{width:6px;height:6px;border-radius:50%;background:#7F77DD;flex-shrink:0}
+.kb-group .cnt{font-size:10px;color:var(--text-muted);margin-left:auto}
+.kb-group .arrow{display:inline-block;width:12px;font-size:10px;transition:transform .15s;}
+.kb-group.expanded .arrow{transform:rotate(90deg);}
+.kb-group-tag{padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;display:flex;align-items:center;gap:6px;margin-bottom:1px;transition:background .12s;padding-left:28px;display:none;}
+.kb-group-tag:hover{background:var(--bg-primary)}
+.kb-group-tag.sel{background:var(--color-background-info, #E6F1FB);color:var(--color-text-info, #185FA5);font-weight:500}
+.kb-group-tag .dot{width:6px;height:6px;border-radius:50%;background:#7F77DD;flex-shrink:0}
+.kb-group-tag .cnt{font-size:10px;color:var(--text-muted);margin-left:auto}
+.kb-group-tag.show{display:flex;}
 
 /* 右侧主区域 */
 .kb-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}

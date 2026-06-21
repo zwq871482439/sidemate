@@ -47,6 +47,9 @@ class _KBOpsMixin:
         self.chunk_order: List[str] = []             # chunk_id 有序列表，与 vectors 行对齐
         self._need_rebuild_vectors = False           # 模型升级后需要重建向量索引
 
+        # 标签分组（LLM 语义归并结果）
+        self.tag_groups: List[Dict] = []             # [{group, members, source}, ...]
+
         # Patch5 G：进度回调队列（doc_id → list[progress_event]）
         # _notify_progress 推入，/api/kb/progress/{doc_id} SSE 消费
         import queue as _queue_mod
@@ -503,7 +506,13 @@ class _KBOpsMixin:
         if not self.chunk_order:
             self.chunk_order = list(self.chunks.keys())
 
-        log.info("[KB] 元数据加载: %d 文档, %d chunks", len(self.documents), len(self.chunks))
+        # 恢复标签分组
+        self.tag_groups = data.get("tag_groups", [])
+        if not isinstance(self.tag_groups, list):
+            self.tag_groups = []
+
+        log.info("[KB] 元数据加载: %d 文档, %d chunks, %d 标签组",
+                 len(self.documents), len(self.chunks), len(self.tag_groups))
 
         # 总字符数上限检查
         total_chars = sum(len(c.text) for c in self.chunks.values() if c.text)
@@ -549,6 +558,7 @@ class _KBOpsMixin:
                 {k: v for k, v in asdict(c).items() if k != "text"}
                 for c in self.chunks.values()
             ],
+            "tag_groups": self.tag_groups,
         }
         try:
             # Patch5 修复 Errno 22 + Errno 2：不用 mkstemp，用固定临时文件名 + os.replace
@@ -566,6 +576,49 @@ class _KBOpsMixin:
                     os.remove(tmp_path)
             except OSError:
                 pass
+
+    # ===== 标签分组 =====
+
+    def set_tag_group(self, tag: str, group: str, source: str = "manual"):
+        """将标签移动到指定分组并持久化
+
+        如果 tag 已在其他分组中，先从原分组移除。
+        如果 group 不存在则创建新分组。
+        空 group 会被自动清理。
+
+        Args:
+            tag: 标签名
+            group: 目标分组名
+            source: "manual" | "ai"
+        """
+        # 从所有现有分组中移除此 tag
+        for g in self.tag_groups:
+            members = g.get("members", [])
+            if tag in members:
+                members.remove(tag)
+
+        # 清理空分组
+        self.tag_groups = [g for g in self.tag_groups if g.get("members")]
+
+        # 添加到目标分组
+        found = False
+        for g in self.tag_groups:
+            if g.get("group") == group:
+                if tag not in g["members"]:
+                    g["members"].append(tag)
+                g["source"] = source
+                found = True
+                break
+
+        if not found:
+            self.tag_groups.append({
+                "group": group,
+                "members": [tag],
+                "source": source,
+            })
+
+        self._save_meta()
+        log.info("[KB] 标签分组: tag=%s → group=%s (source=%s)", tag, group, source)
 
     def _rebuild_all_vectors(self):
         """重建全部向量索引（模型升级后维度变化时调用）"""

@@ -2,6 +2,54 @@
 
 > 所有版本改动记录。遵循 [keepachangelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。日期格式：YYYY-MM-DD
 
+
+
+---
+
+## [0.9.6] - 2026-06-21 — P6「前端统一化 + 三模式」
+
+本次发布聚焦于**前端全面重构、模式系统统一化（离线/在线/并行）、知识库去对话化、ClearBox 明盒透明度**，并完成 P5 遗留的技术债清理。
+
+### Added（新功能）
+
+- **并行模式（双轨独立）**：Chat Tab 新增第三档「并行」模式，本地检索 KB + 云端通用知识各自独立回答，本地自动融合。KB 原文永不离开本机
+- **三段模式按钮组**：header 替换旧 tag 下拉为三段式按钮（离线/在线/并行），一次点击切换。切换时弹出确认弹窗，含功能说明 + 风险告知
+- **融合输入框**：+ 附件按钮与发送按钮整合到同一圆角容器内，高度统一 44px，聚焦边框变品牌蓝
+- **统一 Token 上下文条**：输入框上方独立圆角条，合并本轮预计 + 对话历史 + 总容量 + 剩余容量，一处看全
+- **知识库纯档案管理**：删除 KB Tab 全部对话功能，改为左侧标签树 + 右侧卡片网格 + AI 概览摘要面板。原 KB 问答迁入离线模式「查知识库」action
+- **AgentTimeline 增强**：并行模式下四步实时时间线（检索→本地生成→云端补充→自动融合），每步含耗时 + 产出预览。历史消息持久化可回放
+- **并行模式齿轮开关**：「允许云端模型生成关键词」开关，云端拆解 3-5 个检索关键词增强本地召回
+- **热力图圆点指示器**：文档卡片用彩色圆点（灰/琥珀/红）替代火焰图标，与 AgentTimeline dot 体系统一
+- **设置页 Tab 化**：左侧竖排导航，五组子 Tab（常规/云端 AI/知识库/隐私安全/关于）
+- **知识库 AI 概览面板**：本地 LLM 离线生成知识库领域分析，辅助文档管理决策
+- **模式动态 placeholder**：输入框占位文案根据当前模式和 action 自动切换（六组文案）
+
+### Changed（改进）
+
+- **品牌色统一 #1E3A5F**：Tab 激活、输入聚焦、发送按钮全部统一为品牌深蓝
+- **SVG 图标体系**：全部图标使用 SVG（锁/火/重复/图片/发送等），零 emoji
+- **知识库文档卡片**：从平铺列表改为响应式卡片网格（标题+2行预览+标签+大小/切块/词元+热力图+上传时间）
+- **知识库标签树**：父+子层级标签，点击筛选对应文档
+- **并行模式流程**：照搬现有 compare_pipeline，本地列增加 memory_local 历史注入，双线记忆独立维护
+
+### Fixed（修复）
+
+- **思考态闪屏**：移除骨架屏，气泡自带空→时间线→内容三态过渡
+- **AgentTimeline 重复渲染**：修复 `_handleAgentSummary` 后 `_agentTimelineEl=null` 导致 re-render 丢数据
+- **CSS .btn 重复定义**：合并双套 .btn 样式，消除不可预测的叠加行为
+- **Token 估算重复逻辑**：删除 `token-estimator.js` 中 `estimateTotal`，统一用 `_estimateDoc`
+
+### Removed（移除）
+
+- **骨架屏全量移除**：skeleton.js / skeleton.css 删除，AI 回复等待用气泡状态替代
+- **drift 全链路清理**（~30 文件）：drift_hint/drift_result/check_topic_drift/topic_drift 全部删除，零残留
+- **纪要模块归档**：minutes.js 归档为 `.archived`，index.html 移除对应 Tab
+- **旧模式切换**: 删除 tag-mode dropdown + modeConfirmModal 旧体系
+- **KB Tab 对话功能**（qa.js 千行削减）：删除 kbAsk/kbCompareMode/askCompare/kbStopGeneration/kbNewChat 等全部对话功能
+- _compress_cloud_history 函数
+- token-estimator estimateTotal 方法
+- 上下文清除按钮 DOM 残留
+
 ---
 
 ## [0.9.5] - 2026-06-21 — P5「稳定与整洁」
@@ -54,20 +102,19 @@
 - **KB 依赖检查瘦身**：`_check_kb_dependencies` 移除对 `rank_bm25` / `jieba` 的存在性检查
 - **`_compress_cloud_history` 函数**：无调用方，随 summarize_history 工具上线一并移除
 
-### Deprecated（标记废弃，计划 P6 移除）
+### 已在 P6 完成（原 P5 计划内容）
 
-- **drift_hint 全链路参数**：函数签名中保留参数占位但不传非空值，调用方无需改动，P6 将彻底删除
-- **`_refFilePath` 混合语义**：当前兼容保留，P6 将拆分为独立的 `doc_id` 引用与 `file_path` 本地路径
-- **13 个未使用的 Python 包**：`jieba` / `rank_bm25` / `av` / `onnxruntime` / `mdurl` / `click` 等将在 P6 从 `requirements.txt` 清理
+- ~~drift_hint 全链路参数~~（P6 已彻底删除，~30 文件）
+- ~~`_refFilePath` 混合语义~~（P6 已清理搬迁）
+- ~~13 个未使用的 Python 包~~（P6 已标记清理）
+- ~~系统诊断面板完整版~~（P6 设置页关于 Tab 已实现）
+- ~~KB Tag 智能归并 + 分组显示~~（P6 知识库 Tab 已实现）
+- ~~并行模式~~（P6 Chat Tab 第三档已上线）
 
-### 计划在 P6 / P7 完成的功能（避免误以为已在 P5 提供）
+### 计划在 P7 / P8 完成的功能
 
-- 系统诊断面板完整版（P6 跟设置页 Tab 化一起做）
-- 隐私声明完整页（P6）
-- KB Tag 智能归并 + 分组显示（P6）
-- 隐身协作模式（P6）
-- 桌伴云商业化（P6）
 - 品牌视觉精修（Logo 全套变体 / 字体内嵌 / 安装包视觉）（P7）
+- 桌伴云商业化（P8）
 
 ---
 

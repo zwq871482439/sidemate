@@ -2055,3 +2055,348 @@ async def api_kb_progress_sse(doc_id: str):
             kb.cleanup_progress_callback(doc_id)
 
     return StreamingResponse(sse_gen(), media_type="text/event-stream")
+
+
+# ============================================================
+#  标签分组（LLM 语义归并）
+# ============================================================
+
+def _collect_all_tags(kb) -> list:
+    """收集所有文档的唯一标签"""
+    tags = set()
+    for doc in kb.documents.values():
+        if getattr(doc, "tags", None):
+            for t in doc.tags:
+                t = t.strip()
+                if t:
+                    tags.add(t)
+    return sorted(tags)
+
+
+def _parse_llm_groups(raw_text: str, all_tags: list) -> list:
+    """解析 LLM 输出的分组 JSON，失败回退到「其他」分组
+
+    Args:
+        raw_text: LLM 原始输出文本
+        all_tags: 需要分组的标签列表
+
+    Returns:
+        [{"group": "组名", "members": ["标签1", "标签2"]}, ...]
+    """
+    import re as _re
+
+    text = raw_text.strip()
+
+    # 1. 尝试提取 ```json ... ``` 代码块
+    m = _re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+    if m:
+        text = m.group(1).strip()
+
+    # 2. 尝试提取第一个 [ 到最后一个 ] 之间的 JSON 数组
+    m = _re.search(r'\[[\s\S]*\]', text)
+    if m:
+        text = m.group(0)
+
+    # 3. 解析 JSON
+    try:
+        groups = json.loads(text)
+        if isinstance(groups, list):
+            return groups
+    except json.JSONDecodeError:
+        pass
+
+    # 4. 部分提取：尝试逐行匹配 {"group":... 格式
+    partial_groups = []
+    for match in _re.finditer(r'\{[^}]*"group"\s*:\s*"([^"]+)"[^}]*"members"\s*:\s*\[([^\]]*)\][^}]*\}', text):
+        group_name = match.group(1)
+        members_str = match.group(2)
+        members = [t.strip().strip('"').strip("'") for t in members_str.split(",") if t.strip()]
+        if group_name and members:
+            partial_groups.append({"group": group_name, "members": members})
+
+    if partial_groups:
+        log.warning("[KB-TAGS] JSON 完整解析失败，部分提取 %d 组", len(partial_groups))
+        return partial_groups
+
+    # 5. 完全失败 → 全部放入「其他」
+    log.warning("[KB-TAGS] 无法解析 LLM 输出，回退到「其他」分组")
+    return [{"group": "其他", "members": list(all_tags)}]
+
+
+@router.post("/api/kb/tags/group")
+async def api_kb_tags_group(request: Request):
+    """触发 LLM 语义分组（不覆盖 source:"manual" 标签）
+
+    流程:
+    1. 收集所有文档的唯一标签
+    2. 过滤掉 source:"manual" 的标签
+    3. 调用本地 LLM 分组
+    4. 保存分组到 kb_meta.json (source:"ai")
+    5. 返回分组结果
+    """
+    kb = get_kb()
+    mgr = get_mgr()
+
+    # 检查 LLM 已加载
+    loaded = mgr.get_loaded_llms()
+    if not loaded:
+        return JSONResponse(
+            {"error": "请先在「设置」页面加载模型，标签分组需要模型支持"},
+            status_code=503
+        )
+
+    # 收集所有标签
+    all_tags = _collect_all_tags(kb)
+    if not all_tags:
+        return {"groups": [], "ungrouped": []}
+
+    # 过滤掉 source:"manual" 的标签（不覆盖手动锁定的）
+    manual_tags = set()
+    for g in kb.tag_groups:
+        if g.get("source") == "manual":
+            for m in g.get("members", []):
+                manual_tags.add(m)
+
+    tags_to_group = [t for t in all_tags if t not in manual_tags]
+    if not tags_to_group:
+        # 所有标签都是 manual，直接返回现有分组
+        return _build_groups_response(kb, all_tags)
+
+    # 构建 prompt
+    tags_str = json.dumps(tags_to_group, ensure_ascii=False)
+    prompt = (
+        "将以下标签按语义归并为5-10组。每个标签必须属于一个组。"
+        "输出JSON数组: [{\"group\":\"组名\",\"members\":[\"标签1\",\"标签2\"]}]。"
+        "只输出JSON，不要任何解释。\n\n标签: " + tags_str
+    )
+
+    log.info("[KB-TAGS] 开始 LLM 分组: %d 标签（已排除 %d 个 manual）",
+             len(tags_to_group), len(manual_tags))
+
+    try:
+        from core.thread_pool import get_thread_pool
+        import asyncio
+
+        def _call_llm():
+            return mgr.chat(prompt, max_tokens=1024, _priority="LOW")
+
+        result = await asyncio.get_event_loop().run_in_executor(
+            get_thread_pool().executor, _call_llm
+        )
+
+        if "error" in result:
+            log.error("[KB-TAGS] LLM 调用失败: %s", result["error"])
+            return JSONResponse(
+                {"error": "LLM 调用失败: %s" % result["error"][:120]},
+                status_code=503
+            )
+
+        llm_output = result.get("response", "")
+        log.info("[KB-TAGS] LLM 输出: %s", llm_output[:200])
+
+    except Exception as e:
+        log.error("[KB-TAGS] LLM 调用异常: %s", str(e)[:200])
+        return JSONResponse(
+            {"error": "LLM 调用异常: %s" % str(e)[:120]},
+            status_code=503
+        )
+
+    # 解析 LLM 输出
+    groups = _parse_llm_groups(llm_output, tags_to_group)
+
+    # 合并到现有 tag_groups（保留 manual 分组）
+    # 先移除所有 source:"ai" 的分组
+    kb.tag_groups = [g for g in kb.tag_groups if g.get("source") != "ai"]
+
+    # 添加新的 ai 分组
+    for g in groups:
+        group_name = g.get("group", "未命名").strip()
+        members = g.get("members", [])
+        if not group_name or not members:
+            continue
+        # 只保留在 tags_to_group 中的标签（过滤 LLM 幻觉）
+        members = [m.strip() for m in members if m.strip() in tags_to_group]
+        if not members:
+            continue
+        kb.tag_groups.append({
+            "group": group_name,
+            "members": members,
+            "source": "ai",
+        })
+
+    # 检查未分组的标签（LLM 输出未覆盖的），放入「其他」
+    grouped_tags = set()
+    for g in kb.tag_groups:
+        for m in g.get("members", []):
+            grouped_tags.add(m)
+
+    ungrouped = [t for t in tags_to_group if t not in grouped_tags]
+    if ungrouped:
+        # 检查是否已有「其他」分组
+        other_found = False
+        for g in kb.tag_groups:
+            if g.get("group") == "其他":
+                for t in ungrouped:
+                    if t not in g["members"]:
+                        g["members"].append(t)
+                other_found = True
+                break
+        if not other_found:
+            kb.tag_groups.append({
+                "group": "其他",
+                "members": ungrouped,
+                "source": "ai",
+            })
+
+    kb._save_meta()
+    log.info("[KB-TAGS] 分组完成: %d 组, %d 标签",
+             len(kb.tag_groups), len(grouped_tags) + len(ungrouped))
+
+    return _build_groups_response(kb, all_tags)
+
+
+@router.get("/api/kb/tags/groups")
+def api_kb_tags_groups():
+    """返回当前标签分组及未分组标签"""
+    kb = get_kb()
+    all_tags = _collect_all_tags(kb)
+    return _build_groups_response(kb, all_tags)
+
+
+def _build_groups_response(kb, all_tags: list) -> dict:
+    """构建 groups API 响应"""
+    groups = []
+    grouped_tags = set()
+
+    for g in kb.tag_groups:
+        groups.append({
+            "group": g.get("group", ""),
+            "members": list(g.get("members", [])),
+            "source": g.get("source", "ai"),
+        })
+        for m in g.get("members", []):
+            grouped_tags.add(m)
+
+    ungrouped = [t for t in all_tags if t not in grouped_tags]
+    return {"groups": groups, "ungrouped": ungrouped}
+
+
+@router.post("/api/kb/tags/regroup")
+async def api_kb_tags_regroup(request: Request):
+    """强制重新分组（包含 source:"manual" 标签，诊断用）
+
+    与 /group 相同流程，但不排除 manual 标签。
+    结果仍标记为 source:"ai"。
+    """
+    kb = get_kb()
+    mgr = get_mgr()
+
+    loaded = mgr.get_loaded_llms()
+    if not loaded:
+        return JSONResponse(
+            {"error": "请先在「设置」页面加载模型"},
+            status_code=503
+        )
+
+    all_tags = _collect_all_tags(kb)
+    if not all_tags:
+        return {"groups": [], "ungrouped": []}
+
+    tags_str = json.dumps(all_tags, ensure_ascii=False)
+    prompt = (
+        "将以下标签按语义归并为5-10组。每个标签必须属于一个组。"
+        "输出JSON数组: [{\"group\":\"组名\",\"members\":[\"标签1\",\"标签2\"]}]。"
+        "只输出JSON，不要任何解释。\n\n标签: " + tags_str
+    )
+
+    log.info("[KB-TAGS] 开始强制重新分组: %d 标签", len(all_tags))
+
+    try:
+        from core.thread_pool import get_thread_pool
+        import asyncio
+
+        def _call_llm():
+            return mgr.chat(prompt, max_tokens=1024, _priority="LOW")
+
+        result = await asyncio.get_event_loop().run_in_executor(
+            get_thread_pool().executor, _call_llm
+        )
+
+        if "error" in result:
+            log.error("[KB-TAGS] LLM 调用失败: %s", result["error"])
+            return JSONResponse(
+                {"error": "LLM 调用失败: %s" % result["error"][:120]},
+                status_code=503
+            )
+
+        llm_output = result.get("response", "")
+        log.info("[KB-TAGS] LLM 输出: %s", llm_output[:200])
+
+    except Exception as e:
+        log.error("[KB-TAGS] LLM 调用异常: %s", str(e)[:200])
+        return JSONResponse(
+            {"error": "LLM 调用异常: %s" % str(e)[:120]},
+            status_code=503
+        )
+
+    groups = _parse_llm_groups(llm_output, all_tags)
+
+    # 清除所有旧分组，写入新的
+    kb.tag_groups = []
+    for g in groups:
+        group_name = g.get("group", "未命名").strip()
+        members = g.get("members", [])
+        if not group_name or not members:
+            continue
+        members = [m.strip() for m in members if m.strip() in all_tags]
+        if not members:
+            continue
+        kb.tag_groups.append({
+            "group": group_name,
+            "members": members,
+            "source": "ai",
+        })
+
+    # 未分组标签 → 「其他」
+    grouped_tags = set()
+    for g in kb.tag_groups:
+        for m in g.get("members", []):
+            grouped_tags.add(m)
+    ungrouped = [t for t in all_tags if t not in grouped_tags]
+    if ungrouped:
+        kb.tag_groups.append({
+            "group": "其他",
+            "members": ungrouped,
+            "source": "ai",
+        })
+
+    kb._save_meta()
+    log.info("[KB-TAGS] 强制重新分组完成: %d 组", len(kb.tag_groups))
+
+    return _build_groups_response(kb, all_tags)
+
+
+@router.post("/api/kb/tags/move")
+async def api_kb_tags_move(request: Request):
+    """手动将标签移动到指定分组
+
+    Body: {"tag": "中医基础", "group": "中医总论"}
+    设置 source:"manual"，后续 AI 刷新不会覆盖。
+    """
+    kb = get_kb()
+    body = await request.json()
+    tag = (body.get("tag", "") or "").strip()
+    group = (body.get("group", "") or "").strip()
+
+    if not tag:
+        return JSONResponse({"error": "tag 不能为空"}, status_code=400)
+    if not group:
+        return JSONResponse({"error": "group 不能为空"}, status_code=400)
+
+    # 验证 tag 存在于文档中
+    all_tags = _collect_all_tags(kb)
+    if tag not in all_tags:
+        return JSONResponse({"error": "标签 '%s' 不存在于文库中" % tag}, status_code=400)
+
+    kb.set_tag_group(tag, group, source="manual")
+    return _build_groups_response(kb, all_tags)
