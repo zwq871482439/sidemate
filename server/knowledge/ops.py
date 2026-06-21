@@ -194,6 +194,12 @@ class _KBOpsMixin:
                      self._reranker_mem_mb, raw_delta, rss_before, rss_after)
         return ok
 
+    @property
+    def active_vectorization_count(self) -> int:
+        """P6 修复：返回当前正在向量化的文档数（processing/indexing 状态）"""
+        return sum(1 for d in self.documents.values()
+                   if d.status in ('processing', 'indexing'))
+
     def _ensure_reranker(self) -> bool:
         """检索前调用：确保 Reranker 可用（如未加载则加载）
 
@@ -834,6 +840,9 @@ class _KBOpsMixin:
         try:
             # === 1. 分块 ===
             token.check_or_raise()
+            # P6 修复：通知前端 chunking 阶段已开始
+            self._notify_progress(doc_id, phase="chunking", progress=0.02,
+                                 chunk_total=0, chunk_done=0)
             from knowledge.chunker import chunk_text
             plan = chunk_text(
                 text,

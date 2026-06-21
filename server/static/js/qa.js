@@ -386,6 +386,8 @@ async function kbRefreshDocs() {
     kbRefreshTokens();
     // P6 B2: 每次轮询也刷新 AI 概览
     kbRefreshAIOverview();
+    // P6 修复：同步队列条目和文档 tag_status
+    _kbSyncQueueWithDocs(docs);
   } catch (err) {
     silentLog('[KB] 刷新文档列表失败:', err);
   }
@@ -769,6 +771,33 @@ function _kbRemoveFromQueue(docId) {
   _kbRenderQueue();
 }
 
+/** P6 修复：根据文档 tag_status 同步队列条目（捕获 LLM 阶段） */
+function _kbSyncQueueWithDocs(docs) {
+  var changed = false;
+  for (var i = 0; i < docs.length; i++) {
+    var d = docs[i];
+    if (d.status !== 'ready') continue;
+    for (var j = 0; j < _kbQueueItems.length; j++) {
+      var item = _kbQueueItems[j];
+      if (item.docId !== d.doc_id) continue;
+      if (item.conflict) continue;  // skip conflict items
+
+      if (d.tag_status === 'pending' && item.phase !== 'tag_pending') {
+        item.phase = 'tag_pending';
+        changed = true;
+      } else if (d.tag_status === 'generating' && item.phase !== 'tag_generating') {
+        item.phase = 'tag_generating';
+        changed = true;
+      } else if (d.tag_status === 'done' || d.tag_status === 'failed') {
+        _kbQueueItems = _kbQueueItems.filter(function(it) { return it.docId !== d.doc_id; });
+        changed = true;
+      }
+      break;
+    }
+  }
+  if (changed) _kbRenderQueue();
+}
+
 /** 解决重复冲突 */
 function kbResolveConflict(docId, action) {
   var apiBase = (typeof API !== 'undefined') ? API : '';
@@ -826,7 +855,7 @@ function _kbRenderQueue() {
       continue;
     }
 
-    // Fix 2: only keep chunking, embedding, queued phases
+    // Fix 2: only keep chunking, embedding, queued, tag phases
     var phaseLabel;
     if (item.phase === 'chunking') {
       phaseLabel = '切块 (' + item.pct + '%)';
@@ -834,6 +863,10 @@ function _kbRenderQueue() {
       phaseLabel = '向量 (' + item.pct + '%)';
     } else if (item.phase === 'queued') {
       phaseLabel = '排队中';
+    } else if (item.phase === 'tag_pending') {
+      phaseLabel = '排队等待 AI 摘要';
+    } else if (item.phase === 'tag_generating') {
+      phaseLabel = 'AI 摘要生成中';
     } else {
       continue; // skip unknown/completed phases, don't show
     }

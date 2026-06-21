@@ -855,14 +855,17 @@ async def api_kb_upload(file: UploadFile = File(...)):
                     if doc:
                         doc.tag_status = "pending"
                         kb._save_meta()
-                        # 通知 scheduler 有新 ready 文档（让它的 watcher 自动入队）
+                        # P6 修复：等所有同批上传文档都完成向量化后才通知 scheduler
+                        # 避免 LLM tagging 和 vectorization 抢 GPU
+                        import time as _time
+                        _wait_count = 0
+                        while kb.active_vectorization_count > 1 and _wait_count < 600:
+                            _time.sleep(1)
+                            _wait_count += 1
                         if hasattr(scheduler, 'notify_doc_ready'):
                             scheduler.notify_doc_ready(doc_id)
-                            # GPU gating: check batch_queue is connected
-                            if hasattr(scheduler, '_batch_queue') and scheduler._batch_queue is not None:
-                                log.info("[KB] TaggingScheduler batch_queue connected: batch_idle=%s", scheduler._is_batch_idle())
-                            else:
-                                log.warning("[KB] TaggingScheduler batch_queue NOT connected — LLM may run during vectorization!")
+                            log.info("[KB] doc_id=%s vectorization batch done (waited %ds), notified scheduler",
+                                     doc_id, _wait_count)
                 except Exception as _e:
                     log.warning("[KB] 标记 tag_status=pending 失败: %s", str(_e)[:80])
             else:
