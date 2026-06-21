@@ -1017,6 +1017,40 @@ func main() {
 		return false
 	}
 
+	// waitForReadyWithProgress 轮询 /api/status 的 ready 字段
+	// 返回 (ready, loadError)：ready=true 表示后台加载流程已结束（无论成败）
+	// 每 500ms 轮询一次，超时后返回 (false, "")
+	waitForReadyWithProgress := func(host string, port int, timeout time.Duration) (bool, string) {
+		url := fmt.Sprintf("http://%s:%d/api/status", host, port)
+		deadline := time.Now().Add(timeout)
+
+		for time.Now().Before(deadline) {
+			SplashPumpMessages()
+			resp, err := http.Get(url)
+			if err == nil && resp.StatusCode == 200 {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+				resp.Body.Close()
+
+				// 解析 JSON，检查 ready 字段
+				var status struct {
+					Ready     bool   `json:"ready"`
+					LoadError string `json:"load_error"`
+					BgPhase   string `json:"bg_phase"`
+				}
+				if json.Unmarshal(body, &status) == nil {
+					if status.Ready {
+						return true, status.LoadError
+					}
+				}
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		return false, "" // 超时
+	}
+
 	for retry := 0; retry < 3; retry++ {
 		SplashPumpMessages()
 		if waitForServerWithProgress("127.0.0.1", cfg.ServerPort, 60*time.Second) {
@@ -1070,16 +1104,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ===== Patch5 新方案：段 2 + 段 3 =====
-	// HTTP 就绪意味着 _lifespan 已完成所有初始化（KB/纪要/Ollama/预热）
-	// 不再需要轮询 startup_progress.json
+	// ===== Patch5 启动重构：段 2 + 段 3 =====
+	// 段2：真轮询 /api/status.ready（后台线程正在加载模型引擎）
 
-	// ---- 段 2：正在加载模型引擎（至少 3s）----
-	// 注：实际上 _lifespan 已经在 HTTP 监听前做完了这些
-	// 但用户视觉上需要看到这个阶段（3s 最低停留）
+	// ---- 段 2：正在加载模型引擎（真轮询 /api/status.ready，至少 3s，最多 60s）----
 	SetSplashSegment(splash, 2, 1)
 	SetSplashSegmentText(splash, "正在加载模型引擎")
 	stageStart = time.Now()
+
+	// 真轮询后台加载状态（60s 超时）
+	ready, loadError := waitForReadyWithProgress("127.0.0.1", cfg.ServerPort, 60*time.Second)
+	if ready {
+		elapsed := time.Since(stageStart).Seconds()
+		log.Printf("[Launcher] ✅ 模型引擎就绪 (%.1fs)", elapsed)
+		if loadError != "" {
+			log.Printf("[Launcher] ⚠ 模型引擎加载有错误（不阻塞）: %s", loadError)
+		}
+	} else {
+		log.Println("[Launcher] ⚠ 段2 超时(60s)，强制推进")
+	}
+	// 确保至少 3s 最低停留
 	stageMinDelay(stageStart, 3*time.Second)
 	SetSplashSegment(splash, 2, 2) // 模型引擎段变绿
 

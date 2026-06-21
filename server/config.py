@@ -104,6 +104,7 @@ DEFAULTS = {
     "ollama_port": 11434,                # Ollama 服务端口
     "ollama_model": "qwen3-5-4b",       # 默认模型（Ollama 模型名不允许 "."，用 "-" 替代）
     "ollama_auto_start": True,           # 是否自动启动 Ollama 进程
+    "auto_warmup_llm": True,             # 启动时是否自动加载（预热）LLM 模型
     "ollama_health_interval": 30,        # 健康检查间隔（秒）
     "ollama_connect_timeout": 30,        # 连接超时（秒）
     "ollama_read_timeout": 120,          # 读取超时（秒）

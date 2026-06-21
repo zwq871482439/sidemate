@@ -31,7 +31,7 @@ _os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 _os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 _os.environ.setdefault("TQDM_DISABLE", "1")  # 禁用 sentence_transformers tqdm 进度条
 
-import os, sys, time, logging, json, warnings
+import os, sys, time, logging, json, warnings, threading as _threading
 
 # ===== Embedded Python 兼容：确保 server 目录在 sys.path 中 =====
 _server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -177,142 +177,240 @@ ollama_manager = OllamaManager()
 
 _lifespan_entered = False
 
+# ===== Patch5 启动重构：后台初始化状态机（线程安全）=====
+# _lifespan yield 后由后台线程执行重活（auto_start + warmup + KB + Schedulers + BatchQueue）
+# /api/status 读取此状态机，Go Launcher 段2 轮询 ready 字段判断是否推进
+_bg_init_state = {
+    "ready": False,        # false=后台加载进行中；true=加载流程已结束（无论成败）
+    "load_error": None,    # null=无错误；非空字符串=累积的失败原因
+    "bg_phase": "pending", # pending→ollama→warmup→kb→schedulers→done
+}
+_bg_init_lock = _threading.Lock()
+_bg_init_thread = None
+
+
+def _set_bg_phase(phase: str):
+    """更新后台初始化阶段（线程安全）"""
+    with _bg_init_lock:
+        _bg_init_state["bg_phase"] = phase
+    log.info("[STARTUP] 后台阶段: %s" % phase)
+
+
+def _set_bg_ready(error: str = None):
+    """标记后台初始化完成（线程安全）。
+
+    error 非空时累积到 load_error（不覆盖已有错误）。
+    无论成败，ready 最终一定变 True。
+    """
+    with _bg_init_lock:
+        _bg_init_state["ready"] = True
+        if error:
+            existing = _bg_init_state.get("load_error")
+            _bg_init_state["load_error"] = (existing + "; " + error) if existing else error
+    log.info("[STARTUP] 后台初始化完成 (ready=true, error=%s)" % (_bg_init_state.get("load_error")))
+
+
+def _add_bg_error(error: str):
+    """累积后台初始化错误（不结束流程，继续后续步骤）"""
+    with _bg_init_lock:
+        existing = _bg_init_state.get("load_error")
+        _bg_init_state["load_error"] = (existing + "; " + error) if existing else error
+    log.warning("[STARTUP] 后台初始化错误（不阻塞）: %s" % error)
+
+
+def _bg_init_worker():
+    """后台初始化线程：在 HTTP 监听后执行所有重活。
+
+    每个步骤独立 try/except，失败只 _add_bg_error 不中断。
+    最外层 finally 保证 ready 最终置 True。
+    """
+    try:
+        # ---- 步骤1：Ollama 检查（幂等：Go 已起则秒返回）----
+        _set_bg_phase("ollama")
+        if _cfg_get("ollama_auto_start", True):
+            try:
+                _report_startup("ollama_start", 70, "启动 Ollama 推理引擎...")
+                result = ollama_manager.auto_start()
+                if result.get("status") in ("started", "already_running"):
+                    log.info("[BG-INIT] Ollama 就绪: %s" % result.get("status"))
+                else:
+                    _add_bg_error("Ollama 启动失败: %s" % result.get("error", "unknown"))
+            except Exception as e:
+                _add_bg_error("Ollama 异常: %s" % str(e)[:100])
+        else:
+            log.info("[BG-INIT] ollama_auto_start=False，跳过 Ollama 启动")
+
+        # ---- 步骤2：LLM 预热（受 auto_warmup_llm 控制）----
+        _set_bg_phase("warmup")
+        if _cfg_get("auto_warmup_llm", True):
+            _warmup_model = mgr._get_default_llm()
+            if _warmup_model:
+                try:
+                    _report_startup("model_warmup", 72, "预热 AI 模型...")
+                    import httpx as _hx
+                    _base_url = mgr._ollama_base_url
+                    _keep_alive = _cfg_get("ollama_keep_alive", "24h")
+                    _warmup_payload = {
+                        "model": _warmup_model,
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "stream": False,
+                        "options": {"num_predict": 1},
+                        "keep_alive": _keep_alive,
+                    }
+                    log.info("[BG-INIT] 预热模型 %s ..." % _warmup_model)
+                    _t0 = time.time()
+                    _resp = _hx.post(
+                        "%s/api/chat" % _base_url,
+                        json=_warmup_payload,
+                        timeout=_hx.Timeout(connect=30, read=120, write=30, pool=30),
+                    )
+                    _elapsed = time.time() - _t0
+                    if _resp.status_code == 200:
+                        log.info("[BG-INIT] 模型预热完成 (%.1fs)，模型已常驻显存" % _elapsed)
+                        # 标记为已加载，后续首次提问无需再检查
+                        _matched = mgr._find_model_name(_warmup_model)
+                        if _matched and _matched not in mgr._loaded:
+                            mgr._loaded[_matched] = True
+                    else:
+                        _add_bg_error("模型预热请求失败: HTTP %d" % _resp.status_code)
+                except Exception as e:
+                    _add_bg_error("模型预热失败: %s" % str(e)[:120])
+            else:
+                log.info("[BG-INIT] 无可用 LLM 模型，跳过预热")
+        else:
+            log.info("[BG-INIT] auto_warmup_llm=False，跳过 LLM 预热")
+
+        # ---- 步骤3：KB 模型加载（看是否安装，不受 auto_warmup_llm 控制）----
+        _set_bg_phase("kb")
+        try:
+            if _kb_installed and not kb._embedder_loaded:
+                log.info("[BG-INIT] KB 扩展已安装，加载模型...")
+                kb.load_models()
+                log.info("[BG-INIT] KB 模型加载完成: embedder=%s, reranker=%s",
+                         kb._embedder_loaded, kb.reranker.available)
+        except Exception as e:
+            _add_bg_error("KB 加载失败: %s" % str(e)[:100])
+
+        # ---- 步骤4：Schedulers + BatchQueue ----
+        _set_bg_phase("schedulers")
+
+        # LLMScheduler
+        try:
+            global _llm_scheduler
+            from core.llm_scheduler import LLMScheduler
+            _llm_scheduler = LLMScheduler()
+            log.info("[BG-INIT] LLMScheduler 已初始化")
+        except Exception as e:
+            _add_bg_error("LLMScheduler 失败: %s" % str(e)[:100])
+
+        # TaggingScheduler（仅 KB 已安装时启动）
+        if _kb_installed:
+            try:
+                global _tagging_scheduler
+                from core.tagging_scheduler import TaggingScheduler
+                _tagging_scheduler = TaggingScheduler(kb, mgr)
+                _tagging_scheduler.start()
+                log.info("[BG-INIT] TaggingScheduler 已启动")
+                # 把 scheduler 引用存到 kb 上，避免 upload 线程内 import server 拿不到
+                kb._tagging_scheduler = _tagging_scheduler
+                # Patch5 G：不立即入队 pending 文档，登记到 pending_ready 等 batch 空闲
+                pending_count = 0
+                for doc in kb.documents.values():
+                    if doc.status == 'ready' and getattr(doc, 'tag_status', 'pending') in ('pending', 'generating'):
+                        doc.tag_status = 'pending'
+                        _tagging_scheduler.notify_doc_ready(doc.doc_id)
+                        pending_count += 1
+                if pending_count > 0:
+                    log.info("[BG-INIT] %d 篇 pending 文档已登记，等 batch 空闲后入队打标" % pending_count)
+            except Exception as e:
+                _add_bg_error("TaggingScheduler 失败: %s" % str(e)[:100])
+
+            # BatchQueue
+            try:
+                global _batch_queue
+                from core.batch_queue import BatchQueue
+                _bq_db_path = _cfg_get("batch_queue_db_path", "") or None
+                _batch_queue = BatchQueue(db_path=_bq_db_path, data_dir=DATA_DIR)
+                recovered = _batch_queue.recover_pending()
+                if recovered > 0:
+                    log.info("[BG-INIT] BatchQueue 断点恢复: %d 个任务从 processing→pending" % recovered)
+                _batch_queue.start_worker(kb)
+                log.info("[BG-INIT] BatchQueue worker 已启动")
+                # Patch5 G：把 batch_queue 引用注入 TaggingScheduler，启用 gating
+                if _tagging_scheduler and hasattr(_tagging_scheduler, 'set_batch_queue'):
+                    _tagging_scheduler.set_batch_queue(_batch_queue)
+                    log.info("[BG-INIT] TaggingScheduler 已注入 batch_queue")
+            except Exception as e:
+                _add_bg_error("BatchQueue 失败: %s" % str(e)[:120])
+
+    except Exception as e:
+        _add_bg_error("后台初始化未捕获异常: %s" % str(e)[:200])
+    finally:
+        _set_bg_ready()
+        _report_startup("ready", 85, "后台初始化完成")
+
+
 @asynccontextmanager
 async def _lifespan(app):
-    """应用生命周期：启动时自动拉起 Ollama"""
-    global _lifespan_entered
+    """应用生命周期（Patch5 启动重构版）。
+
+    轻量模式：yield 前只做线程池初始化（秒级），重活移入后台线程。
+    HTTP 监听在 yield 后立即开始，段1 秒级就绪。
+    重活（Ollama/warmup/KB/Schedulers/BatchQueue）由 _bg_init_worker 后台执行。
+    """
+    global _lifespan_entered, _bg_init_thread
     if _lifespan_entered:
         log.info("[STARTUP] lifespan 重入，跳过（uvicorn reload）")
         yield
         return
     _lifespan_entered = True
 
-    # Patch5 启动重构：所有进度上报集中在此（顶层不再写进度文件）
-    _report_startup("lifespan_start", 30, "初始化服务实例...")
-    log.info("[STARTUP] _lifespan 开始（进度上报统一入口）")
+    log.info("[STARTUP] _lifespan 开始（轻量模式，重活移入后台线程）")
 
-    # ===== Patch5 T01: 初始化全局线程池 =====
+    # ===== 轻量初始化：全局线程池（秒级，保留在同步路径）=====
     try:
-        from core.thread_pool import init_thread_pool, shutdown_thread_pool
+        from core.thread_pool import init_thread_pool
         init_thread_pool()
         log.info("[STARTUP] 全局线程池已初始化")
     except Exception as e:
         log.warning("[STARTUP] 线程池初始化失败: %s" % str(e)[:100])
 
-    if _cfg_get("ollama_auto_start", True):
-        _report_startup("ollama_start", 70, "启动 Ollama 推理引擎...")
-        log.info("[STARTUP] 自动启动 Ollama...")
-        result = ollama_manager.auto_start()
-        if result.get("status") in ("started", "already_running"):
-            log.info("[STARTUP] Ollama 就绪: %s" % result.get("status"))
-        else:
-            log.warning("[STARTUP] Ollama 启动失败: %s" % result.get("error", "unknown"))
+    # ===== 启动后台初始化线程（所有重活）=====
+    _set_bg_phase("pending")
+    _bg_init_thread = _threading.Thread(target=_bg_init_worker, daemon=True)
+    _bg_init_thread.start()
+    log.info("[STARTUP] 后台初始化线程已启动")
 
-        # 模型预热：发一次极短请求，把 GGUF 加载到显存/内存，消除首次提问延迟
-        # Patch5 启动重构：仅当有可用 LLM 模型时才预热
-        _warmup_model = mgr._get_default_llm()
-        if _warmup_model:
-            _report_startup("model_warmup", 72, "预热 AI 模型...")
-            try:
-                import httpx as _hx
-                _base_url = mgr._ollama_base_url
-                _keep_alive = _cfg_get("ollama_keep_alive", "24h")
-                _warmup_payload = {
-                    "model": _warmup_model,
-                    "messages": [{"role": "user", "content": "hi"}],
-                    "stream": False,
-                    "options": {"num_predict": 1},
-                    "keep_alive": _keep_alive,
-                }
-                log.info("[STARTUP] 预热模型 %s ..." % _warmup_model)
-                _t0 = time.time()
-                _resp = _hx.post(
-                    "%s/api/chat" % _base_url,
-                    json=_warmup_payload,
-                    timeout=_hx.Timeout(connect=30, read=120, write=30, pool=30),
-                )
-                _elapsed = time.time() - _t0
-                if _resp.status_code == 200:
-                    log.info("[STARTUP] 模型预热完成 (%.1fs)，模型已常驻显存" % _elapsed)
-                    # 标记为已加载，后续首次提问无需再检查
-                    _matched = mgr._find_model_name(_warmup_model)
-                    if _matched and _matched not in mgr._loaded:
-                        mgr._loaded[_matched] = True
-                else:
-                    log.warning("[STARTUP] 模型预热请求失败: HTTP %d（不影响正常使用）" % _resp.status_code)
-            except Exception as _e:
-                log.warning("[STARTUP] 模型预热失败（不影响正常使用）: %s" % str(_e)[:120])
-            _report_startup("warmup_done", 80, "模型预热完成")
-        else:
-            log.info("[STARTUP] 无可用 LLM 模型，跳过预热")
-            _report_startup("warmup_skipped", 80, "无可用模型，跳过预热")
+    _report_startup("ready", 85, "HTTP 已就绪，后台加载中...")
 
-    # Patch3: KB 自动初始化 — 检测扩展安装状态，若已安装则加载模型
-    try:
-        if _kb_installed and not kb._embedder_loaded:
-            log.info("[STARTUP] KB 扩展已安装，自动加载模型...")
-            kb.load_models()
-            log.info("[STARTUP] KB 模型加载完成: embedder=%s, reranker=%s",
-                     kb._embedder_loaded, kb.reranker.available)
-    except Exception as e:
-        log.warning("[STARTUP] KB 自动加载失败（可手动重试）: %s" % str(e)[:100])
+    yield  # ← HTTP 立即监听，段1 秒级就绪
 
-    # Patch3: LLMScheduler 初始化
-    global _llm_scheduler
-    try:
-        from core.llm_scheduler import LLMScheduler
-        _llm_scheduler = LLMScheduler()
-        log.info("[STARTUP] LLMScheduler 已初始化")
-    except Exception as e:
-        log.warning("[STARTUP] LLMScheduler 初始化失败: %s" % str(e)[:100])
-
-    # Patch3: TaggingScheduler 启动
-    global _tagging_scheduler
-    if _kb_installed:
+    # ===== shutdown 逻辑（保持不变）=====
+    if _batch_queue is not None:
         try:
-            from core.tagging_scheduler import TaggingScheduler
-            _tagging_scheduler = TaggingScheduler(kb, mgr)
-            _tagging_scheduler.start()
-            log.info("[STARTUP] TaggingScheduler 已启动")
-            # 把 scheduler 引用存到 kb 上，避免 upload 线程内 import server 拿不到
-            kb._tagging_scheduler = _tagging_scheduler
-            # Patch5 G：不立即入队 pending 文档，登记到 pending_ready 等 batch 空闲
-            pending_count = 0
-            for doc in kb.documents.values():
-                if doc.status == 'ready' and getattr(doc, 'tag_status', 'pending') in ('pending', 'generating'):
-                    doc.tag_status = 'pending'
-                    _tagging_scheduler.notify_doc_ready(doc.doc_id)
-                    pending_count += 1
-            if pending_count > 0:
-                log.info("[STARTUP] %d 篇 pending 文档已登记，等 batch 空闲后入队打标" % pending_count)
+            _batch_queue.stop_worker()
+            _batch_queue.close()  # P5 审计修复：关闭 SQLite 连接 + WAL checkpoint
+            log.info("[SHUTDOWN] BatchQueue worker 已停止")
         except Exception as e:
-            log.warning("[STARTUP] TaggingScheduler 启动失败: %s" % str(e)[:100])
-
-    _report_startup("ready", 85, "服务就绪，等待 HTTP...")
-    log.info("[STARTUP] 所有 Router 已注册，服务就绪")
-
-    # ===== Patch5 T02: BatchQueue 初始化 + 断点恢复 + 启动 worker =====
-    global _batch_queue
-    if _kb_installed:
+            log.warning("[SHUTDOWN] BatchQueue 停止失败: %s" % str(e)[:80])
+    # 关闭时停止 TaggingScheduler
+    if _tagging_scheduler:
         try:
-            from core.batch_queue import BatchQueue
-            _bq_db_path = _cfg_get("batch_queue_db_path", "") or None
-            _batch_queue = BatchQueue(db_path=_bq_db_path, data_dir=DATA_DIR)
-            # 断点恢复：processing → pending
-            recovered = _batch_queue.recover_pending()
-            if recovered > 0:
-                log.info("[STARTUP] BatchQueue 断点恢复: %d 个任务从 processing→pending" % recovered)
-            # 启动 worker（消费队列）
-            _batch_queue.start_worker(kb)
-            log.info("[STARTUP] BatchQueue worker 已启动")
-            # Patch5 G：把 batch_queue 引用注入 TaggingScheduler，启用 gating
-            if _tagging_scheduler and hasattr(_tagging_scheduler, 'set_batch_queue'):
-                _tagging_scheduler.set_batch_queue(_batch_queue)
-                log.info("[STARTUP] TaggingScheduler 已注入 batch_queue")
+            _tagging_scheduler.stop()
         except Exception as e:
-            log.warning("[STARTUP] BatchQueue 初始化失败: %s" % str(e)[:120])
-
-    yield
+            log.warning("[SHUTDOWN] TaggingScheduler 停止失败: %s" % str(e)[:80])
+    # 关闭时停止 Ollama
+    try:
+        ollama_manager.stop()
+    except Exception as e:
+        log.warning("[SHUTDOWN] Ollama 停止失败: %s" % str(e)[:80])
+    # ===== Patch5 T01: 关闭全局线程池 =====
+    try:
+        from core.thread_pool import shutdown_thread_pool
+        shutdown_thread_pool(wait=False)
+        log.info("[SHUTDOWN] 全局线程池已关闭")
+    except Exception as e:
+        log.warning("[SHUTDOWN] 线程池关闭失败: %s" % str(e)[:80])
     # ===== Patch5: 关闭 BatchQueue worker =====
     if _batch_queue is not None:
         try:
@@ -497,7 +595,6 @@ cleanup_cache(DOCS_DIR, max_age_days=7)
 cleanup_cache(CACHE_DIR, max_age_days=7)
 
 # ===== 日志定期清理 =====
-import threading as _threading
 
 def _log_cleanup_worker():
     """daemon 线程：每 24 小时执行一次日志清理"""

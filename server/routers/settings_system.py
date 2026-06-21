@@ -132,13 +132,27 @@ def api_info():
 
 @router.get("/api/status")
 def api_status():
-    """模型状态"""
+    """模型状态 + 后台初始化状态"""
     from server import VERSION, VERSION_PATCH, FULL_VERSION
     mgr = get_mgr()
     s = mgr.status()
     result = {"version": FULL_VERSION}
     for name, info in s.items():
         result[name] = info
+
+    # 【Patch5 启动重构】后台初始化状态机（Go Launcher 段2 轮询依据）
+    try:
+        import server as _svr
+        with _svr._bg_init_lock:
+            result["ready"] = _svr._bg_init_state["ready"]
+            result["load_error"] = _svr._bg_init_state["load_error"]
+            result["bg_phase"] = _svr._bg_init_state["bg_phase"]
+    except Exception:
+        # fallback：读取失败时默认 ready（不应发生）
+        result["ready"] = True
+        result["load_error"] = None
+        result["bg_phase"] = "unknown"
+
     return result
 
 
