@@ -1383,11 +1383,110 @@ async function exportDiagnostics() {
   }
 }
 
+// ===== P6: 设置页 Tab 切换 =====
+function switchSettingsTab(tabId, navEl) {
+  // 更新导航选中状态
+  var navItems = document.querySelectorAll('#settingsNav .settings-nav-item');
+  for (var i = 0; i < navItems.length; i++) {
+    navItems[i].classList.remove('sel');
+  }
+  if (navEl) navEl.classList.add('sel');
+
+  // 切换内容面板
+  var stabs = document.querySelectorAll('#settingsContent .settings-stab');
+  for (var j = 0; j < stabs.length; j++) {
+    stabs[j].style.display = 'none';
+  }
+  var target = document.getElementById('stab-' + tabId);
+  if (target) target.style.display = 'block';
+
+  // Tab 特定初始化
+  if (tabId === 'knowledge') {
+    // 加载知识库统计
+    if (typeof kbRefreshDocs === 'function') kbRefreshDocs();
+    if (typeof loadPermissionTools === 'function') loadPermissionTools();
+  } else if (tabId === 'about') {
+    refreshAboutDiagnostics();
+  } else if (tabId === 'privacy') {
+    refreshPrivacyInfo();
+  } else if (tabId === 'cloud') {
+    if (typeof loadCloudConfig === 'function') loadCloudConfig();
+  }
+}
+
+// ===== P6: 关于 Tab — 系统诊断 =====
+async function refreshAboutDiagnostics() {
+  try {
+    var resp = await fetch(_apiBase + '/api/system/info');
+    var data = await resp.json();
+
+    var vEl = document.getElementById('versionDisplay');
+    if (vEl) vEl.textContent = data.version ? ('v' + data.version) : (window.APP_VERSION ? ('v' + window.APP_VERSION) : '');
+
+    var pyEl = document.getElementById('diagPython');
+    if (pyEl) pyEl.textContent = data.python || '--';
+
+    var olEl = document.getElementById('diagOllama');
+    if (olEl) {
+      var olStatus = data.ollama_status === 'running' ? '运行中' : '未运行';
+      olEl.textContent = olStatus + '（' + (data.ollama_version || '-') + '）';
+    }
+
+    var gpuEl = document.getElementById('diagGpu');
+    if (gpuEl) gpuEl.textContent = data.gpu_info || '无 GPU 信息';
+
+    var diskEl = document.getElementById('diagDisk');
+    if (diskEl) diskEl.textContent = data.disk_info || '--';
+
+    var modeEl = document.getElementById('diagMode');
+    if (modeEl) {
+      var modeMap = {local: '本地 AI', cloud: '云端 AI', parallel: '并行模式'};
+      modeEl.textContent = modeMap[data.mode] || data.mode || '--';
+    }
+  } catch (e) {
+    var els = ['diagPython', 'diagOllama', 'diagGpu', 'diagDisk', 'diagMode'];
+    for (var i = 0; i < els.length; i++) {
+      var el = document.getElementById(els[i]);
+      if (el) el.textContent = '加载失败';
+    }
+  }
+}
+
+// ===== P6: 隐私 Tab — 数据存储信息 =====
+async function refreshPrivacyInfo() {
+  try {
+    var resp = await fetch(_apiBase + '/api/system/info');
+    var data = await resp.json();
+
+    var dirEl = document.getElementById('privacyDataDir');
+    if (dirEl && data.data_dir) dirEl.textContent = data.data_dir;
+
+    var diskEl = document.getElementById('privacyDiskUsage');
+    if (diskEl && data.data_dir) {
+      diskEl.textContent = '计算中...';
+      // 尝试获取磁盘占用
+      try {
+        var diskResp = await fetch(_apiBase + '/api/resource-info');
+        var diskData = await diskResp.json();
+        if (diskData && diskData.system) {
+          diskEl.textContent = fmtMB(diskData.system.used_mb);
+        }
+      } catch (e) { diskEl.textContent = '--'; }
+    }
+  } catch (e) {
+    // 静默失败
+  }
+}
+
 // ===== 暴露到全局 =====
 // P6: 模式选择器
 window.initModeSelector = initModeSelector;
 window.selectMode = selectMode;
 window._executeModeSwitch = _executeModeSwitch;
+// P6: 设置页 Tab 切换
+window.switchSettingsTab = switchSettingsTab;
+window.refreshAboutDiagnostics = refreshAboutDiagnostics;
+window.refreshPrivacyInfo = refreshPrivacyInfo;
 // 模型管理
 window.refreshResourcePanel = refreshResourcePanel;
 window.refreshStatus = refreshStatus;

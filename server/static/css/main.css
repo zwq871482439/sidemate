@@ -1585,3 +1585,12 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 [data-theme="dark"] .hm-dot.warm{background:#fbbf24}
 [data-theme="dark"] .hm-dot.hot{background:#f87171}
 
+/* P6: 设置页辅助样式（settings.js 引用） */
+.model-info-row{display:flex;align-items:center;justify-content:space-between;gap:12px;white-space:nowrap;overflow:hidden}
+.model-info-left{display:flex;align-items:center;gap:8px;overflow:hidden;flex-shrink:1}
+.model-info-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.policy-option{display:block;margin-bottom:4px;font-size:.85em;cursor:pointer;padding:6px 8px;border-radius:4px}
+.policy-option:hover{background:var(--bg-secondary)}
+.policy-option input[type="radio"]{margin-right:6px}
+.warmup-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border-color);border-top-color:var(--accent-color);border-radius:50%;animation:spin .8s linear infinite}
+

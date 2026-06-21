@@ -260,6 +260,17 @@
 
         <!-- 主内容区 -->
         <div class="kb-main-body" id="kbMainBody">
+          <!-- Patch5 B1: 批量操作工具栏 -->
+          <div id="kbBatchToolbar" class="kb-batch-toolbar" style="display:none">
+            <span style="font-size:.78em;color:var(--text-secondary)">已选 <b id="kbBatchCount">0</b> 个</span>
+            <button class="kb-batch-btn" onclick="kbBatchDelete()" title="批量删除" style="color:var(--error-color)">删除</button>
+            <button class="kb-batch-btn" onclick="kbBatchRetag()" title="批量重标">重标</button>
+            <button class="kb-batch-btn" onclick="kbBatchPrivacy(true)" title="批量设为私密">私密</button>
+            <button class="kb-batch-btn" onclick="kbBatchPrivacy(false)" title="批量取消私密">公开</button>
+            <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbSelectInvert()">反选</button>
+            <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbClearSelection()">清除</button>
+          </div>
+
           <!-- AI 知识库概览面板 -->
           <div class="kb-summary" id="kbAIOverview">
             <div class="s-hdr">
@@ -903,7 +914,7 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   localStorage.setItem('_activeTab', name);  // 记住当前 Tab
-  if (name === 'settings') { refreshStatus(); loadRecorderResident(); loadAutoWarmupSetting(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); }
+  if (name === 'settings') { refreshStatus(); loadRecorderResident(); loadAutoWarmupSetting(); refreshResourcePanel(); refreshCapabilities(); loadCloudConfig(); loadPermissionTools(); switchSettingsTab('general'); }
   if (name === 'qa') kbRouteState();  // Patch 7: 三级状态路由（安装/激活/就绪）
   // P6: minutes tab 已移除
   if (name === 'chat') updateChatOverlay();  // 切换到对话 Tab 时同步模型锁状态
