@@ -249,6 +249,11 @@ function showModeConfirmModal(mode, callback) {
     ? '<div class="modal-confirm-risk"><span><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1L1 12h12L7 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 5v3M7 10v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span>' + cfg.risk + '</span></div>'
     : '';
 
+  // P6 审计修复：新增「下次不再提示」checkbox
+  var dontShowHtml = '<label class="modal-dont-show" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);margin-top:8px;cursor:pointer">' +
+    '<input type="checkbox" id="modalDontShow" style="margin:0"> 下次不再提示' +
+    '</label>';
+
   var backdrop = document.createElement('div');
   backdrop.className = 'modal-back show';
   backdrop.innerHTML =
@@ -257,6 +262,7 @@ function showModeConfirmModal(mode, callback) {
     '<div class="modal-confirm-desc">' + cfg.desc + '</div>' +
     '<div class="modal-confirm-features">' + featHtml + '</div>' +
     riskHtml +
+    dontShowHtml +
     '<div class="modal-confirm-acts">' +
     '<button class="cancel-btn">取消</button>' +
     '<button class="confirm-btn">确认切换</button>' +
@@ -281,8 +287,11 @@ function showModeConfirmModal(mode, callback) {
   var confirmBtn = backdrop.querySelector('.confirm-btn');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', function() {
+      // P6 审计修复：读取「下次不再提示」状态
+      var dontShowCheckbox = backdrop.querySelector('#modalDontShow');
+      var dontShowAgain = dontShowCheckbox ? !!dontShowCheckbox.checked : false;
       backdrop.remove();
-      if (callback) callback(true);
+      if (callback) callback(true, dontShowAgain);
     });
   }
 

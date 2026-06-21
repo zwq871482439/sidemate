@@ -72,25 +72,64 @@ async function updateChatOverlay() {
   var lock = document.getElementById('chatOverlayLock');
   if (!overlay) return;
   try {
+    var curMode = (typeof _currentMode !== 'undefined') ? _currentMode : 'local';
+
+    // P6 审计修复：恢复模式相关的空状态检测
+    // 云端/并行模式：检查 API 是否配置
+    if (curMode === 'cloud' || curMode === 'parallel') {
+      var cloudConfigured = (typeof _cloudConfigured !== 'undefined') ? _cloudConfigured : false;
+      if (!cloudConfigured) {
+        // 未配置云端 API → 显示配置提示卡片
+        if (lock) lock.style.display = 'none';
+        overlay.style.display = '';
+        overlay.innerHTML =
+          '<div class="overlay-card" style="margin:auto;max-width:340px;padding:24px;text-align:center">' +
+            '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('cloud', '32') + '</div>' +
+            '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">' +
+              (curMode === 'parallel' ? '并行模式需要云端 API' : '在线模式需要云端 API') +
+            '</div>' +
+            '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
+              '请先在设置页配置云端 AI 模型的 API 地址和密钥' +
+            '</div>' +
+            '<button class="btn btn-primary" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'cloud\',document.querySelector(\'.settings-nav-item[data-stab=cloud]\'))},100);" style="padding:6px 16px">' +
+              '前往设置' +
+            '</button>' +
+          '</div>';
+        return;
+      }
+      // 已配置 → 隐藏遮罩
+      overlay.style.display = 'none';
+      if (lock) lock.style.display = 'none';
+      return;
+    }
+
+    // 离线模式：检查 LLM 是否预热
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/models');
     var data = await resp.json();
     var current = data.current;
     var hasLoadedModel = !!current;
 
-    // 云端模式下不显示本地模型遮罩
-    if (typeof _currentMode !== 'undefined' && _currentMode === 'cloud') {
-      overlay.style.display = 'none';
-      return;
-    }
-
     if (hasLoadedModel) {
       overlay.style.display = 'none';
+      if (lock) lock.style.display = 'none';
       return;
     }
 
     // 未预热 → 显示 lock 卡片
-    lock.style.display = '';
+    if (lock) lock.style.display = '';
     overlay.style.display = '';
+    // 恢复 overlay 原始内容（防止被云端 API 提示覆盖后残留）
+    overlay.innerHTML =
+      '<div class="overlay-card" style="margin:auto;max-width:340px;padding:24px;text-align:center">' +
+        '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('brain', '32') + '</div>' +
+        '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">本地模型未加载</div>' +
+        '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
+          '请在设置页加载本地 LLM 模型后开始对话' +
+        '</div>' +
+        '<button class="btn btn-primary" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'general\',document.querySelector(\'.settings-nav-item[data-stab=general]\'))},100);" style="padding:6px 16px">' +
+          '前往设置' +
+        '</button>' +
+      '</div>';
   } catch(e) {
     console.error('[chat.updateChatOverlay]', e);
   }

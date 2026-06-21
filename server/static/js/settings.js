@@ -72,22 +72,25 @@ function initModeSelector() {
  * 1. 更新按钮高亮
  * 2. 更新输入框 placeholder
  * 3. 调用后端 /api/mode/switch
+ * P6 审计修复：每次切换都弹确认，用户可选「下次不再提示」永久跳过
  */
 function selectMode(mode) {
-  // P6 T04: 首次切换到此模式时弹出确认弹窗
-  var confirmKey = 'sidemate_mode_confirm_' + mode;
-  var needsConfirm = !localStorage.getItem(confirmKey);
+  // 检查"下次不再提示"标志（用户主动选择后才设置）
+  var confirmKey = 'sidemate_mode_confirm_skip_' + mode;
+  var skipConfirm = localStorage.getItem(confirmKey) === '1';
 
   var _doSwitch = function() {
-    if (needsConfirm) {
-      localStorage.setItem(confirmKey, '1');
-    }
     _executeModeSwitch(mode);
   };
 
-  if (needsConfirm && typeof showModeConfirmModal === 'function') {
-    showModeConfirmModal(mode, function(confirmed) {
-      if (confirmed) _doSwitch();
+  if (!skipConfirm && typeof showModeConfirmModal === 'function') {
+    showModeConfirmModal(mode, function(confirmed, dontShowAgain) {
+      if (confirmed) {
+        if (dontShowAgain) {
+          localStorage.setItem(confirmKey, '1');
+        }
+        _doSwitch();
+      }
     });
   } else {
     _doSwitch();
