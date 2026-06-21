@@ -136,6 +136,18 @@
       <select id="kbFilePickerSelect" style="display:none;position:absolute;left:-9999px"></select>
       <div class="input-area-inner">
         <div id="fileIndicatorBar" class="file-indicator-bar" style="display:none"></div>
+        <!-- P6: 统一 Token 条（替代旧 tokenDisplay） -->
+        <div class="token-bar" id="tokenBar">
+          <div class="seg"><span class="lbl">本轮</span><span class="val" id="tokenCur">0</span></div>
+          <span class="divider"></span>
+          <div class="seg"><span class="lbl">+ 历史</span><span class="val" id="tokenHist">0</span></div>
+          <span class="divider"></span>
+          <div class="seg"><span class="val" id="tokenTotal">0</span><span style="color:var(--text-muted)">/<span id="tokenLimit">16K</span></span></div>
+          <span class="divider"></span>
+          <div class="seg status-ok" id="tokenStatus">空间充足</div>
+          <span style="flex:1"></span>
+          <div class="seg"><span class="lbl">对话剩余容量</span><span class="val" id="tokenRemain">16K 词元</span></div>
+        </div>
         <div class="input-row">
           <div style="position:relative">
             <button class="btn-img" id="attachBtn" onclick="toggleAttachMenu()" title="添加附件">
@@ -158,7 +170,7 @@
             <button class="btn-stop" id="stopBtn" onclick="stopGeneration()" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%"></button>
           </div>
         </div>
-        <div id="tokenDisplay" style="font-size:11px;color:var(--text-muted);text-align:right;padding:2px 8px;min-height:14px"></div>
+        <!-- P6: Token 条已移到输入框上方，这里不再需要 tokenDisplay -->
       </div>
     </div>
       </div><!-- /chat-main -->
@@ -529,12 +541,12 @@
           </div>
 
           <div class="card">
-            <h4>🔐 权限管理</h4>
+            <h4>权限管理</h4>
             <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">选择权限预设快速配置，或展开高级设置单独控制每个工具</div>
             <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-              <button class="btn btn-ghost kb-preset-btn" data-preset="trusted" onclick="applyPermissionPreset('trusted')">✅ 完全信任</button>
-              <button class="btn btn-ghost kb-preset-btn" data-preset="cautious" onclick="applyPermissionPreset('cautious')">⚠️ 谨慎模式</button>
-              <button class="btn btn-ghost kb-preset-btn" data-preset="offline" onclick="applyPermissionPreset('offline')">✈️ 纯离线</button>
+              <button class="btn btn-ghost kb-preset-btn" data-preset="trusted" onclick="applyPermissionPreset('trusted')">完全信任</button>
+              <button class="btn btn-ghost kb-preset-btn" data-preset="cautious" onclick="applyPermissionPreset('cautious')">谨慎模式</button>
+              <button class="btn btn-ghost kb-preset-btn" data-preset="offline" onclick="applyPermissionPreset('offline')">纯离线</button>
             </div>
             <details>
               <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-primary);padding:4px 0">⚙️ 高级设置（工具级权限）</summary>
@@ -545,8 +557,8 @@
           <div class="card">
             <h4>检索诊断</h4>
             <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">查看检索性能指标和问题诊断</div>
-            <button class="btn btn-ghost" onclick="kbShowDuplicates()">📋 重复检测</button>
-            <button class="btn btn-ghost" onclick="kbResetHeatmap()" style="margin-left:6px">🔄 重置热力图</button>
+            <button class="btn btn-ghost" onclick="kbShowDuplicates()">重复检测</button>
+            <button class="btn btn-ghost" onclick="kbResetHeatmap()" style="margin-left:6px">重置热力图</button>
           </div>
         </div>
 
@@ -562,11 +574,11 @@
           <div class="card">
             <h4>隐私声明</h4>
             <div style="font-size:13px;color:var(--text-secondary);line-height:1.8;margin-bottom:8px">
-              <div>✅ <b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在本地。</div>
-              <div>✅ <b>不主动上传</b>：程序不会主动上传任何用户数据。</div>
-              <div>✅ <b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时通信。</div>
-              <div>✅ <b>文库权限保护</b>：文档受三级令牌授权保护。</div>
-              <div>✅ <b>随时可清除</b>：删除安装目录即可彻底卸载。</div>
+              <div><b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在本地。</div>
+              <div><b>不主动上传</b>：程序不会主动上传任何用户数据。</div>
+              <div><b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时通信。</div>
+              <div><b>文库权限保护</b>：文档受三级令牌授权保护。</div>
+              <div><b>随时可清除</b>：删除安装目录即可彻底卸载。</div>
             </div>
             <button class="btn btn-ghost" onclick="loadPrivacyDetail()">查看完整隐私声明</button>
           </div>

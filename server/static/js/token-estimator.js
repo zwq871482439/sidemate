@@ -39,28 +39,72 @@ var TokenEstimator = {
   },
 
   /**
-   * 更新输入框右下角的 token 显示
-   * 读取 #msgInput，写入 #tokenDisplay
-   * Patch5 用户反馈：显示"预计使用 Xk tokens · 空间充足/尚可/不足"
+   * P6: 更新统一 Token 条（替代旧 tokenDisplay）
+   * 读取 #msgInput，写入 #tokenBar 内的多个字段
+   * 显示格式：本轮 X | + 历史 X | = X / 16K · 状态 · 对话剩余容量 X 词元
    */
   updateInputDisplay: function() {
-    var display = document.getElementById('tokenDisplay');
-    if (!display) return;
+    var tokenBar = document.getElementById('tokenBar');
+    if (!tokenBar) {
+      // 兼容：如果 tokenBar 不存在，回退到旧 tokenDisplay
+      this._updateLegacyDisplay();
+      return;
+    }
 
     // 分开计算文本和文档
     var textTokens = this._estimateText();
     var docTokens = this._estimateDoc();
-    var total = textTokens + docTokens;
+    var curTotal = textTokens + docTokens;  // 本轮（输入+文档）
     var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
 
-    // Patch5: 统一用 K 单位
+    // 历史 token（从全局变量读取，由 chat.js 维护）
+    var histTokens = 0;
+    if (typeof _historyTokenCount !== 'undefined') histTokens = _historyTokenCount || 0;
+
+    var total = curTotal + histTokens;
     var fmtK = function(n) { return n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n); };
 
+    // 更新各字段
+    var curEl = document.getElementById('tokenCur');
+    var histEl = document.getElementById('tokenHist');
+    var totalEl = document.getElementById('tokenTotal');
+    var limitEl = document.getElementById('tokenLimit');
+    var statusEl = document.getElementById('tokenStatus');
+    var remainEl = document.getElementById('tokenRemain');
+
+    if (curEl) curEl.textContent = fmtK(curTotal);
+    if (histEl) histEl.textContent = fmtK(histTokens);
+    if (totalEl) totalEl.textContent = '= ' + fmtK(total);
+    if (limitEl) limitEl.textContent = fmtK(maxTokens);
+
+    // 状态
+    var ratio = maxTokens > 0 ? total / maxTokens : 0;
+    var statusText = ratio < 0.5 ? '空间充足' : (ratio < 0.8 ? '空间尚可' : '空间不足');
+    if (statusEl) {
+      statusEl.textContent = statusText;
+      statusEl.classList.remove('status-ok', 'status-warn', 'status-over');
+      if (ratio >= 0.8) statusEl.classList.add('status-over');
+      else if (ratio >= 0.5) statusEl.classList.add('status-warn');
+      else statusEl.classList.add('status-ok');
+    }
+
+    // 剩余容量
+    var remain = Math.max(0, maxTokens - total);
+    if (remainEl) remainEl.textContent = fmtK(remain) + ' 词元';
+  },
+
+  _updateLegacyDisplay: function() {
+    var display = document.getElementById('tokenDisplay');
+    if (!display) return;
+    var textTokens = this._estimateText();
+    var docTokens = this._estimateDoc();
+    var total = textTokens + docTokens;
+    var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
+    var fmtK = function(n) { return n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n); };
     var text = '';
     if (total > 0 && maxTokens > 0) {
       var ratio = total / maxTokens;
       var statusText = ratio < 0.5 ? '空间充足' : (ratio < 0.8 ? '空间尚可' : '空间不足');
-
       if (docTokens > 0) {
         text = '预计文本 ' + fmtK(textTokens) + ' + 文档 ' + fmtK(docTokens) + ' = ' + fmtK(total) + ' / ' + fmtK(maxTokens) + ' · ' + statusText;
       } else {
@@ -70,8 +114,6 @@ var TokenEstimator = {
       text = '预计 ' + fmtK(total) + ' tokens';
     }
     display.textContent = text;
-
-    // 状态着色
     display.classList.remove('token-warn', 'token-over');
     if (maxTokens > 0) {
       var ratio = total / maxTokens;

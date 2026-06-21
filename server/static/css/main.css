@@ -1204,6 +1204,9 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .token-bar .divider{width:1px;height:12px;background:var(--border-color)}
 .token-bar .val{font-weight:500;color:var(--text-primary)}
 .token-bar .status-ok{color:var(--success-color);font-weight:500}
+.token-bar .status-warn{color:#BA7517;font-weight:500}
+.token-bar .status-over{color:#D85A30;font-weight:500}
+.token-bar .lbl{color:var(--text-muted)}
 
 /* ============================================================
    P6: 融合输入框

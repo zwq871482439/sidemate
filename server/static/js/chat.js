@@ -507,31 +507,13 @@ async function fetchContextUsage() {
   } catch(e) { /* 后端未实现时静默忽略 */ }
 }
 function updateContextRing(percentage, level, used, total) {
-  var wrap = document.getElementById('contextRing');
-  var pct = document.getElementById('contextPct');
-  var detail = document.getElementById('contextDetail');
-  var arc = document.getElementById('contextRingArc');
-  if (!wrap || !pct || !arc) return;
-  wrap.className = 'context-ring-wrap level-' + (level || 'normal');
-  pct.textContent = Math.round(percentage) + '%';
-  if (detail) {
-    var usedStr = used >= 1000 ? Math.round(used / 1000) + 'K' : used;
-    var totalStr = total >= 1000 ? Math.round(total / 1000) + 'K' : total;
-    detail.textContent = usedStr + '/' + totalStr;
+  // P6: 同步历史 token 到统一 Token 条
+  if (typeof _historyTokenCount === 'undefined') window._historyTokenCount = 0;
+  window._historyTokenCount = used || 0;
+  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+    TokenEstimator.updateInputDisplay();
   }
-  // Tooltip 明细展示
-  var pctVal = Math.round(percentage);
-  if (pctVal >= 80) {
-    wrap.title = '[!] 上下文接近上限，建议新建对话: ' + used + '/' + total + ' tokens';
-  } else if (pctVal >= 60) {
-    wrap.title = '[!] 上下文使用较高: ' + used + '/' + total + ' tokens';
-  } else {
-    wrap.title = '上下文使用: ' + used + '/' + total + ' tokens';
-  }
-  var circ = 94.2;
-  arc.setAttribute('stroke-dashoffset', circ - (percentage / 100) * circ);
-  var color = level === 'critical' ? 'var(--error-color)' : level === 'warning' ? 'var(--warning-color)' : 'var(--accent-color)';
-  arc.setAttribute('stroke', color);
+  // 旧 contextRing DOM 已删除，不再更新
 }
 
 // ===== 发送消息 =====
