@@ -2092,16 +2092,29 @@ def _parse_llm_groups(raw_text: str, all_tags: list) -> list:
     if m:
         text = m.group(1).strip()
 
-    # 2. 尝试提取第一个 [ 到最后一个 ] 之间的 JSON 数组
-    m = _re.search(r'\[[\s\S]*\]', text)
-    if m:
-        text = m.group(0)
+    # 2. 提取所有 {"group": ..., "members": [...]} 对象（非贪婪，防止跨数组污染）
+    objs = _re.findall(
+        r'\{[^{}]*"group"\s*:\s*"[^"]*"[^{}]*"members"\s*:\s*\[[^\]]*\][^{}]*\}',
+        text
+    )
+    if objs:
+        text = '[' + ','.join(objs) + ']'
 
-    # 3. 解析 JSON
+    # 3. 解析 JSON 并验证每个条目结构
     try:
         groups = json.loads(text)
         if isinstance(groups, list):
-            return groups
+            valid = []
+            for item in groups:
+                if not isinstance(item, dict):
+                    continue
+                if "group" not in item or "members" not in item:
+                    continue
+                if not isinstance(item["members"], list):
+                    continue
+                valid.append(item)
+            if valid:
+                return valid
     except json.JSONDecodeError:
         pass
 
