@@ -1165,10 +1165,12 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 
 /* A2 论坛风列表模式 */
 #messages.msg-list-mode .msg {
-  max-width: 100%;
+  max-width: 100% !important;
+  align-self: stretch !important;
   background: transparent !important;
   border: none !important;
   border-radius: 0 !important;
+  box-shadow: none !important;
   padding: 12px 0 !important;
   margin: 0 !important;
   display: grid;
