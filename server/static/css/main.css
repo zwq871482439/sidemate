@@ -1498,6 +1498,33 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-sidebar-list{flex:1;overflow-y:auto;padding:4px}
 .kb-sidebar-ft{padding:6px 10px;border-top:0.5px solid var(--border-color);font-size:10px;color:var(--text-muted);display:flex;gap:6px;flex-shrink:0}
 
+/* P6: 令牌管理面板（侧栏内 <details> 折叠区） */
+.kb-sidebar-tokens-wrap{border-top:0.5px solid var(--border-color);flex-shrink:0}
+.kb-sidebar-tokens-wrap[open]{flex-shrink:0;max-height:220px;overflow-y:auto}
+.kb-sidebar-tokens-hdr{padding:6px 10px;font-size:10px;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;user-select:none;list-style:none}
+.kb-sidebar-tokens-hdr::-webkit-details-marker{display:none}
+.kb-sidebar-tokens-hdr::marker{display:none;content:''}
+.kb-sidebar-tokens-hdr:hover{color:var(--text-secondary)}
+.kb-sidebar-tokens{padding:2px 4px 4px}
+.kb-token-empty{font-size:10px;color:var(--text-muted);padding:4px 8px;text-align:center}
+.kb-token-item{display:flex;align-items:center;gap:4px;padding:4px 6px;border-radius:6px;transition:background .12s}
+.kb-token-item:hover{background:var(--bg-primary)}
+.kb-token-icon{flex-shrink:0;color:#D85A30;display:flex;align-items:center}
+.kb-token-info{flex:1;min-width:0;overflow:hidden}
+.kb-token-doc{font-size:10px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kb-token-meta{font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kb-token-actions{display:flex;gap:2px;flex-shrink:0}
+.kb-token-btn{padding:2px 4px;border:none;border-radius:3px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:10px;display:flex;align-items:center;line-height:1}
+.kb-token-btn:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.kb-token-footer{padding:4px 6px;border-top:0.5px solid var(--border-color)}
+.kb-token-revoke-all{padding:3px 8px;border:0.5px solid var(--border-color);border-radius:4px;background:transparent;color:var(--error-color, #D85A30);cursor:pointer;font-size:10px;width:100%}
+.kb-token-revoke-all:hover{background:rgba(216,90,48,.08)}
+
+/* 文档卡片中的令牌按钮 */
+.ctoken-act{margin-top:2px}
+.ctoken-btn{padding:1px 6px;border:0.5px solid var(--border-color);border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:9px;display:inline-flex;align-items:center;gap:2px}
+.ctoken-btn:hover{border-color:#D85A30;color:#D85A30}
+
 /* 标签树条目 */
 .kb-tag{padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;display:flex;align-items:center;gap:6px;margin-bottom:1px;transition:background .12s}
 .kb-tag:hover{background:var(--bg-primary)}
@@ -1584,6 +1611,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 [data-theme="dark"] .hm-dot.cold{background:#475569}
 [data-theme="dark"] .hm-dot.warm{background:#fbbf24}
 [data-theme="dark"] .hm-dot.hot{background:#f87171}
+/* P6: 暗色模式令牌面板 */
+[data-theme="dark"] .kb-token-icon{color:#f87171}
+[data-theme="dark"] .ctoken-btn:hover{border-color:#f87171;color:#f87171}
+[data-theme="dark"] .kb-token-revoke-all:hover{background:rgba(248,113,113,.12)}
 
 /* P6: 设置页辅助样式（settings.js 引用） */
 .model-info-row{display:flex;align-items:center;justify-content:space-between;gap:12px;white-space:nowrap;overflow:hidden}

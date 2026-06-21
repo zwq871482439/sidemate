@@ -206,6 +206,14 @@ async function _sidebarDeleteChat(path) {
   var delResp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(name), {method:'DELETE'});
   var delData = await delResp.json();
   if (!delResp.ok && !delData.ok) { showToast('删除失败: ' + (delData.error || '未知错误'), 'error'); return; }
+
+  // P6: 自动撤销该会话关联的所有令牌
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/tokens/revoke_by_session', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: name})
+  }).catch(function() {});  // 静默失败
+
   if (path === currentChatFile) {
     currentChatFile = null;
     currentMessages = [];
@@ -275,6 +283,14 @@ async function deleteChat() {
   var delResp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(name), {method:'DELETE'});
   var delData = await delResp.json();
   if (!delResp.ok && !delData.ok) { showToast('删除失败: ' + (delData.error || '未知错误'), 'error'); return; }
+
+  // P6: 自动撤销该会话关联的所有令牌
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/tokens/revoke_by_session', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: name})
+  }).catch(function() {});  // 静默失败，令牌撤销不影响主流程
+
   currentChatFile = null;
   currentMessages = [];
   await loadChatList();

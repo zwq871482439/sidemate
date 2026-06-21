@@ -35,14 +35,16 @@ class AccessToken:
         token: 32 字节随机 hex 字符串
         doc_id: 绑定的文档 ID
         level: 令牌级别 "full" | "search" | "none"
+        session_id: 关联的会话 ID（空字符串 = 未关联）
         created_at: 创建时间（unix timestamp）
         expires_at: 过期时间（0=永不过期）
     """
     token: str
     doc_id: str
     level: str          # "full" | "search" | "none"
-    created_at: float
-    expires_at: float   # 0 = 永不过期
+    session_id: str = ""  # 关联的会话 ID
+    created_at: float = 0.0
+    expires_at: float = 0.0  # 0 = 永不过期
 
 
 class AccessTokenManager:
@@ -84,7 +86,8 @@ class AccessTokenManager:
         """
         return secrets.token_hex(32)
 
-    def _create_token(self, doc_id: str, level: str, ttl: float = None) -> AccessToken:
+    def _create_token(self, doc_id: str, level: str, ttl: float = None,
+                      session_id: str = "") -> AccessToken:
         """创建令牌并存入缓存
 
         P5 审计修复 P2-13: 每个 doc_id 最多保留 MAX_TOKENS_PER_DOC 个令牌，
@@ -94,6 +97,7 @@ class AccessTokenManager:
             doc_id: 绑定的文档 ID
             level: 令牌级别 "full" | "search"
             ttl: 有效期（秒），None 则使用默认值
+            session_id: 关联的会话 ID（空字符串 = 未关联）
 
         Returns:
             AccessToken 对象
@@ -117,6 +121,7 @@ class AccessTokenManager:
             token=token_str,
             doc_id=doc_id,
             level=level,
+            session_id=session_id or "",
             created_at=now,
             expires_at=expires_at,
         )
@@ -130,30 +135,34 @@ class AccessTokenManager:
                  doc_id, level, "never" if expires_at == 0 else str(expires_at))
         return access_token
 
-    def generate_full_token(self, doc_id: str, ttl: float = None) -> str:
+    def generate_full_token(self, doc_id: str, ttl: float = None,
+                            session_id: str = "") -> str:
         """生成全文令牌（full 级别）
 
         Args:
             doc_id: 文档 ID
             ttl: 有效期（秒），None 则使用默认值
+            session_id: 关联的会话 ID
 
         Returns:
             令牌字符串
         """
-        token = self._create_token(doc_id, "full", ttl)
+        token = self._create_token(doc_id, "full", ttl, session_id=session_id)
         return token.token
 
-    def generate_search_token(self, doc_id: str, ttl: float = None) -> str:
+    def generate_search_token(self, doc_id: str, ttl: float = None,
+                              session_id: str = "") -> str:
         """生成搜索令牌（search 级别）
 
         Args:
             doc_id: 文档 ID
             ttl: 有效期（秒），None 则使用默认值
+            session_id: 关联的会话 ID
 
         Returns:
             令牌字符串
         """
-        token = self._create_token(doc_id, "search", ttl)
+        token = self._create_token(doc_id, "search", ttl, session_id=session_id)
         return token.token
 
     def verify_token(self, token: str, doc_id: str = None) -> Tuple[bool, str]:
@@ -217,6 +226,46 @@ class AccessTokenManager:
             count += 1
         if count > 0:
             log.info("[ACCESS_TOKEN] 撤销文档 %s 的 %d 个令牌", doc_id, count)
+        return count
+
+    def list_tokens(self) -> list:
+        """列出所有活跃令牌
+
+        Returns:
+            [{"doc_id": "...", "level": "...", "session_id": "...", "created_at": N}, ...]
+        """
+        result = []
+        for token_str, access_token in self._tokens_cache.items():
+            result.append({
+                "token": token_str,
+                "doc_id": access_token.doc_id,
+                "level": access_token.level,
+                "session_id": access_token.session_id or "",
+                "created_at": access_token.created_at,
+            })
+        return result
+
+    def revoke_all_for_session(self, session_id: str) -> int:
+        """撤销某会话的所有令牌
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            撤销的令牌数量
+        """
+        if not session_id:
+            return 0
+        to_revoke = []
+        for token_str, access_token in list(self._tokens_cache.items()):
+            if access_token.session_id == session_id:
+                to_revoke.append(token_str)
+        count = 0
+        for token_str in to_revoke:
+            if self._remove_token(token_str):
+                count += 1
+        if count > 0:
+            log.info("[ACCESS_TOKEN] 撤销会话 %s 的 %d 个令牌", session_id, count)
         return count
 
     def _remove_token(self, token: str) -> bool:

@@ -1497,8 +1497,8 @@ async def api_kb_batch_active():
 async def api_kb_generate_token(doc_id: str, request: Request):
     """为文档生成访问令牌（Patch5 T03）
 
-    Body: {"level": "full" | "search"}
-    Response: {"token": "a1b2c3...", "doc_id": "...", "level": "..."}
+    Body: {"level": "full" | "search", "session_id": "optional_session_id"}
+    Response: {"token": "a1b2c3...", "doc_id": "...", "level": "...", "session_id": "..."}
     """
     kb = get_kb()
     doc = kb.get_document(doc_id)
@@ -1510,14 +1510,16 @@ async def api_kb_generate_token(doc_id: str, request: Request):
     if level not in ("full", "search"):
         return JSONResponse({"error": "level 必须为 full 或 search"}, status_code=400)
 
+    session_id = body.get("session_id", "") or ""
+
     from core.access_token import get_access_token_manager
     mgr = get_access_token_manager()
     if level == "full":
-        token = mgr.generate_full_token(doc_id)
+        token = mgr.generate_full_token(doc_id, session_id=session_id)
     else:
-        token = mgr.generate_search_token(doc_id)
+        token = mgr.generate_search_token(doc_id, session_id=session_id)
 
-    return {"token": token, "doc_id": doc_id, "level": level}
+    return {"token": token, "doc_id": doc_id, "level": level, "session_id": session_id}
 
 
 @router.delete("/api/kb/documents/{doc_id}/token")
@@ -1535,6 +1537,36 @@ async def api_kb_revoke_token(doc_id: str):
     mgr = get_access_token_manager()
     count = mgr.revoke_doc_tokens(doc_id)
     return {"revoked": True, "count": count}
+
+
+@router.get("/api/kb/tokens")
+async def api_kb_list_tokens():
+    """列出所有活跃令牌（P6 令牌管理）
+
+    Response: {"tokens": [{"doc_id": "...", "level": "...", "session_id": "...", "created_at": N}, ...]}
+    """
+    from core.access_token import get_access_token_manager
+    mgr = get_access_token_manager()
+    tokens = mgr.list_tokens()
+    return {"tokens": tokens}
+
+
+@router.post("/api/kb/tokens/revoke_by_session")
+async def api_kb_revoke_tokens_by_session(request: Request):
+    """撤销某会话的所有令牌（P6 令牌管理）
+
+    Body: {"session_id": "session_abc"}
+    Response: {"revoked": N}
+    """
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    if not session_id:
+        return JSONResponse({"error": "session_id 不能为空"}, status_code=400)
+
+    from core.access_token import get_access_token_manager
+    mgr = get_access_token_manager()
+    count = mgr.revoke_all_for_session(session_id)
+    return {"revoked": count}
 
 
 @router.post("/api/kb/documents/{doc_id}/privacy")

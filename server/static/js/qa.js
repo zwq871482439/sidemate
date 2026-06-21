@@ -310,6 +310,12 @@ async function kbRefreshDocs() {
       if (tokenInfo) html += '<span>' + tokenInfo + '</span>';
       html += hmDotHtml;
       html += '</div>';
+      // P6: 私密文档的令牌按钮
+      if (d.is_private) {
+        html += '<div class="ctoken-act">';
+        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbGenerateToken(\'' + esc(d.doc_id) + '\')" title="生成访问令牌"><svg width="10" height="10" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg> 令牌</button>';
+        html += '</div>';
+      }
       html += '<div class="cmtime">' + uploadTime + '</div>';
       html += '</div>';
     }
@@ -328,6 +334,9 @@ async function kbRefreshDocs() {
       clearInterval(_kbPollTimer);
       _kbPollTimer = null;
     }
+
+    // P6: 刷新令牌面板
+    kbRefreshTokens();
   } catch (err) {
     silentLog('[KB] 刷新文档列表失败:', err);
   }
@@ -644,6 +653,181 @@ function showKbInfo() {
   document.body.appendChild(overlay);
 }
 
+// --- P6: 令牌管理（Token Management） ---
+
+var _kbTokenCache = [];  // 缓存最近的令牌列表
+
+/** 刷新令牌列表并渲染令牌管理面板 */
+async function kbRefreshTokens() {
+  try {
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/tokens');
+    var data = await resp.json();
+    _kbTokenCache = data.tokens || [];
+    _kbRenderTokenPanel(_kbTokenCache);
+  } catch (e) {
+    silentLog('[KB] 刷新令牌列表失败:', e);
+  }
+}
+
+/** 渲染令牌管理面板到侧栏 */
+function _kbRenderTokenPanel(tokens) {
+  var panel = document.getElementById('kbSidebarTokens');
+  if (!panel) return;
+
+  // 令牌锁图标 SVG
+  var svgLock = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>';
+
+  if (!tokens || !tokens.length) {
+    panel.innerHTML = '<div class="kb-token-empty">暂无活跃令牌</div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < tokens.length; i++) {
+    var t = tokens[i];
+    var levelLabel = t.level === 'full' ? '完整访问' : '仅检索';
+    var sessionInfo = t.session_id ? ' · 会话"' + esc(t.session_id) + '"' : '';
+    var docLabel = t.doc_id || '未知文档';
+    // 截断长 doc_id 用于显示
+    if (docLabel.length > 22) docLabel = docLabel.substring(0, 20) + '...';
+
+    html += '<div class="kb-token-item">';
+    html += '<div class="kb-token-icon">' + svgLock + '</div>';
+    html += '<div class="kb-token-info">';
+    html += '<div class="kb-token-doc" title="' + esc(t.doc_id || '') + '">' + esc(docLabel) + '</div>';
+    html += '<div class="kb-token-meta">' + levelLabel + sessionInfo + '</div>';
+    html += '</div>';
+    html += '<div class="kb-token-actions">';
+    html += '<button class="kb-token-btn" onclick="event.stopPropagation();kbCopyToken(\'' + esc(t.token) + '\')" title="复制令牌"><svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3.5" y="3.5" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.1"/><path d="M1.5 10.5V2a.5.5 0 01.5-.5h8.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></button>';
+    html += '<button class="kb-token-btn" onclick="event.stopPropagation();kbRevokeToken(\'' + esc(t.doc_id) + '\')" title="撤销">' + iconSvg('close', '11') + '</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+
+  html += '<div class="kb-token-footer">';
+  html += '<button class="kb-token-revoke-all" onclick="kbRevokeAllTokens()">撤销全部令牌</button>';
+  html += '</div>';
+
+  panel.innerHTML = html;
+}
+
+/** 为文档生成访问令牌 */
+function kbGenerateToken(docId) {
+  var level = prompt('令牌级别（full=完整访问 / search=仅检索）：', 'search');
+  if (!level || (level !== 'full' && level !== 'search')) {
+    if (level !== null) showToast('级别必须为 full 或 search', 'warning');
+    return;
+  }
+
+  var sessionId = prompt('关联的会话名称（可选，留空跳过）：', '');
+  if (sessionId === null) return;  // 用户取消
+
+  var body = { level: level };
+  if (sessionId && sessionId.trim()) body.session_id = sessionId.trim();
+
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + encodeURIComponent(docId) + '/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(function(resp) { return resp.json(); })
+    .then(function(data) {
+      if (data.token) {
+        showToast('令牌已生成');
+        kbRefreshTokens();
+      } else {
+        showToast('生成失败: ' + (data.error || '未知错误'), 'error');
+      }
+    })
+    .catch(function(err) {
+      showToast('生成失败: ' + err.message, 'error');
+    });
+}
+
+/** 撤销文档的所有令牌 */
+async function kbRevokeToken(docId) {
+  try {
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + encodeURIComponent(docId) + '/token', {
+      method: 'DELETE'
+    });
+    var data = await resp.json();
+    if (resp.ok && data.revoked) {
+      showToast('已撤销 ' + (data.count || 0) + ' 个令牌');
+      kbRefreshTokens();
+    } else {
+      showToast('撤销失败: ' + (data.error || '未知错误'), 'error');
+    }
+  } catch (e) {
+    showToast('撤销失败: ' + e.message, 'error');
+  }
+}
+
+/** 撤销所有令牌 */
+async function kbRevokeAllTokens() {
+  if (!_kbTokenCache || !_kbTokenCache.length) {
+    showToast('没有可撤销的令牌', 'warning');
+    return;
+  }
+  if (!(await showDialog('确认撤销', '确定撤销所有 ' + _kbTokenCache.length + ' 个令牌？', {type: 'danger', confirm: true, confirmLabel: '全部撤销', cancelLabel: '取消'}))) return;
+
+  var errorCount = 0;
+  var successCount = 0;
+  // 按 doc_id 去重后批量撤销
+  var docIds = [];
+  for (var i = 0; i < _kbTokenCache.length; i++) {
+    var dId = _kbTokenCache[i].doc_id;
+    if (docIds.indexOf(dId) === -1) docIds.push(dId);
+  }
+  for (var j = 0; j < docIds.length; j++) {
+    try {
+      var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + encodeURIComponent(docIds[j]) + '/token', {
+        method: 'DELETE'
+      });
+      var data = await resp.json();
+      if (resp.ok && data.revoked) successCount += (data.count || 0);
+      else errorCount++;
+    } catch (e) { errorCount++; }
+  }
+  if (errorCount === 0) {
+    showToast('已撤销全部 ' + successCount + ' 个令牌');
+  } else {
+    showToast('撤销完成: ' + successCount + ' 成功, ' + errorCount + ' 失败', 'warning');
+  }
+  kbRefreshTokens();
+}
+
+/** 复制令牌到剪贴板 */
+function kbCopyToken(tokenStr) {
+  if (!tokenStr) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(tokenStr).then(function() {
+      showToast('令牌已复制到剪贴板');
+    }).catch(function() {
+      _fallbackCopy(tokenStr);
+    });
+  } else {
+    _fallbackCopy(tokenStr);
+  }
+}
+
+/** 降级复制方案（textarea 方式） */
+function _fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showToast('令牌已复制到剪贴板');
+  } catch (e) {
+    showToast('复制失败，请手动复制', 'error');
+  }
+  document.body.removeChild(ta);
+}
+
 // --- 暴露到全局 ---
 window.kbRouteState = kbRouteState;
 window.kbInstallModule = kbInstallModule;
@@ -663,6 +847,11 @@ window.kbCardClick = kbCardClick;
 window.kbRefreshAIOverview = kbRefreshAIOverview;
 window.kbRenderTagTree = kbRenderTagTree;
 window.showKbInfo = showKbInfo;
+window.kbRefreshTokens = kbRefreshTokens;
+window.kbGenerateToken = kbGenerateToken;
+window.kbRevokeToken = kbRevokeToken;
+window.kbRevokeAllTokens = kbRevokeAllTokens;
+window.kbCopyToken = kbCopyToken;
 
 // _kbBusyProcessing getter
 try { Object.defineProperty(window, '_kbBusyProcessing', { get: function() { return _kbBusyProcessing; }, configurable: true }); } catch(e) { window._kbBusyProcessing = _kbBusyProcessing; }
