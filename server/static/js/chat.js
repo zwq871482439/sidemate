@@ -956,11 +956,11 @@ async function sendMessage() {
             _renderParallelSources(srcCh, srcItems);
           } else if (d.type === 'token') {
             fullText += d.content;
-            // Patch5 C7 B3: 收到首个有内容的 token 时停止思考态计时 + 重置标记
-            if (fullText.length > 0 && _thinkingTimerInterval) {
+            // P6 修复：思考态指示器由 appendStreamingMsg(isThinking=true) 统一管理
+            // 只在退出思考态时（truncated/done/agent_start）才删除，避免每个 token 都闪
+            if (fullText.length > 0 && _thinkingTimerInterval && !thinkingPhase) {
               clearInterval(_thinkingTimerInterval);
               _thinkingTimerInterval = null;
-              // 思考态指示器移除
               var _ti = document.querySelector('.thinking-indicator');
               if (_ti) _ti.remove();
             }
