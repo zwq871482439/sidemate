@@ -64,6 +64,9 @@ def _run_local_column(ctx, query: str, q: queue.Queue, local_model: str = None, 
         local_model = mgr._get_default_llm() or "qwen"
 
     try:
+        # 阶段开始
+        q.put(("phase_started", None))
+
         # 步骤0: Reformulation（在本地线程内做，不阻塞云端）
         if kb_history:
             try:
@@ -143,6 +146,9 @@ def _run_cloud_column(ctx, question: str, cloud_history: list, q: queue.Queue):
     mgr = ctx.mgr
 
     try:
+        # 阶段开始
+        q.put(("phase_started", None))
+
         if not hasattr(mgr, '_cloud_engine'):
             from core.cloud_engine import CloudEngine
             mgr._cloud_engine = CloudEngine(mgr)
@@ -306,6 +312,8 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
                         })
                     elif evt_type == "error":
                         local_error = evt_data
+                    elif evt_type == "phase_started":
+                        yield _sse_channel_event("local", "phase", {"phase": "started"})
                     elif evt_type == "done":
                         local_done = True
                         break
@@ -325,8 +333,9 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
                         yield _sse_channel_event("cloud", "status", {"status": evt_data})
                     elif evt_type == "error":
                         cloud_error = evt_data
+                    elif evt_type == "phase_started":
+                        yield _sse_channel_event("cloud", "phase", {"phase": "started"})
                     elif evt_type == "done":
-                        cloud_done = True
                         break
 
             # 如果两列都没数据且都没完成，短暂等待避免空转

@@ -110,8 +110,8 @@ function _handleAgentTimelineSSE(d) {
 
   // P6 打磨：KB 步骤（reformulate/search）需要垂直布局，加 vertical 类
   var _isKbStep = (step === 'reformulate' || step === 'search');
-  if (_isKbStep && container.className.indexOf('vertical') < 0) {
-    container.className += ' vertical';
+  if (_isKbStep) {
+    container.classList.add('vertical');
   }
 
   // 步骤图标 + 配色映射
@@ -282,10 +282,9 @@ function _handleKbReformulate(d) {
   }
 }
 
-// P6 打磨：通用步骤内容注入函数（kb_sources、并行内容等）
+// P6 打磨：把 KB 检索来源注入时间线步骤
 // stepName: "reformulate" | "search" | "local_gen" | "cloud_gen" | "merge"
-// data: 源数据数组或字符串
-// dataType: "kb" (kb sources) | "text" (plain text)
+// data: kb sources 数组（dataType 恒为 'kb'，保留参数与调用点一致）
 function _injectStepContent(stepName, data, dataType) {
   // 限定在当前 stream-msg 内搜索时间线容器，避免跨气泡串扰
   var streamEl = document.getElementById('stream-msg');
@@ -321,8 +320,6 @@ function _injectStepContent(stepName, data, dataType) {
     }
     contentEl.innerHTML = html;
     showToast('已检索到 ' + sources.length + ' 条相关文档', 'success');
-  } else if (dataType === 'text') {
-    contentEl.textContent = data;
   }
 }
 
@@ -351,11 +348,14 @@ function _handleParallelSSE(d) {
   if (d.type === 'phase') {
     var pNum = _parallelPhaseMap[channel] || 4;
     var pName = { 1: '本地检索', 2: '云端检索', 3: '融合优化' }[pNum] || d.label || '处理中';
-    if (d.phase === 'started' && !_getPhaseCard(pNum)) {
-      _createPhaseCard(pName, pNum, 'active');
+    if (d.phase === 'started') {
+      if (!_getPhaseCard(pNum)) _createPhaseCard(pName, pNum, 'active');
+      // 写入持久化数据
+      _agentTimelineData.push({ phase: 'started', name: pName, num: pNum });
     }
     if (d.phase === 'done') {
       _markPhaseCard(pNum, 'done');
+      _agentTimelineData.push({ phase: 'done', num: pNum });
     }
     return;
   }
@@ -366,9 +366,11 @@ function _handleParallelSSE(d) {
     if (!_getPhaseCard(sNum)) {
       var sName = { 1: '本地检索', 2: '云端检索', 3: '融合优化' }[sNum] || '处理中';
       _createPhaseCard(sName, sNum, 'active');
+      _agentTimelineData.push({ phase: 'started', name: sName, num: sNum });
     }
     var si = _parallelStepIcons[d.step] || { icon: 'spin', label: d.step || '处理中', color: 'var(--text-muted)' };
     _addStepToPhase(sNum, si.icon, si.label, si.color, true);
+    _agentTimelineData.push({ step: d.step, label: si.label, done: false, phase: sNum, color: si.color });
     return;
   }
 
@@ -380,6 +382,7 @@ function _handleParallelSSE(d) {
       sdi = { icon: 'check', label: (d.label || d.step || '完成'), color: 'var(--success-color)' };
     }
     _addStepToPhase(sdNum, sdi.icon, sdi.label || (d.step + '完成'), sdi.color, false);
+    _agentTimelineData.push({ step: d.step, label: sdi.label || (d.step + '完成'), done: true, phase: sdNum, color: sdi.color });
     return;
   }
 
@@ -524,6 +527,61 @@ window._resetParallelState = _resetParallelState;
 
 function _buildAgentTimelineHtml(timelineData) {
   if (!timelineData || !timelineData.length) return '';
+
+  // P6 打磨：检测是否为并行模式阶段卡片数据
+  var hasPhases = timelineData.some(function(item) { return item.phase === 'started'; });
+  if (hasPhases) {
+    var phases = {};      // num → {name, num, steps[], done}
+    var phaseOrder = [];   // insertion order
+    for (var i = 0; i < timelineData.length; i++) {
+      var pi = timelineData[i];
+      if (pi.phase === 'started') {
+        if (!phases[pi.num]) {
+          phases[pi.num] = { name: pi.name, num: pi.num, steps: [], done: false };
+          phaseOrder.push(pi.num);
+        }
+      } else if (pi.phase === 'done' && phases[pi.num]) {
+        phases[pi.num].done = true;
+      } else if (pi.step && pi.phase != null) {
+        var pNum = pi.phase;
+        if (phases[pNum]) phases[pNum].steps.push(pi);
+        else {
+          // 兜底：同 phase 号的 step 先于 started 到达
+          phases[pNum] = { name: '阶段 ' + pNum, num: pNum, steps: [pi], done: false };
+          phaseOrder.push(pNum);
+        }
+      }
+    }
+
+    var html = '<div class="agent-timeline phase-timeline">';
+    for (var p = 0; p < phaseOrder.length; p++) {
+      var ph = phases[phaseOrder[p]];
+      var status = ph.done ? 'done' : 'active';
+      html += '<div class="agent-phase-card phase-' + status + '">' +
+        '<div class="agent-phase-header">' +
+          '<span class="agent-phase-num">' + ph.num + '</span>' +
+          '<span class="agent-phase-title">' + _esc(ph.name) + '</span>' +
+          '<span class="agent-phase-status">' + (status === 'done' ? '完成' : '处理中') + '</span>' +
+        '</div>';
+      if (ph.steps.length) {
+        html += '<div class="agent-phase-body">';
+        for (var s = 0; s < ph.steps.length; s++) {
+          var st = ph.steps[s];
+          var icon = st.icon || ((_parallelStepIcons[st.step] || {}).icon) || 'check';
+          var color = st.color || 'var(--success-color)';
+          html += '<div class="agent-phase-step">' +
+            '<span class="agent-phase-step-icon" style="color:' + color + '">' + (typeof iconSvg === 'function' ? iconSvg(icon, '12') : '') + '</span>' +
+            '<span class="agent-phase-step-label">' + _esc(st.label || st.step) + '</span>' +
+            '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   var html = '<div class="agent-timeline">';
   timelineData.forEach(function(item) {
     // P6: parallel 模式 timeline（item.step 格式）
