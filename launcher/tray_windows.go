@@ -251,6 +251,23 @@ func UpdateTrayCallbacks(tip string, onOpen func(), onExit func(), onPanel func(
 	trayOnExit = onExit
 	trayOnPanel = onPanel
 	trayStartupPhase = false // 启动完成，切换到运行期
+
+	// P6 修复：用 NIM_MODIFY 更新托盘提示文字
+	if trayHWnd != 0 {
+		nid := NOTIFYICONDATAW{
+			CbSize:           uint32(unsafe.Sizeof(NOTIFYICONDATAW{})),
+			HWnd:             trayHWnd,
+			UID:              1,
+			UFlags:           NIF_TIP,
+		}
+		copy(nid.SzTip[:], utf16FromString(tip))
+		ret, _, _ := procShellNotifyIconW.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&nid)))
+		if ret == 0 {
+			log.Printf("[Tray] 更新托盘提示失败（NIM_MODIFY）")
+		} else {
+			log.Printf("[Tray] 托盘提示已更新为: %s", tip)
+		}
+	}
 }
 
 // InitTray — 创建隐藏窗口 + 托盘图标

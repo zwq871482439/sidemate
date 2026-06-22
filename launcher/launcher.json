@@ -1,3 +1,3 @@
 {
-  "version": "v0.9 Patch 4"
+  "_comment": "launcher.json 的 version 字段已废弃（P6 统一版本号）。版本号唯一来源：server/config.py。如需修改端口，在此添加 server_port / ollama_port 覆盖。"
 }

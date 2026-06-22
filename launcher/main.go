@@ -72,10 +72,41 @@ func loadConfig() *Config {
 			if v, ok := overrides["ollama_host"].(string); ok {
 				cfg.OllamaHost = v
 			}
+			// P6 统一版本号：launcher.json 的 version 字段已废弃
+			// 版本号唯一来源：server/config.py
+			// 如果 launcher.json 仍带 version，记日志但不采用（向后兼容）
 			if v, ok := overrides["version"].(string); ok {
-				cfg.Version = v
+				log.Printf("[Launcher] launcher.json 含旧版 version=%s，已忽略（统一从 config.py 读取）", v)
 			}
 		}
+	}
+
+	// P6 统一版本号：从 server/config.py 读取 version 字段
+	configPyPath := filepath.Join(appDir, "server", "config.py")
+	if data, err := os.ReadFile(configPyPath); err == nil {
+		content := string(data)
+		// 匹配 "version": "x.y.z"
+		lines := strings.Split(content, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.Contains(line, "\"version\"") {
+				// 提取引号内的值
+				idx := strings.Index(line, ":")
+				if idx > 0 {
+					val := strings.TrimSpace(line[idx+1:])
+					// 去掉尾逗号、引号、空格
+					val = strings.TrimRight(val, ", \t\r")
+					val = strings.Trim(val, "\"'")
+					if val != "" {
+						cfg.Version = val
+						log.Printf("[Launcher] 版本号从 config.py 读取: %s", val)
+						break
+					}
+				}
+			}
+		}
+	} else {
+		log.Printf("[Launcher] 警告: 无法读取 server/config.py，使用编译时版本: %s", cfg.Version)
 	}
 
 	cfg.BrowserURL = fmt.Sprintf("http://127.0.0.1:%d", cfg.ServerPort)
