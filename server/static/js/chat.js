@@ -770,6 +770,7 @@ async function sendMessage() {
   var fullText = '';
   var thinkText = '';
   var thinkLen = 0;
+  var _hadError = false;
 
   var lastRender = 0;
   var RENDER_INTERVAL = (typeof STREAM_RENDER_INTERVAL !== 'undefined') ? STREAM_RENDER_INTERVAL : 100;

@@ -281,7 +281,7 @@ async function kbRefreshDocs() {
       if (_kbNameFilter && d.filename.toLowerCase().indexOf(_kbNameFilter.toLowerCase()) === -1) continue;
 
       var sizeStr = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : d.file_size > 1024 ? (d.file_size/1024).toFixed(1)+'KB' : d.file_size+'B';
-      var tokenInfo = d.total_chars ? '约 ' + (d.total_chars/1000).toFixed(1) + 'K 词元' : '';
+      var tokenInfo = d.total_chars ? '约 ' + (Math.ceil(d.total_chars/1.5)/1000).toFixed(1) + 'K 词元' : '';
       var hitCount = d.hit_count || 0;
       var hitStr = '被搜索 ' + hitCount + ' 次';
 

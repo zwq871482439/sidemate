@@ -144,12 +144,17 @@ var TokenEstimator = {
       }
     }
     if (typeof window !== 'undefined' && window._kbSelectedFiles && window._kbSelectedFiles.length > 0) {
-      var totalSize = 0;
+      var totalTokensFromChars = 0;
+      var totalTokensFromSize = 0;
       for (var i = 0; i < window._kbSelectedFiles.length; i++) {
         var d = window._kbSelectedFiles[i];
-        totalSize += (d.file_size || d.size || 0);
+        if (d.total_chars > 0) {
+          totalTokensFromChars += Math.ceil((d.total_chars || 0) / 1.5);
+        } else {
+          totalTokensFromSize += Math.ceil((d.file_size || d.size || 0) / 1024 * this.FILE_TOKENS_PER_KB);
+        }
       }
-      return Math.ceil(totalSize / 1024 * this.FILE_TOKENS_PER_KB);
+      return totalTokensFromChars + totalTokensFromSize;
     }
     return 0;
   },

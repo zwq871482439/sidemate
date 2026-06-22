@@ -197,7 +197,7 @@ function _showKbPickerModal(files) {
       var overLimit = totalTokens > maxTokens * 0.85;  // 85% 阈值
 
       var btnText = selCount > 0
-        ? ('确认引用（' + selCount + '篇' + (totalChars > 0 ? ' · 约' + (totalChars/1000).toFixed(1) + 'K词元' : '') + '）')
+        ? ('确认引用（' + selCount + '篇' + (totalTokens > 0 ? ' · 约' + (totalTokens/1000).toFixed(1) + 'K词元' : '') + '）')
         : '确认引用';
 
       if (overLimit) {
@@ -223,7 +223,7 @@ function _showKbPickerModal(files) {
     metaSpan.style.cssText = 'font-size:11px;color:var(--text-muted,#999);flex-shrink:0';
     var tags = (f.tags && f.tags.length) ? f.tags.slice(0, 2).join(' / ') : '';
     // P6 打磨 bug2: 显示词元数而非段数
-    var tokenEst = f.total_chars ? '约 ' + (f.total_chars/1000).toFixed(1) + 'K 词元' : (f.file_size ? '约 ' + (f.file_size/300).toFixed(0) + ' 词元' : '');
+    var tokenEst = f.total_chars ? '约 ' + (Math.ceil(f.total_chars/1.5)/1000).toFixed(1) + 'K 词元' : (f.file_size ? '约 ' + Math.ceil(f.file_size/1024*200).toFixed(0) + ' 词元' : '');
     metaSpan.textContent = (tokenEst || '未知大小') + (tags ? ' · ' + tags : '');
 
     item.appendChild(iconSpan);
