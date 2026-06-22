@@ -65,10 +65,45 @@ async function refreshActionBar() {
       return;
     }
 
+    // ===== P6 打磨 #4：并行模式 — 仅知识库问答 =====
+    if (curMode === 'parallel') {
+      var cacheKey2 = 'parallel|kb_qa';
+      if (cacheKey2 === _lastActionIds) return;
+      _lastActionIds = cacheKey2;
+
+      var bar2 = document.getElementById('actionBar');
+      if (!bar2) return;
+      bar2.innerHTML = '';
+
+      if (typeof currentActionMode !== 'undefined' && currentActionMode !== 'kb_qa') {
+        currentActionMode = 'kb_qa';
+      }
+
+      var kbBtn = document.createElement('button');
+      kbBtn.className = 'action-btn active';
+      kbBtn.setAttribute('data-action', 'kb_qa');
+      kbBtn.title = '知识库问答 — 本地模型检索文库，结合云端 AI 综合回答';
+      kbBtn.innerHTML = iconSvg('books', '14') + ' 知识库问答';
+      kbBtn.onclick = function() { setActionMode('kb_qa', this); };
+      bar2.appendChild(kbBtn);
+
+      // 追加齿轮按钮
+      if (typeof _renderGearMenu === 'function') _renderGearMenu(bar2);
+      return;
+    }
+
     // ===== 本地模式：从后端获取 action 列表 =====
     var resp = await fetch(_apiBase + '/api/action/list');
     var data = await resp.json();
     var actions = data.actions || [];
+
+    // P6 打磨 #2：补充知识库问答按钮（离线模式专属）
+    actions.push({
+      id: 'kb_qa',
+      label: '知识库问答',
+      title: '知识库问答 — 检索你的本地文库，基于文档内容回答问题',
+      icon_svg: iconSvg('books', '14')
+    });
 
     // 缓存 key
     var ids = actions.map(function(a) { return a.id; }).sort().join(',');
@@ -99,10 +134,6 @@ async function refreshActionBar() {
       bar.appendChild(btn);
     });
 
-    // P6 T04: 并行模式下追加齿轮按钮
-    if (curMode === 'parallel' && typeof _renderGearMenu === 'function') {
-      _renderGearMenu(bar);
-    }
   } catch(e) {
     console.error('[chat.refreshActionBar]', e);
   }

@@ -281,8 +281,9 @@ async function kbRefreshDocs() {
       if (_kbNameFilter && d.filename.toLowerCase().indexOf(_kbNameFilter.toLowerCase()) === -1) continue;
 
       var sizeStr = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : d.file_size > 1024 ? (d.file_size/1024).toFixed(1)+'KB' : d.file_size+'B';
-      var chunkInfo = d.chunk_count ? d.chunk_count + '块' : '';
-      var tokenInfo = d.total_chars ? '~' + (d.total_chars/1000).toFixed(1) + 'K' : '';
+      var tokenInfo = d.total_chars ? '约 ' + (d.total_chars/1000).toFixed(1) + 'K 词元' : '';
+      var hitCount = d.hit_count || 0;
+      var hitStr = '被搜索 ' + hitCount + ' 次';
 
       // 状态图标
       var iconsHtml = '';
@@ -291,7 +292,6 @@ async function kbRefreshDocs() {
       if (d.metadata && d.metadata.has_images) iconsHtml += '<span class="ic-img" title="含图片">' + svgImg + '</span>';
 
       // 热力图圆点
-      var hitCount = d.hit_count || 0;
       var hmDotClass = hitCount >= 10 ? 'hot' : (hitCount >= 1 ? 'warm' : 'cold');
       var hmDotHtml = '<span style="display:flex;align-items:center;gap:3px"><span class="hm-dot ' + hmDotClass + '"></span>' + hitCount + '</span>';
 
@@ -357,10 +357,9 @@ async function kbRefreshDocs() {
       html += esc(previewText) + '</div>';
       if (tagsHtml) html += '<div class="ctags">' + tagsHtml + '</div>';
       html += '<div class="cstats">';
-      html += '<span>' + sizeStr + '</span>';
-      if (chunkInfo) html += '<span>' + chunkInfo + '</span>';
+      html += '<span>文件大小 ' + sizeStr + '</span>';
       if (tokenInfo) html += '<span>' + tokenInfo + '</span>';
-      html += hmDotHtml;
+      html += '<span>' + hitStr + '</span>';
       html += '</div>';
       // P6: 私密文档的令牌按钮
       if (d.is_private) {
@@ -383,6 +382,17 @@ async function kbRefreshDocs() {
       // P6: 根据 _kbViewMode 切换 class
       gridEl.className = _kbViewMode === 'list' ? 'kb-doc-list' : 'kb-doc-grid';
       gridEl.innerHTML = html;
+    }
+
+    // P6 打磨 #7：更新底部统计
+    var statsEl = document.getElementById('kbStats');
+    if (statsEl) {
+      var totalDocs = docs.length;
+      var totalChunks = 0, totalBytes = 0;
+      docs.forEach(function(d) { totalChunks += (d.chunk_count || 0); totalBytes += (d.file_size || 0); });
+      var sizeStr = totalBytes > 1073741824 ? (totalBytes/1073741824).toFixed(1)+'GB' : totalBytes > 1048576 ? (totalBytes/1048576).toFixed(1)+'MB' : (totalBytes/1024).toFixed(1)+'KB';
+      statsEl.style.display = totalDocs > 0 ? '' : 'none';
+      statsEl.textContent = '共 ' + totalDocs + ' 篇文档 · 已索引 ' + totalChunks + ' 块 · 占用 ' + sizeStr;
     }
 
     // 通知 kb-batch.js
@@ -568,6 +578,52 @@ function kbCardClick(docId) {
 }
 
 // --- AI 知识库概览 ---
+// P6 打磨 #10：LLM 驱动的概览刷新
+async function kbRefreshOverviewLLM() {
+  var btn = document.getElementById('kbRefreshBtn');
+  var bodyEl = document.getElementById('kbOverviewBody');
+  var sourceEl = document.getElementById('kbOverviewSource');
+  var countEl = document.getElementById('kbOverviewDocCount');
+  var updatedEl = document.getElementById('kbOverviewUpdated');
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = iconSvg('spin','11') + ' 正在重新生成...';
+  }
+  if (bodyEl) bodyEl.textContent = '正在调用 AI 分析知识库结构...';
+  if (sourceEl) sourceEl.textContent = '本地 AI 生成';
+
+  try {
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}'
+    });
+    var data = await resp.json();
+
+    if (data.ok) {
+      if (bodyEl) bodyEl.textContent = data.overview;
+      if (countEl) countEl.textContent = data.doc_count + ' 篇文档';
+      if (sourceEl) sourceEl.textContent = '本地 AI 生成';
+      if (updatedEl) {
+        var now = new Date();
+        updatedEl.textContent = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ' 更新';
+      }
+    } else {
+      if (bodyEl) bodyEl.textContent = '生成失败，请重试。';
+    }
+  } catch (e) {
+    if (bodyEl) bodyEl.textContent = '网络异常，请重试。';
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 刷新';
+    }
+  }
+}
+// 暴露到 window
+window.kbRefreshOverviewLLM = kbRefreshOverviewLLM;
+
 async function kbRefreshAIOverview() {
   // Fix F: 点击刷新时重置冷却，允许立即触发分组
   _kbLastGroupTrigger = 0;
@@ -788,20 +844,20 @@ function _kbRenderQueue() {
       continue;
     }
 
-    // Fix 2: only keep chunking, embedding, queued, tag phases
+    // Fix 2: 显示完整的处理阶段
     var phaseLabel;
     if (item.phase === 'chunking') {
-      phaseLabel = '切块 (' + item.pct + '%)';
+      phaseLabel = '切分段落 (' + item.pct + '%)';
     } else if (item.phase === 'embedding') {
-      phaseLabel = '向量 (' + item.pct + '%)';
+      phaseLabel = '向量化 (' + item.pct + '%)';
     } else if (item.phase === 'queued') {
-      phaseLabel = '排队中';
+      phaseLabel = '排队等待处理';
     } else if (item.phase === 'tag_pending') {
       phaseLabel = '排队等待 AI 摘要';
     } else if (item.phase === 'tag_generating') {
-      phaseLabel = 'AI 摘要生成中';
+      phaseLabel = 'AI 正在生成摘要';
     } else {
-      continue; // skip unknown/completed phases, don't show
+      phaseLabel = '处理中';
     }
 
     listHtml += '<div class="kb-qitem">' + esc(item.filename) + ' <span class="qi-pct">' + phaseLabel + '</span></div>';

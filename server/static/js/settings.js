@@ -101,6 +101,35 @@ function selectMode(mode) {
  * P6 T04: 实际执行模式切换（确认后调用）
  */
 function _executeModeSwitch(mode) {
+  // P6 打磨 #1：模式切换前置条件检查
+  if (mode === 'parallel') {
+    // 并行模式：离线 LLM + 云端 API 缺一不可
+    var _modelTag = document.getElementById('modelTag');
+    var _noModel = _modelTag && _modelTag.classList.contains('none');
+    var _noCloud = !(typeof _cloudConfigured !== 'undefined' && _cloudConfigured);
+    if (_noModel && _noCloud) {
+      showToast('并行模式需要加载本地 LLM 和配置云端 API，请先前往设置页完成配置', 'warning', 6000);
+      return;
+    } else if (_noModel) {
+      showToast('并行模式需要本地 LLM，请先在设置页加载模型', 'warning');
+      return;
+    } else if (_noCloud) {
+      showToast('并行模式需要云端 API，请先在设置页配置 API 密钥', 'warning');
+      return;
+    }
+  } else if (mode === 'offline') {
+    var _tag2 = document.getElementById('modelTag');
+    if (_tag2 && _tag2.classList.contains('none')) {
+      showToast('离线模式需要本地 LLM，请先在设置页加载模型', 'warning');
+      return;
+    }
+  } else if (mode === 'online') {
+    if (!(typeof _cloudConfigured !== 'undefined' && _cloudConfigured)) {
+      showToast('在线模式需要云端 API，请先在设置页配置 API 密钥', 'warning');
+      return;
+    }
+  }
+
   // 1. 更新按钮高亮
   _updateModeButtons(mode);
 
@@ -278,15 +307,22 @@ async function refreshStatus() {
 
     var currentDisplay = data.current_display || data.current;
     _loadedModelId = data.current || null;
-    if (typeof _currentMode !== 'undefined' && _currentMode === 'cloud') {
+    if (typeof _currentMode !== 'undefined' && _currentMode === 'parallel') {
+      // P6 打磨 #4：并行模式同时展示双模型
+      var _local = currentDisplay || '离线 AI';
+      var _cloud = window._cloudModelName || '云端 AI';
+      tag.className = 'model-tag';
+      tag.textContent = '离线 ' + _local + ' · 云端 ' + _cloud;
+      stag.innerHTML = '<span class="model-tag">离线 ' + esc(_local) + ' · 云端 ' + esc(_cloud) + '</span>';
+    } else if (typeof _currentMode !== 'undefined' && _currentMode === 'cloud') {
       currentDisplay = window._cloudModelName || '云端模型';
       tag.className = 'model-tag';
-      tag.textContent = currentDisplay;
-      stag.innerHTML = '<span class="model-tag">' + esc(currentDisplay) + '</span>';
+      tag.textContent = '在线 AI · ' + currentDisplay;
+      stag.innerHTML = '<span class="model-tag">在线 AI · ' + esc(currentDisplay) + '</span>';
     } else if (data.current) {
       tag.className = 'model-tag';
-      tag.textContent = currentDisplay;
-      stag.innerHTML = '<span class="model-tag">' + esc(currentDisplay) + '</span>';
+      tag.textContent = '离线 AI · ' + currentDisplay;
+      stag.innerHTML = '<span class="model-tag">离线 AI · ' + esc(currentDisplay) + '</span>';
       localStorage.setItem('_model_ever_loaded', '1');
     } else {
       tag.className = 'model-tag none';

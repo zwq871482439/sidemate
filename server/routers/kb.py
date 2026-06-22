@@ -2422,3 +2422,61 @@ async def api_kb_tags_move(request: Request):
 
     kb.set_tag_group(tag, group, source="manual")
     return _build_groups_response(kb, all_tags)
+
+
+# P6 打磨 #10：AI 知识库概览刷新
+@router.post("/api/kb/overview/refresh")
+async def api_kb_overview_refresh(request: Request):
+    """调用本地 LLM 重新生成知识库概览文字
+
+    读取所有已入库文档的 category，提交给 LLM 归纳成 2-3 个大类。
+    返回概览文本 + 文档计数。
+    """
+    kb = get_kb()
+    mgr = get_mgr()
+
+    # 获取所有文档的 category 统计
+    all_docs = kb.list_all_docs() if hasattr(kb, "list_all_docs") else kb.search_docs("", top_k=1000)
+    doc_count = len(all_docs)
+
+    if doc_count == 0:
+        return {"ok": True, "overview": "知识库为空，请先上传文档。", "doc_count": 0}
+
+    # 收集 category 统计
+    cat_counts = {}
+    for d in all_docs:
+        cat = (d.get("category") or "").strip()
+        if cat:
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+    # 构建 LLM prompt
+    cats_text = "\n".join("  - %s（%d 篇）" % (k, v) for k, v in sorted(cat_counts.items(), key=lambda x: -x[1]))
+    prompt = (
+        "你是一个知识库管理员。请根据以下文档分类，用 1-2 句话概括知识库的整体主题覆盖情况。\n"
+        "\n"
+        "知识库共 %d 篇文档。分类如下：\n"
+        "%s\n"
+        "\n"
+        "要求：\n"
+        "1. 将相似分类归纳为 2-3 个宽泛的大类\n"
+        "2. 输出格式：直接用流畅的自然语言描述，不要加额外格式\n"
+        "3. 示例：你的知识库主要覆盖中医健康（3篇）、AI技术（3篇）和哲学本体论（3篇）三大领域。\n"
+    ) % (doc_count, cats_text if cats_text else "（暂无分类标签）")
+
+    try:
+        result = mgr.chat(prompt, max_tokens=200, _priority="LOW")
+        overview = (result.get("text", "") or result.get("response", "") or "").strip()
+    except Exception:
+        # LLM 不可用时返回纯统计
+        parts = ["%s（%d篇）" % (k, v) for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])[:3]]
+        if parts:
+            overview = "你的知识库主要覆盖" + "、".join(parts) + "等领域。"
+        else:
+            overview = "知识库共 %d 篇文档，AI 正在学习标签中。" % doc_count
+
+    return {
+        "ok": True,
+        "overview": overview,
+        "doc_count": doc_count,
+        "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
+    }
