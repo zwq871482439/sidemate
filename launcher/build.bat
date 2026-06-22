@@ -3,7 +3,7 @@ REM Sidemate Launcher build script
 REM P6 统一版本号：唯一来源是 server/config.py
 REM   - Go 编译时从 config.py 读取版本号注入 -X main.AppVersion
 REM   - Go 运行时也从 config.py 读取（启动时）
-REM   - PE 资源由 update_pe_version.py 在编译后自动 patch
+REM   - 图标嵌入：rsrc_windows_amd64.syso（由 rsrc.exe 从 logo.ico 生成）
 
 setlocal
 
@@ -37,14 +37,6 @@ go build -ldflags "-H windowsgui -X main.AppVersion=v%VERSION%" -o Sidemate.exe 
 
 if %ERRORLEVEL% EQU 0 (
     echo [OK] Build success: Sidemate.exe v%VERSION%
-    
-    REM P6: 自动 patch PE 资源版本号（从 config.py 读取）
-    echo [INFO] Patching PE version info...
-    ..\python\python.exe update_pe_version.py
-    if %ERRORLEVEL% NEQ 0 (
-        echo [WARN] PE patch failed, but build succeeded
-    )
-    
     dir Sidemate.exe | findstr /C:"Sidemate.exe"
 ) else (
     echo [FAIL] Build failed
