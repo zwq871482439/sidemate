@@ -994,11 +994,11 @@ def _calc_context_usage(chat_file: str = None):
             pass
 
     # 估算 token 数
-    total_chars = sum(len(m.get("content", "")) for m in messages)
+    # P6 精度优化：计算真实注入的上下文，而非简单消息字符累加
     used_tokens = 0
-    # 仅在纯在线模式下使用云端 API 返回的真实 input_tokens
-    # 离线/并行模式：无可靠 token_stats，用 chars/1.5 + 系统开销估算
+    
     if ai_mode == "cloud":
+        # 在线模式：优先使用云端 API 返回的真实 input_tokens
         _last_token_stats = None
         for m in reversed(messages):
             if m.get("role") == "assistant" and m.get("token_stats"):
@@ -1006,11 +1006,40 @@ def _calc_context_usage(chat_file: str = None):
                 break
         if _last_token_stats and _last_token_stats.get("input_tokens"):
             used_tokens = _last_token_stats["input_tokens"]
+    
     if used_tokens == 0:
-        # P6: 离线模式估算需包含 system prompt + FC schema + KB 注入等固定开销
-        # 纯消息字符 / 1.5 严重低估总上下文（差 ~800-1200 tokens）
-        SYSTEM_OVERHEAD = 800  # system prompt + FC schema + KB summary
-        used_tokens = int(total_chars / 1.5) + (SYSTEM_OVERHEAD if total_chars > 0 else 0)
+        # 离线/并行模式：精确估算注入上下文
+        # 1. System prompt（从 prompts 模块读取）
+        sys_chars = 0
+        try:
+            from prompts import SYSTEM_PROMPT_V2, KB_SYSTEM_PROMPT_TEMPLATE
+            sys_chars = len(SYSTEM_PROMPT_V2)
+            # 如果有 KB 注入（上下文缓存），额外加 KB prompt
+            # 这里估算一个典型值
+        except ImportError:
+            sys_chars = 100  # fallback
+        
+        # 2. 场景增强（最多一行）
+        try:
+            from prompts import STRATEGY_ENHANCEMENTS
+            enhancement_chars = max(len(v) for v in STRATEGY_ENHANCEMENTS.values())
+            sys_chars += enhancement_chars
+        except ImportError:
+            pass
+        
+        # 3. FC 工具 schema 估算（离线模式固定 ~300 字）
+        FC_SCHEMA_CHARS = 300
+        
+        # 4. 历史消息：按 context_cutoff 裁剪（和前端 sendMessage 一致）
+        cutoff_idx = -1
+        for ci, m in enumerate(messages):
+            if m.get("context_cutoff"):
+                cutoff_idx = ci
+        
+        trimmed_messages = messages[cutoff_idx + 1:] if cutoff_idx >= 0 else messages
+        history_chars = sum(len(m.get("content", "")) for m in trimmed_messages)
+        
+        used_tokens = int((sys_chars + FC_SCHEMA_CHARS + history_chars) / 1.5)
     
     # 获取模型上下文窗口大小
     if ai_mode == "cloud":
