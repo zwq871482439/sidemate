@@ -60,7 +60,7 @@ def api_mode():
         "available": ["local", "cloud"],
         "cloud_configured": cloud_configured,
         "cloud_model": cfg_get("cloud_model", "gpt-4o-mini") if ai_mode == "cloud" or cloud_configured else None,
-        "context_window": context_window or (8192 if ai_mode == "local" else 131072),
+        "context_window": context_window or (8192 if ai_mode in ("local", "parallel") else 131072),
         "max_history_chars": max_history_chars,
     }
 
