@@ -223,6 +223,29 @@ async function kbRefreshDocs() {
     var hasSummarizing = (stats.summarizing_documents || 0) > 0;
     _kbBusyProcessing = hasSummarizing;
 
+    // P6: 页面刷新后重建处理队列（从后端文档状态恢复）
+    var _rebuildOne = function(_rd) {
+      var _exists = false;
+      for (var _ei = 0; _ei < _kbQueueItems.length; _ei++) {
+        if (_kbQueueItems[_ei].docId === _rd.doc_id) { _exists = true; break; }
+      }
+      if (!_exists) {
+        _kbAddToQueue(_rd.doc_id, _rd.filename);
+        if (typeof kbSubscribeProgress === 'function') {
+          kbSubscribeProgress(_rd.doc_id, _rd.filename);
+        }
+      }
+    };
+    for (var _ri = 0; _ri < docs.length; _ri++) {
+      var _rd = docs[_ri];
+      if (_rd.status === 'processing' || _rd.status === 'indexing' || _rd.status === 'summarizing') {
+        _rebuildOne(_rd);
+      } else if (_rd.status === 'ready' && (_rd.tag_status === 'generating' || _rd.tag_status === 'pending')) {
+        _rebuildOne(_rd);
+      }
+    }
+    _kbRenderQueue();
+
     // P6: 侧栏按文档 category 分组（不再依赖 tag_groups API）
     _kbRenderCategoryTree(docs);
 
