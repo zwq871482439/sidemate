@@ -446,6 +446,13 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             filter_result = filter_response(final_text, user_msg=message)
             filter_warnings = filter_result.get("warnings", [])
             filter_corrections = filter_result.get("corrections", [])
+            # P6: 前缀累积警告不暴露给用户（仅日志内部使用），文本已在 cleaned 字段处理
+            filter_warnings = [w for w in filter_warnings if '前缀累积' not in w and '4-gram' not in w]
+            # P6: 如果 cleaned 文本不同，说明前缀累积已被清理，使用清理后的文本
+            cleaned_text = filter_result.get("cleaned", "")
+            if cleaned_text and cleaned_text != final_text:
+                response_text = cleaned_text
+                final_text = cleaned_text
             if filter_warnings:
                 _filter_yielded = False
                 for w in filter_warnings:
