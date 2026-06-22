@@ -396,13 +396,23 @@ function _handleParallelSSE(d) {
     return;
   }
 
-  // status 事件（云端状态展示）
+  // status 事件（云端状态展示，去重：只在状态变化时新增步骤）
   if (d.type === 'status') {
     var stNum = _parallelPhaseMap[channel] || 2;
     if (!_getPhaseCard(stNum)) {
       _createPhaseCard('云端检索', stNum, 'active');
     }
-    _addStepToPhase(stNum, 'think', d.status || '处理中', '#EF9F27', true);
+    if (!window._parallelLastStatus) window._parallelLastStatus = {};
+    var curStatus = d.status || '';
+    if (window._parallelLastStatus[stNum] === curStatus) return;
+    window._parallelLastStatus[stNum] = curStatus;
+    // P6 打磨：状态图标映射（不再用 think 双环）
+    var statusIcons = { understanding: 'search', thinking: 'brain', generating: 'write' };
+    var statusIcon = statusIcons[curStatus] || 'spin';
+    var statusColor = { understanding: '#378ADD', thinking: '#7F77DD', generating: '#639922' }[curStatus] || '#EF9F27';
+    _addStepToPhase(stNum, statusIcon, curStatus, statusColor, true);
+    // 同步写持久化数据
+    _agentTimelineData.push({ step: curStatus, label: curStatus, done: false, phase: stNum, color: statusColor });
     return;
   }
 }
@@ -1076,6 +1086,7 @@ async function sendMessage() {
   _resetParallelState();  // P6 打磨：重置并行模式流式状态
   _hasMorphedToAnswering = false;  // P6 打磨：重置思考→回答过渡
   _phaseCards = {};  // P6 打磨：重置 phase 卡片
+  window._parallelLastStatus = {};  // P6 打磨：重置云端状态去重
 
   appendStreamingMsg('', '', 0, null, true);
   var msgEl = document.getElementById('messages');
