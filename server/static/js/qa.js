@@ -626,9 +626,9 @@ async function kbRefreshOverviewLLM() {
         localStorage.setItem('kb_ai_insight', data.insight || '');
         localStorage.setItem('kb_ai_insight_ts', Date.now());
       } catch(e) {}
-      // 标签归并后刷新侧栏标签（不触发 overview 文本覆盖）
+      // P6 打磨：标签归并后刷新侧栏分类和文档列表
       if (data.merges_applied && data.merges_applied.length > 0) {
-        try { if (typeof kbLoadDocs === 'function') kbLoadDocs(); } catch(e) {}
+        try { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); } catch(e) {}
       }
     } else {
       if (bodyEl) bodyEl.textContent = '整理失败，请重试。';
@@ -669,13 +669,21 @@ async function kbRefreshAIOverview() {
 
   if (!bodyEl) return;
 
-  // P6 打磨：优先从 localStorage 恢复上次 AI 洞察
+  // P6 打磨：优先 localStorage，fallback 到服务端缓存
   var cachedInsight = null;
   try { cachedInsight = localStorage.getItem('kb_ai_insight'); } catch(e) {}
+  if (!cachedInsight) {
+    try {
+      var _svrResp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh');
+      var _svrData = await _svrResp.json();
+      if (_svrData.insight) {
+        cachedInsight = _svrData.insight;
+        try { localStorage.setItem('kb_ai_insight', cachedInsight); } catch(e) {}
+      }
+    } catch(e) {}
+  }
   if (cachedInsight) {
-    if (bodyEl && bodyEl.textContent === '正在分析知识库...') {
-      bodyEl.textContent = cachedInsight;
-    }
+    bodyEl.textContent = cachedInsight;
     if (sourceEl) sourceEl.textContent = '本地 AI 生成';
   } else {
     bodyEl.textContent = '正在分析知识库...';
@@ -696,6 +704,19 @@ async function kbRefreshAIOverview() {
       return;
     }
 
+    // P6 打磨：有缓存洞察时只更新统计数字，不覆盖 LLM 生成的洞察文本
+    if (cachedInsight) {
+      if (countEl) countEl.textContent = docs.length + ' 篇文档';
+      if (updatedEl) {
+        var _now = new Date();
+        updatedEl.textContent = _now.getHours() + ':' + String(_now.getMinutes()).padStart(2, '0') + ' 更新';
+      }
+      // 刷新标签侧栏分类
+      _kbRenderCategoryTree(docs);
+      return;
+    }
+
+    // 无缓存洞察 → 生成简单统计概览（等待用户触发 AI 整理）
     // P6 B2: 统计排队中/处理中的文档
     var queuedCount = 0;
     for (var qi = 0; qi < docs.length; qi++) {

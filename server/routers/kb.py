@@ -2437,6 +2437,23 @@ async def api_kb_tags_move(request: Request):
 
 
 # P6 打磨 #10：AI 知识库概览刷新
+
+@router.get("/api/kb/overview/refresh")
+def api_kb_overview_get():
+    """返回上次 AI 洞察缓存（页面刷新不丢失）"""
+    kb = get_kb()
+    try:
+        import os as _os_g
+        _insight_file = kb.data_dir.replace("/", _os_g.sep) + _os_g.sep + "kb_insight.json"
+        if _os_g.path.exists(_insight_file):
+            with open(_insight_file, "r", encoding="utf-8") as _f:
+                cached = json.load(_f)
+            cached["ok"] = True
+            return cached
+    except Exception:
+        pass
+    return {"ok": True, "insight": "", "doc_count": 0}
+
 @router.post("/api/kb/overview/refresh")
 async def api_kb_overview_refresh(request: Request):
     """AI 知识库洞察 · 自动整理
@@ -2540,11 +2557,11 @@ async def api_kb_overview_refresh(request: Request):
             for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])
         )
         merge_prompt = (
-            "你是一位知识库分类专家。以下文档的标签过于碎片化，需要归并为 3-6 个宽泛的大类。\n\n"
+            "你是一位知识库分类专家。以下文档的标签过于碎片化，需要归并为 3-5 个宽泛的大类。\n\n"
             "当前标签：\n%s\n\n"
             "要求：\n"
-            "1. 含义相近的标签合并（如「中医养生」「中医流派」「中医病机」→ 「中医药」）\n"
-            "2. 标签数归并到 3-6 个\n"
+            "1. 含义相近的标签必须合并（如「中医养生」「中医流派」「中医病机」→ 「中医药」）\n"
+            "2. 归并到 3-5 个大类，宁少勿多\n"
             "3. 输出纯 JSON 数组，每项格式：{\"new\": \"新标签\", \"from\": [\"旧标签1\", \"旧标签2\"]}\n"
             "4. 不准输出 Markdown，不准加解释文字，只剩 JSON\n\n"
             "归并方案 JSON：" % cats_text
@@ -2597,6 +2614,21 @@ async def api_kb_overview_refresh(request: Request):
             cat = (d.get("category") or "").strip()
             if cat:
                 cat_counts[cat] = cat_counts.get(cat, 0) + 1
+    except Exception:
+        pass
+
+    # ==== 持久化洞察到文件（刷新页面不丢失）====
+    try:
+        import os as _os_ov
+        _insight_file = kb.data_dir.replace("/", _os_ov.sep) + _os_ov.sep + "kb_insight.json"
+        _os_ov.makedirs(_os_ov.path.dirname(_insight_file), exist_ok=True)
+        with open(_insight_file, "w", encoding="utf-8") as _f:
+            json.dump({
+                "insight": insight,
+                "doc_count": doc_count,
+                "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }, _f, ensure_ascii=False)
     except Exception:
         pass
 
