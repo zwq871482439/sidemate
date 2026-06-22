@@ -188,8 +188,27 @@ function _showKbPickerModal(files) {
       }
       // 更新底部按钮文案
       var selCount = _kbSelectedDocs.length;
-      confirmBtn.disabled = selCount === 0;
-      confirmBtn.textContent = selCount > 0 ? ('确认引用（' + selCount + ' 篇）') : '确认引用';
+      var totalChars = 0;
+      for (var i = 0; i < _kbSelectedDocs.length; i++) {
+        totalChars += (_kbSelectedDocs[i].total_chars || 0);
+      }
+      var totalTokens = Math.ceil(totalChars / 1.5);  // 中文 token 估算
+      var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
+      var overLimit = totalTokens > maxTokens * 0.85;  // 85% 阈值
+
+      var btnText = selCount > 0
+        ? ('确认引用（' + selCount + '篇' + (totalChars > 0 ? ' · 约' + (totalChars/1000).toFixed(1) + 'K词元' : '') + '）')
+        : '确认引用';
+
+      if (overLimit) {
+        btnText += ' — 超出容量限制';
+        confirmBtn.style.cssText = confirmBtn.style.cssText + ';opacity:.5;cursor:not-allowed';
+      } else {
+        confirmBtn.style.cssText = confirmBtn.style.cssText.replace(';opacity:.5;cursor:not-allowed', '');
+      }
+
+      confirmBtn.disabled = selCount === 0 || overLimit;
+      confirmBtn.textContent = btnText;
     };
 
     var iconSpan = document.createElement('span');
