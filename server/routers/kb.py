@@ -2436,7 +2436,13 @@ async def api_kb_overview_refresh(request: Request):
     mgr = get_mgr()
 
     # 获取所有文档的 category 统计
-    all_docs = kb.list_all_docs() if hasattr(kb, "list_all_docs") else kb.search_docs("", top_k=1000)
+    try:
+        all_docs = kb.list_documents()
+    except Exception:
+        return {"ok": False, "overview": "无法获取文档列表", "doc_count": 0}
+
+    if not isinstance(all_docs, list):
+        return {"ok": False, "overview": "文档数据异常", "doc_count": 0}
     doc_count = len(all_docs)
 
     if doc_count == 0:
