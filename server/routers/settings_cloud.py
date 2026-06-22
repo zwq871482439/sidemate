@@ -32,11 +32,10 @@ def api_mode():
     cloud_configured = bool(cloud_api_key)
 
     context_window = 0
-    if ai_mode == "cloud" or cloud_configured:
+    if ai_mode == "cloud":
         try:
             from core.cloud_engine import CloudEngine
             cloud_model = cfg_get("cloud_model", "gpt-4o-mini")
-            # 优先用用户手动配置的值
             user_ctx = cfg_get("cloud_context_window", 0)
             if user_ctx and user_ctx > 0:
                 context_window = user_ctx
@@ -44,7 +43,7 @@ def api_mode():
                 _ce = CloudEngine.__new__(CloudEngine)
                 context_window = _ce._lookup_capabilities(cloud_model)["context_window"]
         except Exception:
-            context_window = 32768
+            context_window = 131072  # CloudEngine default
 
     # 本地模式的 max_history_chars（与 model_manager 一致）
     max_history_chars = 12000
@@ -61,7 +60,7 @@ def api_mode():
         "available": ["local", "cloud"],
         "cloud_configured": cloud_configured,
         "cloud_model": cfg_get("cloud_model", "gpt-4o-mini") if ai_mode == "cloud" or cloud_configured else None,
-        "context_window": context_window or 16000,
+        "context_window": context_window or (8192 if ai_mode == "local" else 131072),
         "max_history_chars": max_history_chars,
     }
 

@@ -31,6 +31,7 @@ log = logging.getLogger("deps_check")
 REQUIRED_DEPS: List[Tuple[str, str, str]] = [
     # ── 基础依赖（核心功能） ──
     ("docx", "python_docx", "base"),
+    ("pypandoc", "pypandoc_binary", "base"),  # P6: markdown→docx 转换
     ("psutil", "psutil", "base"),
     ("openai", "openai", "cloud"),  # 云端 AI 模式依赖
     # ── KB 依赖 ──

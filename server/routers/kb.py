@@ -2439,70 +2439,171 @@ async def api_kb_tags_move(request: Request):
 # P6 打磨 #10：AI 知识库概览刷新
 @router.post("/api/kb/overview/refresh")
 async def api_kb_overview_refresh(request: Request):
-    """调用本地 LLM 重新生成知识库概览文字
+    """AI 知识库洞察 · 自动整理
 
-    读取所有已入库文档的 category，提交给 LLM 归纳成 2-3 个大类。
-    返回概览文本 + 文档计数。
+    两轮 LLM：
+      第一轮 — B3 叙事型洞察（分析文档内容结构，发现隐藏主题）
+      第二轮 — 标签归并（碎片标签收敛为宽泛大类）
+
+    返回 insight 文本 + 归并后的 tags + 文档计数。
     """
     kb = get_kb()
     mgr = get_mgr()
 
-    # 获取所有文档的 category 统计
     try:
         all_docs = kb.list_documents()
     except Exception:
-        return {"ok": False, "overview": "无法获取文档列表", "doc_count": 0}
+        return {"ok": False, "insight": "无法获取文档列表", "doc_count": 0}
 
     if not isinstance(all_docs, list):
-        return {"ok": False, "overview": "文档数据异常", "doc_count": 0}
+        return {"ok": False, "insight": "文档数据异常", "doc_count": 0}
     doc_count = len(all_docs)
 
     if doc_count == 0:
-        return {"ok": True, "overview": "知识库为空，请先上传文档。", "doc_count": 0}
+        return {"ok": True, "insight": "知识库为空，请先上传文档。", "doc_count": 0}
 
-    # 收集 category 统计
+    # 收集文档列表（标题 + 分类 + 标签）
+    doc_list = []
     cat_counts = {}
     for d in all_docs:
+        fname = d.get("filename", "未知")
         cat = (d.get("category") or "").strip()
+        tags = d.get("tags") or []
+        doc_list.append({
+            "title": fname,
+            "category": cat,
+            "tags": [t for t in tags if t],
+        })
         if cat:
             cat_counts[cat] = cat_counts.get(cat, 0) + 1
 
-    # 构建 LLM prompt
-    cats_text = "\n".join("  - %s（%d 篇）" % (k, v) for k, v in sorted(cat_counts.items(), key=lambda x: -x[1]))
-    prompt = (
-        "你是一个知识库管理员。请根据以下文档分类，用 1-2 句话概括知识库的整体主题覆盖情况。\n"
-        "\n"
-        "知识库共 %d 篇文档。分类如下：\n"
-        "%s\n"
-        "\n"
-        "要求：\n"
-        "1. 将相似分类归纳为 2-3 个宽泛的大类\n"
-        "2. 输出格式：直接用流畅的自然语言描述，不要加额外格式\n"
-        "3. 示例：你的知识库主要覆盖中医健康（3篇）、AI技术（3篇）和哲学本体论（3篇）三大领域。\n"
-    ) % (doc_count, cats_text if cats_text else "（暂无分类标签）")
+    # ==== 辅助：用 StreamEngine 跑一轮 LLM ====
+    from core.thread_pool import get_thread_pool
+    import asyncio, json
 
-    try:
-        from core.thread_pool import get_thread_pool
-        import asyncio
+    def _run_llm(prompt: str, max_tokens: int = 500) -> str:
+        se = mgr._stream_engine
+        parts = []
+        for ctype, ctext in se.run(
+            message=prompt, model=None, max_tokens=max_tokens,
+            history=[], context_cache=None, override_task_type="text",
+            kb_mode=False,
+        ):
+            if ctype in ("text", "raw"):
+                parts.append(ctext)
+        return mgr.strip_think("".join(parts)).strip()
 
-        def _call_llm():
-            return mgr.chat(prompt, max_tokens=200, _priority="LOW")
-        
-        result = await asyncio.get_event_loop().run_in_executor(
-            get_thread_pool().executor, _call_llm
+    async def _run_async(prompt: str, max_tokens: int = 500) -> str:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            get_thread_pool().executor,
+            _run_llm, prompt, max_tokens
         )
-        overview = (result.get("text", "") or result.get("response", "") or "").strip()
+
+    # ==== 第一轮：B3 叙事型洞察 ====
+    insight = ""
+    merges_applied = []
+    try:
+        docs_text = "\n".join(
+            "  《%s》  分类: %s  标签: %s" % (
+                d["title"],
+                d["category"] or "未分类",
+                ", ".join(d["tags"][:6]) if d["tags"] else "",
+            )
+            for d in doc_list
+        )
+        insight_prompt = (
+            "你是一位知识库分析顾问。请阅读以下用户的全部文档，用叙事方式写一段洞察分析（150-250 字）。\n\n"
+            "要求：\n"
+            "1. 发现文档在回答什么问题（不是列举标题，是找隐藏主题）\n"
+            "2. 哪些领域已经形成体系，哪些只是碎片收藏\n"
+            "3. 给出有判断的评价（如「像是看了门还没进去」「恰好覆盖了三个层次」）\n"
+            "4. 如果值得，给一条可执行的补全建议\n"
+            "5. 语气像人在聊天，不要用「您的」「以上」「本文」等书面语\n\n"
+            "文档列表：\n%s\n\n"
+            "洞察分析：" % docs_text
+        )
+        insight = await _run_async(insight_prompt, max_tokens=600)
+
     except Exception:
-        # LLM 不可用时返回纯统计
+        # LLM 不可用：用分类统计回退
         parts = ["%s（%d篇）" % (k, v) for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])[:3]]
         if parts:
-            overview = "你的知识库主要覆盖" + "、".join(parts) + "等领域。"
+            insight = "你的知识库主要覆盖" + "、".join(parts) + "等领域。"
         else:
-            overview = "知识库共 %d 篇文档，AI 正在学习标签中。" % doc_count
+            insight = "知识库共 %d 篇文档，AI 正在学习标签中。" % doc_count
+
+    # ==== 第二轮：标签归并 ====
+    try:
+        cats_text = "\n".join(
+            "  %s（%d 篇）" % (k, v)
+            for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])
+        )
+        merge_prompt = (
+            "你是一位知识库分类专家。以下文档的标签过于碎片化，需要归并为 3-6 个宽泛的大类。\n\n"
+            "当前标签：\n%s\n\n"
+            "要求：\n"
+            "1. 含义相近的标签合并（如「中医养生」「中医流派」「中医病机」→ 「中医药」）\n"
+            "2. 标签数归并到 3-6 个\n"
+            "3. 输出纯 JSON 数组，每项格式：{\"new\": \"新标签\", \"from\": [\"旧标签1\", \"旧标签2\"]}\n"
+            "4. 不准输出 Markdown，不准加解释文字，只剩 JSON\n\n"
+            "归并方案 JSON：" % cats_text
+        )
+        raw = await _run_async(merge_prompt, max_tokens=400)
+
+        # 解析 JSON（容错：提取第一个 [ 到最后一个 ] 之间的内容）
+        try:
+            start = raw.index("[")
+            end = raw.rindex("]") + 1
+            merge_plan = json.loads(raw[start:end])
+        except (ValueError, json.JSONDecodeError):
+            merge_plan = []
+
+        # 执行归并：更新文档 category + save
+        if merge_plan:
+            for plan in merge_plan:
+                new_cat = plan.get("new", "").strip()
+                old_tags = plan.get("from", [])
+                if not new_cat or not old_tags:
+                    continue
+                old_set = {t.strip() for t in old_tags}
+                changed = 0
+                for doc in kb.documents.values():
+                    old_cat = (doc.category or "").strip()
+                    if old_cat in old_set:
+                        doc.category = new_cat
+                        changed += 1
+                if changed > 0:
+                    merges_applied.append({
+                        "from": list(old_set),
+                        "to": new_cat,
+                        "count": changed,
+                    })
+
+            # 持久化
+            try:
+                kb._save_meta()
+            except Exception:
+                pass
+
+    except Exception:
+        pass
+
+    # 重新读一次分类统计（归并后）
+    try:
+        refreshed = kb.list_documents()
+        cat_counts = {}
+        for d in refreshed:
+            cat = (d.get("category") or "").strip()
+            if cat:
+                cat_counts[cat] = cat_counts.get(cat, 0) + 1
+    except Exception:
+        pass
 
     return {
         "ok": True,
-        "overview": overview,
+        "insight": insight,
         "doc_count": doc_count,
         "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
+        "merges_applied": merges_applied,
     }

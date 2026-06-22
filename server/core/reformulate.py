@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 
 def reformulate_query(query: str, history: list, mgr) -> str:
-    """有历史时 reformulate，无历史原样返回
+    """改写查询：有历史时补全上下文，无历史时提取搜索关键词
 
     Args:
         query: 用户当前消息
@@ -22,20 +22,21 @@ def reformulate_query(query: str, history: list, mgr) -> str:
     Returns:
         reformulated query string（失败时返回原 query）
     """
+    from prompts import REFORMULATE_PROMPT, REFORMULATE_NO_HISTORY_PROMPT
+
+    # 首轮提问：提取搜索关键词
     if not history:
-        return query
-
-    # 拼接 history_summary（最近2轮的Q+A摘要，限制500字）
-    history_summary = _build_history_summary(history, max_chars=500)
-    if not history_summary:
-        return query
-
-    # 拼接 prompt
-    from prompts import REFORMULATE_PROMPT
-    prompt = REFORMULATE_PROMPT.format(
-        history_summary=history_summary,
-        query=query,
-    )
+        prompt = REFORMULATE_NO_HISTORY_PROMPT.format(query=query)
+    else:
+        # 拼接 history_summary（最近2轮的Q+A摘要，限制500字）
+        history_summary = _build_history_summary(history, max_chars=500)
+        if not history_summary:
+            prompt = REFORMULATE_NO_HISTORY_PROMPT.format(query=query)
+        else:
+            prompt = REFORMULATE_PROMPT.format(
+                history_summary=history_summary,
+                query=query,
+            )
 
     # 强制调用本地 StreamEngine（不走 CloudEngine，避免阻塞）
     try:

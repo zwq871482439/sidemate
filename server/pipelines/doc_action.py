@@ -208,10 +208,17 @@ def _parse_markdown_to_sections(md_text: str):
         if line.startswith('# ') and not line.startswith('## '):
             title = line.lstrip('# ').strip()
             continue
-        if line.startswith('## '):
+        # P6：支持 ### / #### 子标题（映射到 Heading 2/3）
+        if re.match(r'^##\s', line) and not re.match(r'^###\s', line):
             if current_heading is not None or current_body_lines:
                 sections.append((current_heading or "概述", '\n'.join(current_body_lines).strip()))
             current_heading = line.lstrip('# ').strip()
+            current_body_lines = []
+            continue
+        if re.match(r'^###\s', line):
+            if current_heading is not None or current_body_lines:
+                sections.append((current_heading or "概述", '\n'.join(current_body_lines).strip()))
+            current_heading = "  " + line.lstrip('# ').strip()  # 缩进表示子标题
             current_body_lines = []
             continue
         current_body_lines.append(line)
@@ -231,25 +238,35 @@ def _parse_markdown_to_sections(md_text: str):
 
 
 def generate_docx(content: str, output_path: str, title: str = "文档"):
-    """将 AI 生成的 Markdown 内容转换为 .docx 文件"""
+    """使用 pandoc 将 Markdown 转为 .docx，再统一字体为等线"""
     from docx import Document
     from docx.shared import Pt
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
+    import pypandoc
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    doc_title, sections = _parse_markdown_to_sections(content)
-    doc = Document()
-
-    # Patch4：统一字体（正文和标题都用同一套）
     _FONT_CN = '等线'
     _FONT_EN = 'Calibri'
-    _FONT_SIZE = Pt(11)
 
-    # Patch4 v3.1 BUG#16 根治：覆盖 docDefaults 的 theme 字体
-    # Word 默认 docDefaults 用 minorEastAsia 主题（映射到 MS Gothic 等日文字体）
-    # 必须直接改 docDefaults，否则没显式设字体的段落（如 Title）会用默认日文字体
+    # 用 pandoc 转换 markdown → docx
+    try:
+        pypandoc.convert_text(
+            content, 'docx', format='markdown',
+            outputfile=output_path,
+            extra_args=[
+                '--from=markdown+autolink_bare_uris+task_lists',
+                '--metadata', 'title=' + title,
+            ]
+        )
+    except Exception as e:
+        log.warning("[DOC] pandoc 转换失败，回退手动生成: %s", e)
+        return _generate_docx_manual(content, output_path, title)
+
+    # 打开生成的 docx，统一字体
+    doc = Document(output_path)
+
+    # 覆盖 docDefaults 字体
     from lxml import etree
     _W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
     _doc_defaults = doc.styles.element.find('{%s}docDefaults' % _W_NS)
@@ -263,27 +280,71 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
         _rfonts = _rpr.find('{%s}rFonts' % _W_NS)
         if _rfonts is None:
             _rfonts = etree.SubElement(_rpr, '{%s}rFonts' % _W_NS)
-        # 覆盖 theme 引用为显式字体名
         _rfonts.set('{%s}ascii' % _W_NS, _FONT_EN)
         _rfonts.set('{%s}hAnsi' % _W_NS, _FONT_EN)
         _rfonts.set('{%s}eastAsia' % _W_NS, _FONT_CN)
         _rfonts.set('{%s}cs' % _W_NS, _FONT_EN)
-        # 删除 theme 属性
         for _attr in ['asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme']:
             _full = '{%s}%s' % (_W_NS, _attr)
             if _full in _rfonts.attrib:
                 del _rfonts.attrib[_full]
 
-    # 设置 Normal 样式
+    # 遍历所有段落，统一字体
+    for _para in doc.paragraphs:
+        for _run in _para.runs:
+            _run.font.name = _FONT_EN
+            _run._element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
+
+    doc.save(output_path)
+    file_size = os.path.getsize(output_path)
+    log.info("[DOC] .docx 生成完成 (pandoc): %s (%d bytes)", os.path.basename(output_path), file_size)
+
+
+def _generate_docx_manual(content: str, output_path: str, title: str = "文档"):
+    """pandoc 不可用时的手动回退方案"""
+    from docx import Document
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    doc_title, sections = _parse_markdown_to_sections(content)
+    doc = Document()
+
+    _FONT_CN = '等线'
+    _FONT_EN = 'Calibri'
+    _FONT_SIZE = Pt(11)
+
+    from lxml import etree
+    _W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    _doc_defaults = doc.styles.element.find('{%s}docDefaults' % _W_NS)
+    if _doc_defaults is not None:
+        _rpr_default = _doc_defaults.find('{%s}rPrDefault' % _W_NS)
+        if _rpr_default is None:
+            _rpr_default = etree.SubElement(_doc_defaults, '{%s}rPrDefault' % _W_NS)
+        _rpr = _rpr_default.find('{%s}rPr' % _W_NS)
+        if _rpr is None:
+            _rpr = etree.SubElement(_rpr_default, '{%s}rPr' % _W_NS)
+        _rfonts = _rpr.find('{%s}rFonts' % _W_NS)
+        if _rfonts is None:
+            _rfonts = etree.SubElement(_rpr, '{%s}rFonts' % _W_NS)
+        _rfonts.set('{%s}ascii' % _W_NS, _FONT_EN)
+        _rfonts.set('{%s}hAnsi' % _W_NS, _FONT_EN)
+        _rfonts.set('{%s}eastAsia' % _W_NS, _FONT_CN)
+        _rfonts.set('{%s}cs' % _W_NS, _FONT_EN)
+        for _attr in ['asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme']:
+            _full = '{%s}%s' % (_W_NS, _attr)
+            if _full in _rfonts.attrib:
+                del _rfonts.attrib[_full]
+
     style = doc.styles['Normal']
     style.font.name = _FONT_EN
     style.font.size = _FONT_SIZE
     style.element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
-    # Patch4 v3.1 BUG#16：Title 样式也设字体（否则标题用 Word 默认字体，不统一）
     _title_style = doc.styles['Title']
     _title_style.font.name = _FONT_EN
     _title_style.element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
-    # 设置 Heading 样式
     for level in range(1, 5):
         hstyle = doc.styles['Heading %d' % level]
         hstyle.font.name = _FONT_EN
@@ -291,10 +352,19 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
 
     title_para = doc.add_heading(doc_title or title, level=0)
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for _run in title_para.runs:
+        _run.font.name = _FONT_EN
+        _run.font.size = Pt(14)
+        _run._element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
 
     for heading, body in sections:
         if heading:
-            doc.add_heading(heading, level=1)
+            _h_level = 2 if heading.startswith('  ') else 1
+            _h_text = heading.lstrip() if _h_level == 2 else heading
+            _h_para = doc.add_heading(_h_text, level=_h_level)
+            for _run in _h_para.runs:
+                _run.font.name = _FONT_EN
+                _run._element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
         if not body:
             continue
         paragraphs = re.split(r'\n{2,}', body)
@@ -303,33 +373,45 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
             if not para_text:
                 continue
             list_items = []
+            _list_has_marks = False
             for line in para_text.split('\n'):
                 line = line.strip()
                 if not line:
                     continue
+                line = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', line)
+                line = re.sub(r'!\[([^\]]*)\]\([^)]*\)', r'\1', line)
                 if re.match(r'^\d+[.、．)\s]', line):
-                    list_items.append(re.sub(r'^\d+[.、．)\s]+', '', line))
-                elif re.match(r'^[-*•]\s', line):
-                    list_items.append(re.sub(r'^[-*•]\s+', '', line))
-                else:
+                    _list_has_marks = True
                     list_items.append(line)
+                elif re.match(r'^[-*•]\s', line):
+                    _list_has_marks = True
+                    list_items.append('• ' + re.sub(r'^[-*•]\s+', '', line))
+                else:
+                    if _list_has_marks and list_items:
+                        list_items.append(line)
+                    else:
+                        list_items.append(line)
             for item in list_items:
                 p = doc.add_paragraph()
-                parts = re.split(r'(\*\*[^*]+\*\*)', item)
+                parts = re.split(r'(\*\*[^*]+\*\*|`[^`]+`)', item)
                 for part in parts:
                     if part.startswith('**') and part.endswith('**'):
                         run = p.add_run(part[2:-2])
                         run.bold = True
-                        run.font.size = Pt(11)
+                        run.font.size = _FONT_SIZE
                         run.font.name = _FONT_EN
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
+                    elif part.startswith('`') and part.endswith('`'):
+                        run = p.add_run(part[1:-1])
+                        run.font.size = _FONT_SIZE
+                        run.font.name = 'Consolas'
                         run._element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
                     elif part:
                         run = p.add_run(part)
-                        run.font.size = Pt(11)
+                        run.font.size = _FONT_SIZE
                         run.font.name = _FONT_EN
                         run._element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
 
     doc.save(output_path)
     file_size = os.path.getsize(output_path)
-    log.info("[DOC] .docx 生成完成: %s (%d bytes, %d 章节)" % (
-        os.path.basename(output_path), file_size, len(sections)))
+    log.info("[DOC] .docx 生成完成 (手动): %s (%d bytes)", os.path.basename(output_path), file_size)
