@@ -224,14 +224,14 @@ async function kbRefreshDocs() {
     _kbBusyProcessing = hasSummarizing;
 
     // P6: 页面刷新后重建处理队列（从后端文档状态恢复）
-    var _rebuildOne = function(_rd) {
+    var _rebuildOne = function(_rd, _conflictInfo) {
       var _exists = false;
       for (var _ei = 0; _ei < _kbQueueItems.length; _ei++) {
         if (_kbQueueItems[_ei].docId === _rd.doc_id) { _exists = true; break; }
       }
       if (!_exists) {
-        _kbAddToQueue(_rd.doc_id, _rd.filename);
-        if (typeof kbSubscribeProgress === 'function') {
+        _kbAddToQueue(_rd.doc_id, _rd.filename, _conflictInfo || null);
+        if (!_conflictInfo && typeof kbSubscribeProgress === 'function') {
           kbSubscribeProgress(_rd.doc_id, _rd.filename);
         }
       }
@@ -242,6 +242,24 @@ async function kbRefreshDocs() {
         _rebuildOne(_rd);
       } else if (_rd.status === 'ready' && (_rd.tag_status === 'generating' || _rd.tag_status === 'pending')) {
         _rebuildOne(_rd);
+      } else if (_rd.status === 'conflict') {
+        // 重建冲突文档的队列条目
+        var _cinfo = null;
+        var _meta = _rd.metadata || {};
+        var _dupOf = _meta.duplicate_of;
+        if (_dupOf) {
+          var _existFn = _dupOf;
+          for (var _fi = 0; _fi < docs.length; _fi++) {
+            if (docs[_fi].doc_id === _dupOf) { _existFn = docs[_fi].filename || _dupOf; break; }
+          }
+          _cinfo = {
+            existing_doc_id: _dupOf,
+            existing_filename: _existFn,
+            level: _meta.duplicate_level || 'high',
+            similarity: _meta.duplicate_similarity || 0.95
+          };
+        }
+        _rebuildOne(_rd, _cinfo);
       }
     }
     _kbRenderQueue();
