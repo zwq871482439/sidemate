@@ -71,6 +71,14 @@
   --kbd-bg: var(--gray-100);
   --kbd-border: var(--gray-200);
 
+  /* P6 亮色主题组件级变量 */
+  --card-bg: var(--bg-primary);
+  --card-border: var(--border-color);
+  --tag-bg: #EEEDFE;
+  --tag-text: #534AB7;
+  --timeline-bg: var(--bg-secondary);
+  --timeline-border: var(--border-color);
+
   /* 字号体系 */
   --font-xs: 11px;
   --font-sm: 13px;
@@ -122,6 +130,14 @@
   --chip-reasoning-bg: rgba(96,165,250,0.15); --chip-reasoning-text: #93c5fd;
   --chip-code-bg: rgba(52,211,153,0.15); --chip-code-text: #86efac;
   --chip-text-bg: rgba(251,191,36,0.15); --chip-text-text: #fde68a;
+
+  /* P6 暗色主题组件级变量 */
+  --card-bg: #1e1f25;
+  --card-border: #2a2b33;
+  --tag-bg: rgba(99,102,241,.18);
+  --tag-text: #c7d2fe;
+  --timeline-bg: #25262d;
+  --timeline-border: #3a3b42;
   --chip-agent-bg: rgba(167,139,250,0.15); --chip-agent-text: #c4b5fd;
   --chip-doc-bg: rgba(244,114,182,0.15); --chip-doc-text: #f9a8d4;
   --think-color: #a78bfa; --think-hover: #c4b5fd;
@@ -791,7 +807,8 @@ body.has-offline-banner #app{padding-top:44px}
   margin-bottom: 8px;
   padding: 6px 10px;
   border-radius: 8px;
-  background: var(--bg-secondary);
+  background: var(--timeline-bg);
+  border: 0.5px solid var(--timeline-border);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1190,10 +1207,19 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
    P6: 三段模式按钮组
    ============================================================ */
 .mode{display:flex;border-radius:8px;border:0.5px solid var(--border-color);overflow:hidden;background:var(--bg-primary)}
-.mode button{padding:5px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text-secondary);border-right:0.5px solid var(--border-color);transition:all .15s;white-space:nowrap;position:relative}
+.mode button{padding:5px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text-secondary);border-right:0.5px solid var(--border-color);transition:all .2s cubic-bezier(.4,0,.2,1);white-space:nowrap;position:relative;overflow:hidden}
 .mode button:last-child{border-right:none}
 .mode button:hover{background:var(--primary-50);color:var(--primary-900)}
-.mode button.sel{background:var(--primary-50);color:var(--primary-900);font-weight:500}
+/* P6 三模式主题色：离线=绿 在线=蓝 并行=紫 */
+.mode button.sel{color:#fff;font-weight:600;border-right-color:transparent}
+.mode button.sel:last-child{border-right:none}
+.mode button[data-mode="offline"].sel,
+.mode button[data-mode="local"].sel{background:var(--success-color)}
+.mode button[data-mode="online"].sel,
+.mode button[data-mode="cloud"].sel{background:var(--primary-700)}
+.mode button[data-mode="parallel"].sel{background:linear-gradient(135deg,#7c3aed,#5b34c4)}
+.mode button.sel::before{content:'';position:absolute;left:8px;top:50%;transform:translateY(-50%);width:5px;height:5px;background:#fff;border-radius:50%;opacity:.85}
+.mode button.sel{padding-left:22px}
 
 /* ============================================================
    P6: Token 条
@@ -1595,12 +1621,21 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-view-btn.sel{background:var(--bg-info);color:var(--color-accent)}
 .kb-view-btn:hover{background:var(--bg-tertiary)}
 
+/* P6 拖拽上传视觉反馈 */
+.kb-page.drag-over .kb-doc-grid,
+.kb-page.drag-over .kb-doc-list,
+.kb-page.drag-over .kb-summary,
+.kb-page.drag-over .kb-toolbar{opacity:.25;pointer-events:none;transition:opacity .2s}
+.kb-page.drag-over::after{content:'松开以上传文档';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(1.1);font-size:1.4em;font-weight:600;color:var(--primary-900);background:var(--primary-50);padding:28px 56px;border-radius:16px;border:2px dashed var(--primary-500);box-shadow:0 8px 24px rgba(30,58,95,.15);animation:kb-drag-pulse 1.2s ease infinite;z-index:50;pointer-events:none}
+@keyframes kb-drag-pulse{0%,100%{transform:translate(-50%,-50%) scale(1.1)}50%{transform:translate(-50%,-50%) scale(1.18)}}
+
 /* P6: 分类标签（侧栏） */
 .kb-tag.cat{padding:5px 10px;cursor:pointer;font-size:12px}
 
 /* 文档卡片 */
-.kb-card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;position:relative;transition:border-color .15s}
-.kb-card:hover{border-color:#B5D4F4}
+.kb-card{background:var(--card-bg);border:0.5px solid var(--card-border);border-radius:var(--border-radius-md, 8px);padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;position:relative;transition:all .2s cubic-bezier(.4,0,.2,1);box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.kb-card:hover{border-color:var(--primary-500);box-shadow:0 4px 12px rgba(30,58,95,.08);transform:translateY(-1px)}
+.kb-card:active{transform:translateY(0);box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .kb-card .cbar{display:flex;align-items:center;justify-content:space-between}
 .kb-card .ctitle{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .kb-card .cicons{display:flex;gap:3px;flex-shrink:0}
@@ -1610,7 +1645,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-card .cpreview.failed{color:#D85A30}
 .cpreview-spinner{display:inline-block;width:9px;height:9px;border:1.5px solid var(--border-color);border-top-color:var(--accent-color);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:4px}
 .kb-card .ctags{display:flex;gap:3px;flex-wrap:wrap}
-.kb-card .ctag{padding:1px 6px;border-radius:8px;font-size:10px;background:#EEEDFE;color:#534AB7}
+.kb-card .ctag{padding:1px 6px;border-radius:8px;font-size:10px;background:var(--tag-bg);color:var(--tag-text)}
 .kb-card .cstats{display:flex;gap:10px;font-size:10px;color:var(--text-muted);flex-wrap:wrap;align-items:center}
 .kb-card .cmtime{font-size:10px;color:var(--text-muted);margin-top:auto}
 
@@ -1646,7 +1681,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .settings-content .progress{height:6px;border-radius:3px;background:var(--border-color);margin-top:4px}
 .settings-content .progress-bar{height:6px;border-radius:3px;background:var(--primary-900)}
 [data-theme="dark"] .settings-nav-item.sel{background:rgba(99,102,241,.15);color:#a5b4fc}
-[data-theme="dark"] .kb-card .ctag{background:rgba(99,102,241,.15);color:#a5b4fc}
+[data-theme="dark"] .kb-card .ctag{background:var(--tag-bg);color:var(--tag-text)}
 [data-theme="dark"] .ic-lock{color:#f87171}
 [data-theme="dark"] .ic-dup{color:#fbbf24}
 [data-theme="dark"] .hm-dot.cold{background:#475569}

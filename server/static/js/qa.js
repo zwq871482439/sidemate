@@ -826,6 +826,31 @@ async function kbOnDrop(e) {
   }
 }
 
+// P6 拖拽视觉反馈
+function kbHandleDragOver(e) {
+  e.preventDefault();
+  var page = document.getElementById('kbFullInterface');
+  if (page) page.classList.add('drag-over');
+}
+function kbHandleDragLeave(e) {
+  // 只有真正离开 kb-page 才清除（子元素间移动不触发）
+  var page = document.getElementById('kbFullInterface');
+  if (!page) return;
+  var related = e.relatedTarget;
+  if (!related || !page.contains(related)) {
+    page.classList.remove('drag-over');
+  }
+}
+async function kbHandleDrop(e) {
+  e.preventDefault();
+  var page = document.getElementById('kbFullInterface');
+  if (page) page.classList.remove('drag-over');
+  var files = Array.from(e.dataTransfer.files);
+  for (var i = 0; i < files.length; i++) {
+    await kbUploadFile(files[i]);
+  }
+}
+
 async function kbUploadFile(f) {
   var formData = new FormData();
   formData.append('file', f);
@@ -1180,6 +1205,9 @@ window.kbRefreshDocs = kbRefreshDocs;
 window.kbOnFilePicked = kbOnFilePicked;
 window.kbOnDrop = kbOnDrop;
 window.kbUploadFile = kbUploadFile;
+window.kbHandleDragOver = kbHandleDragOver;
+window.kbHandleDragLeave = kbHandleDragLeave;
+window.kbHandleDrop = kbHandleDrop;
 window.kbDeleteDoc = kbDeleteDoc;
 window.kbPauseDoc = kbPauseDoc;
 window.kbResumeDoc = kbResumeDoc;

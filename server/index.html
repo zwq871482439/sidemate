@@ -218,7 +218,8 @@
     </div>
 
     <!-- State 3: 已激活 → 完整 KB 界面 -->
-    <div id="kbFullInterface" style="display:none;position:relative;flex:1;flex-direction:column;min-height:0">
+    <div id="kbFullInterface" class="kb-page" style="display:none;position:relative;flex:1;flex-direction:column;min-height:0"
+         ondragover="kbHandleDragOver(event)" ondragleave="kbHandleDragLeave(event)" ondrop="kbHandleDrop(event)">
 
     <!-- 模型未加载遮罩 -->
     <div id="kbModelOverlay" class="kb-model-overlay" style="display:none">
