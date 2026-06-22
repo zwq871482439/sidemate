@@ -195,14 +195,17 @@ function _showKbPickerModal(files) {
       }
       var totalTokens = Math.ceil(totalChars / 1.5);  // 中文 token 估算
       var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 8192;
-      var overLimit = totalTokens > maxTokens * 0.85;  // 85% 阈值
+      // P6: 检测剩余容量，不是纯上限
+      var historyUsed = (typeof _historyTokenCount !== 'undefined') ? (_historyTokenCount || 0) : 0;
+      var remainTokens = Math.max(0, maxTokens * 0.85 - historyUsed);
+      var overLimit = totalTokens > remainTokens && remainTokens > 0;
 
       var btnText = selCount > 0
         ? ('确认引用（' + selCount + '篇' + (totalTokens > 0 ? ' · 约' + (totalTokens/1000).toFixed(1) + 'K词元' : '') + '）')
         : '确认引用';
 
       if (overLimit) {
-        btnText += ' — 超出容量限制';
+        btnText += ' — 超出剩余容量 (可用' + (remainTokens/1000).toFixed(0) + 'K)';
         confirmBtn.style.cssText = confirmBtn.style.cssText + ';opacity:.5;cursor:not-allowed';
       } else {
         confirmBtn.style.cssText = confirmBtn.style.cssText.replace(';opacity:.5;cursor:not-allowed', '');

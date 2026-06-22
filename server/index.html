@@ -508,9 +508,11 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:stretch">
             <div class="card">
               <h4>云端 AI 模型配置</h4>
+              <form onsubmit="return false" style="margin:0">
               <div class="row"><span class="lbl">API 地址</span><input type="text" id="cloudBaseUrl" placeholder="请输入 API 地址" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
               <div class="row"><span class="lbl">API Key</span><input type="password" id="cloudApiKey" placeholder="请输入 API Key" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><button class="btn btn-ghost btn-sm" onclick="toggleApiKeyVisibility()">显示</button></div>
               <div class="row"><span class="lbl">模型名称</span><input type="text" id="cloudModel" placeholder="请输入模型名称" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
+              </form>
               <div class="row"><span class="lbl">模型能力</span><span id="cloudCapsDisplay" style="font-size:var(--font-sm);color:var(--text-muted)">输入模型名称后自动匹配</span></div>
               <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" onclick="testCloudConnection()">测试连接</button><button class="btn btn-primary" onclick="saveCloudConfig()">保存配置</button></div>
               <div id="cloudTestResult" style="margin-top:6px;font-size:.82em"></div>
