@@ -183,6 +183,7 @@ function _showKbPickerModal(files) {
         _kbSelectedDocs = _kbSelectedDocs.filter(function(d) { return d.doc_id !== f.doc_id; });
       }
       // P6 打磨 bug3: 选择/取消 KB 文档后刷新 token 计数
+      window._kbSelectedFiles = _kbSelectedDocs.slice();  // 同步给 token estimator
       if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
         TokenEstimator.updateInputDisplay();
       }
@@ -331,7 +332,7 @@ function onUnifiedPicked(e) {
         if (d.path) {
           if (typeof pendingFile !== 'undefined') pendingFile = {
             name: file.name, path: d.path, source: 'upload',
-            tokens: d.tokens || 0
+            tokens: d.tokens || 0, size: file.size || 0
           };
           if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
             TokenEstimator.updateInputDisplay();
