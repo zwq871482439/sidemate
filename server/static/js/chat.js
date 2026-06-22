@@ -150,6 +150,29 @@ function _buildAgentTimelineHtml(timelineData) {
   if (!timelineData || !timelineData.length) return '';
   var html = '<div class="agent-timeline">';
   timelineData.forEach(function(item) {
+    // P6: parallel 模式 timeline（item.step 格式）
+    if (item.step) {
+      var elapsedTxt = '';
+      if (item.elapsed_ms != null) {
+        elapsedTxt = item.elapsed_ms >= 1000 ? (item.elapsed_ms / 1000).toFixed(1) + 's' : item.elapsed_ms + 'ms';
+      }
+      var countTxt = (item.count != null) ? '（' + item.count + ' 篇）' : '';
+      var label = '';
+      var icon = 'check';
+      switch (item.step) {
+        case 'retrieve':  label = '本地知识库检索' + countTxt; icon = 'books'; break;
+        case 'local_gen': label = '本地 AI 生成回答'; icon = 'brain'; break;
+        case 'cloud_gen': label = '云端 AI 补充'; icon = 'cloud'; break;
+        case 'merge':     label = '自动融合优化'; icon = 'refresh'; break;
+        default: return;
+      }
+      html += '<div class="agent-step agent-step-parallel">' +
+        '<span class="agent-icon agent-done">' + iconSvg(icon, '14') + '</span>' +
+        '<span class="agent-label">' + label + '</span>' +
+        '<span class="agent-time">' + elapsedTxt + '</span>' +
+        '</div>';
+      return;
+    }
     // summary 特殊处理
     if (item.status === '_summary') {
       var d = item.data || {};
