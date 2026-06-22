@@ -47,8 +47,8 @@ function _buildKbSources(m) {
   if (!m.kb_sources || !m.kb_sources.length || m.role === 'user') return '';
   var html = '<div class="kb-sources-bar"><div class="kb-sources-title">' + iconSvg('books','14') + ' 参考来源</div>';
   m.kb_sources.forEach(function(s, i) {
-    var label = s.label || s.source_label || ('来源' + (i+1));
-    var snippet = s.snippet || s.text_snippet || '';
+    var label = s.label || ('来源' + (i+1));
+    var snippet = s.snippet || '';
     html += '<div class="kb-source-item">'
       + '<span class="kb-source-num">' + (i + 1) + '</span>'
       + '<span class="kb-source-label">' + esc(label) + '</span>'
@@ -1314,8 +1314,8 @@ async function sendMessage() {
                 srcBar.id = 'kbSourcesBar';
                 var srcHtml = '<div class="kb-sources-title">' + iconSvg('books','14') + ' 参考来源</div>';
                 sources.forEach(function(s, i) {
-                  var label = s.label || s.source_label || ('来源' + (i+1));
-                  var snippet = s.snippet || s.text_snippet || '';
+                  var label = s.label || ('来源' + (i+1));
+                  var snippet = s.snippet || '';
                   srcHtml += '<div class="kb-source-item">' +
                     '<span class="kb-source-num">' + (i + 1) + '</span>' +
                     '<span class="kb-source-label">' + esc(label) + '</span>' +

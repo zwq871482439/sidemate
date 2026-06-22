@@ -172,26 +172,30 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             if action_mode == "kb":
                 log.info("[LOCAL] KB 模式：检索文库")
 
-                # 5a. Reformulate: 让本地 LLM 生成检索关键词
-                yield sse_event("agent_timeline", {"step": "reformulate", "phase": "start", "label": "生成搜索关键词"})
-                keywords = []
+                # 5a. Reformulate: 让本地 LLM 改写查询（多轮追问时补全上下文）
+                yield sse_event("agent_timeline", {"step": "reformulate", "phase": "start", "label": "分析问题"})
+                search_query = prompt
                 try:
                     from core.reformulate import reformulate_query
                     reformulated = reformulate_query(prompt, history_raw or [], mgr)
                     if reformulated and reformulated != prompt:
                         log.info("[LOCAL-KB] Reformulated: '%s' -> '%s'", prompt[:30], reformulated[:30])
-                        keywords = [w.strip() for w in reformulated.replace('，', ',').split(',') if w.strip()]
+                        search_query = reformulated
+                        yield sse_event("kb_reformulate", {"original": prompt, "reformulated": reformulated})
                 except Exception as e:
                     log.warning("[LOCAL-KB] Reformulate failed: %s", str(e)[:60])
-                yield sse_event("agent_timeline", {"step": "reformulate", "phase": "done", "label": "生成搜索关键词", "count": len(keywords)})
-                if keywords:
-                    yield sse_event("kb_keywords", {"keywords": keywords})
+                yield sse_event("agent_timeline", {"step": "reformulate", "phase": "done", "label": "分析问题"})
 
                 # 5b. 检索文库
                 yield sse_event("agent_timeline", {"step": "search", "phase": "start", "label": "检索文库"})
                 budget = mgr.calc_kb_context_budget()
                 safe_chars = budget["safe_chars"]
-                kb_context, kb_sources = kb.get_context(prompt, max_chars=safe_chars, ai_mode='local')
+                kb_context, kb_sources_raw = kb.get_context(search_query, max_chars=safe_chars, ai_mode='local')
+                # 规范化字段：统一为 label/snippet（和 compare/parallel pipeline 一致）
+                kb_sources = [
+                    {"label": s.get("source_label", "?"), "snippet": s.get("text_snippet", "")[:100]}
+                    for s in kb_sources_raw
+                ]
                 yield sse_event("agent_timeline", {"step": "search", "phase": "done", "label": "检索文库", "count": len(kb_sources)})
                 if not kb_context:
                     yield sse_event("mode_hint", {"hint": "文库中未找到与问题相关的内容，将作为普通对话处理"})
@@ -202,7 +206,6 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                     kb_prompt = KB_USER_PROMPT_TEMPLATE.format(context=kb_context, question=prompt)
                     prompt = kb_prompt
                     _kb_mode = True
-                    # 保存 KB 来源信息供前端展示
                     ctx.kb_sources = kb_sources
 
             _doc_mode = (action_mode == "doc")
