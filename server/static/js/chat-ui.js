@@ -158,6 +158,9 @@ function clearFileRef() {
   if (typeof _refFilePath !== 'undefined') _refFilePath = null;
   if (typeof pendingFile !== 'undefined') pendingFile = null;
   if (typeof hideFileIndicator === 'function') hideFileIndicator();
+  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+    TokenEstimator.updateInputDisplay();
+  }
   var input = document.getElementById('unifiedInput');
   if (input) input.value = '';
 }

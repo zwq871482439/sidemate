@@ -78,10 +78,7 @@ function hideFileIndicator() {
   _pendingFileSource = '';
   var bar = document.getElementById('fileIndicatorBar');
   if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
-  // P6 打磨 bug1: 清除文件后刷新 token 计数
-  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
-    TokenEstimator.updateInputDisplay();
-  }
+  // 注：TokenEstimator 由调用方在清理 pendingFile 后手动触发
 }
 
 function clearPendingFile(e) {
@@ -94,6 +91,13 @@ function clearPendingFile(e) {
   // 清除 KB 文件引用状态
   var kbPicker = document.getElementById('kbFilePickerSelect');
   if (kbPicker) kbPicker.value = '';
+  // P6: 清理 KB 选择状态
+  if (typeof _kbSelectedDocs !== 'undefined') _kbSelectedDocs = [];
+  if (typeof window !== 'undefined') window._kbSelectedFiles = [];
+  // P6: 清理文件后刷新 token（必须在 pendingFile=null 之后）
+  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+    TokenEstimator.updateInputDisplay();
+  }
 }
 window.clearPendingFile = clearPendingFile;
 
