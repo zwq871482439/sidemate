@@ -867,6 +867,11 @@ class _KBOpsMixin:
                 self._save_meta()
                 return
 
+            # P6: chunking 阶段性进度（总进度的 10% → 20%）
+            self._notify_progress(doc_id, phase="chunking", progress=0.10,
+                                 chunk_total=plan.total_chunks, chunk_done=0)
+            self._notify_progress(doc_id, phase="chunking", progress=0.20,
+                                 chunk_total=plan.total_chunks, chunk_done=plan.total_chunks)
             token.check_or_raise()
 
             # 创建 chunk 记录
