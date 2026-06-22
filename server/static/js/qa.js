@@ -48,11 +48,13 @@ async function kbRouteState() {
     if (loading) loading.style.display = 'none';
     if (fullInterface) fullInterface.style.display = 'flex';
     kbRefreshDocs();
+    kbRefreshAIOverview();  // P6: 页面加载时恢复洞察
   } catch (e) {
     silentLog('[KB] 状态路由失败:', e);
     if (loading) loading.style.display = 'none';
     if (fullInterface) fullInterface.style.display = 'flex';
     kbRefreshDocs();
+    kbRefreshAIOverview();  // P6: 异常兜底也恢复洞察
   }
 }
 
