@@ -1094,6 +1094,10 @@ function applyCodeHighlight(root) {
   if (typeof hljs !== 'undefined') {
     var blocks = (root || document).querySelectorAll('pre code[class*="language-"]');
     blocks.forEach(function(block) {
+      // P6 修复：hljs 要求先清除 data-highlighted 再高亮，避免控制台警告
+      if (block.dataset.highlighted === 'yes') {
+        delete block.dataset.highlighted;
+      }
       try { hljs.highlightElement(block); } catch(e) {}
     });
   }
