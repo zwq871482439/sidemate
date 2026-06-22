@@ -370,14 +370,14 @@ function _renderSingleMsg(m, idx) {
   var _hasLiveTimeline = (_agentTimelineEl && _agentTimelineEl.parentNode);
   var timelineHtml = _hasLiveTimeline ? '' : _buildAgentTimelineHtml(m.agent_timeline);
   var html = '<div class="msg-copy-wrap">'
-    + timelineHtml + actionTag + ts + bodyHtml;
+    + timelineHtml + _buildKbSources(m) + actionTag + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
   if (m.doc_url) {
     var _dlUrl = m.doc_url;
     if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
     html += '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
   }
-  html += _buildFileTag(m) + _buildStats(m) + _buildKbSources(m) + _buildCopyBtn();
+  html += _buildFileTag(m) + _buildStats(m) + _buildCopyBtn();
   html += '</div>';
   return html;
 }
@@ -1314,10 +1314,12 @@ async function sendMessage() {
                 srcBar.id = 'kbSourcesBar';
                 var srcHtml = '<div class="kb-sources-title">' + iconSvg('books','14') + ' 参考来源</div>';
                 sources.forEach(function(s, i) {
+                  var label = s.label || s.source_label || ('来源' + (i+1));
+                  var snippet = s.snippet || s.text_snippet || '';
                   srcHtml += '<div class="kb-source-item">' +
                     '<span class="kb-source-num">' + (i + 1) + '</span>' +
-                    '<span class="kb-source-label">' + esc(s.label || '来源' + (i+1)) + '</span>' +
-                    (s.snippet ? '<div class="kb-source-snippet">' + esc(s.snippet) + '</div>' : '') +
+                    '<span class="kb-source-label">' + esc(label) + '</span>' +
+                    (snippet ? '<div class="kb-source-snippet">' + esc(snippet) + '</div>' : '') +
                     '</div>';
                 });
                 srcBar.innerHTML = srcHtml;
