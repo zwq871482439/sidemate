@@ -7,6 +7,7 @@ var _agentTimelineEl = null;    // Agent 工具时间线容器 DOM（全局，�
 var _agentTimelineData = [];    // Agent 时间线数据收集（用于持久化到消息对象）
 var _agentCurrentStepEl = null; // Patch4 v3：当前进行中的步骤 DOM（新步骤开始时它变 done，治闪烁）
 var _thinkingTimerInterval = null; // Patch5 C7 B3：思考态计时器
+var _hasMorphedToAnswering = false; // P6：思考→回答过渡标记
 // P6 T04: _skeletonActive 已移除（去骨架屏）
 var _agentCurrentStepStartTs = 0; // 当前步骤开始时间戳（用于计算 elapsed）
 
@@ -87,7 +88,8 @@ function _handleAgentTimelineSSE(d) {
   var streamEl = document.getElementById('stream-msg');
   if (!streamEl) return;
 
-  var container = document.getElementById('agent-timeline');
+  // 限定在当前 stream-msg 内搜索，避免第二轮找到旧气泡里的残余容器
+  var container = streamEl.querySelector('#agent-timeline');
   if (!container) {
     // 创建 AgentTimeline 容器，放在 stream-msg 最上方
     container = document.createElement('div');
@@ -106,13 +108,31 @@ function _handleAgentTimelineSSE(d) {
   var phase = d.phase;  // "start" | "done"
   var label = _agentTimelineStepLabels[step] || (d.label || step);
 
+  // P6 打磨：KB 步骤（reformulate/search）需要垂直布局，加 vertical 类
+  var _isKbStep = (step === 'reformulate' || step === 'search');
+  if (_isKbStep && container.className.indexOf('vertical') < 0) {
+    container.className += ' vertical';
+  }
+
+  // 步骤图标 + 配色映射
+  var _stepIcons = {
+    reformulate: { icon: 'search', color: '#7F77DD' },
+    search:      { icon: 'book',   color: '#378ADD' },
+    retrieve:    { icon: 'book',   color: '#378ADD' },
+    local_gen:   { icon: 'write',  color: '#639922' },
+    cloud_gen:   { icon: 'cloud',  color: '#EF9F27' },
+    merge:       { icon: 'check',  color: '#7F77DD' },
+  };
+  var _si = _stepIcons[step] || { icon: 'spin', color: 'currentColor' };
+
   if (phase === 'start') {
-    // 创建新步骤节点 — P6 审计修复：用 SVG 圆环替代实心圆，让 spin 动画有视觉反馈
+    // 创建新步骤节点
     var stepEl = document.createElement('div');
-    stepEl.className = 'agent-tl-step';
+    stepEl.className = _isKbStep ? 'agent-tl-step agent-tl-step-block' : 'agent-tl-step';
     stepEl.setAttribute('data-step', step);
+    stepEl.setAttribute('data-icon', _si.icon);
     stepEl.innerHTML =
-      '<span class="agent-tl-icon spin"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5" opacity="0.3"/><path d="M7 2a5 5 0 015 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>' +
+      '<span class="agent-tl-icon spin" style="color:' + _si.color + '">' + iconSvg(_si.icon, '12') + '</span>' +
       '<span class="agent-tl-label">' + _esc(label) + '</span>' +
       '<span class="agent-tl-time"></span>';
     container.appendChild(stepEl);
@@ -128,9 +148,19 @@ function _handleAgentTimelineSSE(d) {
       if (iconEl) {
         iconEl.classList.remove('spin');
         iconEl.classList.add('done');
+        iconEl.style.color = '';  // 清除内联色，让 .done 的绿色生效
+        // 替换为勾号图标
+        iconEl.innerHTML = iconSvg('check', '12');
       }
       if (timeEl) {
-        var elapsed = d.elapsed_ms != null ? d.elapsed_ms : (Date.now() - _agentCurrentStepStartTs);
+        var elapsed;
+        if (d.elapsed_ms != null) {
+          elapsed = d.elapsed_ms;
+        } else if (d.elapsed != null) {
+          elapsed = Math.round(d.elapsed * 1000);  // 后端发送秒数，转毫秒
+        } else {
+          elapsed = Date.now() - _agentCurrentStepStartTs;
+        }
         if (elapsed >= 1000) {
           timeEl.textContent = (elapsed / 1000).toFixed(1) + 's';
         } else {
@@ -142,36 +172,280 @@ function _handleAgentTimelineSSE(d) {
     // 收集到时间线数据（用于持久化）
     _agentTimelineData.push({
       step: step,
-      elapsed_ms: d.elapsed_ms || (Date.now() - _agentCurrentStepStartTs),
+      elapsed_ms: d.elapsed_ms || (d.elapsed != null ? Math.round(d.elapsed * 1000) : 0) || (Date.now() - _agentCurrentStepStartTs),
       count: d.count
     });
   }
 }
 
-// P6 打磨：并行模式流式内容渲染到对应 timeline 步骤
-var _parallelChannelRendered = {};  // 记录每个 channel 的 rendered 行数（带行号）
+// ===== P6 打磨：Phase 阶段卡片系统（并行模式用）=====
+var _phaseCards = {};  // {num: {el, status}}
 
-function _renderParallelChannelContent(channel, fullContent, newChunk) {
+function _createPhaseCard(name, num, status) {
   var container = document.getElementById('agent-timeline');
+  if (!container) {
+    var streamEl = document.getElementById('stream-msg');
+    if (!streamEl) return null;
+    container = document.createElement('div');
+    container.id = 'agent-timeline';
+    container.className = 'agent-timeline-container';
+    streamEl.insertBefore(container, streamEl.firstChild);
+    _agentTimelineEl = container;
+  }
+
+  var card = document.createElement('div');
+  card.className = 'agent-phase-card phase-' + (status || 'active');
+  card.setAttribute('data-phase', num);
+
+  var header = document.createElement('div');
+  header.className = 'agent-phase-header';
+  header.innerHTML = '<span class="agent-phase-num">' + num + '</span>' +
+    '<span class="agent-phase-title">' + _esc(name) + '</span>' +
+    '<span class="agent-phase-status">' + (status === 'done' ? '完成' : (status === 'pending' ? '等待中' : '进行中')) + '</span>';
+
+  var body = document.createElement('div');
+  body.className = 'agent-phase-body';
+
+  card.appendChild(header);
+  card.appendChild(body);
+  container.appendChild(card);
+
+  _phaseCards[num] = { el: card, status: status || 'active' };
+  return card;
+}
+
+function _markPhaseCard(num, status) {
+  var pc = _phaseCards[num];
+  if (!pc) return;
+  pc.el.className = 'agent-phase-card phase-' + status;
+  pc.status = status;
+  var stEl = pc.el.querySelector('.agent-phase-status');
+  if (stEl) stEl.textContent = status === 'done' ? '完成' : (status === 'pending' ? '等待中' : '进行中');
+}
+
+function _getPhaseCard(num) {
+  return _phaseCards[num] ? _phaseCards[num].el : null;
+}
+
+function _addStepToPhase(num, iconName, label, color, isActive) {
+  var pc = _phaseCards[num];
+  if (!pc) return null;
+  var body = pc.el.querySelector('.agent-phase-body');
+  if (!body) return null;
+
+  var step = document.createElement('div');
+  step.style.cssText = 'display:flex;align-items:center;gap:4px;padding:1px 0;font-size:11px;animation:agent-tl-step-in .25s ease-out';
+  step.innerHTML = '<span style="color:' + (color || 'var(--text-muted)') + ';' + (isActive ? 'animation:pulse 1s ease-in-out infinite' : '') + '">' +
+    iconSvg(iconName || 'spin', '10') + '</span>' +
+    '<span style="color:var(--text-primary);font-weight:500">' + _esc(label) + '</span>';
+  body.appendChild(step);
+  return step;
+}
+
+// P6 打磨：kb_reformulate 事件 → 把改写关键词注入 reformulate 步骤
+function _handleKbReformulate(d) {
+  var streamEl = document.getElementById('stream-msg');
+  if (!streamEl) return;
+  var container = streamEl.querySelector('#agent-timeline');
   if (!container) return;
 
-  var stepId = channel === 'local' ? 'local_gen' : (channel === 'cloud' ? 'cloud_gen' : 'merge');
-  var stepEl = container.querySelector('[data-step="' + stepId + '"]');
+  var stepEl = container.querySelector('[data-step="reformulate"]');
   if (!stepEl) return;
 
-  // 获取或创建内容区域
+  // 保存用于 renderMessages 持久化
+  window._kbReformulateData = d;
+
   var contentEl = stepEl.querySelector('.agent-tl-content');
   if (!contentEl) {
     contentEl = document.createElement('div');
     contentEl.className = 'agent-tl-content';
-    contentEl.style.cssText = 'margin-top:4px;padding:6px 8px;background:var(--bg-tertiary,var(--bg-secondary));border-radius:4px;font-size:11px;line-height:1.5;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--text-secondary)';
-    var labelEl = stepEl.querySelector('.agent-tl-label');
-    if (labelEl) {
-      labelEl.parentNode.insertBefore(contentEl, labelEl.nextSibling);
-    } else {
-      stepEl.appendChild(contentEl);
+    stepEl.appendChild(contentEl);
+  }
+
+  var changed = d.changed;
+  var original = esc(d.original || '');
+  var reformulated = esc(d.reformulated || '');
+
+  if (changed) {
+    // 改写成功的状态：显示原问题 + 改写结果
+    contentEl.innerHTML = '<div class="agent-tl-kv"><span class="agent-tl-kv-key">原问题</span><span class="agent-tl-kv-val">' + original + '</span></div>' +
+      '<div class="agent-tl-kv"><span class="agent-tl-kv-key">改写为</span><span class="agent-tl-kv-val agent-tl-highlight">' + reformulated + '</span></div>';
+  } else if (d.error) {
+    // 改写失败
+    contentEl.innerHTML = '<div class="agent-tl-kv"><span class="agent-tl-kv-key">直接检索</span><span class="agent-tl-kv-val">' + original + '</span></div>';
+  } else {
+    // 改写无变化：原问题已足够清晰
+    contentEl.innerHTML = '<div class="agent-tl-kv"><span class="agent-tl-kv-key">问题清晰</span><span class="agent-tl-kv-val">' + original + '</span></div>';
+  }
+  if (d.elapsed != null) {
+    contentEl.innerHTML += '<span class="agent-tl-elapsed">' + d.elapsed + 's</span>';
+  }
+}
+
+// P6 打磨：通用步骤内容注入函数（kb_sources、并行内容等）
+// stepName: "reformulate" | "search" | "local_gen" | "cloud_gen" | "merge"
+// data: 源数据数组或字符串
+// dataType: "kb" (kb sources) | "text" (plain text)
+function _injectStepContent(stepName, data, dataType) {
+  // 限定在当前 stream-msg 内搜索时间线容器，避免跨气泡串扰
+  var streamEl = document.getElementById('stream-msg');
+  if (!streamEl) return;
+  var container = streamEl.querySelector('#agent-timeline');
+  if (!container) return;
+
+  var stepEl = container.querySelector('[data-step="' + stepName + '"]');
+  if (!stepEl) return;
+
+  var contentEl = stepEl.querySelector('.agent-tl-content');
+  if (!contentEl) {
+    contentEl = document.createElement('div');
+    contentEl.className = 'agent-tl-content';
+    stepEl.appendChild(contentEl);
+  }
+
+  if (dataType === 'kb') {
+    var sources = data;
+    if (!sources || !sources.length) return;
+    // 保存来源信息用于 renderMessages 持久化
+    window._kbSources = sources;
+    var html = '';
+    for (var i = 0; i < sources.length; i++) {
+      var s = sources[i];
+      var label = esc(s.label || ('来源' + (i + 1)));
+      var snippet = esc((s.snippet || '').substring(0, 60));
+      html += '<div class="agent-tl-source">' +
+        '<span class="agent-tl-source-num">' + (i + 1) + '</span>' +
+        '<span class="agent-tl-source-label">' + label + '</span>' +
+        (snippet ? '<span class="agent-tl-source-snippet">' + snippet + '</span>' : '') +
+        '</div>';
+    }
+    contentEl.innerHTML = html;
+    showToast('已检索到 ' + sources.length + ' 条相关文档', 'success');
+  } else if (dataType === 'text') {
+    contentEl.textContent = data;
+  }
+}
+
+// P6 打磨：并行模式专用 SSE 处理器
+// 处理 step/step_done/phase/sources/stream/status 事件，双列渲染
+var _parallelPhaseMap = {  // channel → phase number
+  'local': 1,   // Phase 1: 本地检索
+  'cloud': 2,   // Phase 2: 云端检索
+  'merge': 3,   // Phase 3: 融合
+};
+var _parallelStepIcons = {
+  'searching':    { icon: 'books', label: '检索中', color: '#378ADD' },
+  'search_done':  { icon: 'check', label: '检索完成', color: 'var(--success-color)' },
+  'generating':   { icon: 'write', label: '生成中', color: '#639922' },
+  'generate_done':{ icon: 'check', label: '生成完成', color: 'var(--success-color)' },
+  'organizing':   { icon: 'brain', label: '整理中', color: '#7F77DD' },
+  'organize_done':{ icon: 'check', label: '整理完成', color: 'var(--success-color)' },
+  'merging':      { icon: 'refresh', label: '融合中', color: '#7F77DD' },
+  'merge_done':   { icon: 'check', label: '融合完成', color: 'var(--success-color)' },
+};
+
+function _handleParallelSSE(d) {
+  var channel = d.channel;
+
+  // phase 事件：创建或标记阶段卡片
+  if (d.type === 'phase') {
+    var pNum = _parallelPhaseMap[channel] || 4;
+    var pName = { 1: '本地检索', 2: '云端检索', 3: '融合优化' }[pNum] || d.label || '处理中';
+    if (d.phase === 'started' && !_getPhaseCard(pNum)) {
+      _createPhaseCard(pName, pNum, 'active');
+    }
+    if (d.phase === 'done') {
+      _markPhaseCard(pNum, 'done');
+    }
+    return;
+  }
+
+  // step 事件：在阶段卡片内添加步骤
+  if (d.type === 'step') {
+    var sNum = _parallelPhaseMap[channel] || _parallelPhaseMap['merge'];
+    if (!_getPhaseCard(sNum)) {
+      var sName = { 1: '本地检索', 2: '云端检索', 3: '融合优化' }[sNum] || '处理中';
+      _createPhaseCard(sName, sNum, 'active');
+    }
+    var si = _parallelStepIcons[d.step] || { icon: 'spin', label: d.step || '处理中', color: 'var(--text-muted)' };
+    _addStepToPhase(sNum, si.icon, si.label, si.color, true);
+    return;
+  }
+
+  // step_done 事件
+  if (d.type === 'step_done') {
+    var sdNum = _parallelPhaseMap[channel] || _parallelPhaseMap['merge'];
+    var sdi = _parallelStepIcons[d.step + '_done'] || _parallelStepIcons[d.step];
+    if (!sdi || sdi.icon === 'spin') {
+      sdi = { icon: 'check', label: (d.label || d.step || '完成'), color: 'var(--success-color)' };
+    }
+    _addStepToPhase(sdNum, sdi.icon, sdi.label || (d.step + '完成'), sdi.color, false);
+    return;
+  }
+
+  // sources 事件：复用并行来源渲染（已有）
+  if (d.type === 'sources') {
+    var srcCh = d.channel || 'local';
+    var srcItems = d.sources || d.items || [];
+    if (typeof _renderParallelSources === 'function') {
+      _renderParallelSources(srcCh, srcItems);
+    }
+    return;
+  }
+
+  // status 事件（云端状态展示）
+  if (d.type === 'status') {
+    var stNum = _parallelPhaseMap[channel] || 2;
+    if (!_getPhaseCard(stNum)) {
+      _createPhaseCard('云端检索', stNum, 'active');
+    }
+    _addStepToPhase(stNum, 'think', d.status || '处理中', '#EF9F27', true);
+    return;
+  }
+}
+window._handleParallelSSE = _handleParallelSSE;
+
+// P6 打磨：并行模式流式内容渲染到对应 timeline 步骤
+var _parallelChannelRendered = {};  // 记录每个 channel 的 rendered 行数（带行号）
+
+function _renderParallelChannelContent(channel, fullContent, newChunk) {
+  var streamEl = document.getElementById('stream-msg');
+  if (!streamEl) return;
+  var container = streamEl.querySelector('#agent-timeline');
+  if (!container) return;
+
+  // P6 打磨：并行轨道内容渲染到对应 phase 卡片
+  var pNum = _parallelPhaseMap[channel] || _parallelPhaseMap['merge'];
+  var phaseCard = _getPhaseCard(pNum);
+  var stepEl = container.querySelector('[data-step="' + (channel === 'local' ? 'local_gen' : (channel === 'cloud' ? 'cloud_gen' : 'merge')) + '"]');
+
+  // 优先找 phase 卡片内的流内容区域
+  var contentEl = null;
+  if (phaseCard) {
+    contentEl = phaseCard.querySelector('.agent-phase-stream');
+    if (!contentEl) {
+      contentEl = document.createElement('div');
+      contentEl.className = 'agent-phase-stream';
+      contentEl.style.cssText = 'margin-top:4px;padding:4px 6px;background:var(--bg-secondary);border-radius:4px;font-size:10px;line-height:1.4;max-height:100px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--text-secondary);border:0.5px solid var(--border-color)';
+      var body = phaseCard.querySelector('.agent-phase-body');
+      if (body) body.appendChild(contentEl);
     }
   }
+
+  // fallback：旧 agent-tl-step 路径
+  if (!contentEl && stepEl) {
+    contentEl = stepEl.querySelector('.agent-tl-content');
+    if (!contentEl) {
+      contentEl = document.createElement('div');
+      contentEl.className = 'agent-tl-content';
+      contentEl.style.cssText = 'margin-top:4px;padding:6px 8px;background:var(--bg-tertiary,var(--bg-secondary));border-radius:4px;font-size:11px;line-height:1.5;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--text-secondary)';
+      var labelEl = stepEl.querySelector('.agent-tl-label');
+      if (labelEl) labelEl.parentNode.insertBefore(contentEl, labelEl.nextSibling);
+      else stepEl.appendChild(contentEl);
+    }
+  }
+
+  if (!contentEl) return;
 
   // 流式追加：用 requestAnimationFrame 控制刷新率
   if (!contentEl.__lastUpdate || Date.now() - contentEl.__lastUpdate > 60) {
@@ -190,24 +464,42 @@ function _renderParallelChannelContent(channel, fullContent, newChunk) {
 
 // P6 打磨：并行模式检索结果展示
 function _renderParallelSources(channel, items) {
-  var container = document.getElementById('agent-timeline');
+  var streamEl = document.getElementById('stream-msg');
+  if (!streamEl) return;
+  var container = streamEl.querySelector('#agent-timeline');
   if (!container) return;
 
-  var stepEl = container.querySelector('[data-step="retrieve"]');
-  if (!stepEl) return;
+  // P6 打磨：并行模式来源注入到对应 phase 卡片
+  var pNum = _parallelPhaseMap[channel] || 1;
+  var phaseCard = _getPhaseCard(pNum);
+  var contentEl = null;
 
-  var contentEl = stepEl.querySelector('.agent-tl-content');
-  if (!contentEl) {
-    contentEl = document.createElement('div');
-    contentEl.className = 'agent-tl-content';
-    contentEl.style.cssText = 'margin-top:4px;padding:6px 8px;background:var(--bg-tertiary,var(--bg-secondary));border-radius:4px;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--text-secondary)';
-    var labelEl = stepEl.querySelector('.agent-tl-label');
-    if (labelEl) {
-      labelEl.parentNode.insertBefore(contentEl, labelEl.nextSibling);
-    } else {
-      stepEl.appendChild(contentEl);
+  if (phaseCard) {
+    contentEl = phaseCard.querySelector('.agent-phase-sources');
+    if (!contentEl) {
+      contentEl = document.createElement('div');
+      contentEl.className = 'agent-phase-sources';
+      contentEl.style.cssText = 'margin-top:2px;font-size:10px;line-height:1.4;color:var(--text-secondary);max-height:80px;overflow-y:auto';
+      var body = phaseCard.querySelector('.agent-phase-body');
+      if (body) body.appendChild(contentEl);
     }
   }
+
+  // fallback: 旧 agent-tl-step 路径
+  var stepEl = container.querySelector('[data-step="retrieve"]');
+  if (!contentEl && stepEl) {
+    contentEl = stepEl.querySelector('.agent-tl-content');
+    if (!contentEl) {
+      contentEl = document.createElement('div');
+      contentEl.className = 'agent-tl-content';
+      contentEl.style.cssText = 'margin-top:4px;padding:6px 8px;background:var(--bg-tertiary,var(--bg-secondary));border-radius:4px;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--text-secondary)';
+      var labelEl = stepEl.querySelector('.agent-tl-label');
+      if (labelEl) labelEl.parentNode.insertBefore(contentEl, labelEl.nextSibling);
+      else stepEl.appendChild(contentEl);
+    }
+  }
+
+  if (!contentEl) return;
 
   var html = '';
   if (items && items.length > 0) {
@@ -244,10 +536,12 @@ function _buildAgentTimelineHtml(timelineData) {
       var label = '';
       var icon = 'check';
       switch (item.step) {
-        case 'retrieve':  label = '本地知识库检索' + countTxt; icon = 'books'; break;
-        case 'local_gen': label = '本地 AI 生成回答'; icon = 'brain'; break;
-        case 'cloud_gen': label = '云端 AI 补充'; icon = 'cloud'; break;
-        case 'merge':     label = '自动融合优化'; icon = 'refresh'; break;
+        case 'reformulate': label = '分析问题'; icon = 'search'; break;
+        case 'search':      label = '检索文库' + countTxt; icon = 'book'; break;
+        case 'retrieve':    label = '本地知识库检索' + countTxt; icon = 'book'; break;
+        case 'local_gen':   label = '本地 AI 生成回答'; icon = 'write'; break;
+        case 'cloud_gen':   label = '云端 AI 补充'; icon = 'cloud'; break;
+        case 'merge':       label = '自动融合优化'; icon = 'check'; break;
         default: return;
       }
       html += '<div class="agent-step agent-step-parallel">' +
@@ -365,10 +659,8 @@ function _renderSingleMsg(m, idx) {
   }
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
-  // Patch5 C7：如果页面上已有活跃的 AgentTimeline（流式时建的），
-  // 不重复渲染 m.agent_timeline（否则鱼骨出现两份）
-  var _hasLiveTimeline = (_agentTimelineEl && _agentTimelineEl.parentNode);
-  var timelineHtml = _hasLiveTimeline ? '' : _buildAgentTimelineHtml(m.agent_timeline);
+  // 每条消息自主判断有无工具链，不做全局 live 判断（timerline 容器已由 stream-content 隔离保护）
+  var timelineHtml = _buildAgentTimelineHtml(m.agent_timeline);
   var html = '<div class="msg-copy-wrap">'
     + timelineHtml + _buildKbSources(m) + actionTag + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
@@ -461,53 +753,59 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     el.appendChild(streamEl);
   }
 
-  // 保留已有的 Agent 时间线（不覆盖）
-  var preservedTimeline = null;
-  if (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl) {
-    preservedTimeline = _agentTimelineEl;
-  }
-
-  // Patch4 v3.1：保留进度面板 DOM（避免被 innerHTML 覆盖）
-  // 加固：即使面板已不在 streamEl 里（被前一次重写清掉），只要 tracker 还活着就重新插回
-  var preservedDocPanel = null;
-  if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
-    preservedDocPanel = _docProgressTracker.panelEl;  // 不限 parentNode，强制保留
-  }
-
-  // Patch4 v3.1 BUG#13：保留独立的下载栏（doc_complete 时追加的）
-  var preservedDocDlBar = null;
-  var _existingDlBar = streamEl.querySelector('.doc-download-bar[data-doc-complete="1"]');
-  if (_existingDlBar) {
-    preservedDocDlBar = _existingDlBar;
+  // P6 打磨：使用 #stream-content 子元素做打字机区域，不再 innerHTML 全量替换
+  // 这样 #agent-timeline / doc panels / download bars 作为同级子元素绝不会被销毁
+  var contentEl = streamEl.querySelector('#stream-content');
+  if (!contentEl) {
+    contentEl = document.createElement('div');
+    contentEl.id = 'stream-content';
+    contentEl.className = 'stream-content';
+    streamEl.appendChild(contentEl);
   }
 
   var html = '';
   if (isThinking) {
+    var _isGenerating = (isThinking === 'generating');
     // P6 T04: 骨架屏已移除，只需检查非云端模式
     var _isCloudMode = (typeof _currentMode !== 'undefined' && _currentMode === 'cloud');
     if (!_isCloudMode) {
-      // 本地模式 + 骨架屏已隐藏：动画点 + "思考中" + 计时
-      html += '<div class="thinking-indicator"><span class="thinking-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> 思考中 <span class="thinking-timer" data-start="' + Date.now() + '">0.0s</span></div>';
-      // 启动计时器
-      if (_thinkingTimerInterval) clearInterval(_thinkingTimerInterval);
-      _thinkingTimerInterval = setInterval(function() {
-        var timers = document.querySelectorAll('.thinking-timer');
-        if (!timers.length) {
-          clearInterval(_thinkingTimerInterval);
-          _thinkingTimerInterval = null;
-          return;
-        }
-        timers.forEach(function(t) {
-          var start = parseInt(t.getAttribute('data-start') || '0', 10);
-          if (start) t.textContent = ((Date.now() - start) / 1000).toFixed(1) + 's';
-        });
-      }, 100);
+      // 思考中 → 回答中 无缝过渡：同一个 indicator，只改文案
+      var _indicatorLabel = _isGenerating ? '回答中' : '思考中';
+      html += '<div class="thinking-indicator"><span class="thinking-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> ' + _indicatorLabel + ' <span class="thinking-timer" data-start="' + Date.now() + '">0.0s</span></div>';
+      // 启动计时器（只在初次思考时启动，回答中阶段不重启以保证计时连续）
+      if (!_isGenerating) {
+        if (_thinkingTimerInterval) clearInterval(_thinkingTimerInterval);
+        _thinkingTimerInterval = setInterval(function() {
+          var timers = document.querySelectorAll('.thinking-timer');
+          if (!timers.length) {
+            clearInterval(_thinkingTimerInterval);
+            _thinkingTimerInterval = null;
+            return;
+          }
+          timers.forEach(function(t) {
+            var start = parseInt(t.getAttribute('data-start') || '0', 10);
+            if (start) t.textContent = ((Date.now() - start) / 1000).toFixed(1) + 's';
+          });
+        }, 100);
+      }
     }
     if (content) {
-      html += '<div style="color:var(--text-muted);font-style:italic;font-size:.85em">' + md(content, false) + '</div>';
+      if (_isGenerating) {
+        // 回答中：正文正常渲染
+        html += _renderMsgBody(content, {sanitize: false});
+      } else {
+        // 思考中：思考内容用斜体灰色展示
+        html += '<div style="color:var(--text-muted);font-style:italic;font-size:.85em">' + md(content, false) + '</div>';
+      }
     }
   } else {
     html += _renderMsgBody(content, {sanitize: false});
+  }
+  // P6 打磨：生成阶段提前显示 action tag + 时间戳
+  if (_isGenerating && !stats) {
+    var _labels = { chat: '聊天', doc: '文档', kb_qa: '知识库' };
+    var _action_label = _labels[currentActionMode] || '聊天';
+    html += '<div class="ts" style="margin-top:4px"><span class="action-tag">' + esc(_action_label) + '</span> ' + new Date().toTimeString().slice(0,8) + '</div>';
   }
   if (stats) html += stats;
 
@@ -516,38 +814,8 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     html = '<div class="msg-copy-wrap">' + html + _buildCopyBtn() + '</div>';
   }
 
-  streamEl.innerHTML = html;
-
-  // 恢复 Agent 时间线（在正文之前）
-  if (preservedTimeline && _agentTimelineEl) {
-    streamEl.insertBefore(_agentTimelineEl, streamEl.firstChild);
-  }
-
-  // Patch4 v3.1 BUG#13+17：恢复进度面板（强制重新插入，确保 done 后不消失）
-  // 每次重写 innerHTML 后都重新插回，不要只依赖 preserved 判断
-  if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
-    // 如果面板不在 streamEl 里（被 innerHTML 清掉了），重新插回
-    if (_docProgressTracker.panelEl.parentNode !== streamEl) {
-      streamEl.insertBefore(_docProgressTracker.panelEl, streamEl.firstChild);
-    }
-  }
-
-  // Patch4 v3.1 BUG#13：恢复独立下载栏（追加到末尾，正文之后）
-  if (preservedDocDlBar) {
-    streamEl.appendChild(preservedDocDlBar);
-  }
-  // Patch4 v3.1 BUG#13 加固：如果下载栏没保留住但 _docDownloadInfo 还在，重建一个
-  if (!preservedDocDlBar && window._docDownloadInfo && window._docDownloadInfo.url) {
-    var _rebuildDlBar = document.createElement('div');
-    _rebuildDlBar.className = 'doc-download-bar';
-    _rebuildDlBar.setAttribute('data-doc-complete', '1');
-    var _rebuildUrl = window._docDownloadInfo.url;
-    if (_rebuildUrl.indexOf('http') !== 0) {
-      _rebuildUrl = (typeof API !== 'undefined' ? API : '') + _rebuildUrl;
-    }
-    _rebuildDlBar.innerHTML = '<a href="' + esc(_rebuildUrl) + '" download="' + esc(window._docDownloadInfo.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(window._docDownloadInfo.filename || 'document.docx') + '</a>';
-    streamEl.appendChild(_rebuildDlBar);
-  }
+  // 只更新 #stream-content，不碰时间线/面板/下载栏
+  contentEl.innerHTML = html;
 
   if (!userScrolledUp) {
     el.scrollTop = el.scrollHeight;
@@ -564,36 +832,21 @@ function _renderCloudThink(text, mainText) {
   var len = text.length;
   var html = '';
 
-  // 保留已有的 Agent 时间线
-  var preservedTimeline = null;
-  if (_agentTimelineEl && _agentTimelineEl.parentNode === streamEl) {
-    preservedTimeline = _agentTimelineEl;
+  // P6 打磨：使用 #stream-content 子元素，不破坏时间线
+  var contentEl = streamEl.querySelector('#stream-content');
+  if (!contentEl) {
+    contentEl = document.createElement('div');
+    contentEl.id = 'stream-content';
+    contentEl.className = 'stream-content';
+    streamEl.appendChild(contentEl);
   }
 
-  // Patch4 v3.1：保留进度面板 DOM（加固，不限 parentNode）
-  var preservedDocPanel = null;
-  if (typeof _docProgressTracker !== 'undefined' && _docProgressTracker && _docProgressTracker.panelEl) {
-    preservedDocPanel = _docProgressTracker.panelEl;
-  }
-
-  // Patch4 v3.1 BUG#10 根治：完全不再用 thinking-indicator（"正在思考"）
   // AgentTimeline 已负责"思考中..."状态展示，这里只显示 think-details（思考内容详情，可折叠）
-  // 字数>=20 才显示 think-details，字数少时什么都不显示（避免空 details）
   if (len >= 20) {
     html += '<details open class="think-details"><summary>' + iconSvg('think','14') + ' 思考内容 (' + len + '字)</summary><div class="think-content">' + md(text, false) + '</div></details>';
   }
-  // len < 20 时不显示任何思考 UI（AgentTimeline 的"思考中..."已经够了）
   if (mainText) html += _renderMsgBody(mainText, {sanitize: false});
-  streamEl.innerHTML = html;
-
-  // 恢复 Agent 时间线
-  if (preservedTimeline && _agentTimelineEl) {
-    streamEl.insertBefore(_agentTimelineEl, streamEl.firstChild);
-  }
-  // Patch4：恢复进度面板
-  if (preservedDocPanel) {
-    streamEl.insertBefore(preservedDocPanel, streamEl.firstChild);
-  }
+  contentEl.innerHTML = html;
 
   // 自动滚底
   var msgEl = document.getElementById('messages');
@@ -763,6 +1016,8 @@ async function sendMessage() {
   _agentCurrentStepEl = null;  // Patch4 v3：重置当前步骤
   _agentCurrentStepStartTs = 0;
   _resetParallelState();  // P6 打磨：重置并行模式流式状态
+  _hasMorphedToAnswering = false;  // P6 打磨：重置思考→回答过渡
+  _phaseCards = {};  // P6 打磨：重置 phase 卡片
 
   appendStreamingMsg('', '', 0, null, true);
   var msgEl = document.getElementById('messages');
@@ -948,7 +1203,10 @@ async function sendMessage() {
             else if (status === 'done') appendStreamingMsg(iconSvg('check','14') + ' ' + stepName + ' 完成', '', 0, null, false);
             else if (status === 'failed') appendStreamingMsg(iconSvg('cross','14') + ' ' + stepName + ' 失败', '', 0, null, false);
             lastRender = now;
-          } else if (d.type === 'pipeline_progress') {
+          } else if (d.type === 'pipeline_progress' || d.type === 'step' || d.type === 'step_done' ||
+                     d.type === 'phase' || d.type === 'status') {
+            // P6 打磨：并行模式工具链事件 → 统一路由
+            if (typeof _handleParallelSSE === 'function') _handleParallelSSE(d);
           // P6 打磨：并行模式 stream 事件（带 channel 字段：local/cloud/merge）
           } else if (d.type === 'stream') {
             var ch = d.channel || 'merge';
@@ -966,13 +1224,13 @@ async function sendMessage() {
             _renderParallelSources(srcCh, srcItems);
           } else if (d.type === 'token') {
             fullText += d.content;
-            // P6 修复：思考态指示器由 appendStreamingMsg(isThinking=true) 统一管理
-            // 只在退出思考态时（truncated/done/agent_start）才删除，避免每个 token 都闪
-            if (fullText.length > 0 && _thinkingTimerInterval && !thinkingPhase) {
-              clearInterval(_thinkingTimerInterval);
-              _thinkingTimerInterval = null;
+            // P6 打磨：思考→回答无缝过渡，只改文案不变DOM结构
+            if (fullText.length > 0 && _thinkingTimerInterval && !thinkingPhase && !_hasMorphedToAnswering) {
+              _hasMorphedToAnswering = true;
               var _ti = document.querySelector('.thinking-indicator');
-              if (_ti) _ti.remove();
+              if (_ti) {
+                _ti.innerHTML = _ti.innerHTML.replace('思考中', '回答中');
+              }
             }
             var noThinkTypes = ['text', 'code', 'agent'];
             if (!thinkingPhase && !thinkText && !noThinkTypes.includes(currentTaskType)) {
@@ -987,7 +1245,8 @@ async function sendMessage() {
                   appendStreamingMsg(fullText, '', 0, null, true);
                 }
               } else {
-                appendStreamingMsg(fullText, thinkText, thinkLen);
+                // P6 打磨：生成阶段保持"回答中"指示器
+                appendStreamingMsg(fullText, thinkText, thinkLen, null, 'generating');
               }
               lastRender = now;
             }
@@ -1152,6 +1411,9 @@ async function sendMessage() {
           // P6 T04: AgentTimeline SSE 事件处理
           } else if (d.type === 'agent_timeline') {
             _handleAgentTimelineSSE(d);
+          // P6 打磨：KB 改写结果展示在分析问题步骤下
+          } else if (d.type === 'kb_reformulate') {
+            _handleKbReformulate(d);
           // Patch2 A5: Research Action SSE 事件
           } else if (d.type === 'search') {
             _appendResearchCard('search', d.query, d.results_count);
@@ -1301,32 +1563,9 @@ async function sendMessage() {
             showToast('已取消', 'info');
           } else if (d.type === 'action_error') {
             showToast(d.message || '操作出错', 'error');
-          // KB 引用来源（内嵌到消息区域）
+          // KB 引用来源 — P6 打磨：注入到搜索步骤的 .agent-tl-content，不再单独渲染 kb-sources-bar
           } else if (d.type === 'kb_sources') {
-            var sources = d.sources || [];
-            if (sources.length > 0) {
-              // 保存来源信息，用于 renderMessages 后恢复
-              window._kbSources = sources;
-              var streamEl = document.getElementById('stream-msg');
-              if (streamEl) {
-                var srcBar = document.createElement('div');
-                srcBar.className = 'kb-sources-bar';
-                srcBar.id = 'kbSourcesBar';
-                var srcHtml = '<div class="kb-sources-title">' + iconSvg('books','14') + ' 参考来源</div>';
-                sources.forEach(function(s, i) {
-                  var label = s.label || ('来源' + (i+1));
-                  var snippet = s.snippet || '';
-                  srcHtml += '<div class="kb-source-item">' +
-                    '<span class="kb-source-num">' + (i + 1) + '</span>' +
-                    '<span class="kb-source-label">' + esc(label) + '</span>' +
-                    (snippet ? '<div class="kb-source-snippet">' + esc(snippet) + '</div>' : '') +
-                    '</div>';
-                });
-                srcBar.innerHTML = srcHtml;
-                streamEl.insertBefore(srcBar, streamEl.firstChild);
-              }
-            showToast('已检索到 ' + sources.length + ' 条相关文档', 'success');
-            }
+            _injectStepContent('search', d.sources || [], 'kb');
           } else if (d.type === 'kb_no_reference') {
             showToast('未找到相关文库内容', 'info');
           // 文档提纲确认（Phase 1 完成后）
@@ -1424,7 +1663,14 @@ async function sendMessage() {
       _lastMsgCount = currentMessages.length;
     } else {
       var streamEl4 = document.getElementById('stream-msg');
-      if (streamEl4) streamEl4.removeAttribute('id');
+      if (streamEl4) {
+        streamEl4.removeAttribute('id');
+        // 清理子元素的 id，防止第二轮 timeline 找错容器
+        var _oldTl = streamEl4.querySelector('#agent-timeline');
+        if (_oldTl) _oldTl.removeAttribute('id');
+      }
+      // 彻底清掉引用，确保 renderMessages 从 m.agent_timeline 数据重建时间线
+      _agentTimelineEl = null;
 
       // 计算要持久化的内容：正常输出 / 中止时已有内容 / 错误消息
       var _persistContent = fullText.trim();

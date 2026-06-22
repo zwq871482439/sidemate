@@ -421,8 +421,9 @@ async function kbRefreshDocs() {
 
     // P6: 刷新令牌面板
     kbRefreshTokens();
-    // P6 B2: 每次轮询也刷新 AI 概览
-    kbRefreshAIOverview();
+    // P6: kbRefreshAIOverview 只统计概览（标签数/文档数），不覆盖 AI 洞察文本
+    // AI 洞察由 kbRefreshOverviewLLM 独立管理，避免轮询覆盖 LLM 生成内容
+    _kbRefreshOverviewStatsOnly();
     // P6 修复：同步队列条目和文档 tag_status
     _kbSyncQueueWithDocs(docs);
   } catch (err) {
@@ -599,9 +600,9 @@ async function kbRefreshOverviewLLM() {
 
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = iconSvg('spin','11') + ' 正在重新生成...';
+    btn.innerHTML = iconSvg('spin','11') + ' AI 正在整理...';
   }
-  if (bodyEl) bodyEl.textContent = '正在调用 AI 分析知识库结构...';
+  if (bodyEl) bodyEl.textContent = '正在分析文档结构并发现洞察...';
   if (sourceEl) sourceEl.textContent = '本地 AI 生成';
 
   try {
@@ -613,27 +614,49 @@ async function kbRefreshOverviewLLM() {
     var data = await resp.json();
 
     if (data.ok) {
-      if (bodyEl) bodyEl.textContent = data.overview;
+      if (bodyEl) bodyEl.textContent = data.insight || data.overview || '';
       if (countEl) countEl.textContent = data.doc_count + ' 篇文档';
-      if (sourceEl) sourceEl.textContent = '本地 AI 生成';
+      if (sourceEl) sourceEl.textContent = '本地 AI 整理';
       if (updatedEl) {
         var now = new Date();
         updatedEl.textContent = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ' 更新';
       }
+      // 持久化洞察到 localStorage，防止页面刷新后丢失
+      try {
+        localStorage.setItem('kb_ai_insight', data.insight || '');
+        localStorage.setItem('kb_ai_insight_ts', Date.now());
+      } catch(e) {}
+      // 标签归并后刷新侧栏标签（不触发 overview 文本覆盖）
+      if (data.merges_applied && data.merges_applied.length > 0) {
+        try { if (typeof kbLoadDocs === 'function') kbLoadDocs(); } catch(e) {}
+      }
     } else {
-      if (bodyEl) bodyEl.textContent = '生成失败，请重试。';
+      if (bodyEl) bodyEl.textContent = '整理失败，请重试。';
     }
   } catch (e) {
     if (bodyEl) bodyEl.textContent = '网络异常，请重试。';
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 刷新';
+      btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 自动整理知识库';
     }
   }
 }
 // 暴露到 window
 window.kbRefreshOverviewLLM = kbRefreshOverviewLLM;
+
+// P6 打磨：仅刷新 AI 洞察区域的统计数（不覆盖 LLM 生成的洞察文本）
+function _kbRefreshOverviewStatsOnly() {
+  var countEl = document.getElementById('kbOverviewDocCount');
+  var updatedEl = document.getElementById('kbOverviewUpdated');
+  var docs = _kbLastDocs.length > 0 ? _kbLastDocs : [];
+  if (!docs.length) return;
+  if (countEl) countEl.textContent = docs.length + ' 篇文档';
+  if (updatedEl) {
+    var now = new Date();
+    updatedEl.textContent = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ' 更新';
+  }
+}
 
 async function kbRefreshAIOverview() {
   // Fix F: 点击刷新时重置冷却，允许立即触发分组
@@ -646,10 +669,19 @@ async function kbRefreshAIOverview() {
 
   if (!bodyEl) return;
 
-  bodyEl.textContent = '正在分析知识库...';
+  // P6 打磨：优先从 localStorage 恢复上次 AI 洞察
+  var cachedInsight = null;
+  try { cachedInsight = localStorage.getItem('kb_ai_insight'); } catch(e) {}
+  if (cachedInsight) {
+    if (bodyEl && bodyEl.textContent === '正在分析知识库...') {
+      bodyEl.textContent = cachedInsight;
+    }
+    if (sourceEl) sourceEl.textContent = '本地 AI 生成';
+  } else {
+    bodyEl.textContent = '正在分析知识库...';
+  }
 
   try {
-    // P6 B2: 使用缓存文档避免重复请求
     var docs = _kbLastDocs.length > 0 ? _kbLastDocs : [];
     if (docs.length === 0) {
       var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents');
@@ -1017,6 +1049,12 @@ function kbSubscribeProgress(docId, filename) {
         // P6 B5: 从队列移除已完成/失败/超时条目
         _kbRemoveFromQueue(docId);
         kbRefreshDocs();
+        // P6 打磨：全部处理完毕后自动触发 AI 洞察整理
+        if (_kbActiveEventSources <= 0 && _kbPendingSubscriptions.length === 0) {
+          setTimeout(function() {
+            if (typeof kbRefreshOverviewLLM === 'function') kbRefreshOverviewLLM();
+          }, 500);  // 延迟等 kbRefreshDocs 的 DOM 更新完成
+        }
       }
     } catch (e) { console.warn('[KB] SSE 解析失败', e); }
   };

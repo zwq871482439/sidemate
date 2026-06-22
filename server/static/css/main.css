@@ -1307,7 +1307,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 }
 .agent-tl-icon.spin {
   color: var(--accent-color);
-  animation: agent-tl-spin 1s linear infinite;
+  animation: agent-tl-pulse 1.2s ease-in-out infinite;
 }
 .agent-tl-icon.done {
   color: var(--success-color);
@@ -1326,28 +1326,213 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   font-variant-numeric: tabular-nums;
 }
 /* P6 打磨：并行模式阶段内容展示 */
+/* (样式已合入下方 ABCD 紧凑版) */
+/* P6 打磨：垂直模式（KB 步骤用）*/
+.agent-timeline-container.vertical {
+  flex-direction: column;
+  align-items: stretch;
+  overflow-x: visible;
+  padding: 10px 14px;
+  gap: 6px;
+}
+.agent-timeline-container.vertical .agent-tl-step {
+  flex-shrink: 1;
+}
+.agent-timeline-container.vertical .agent-tl-step + .agent-tl-step {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+/* P6 打磨：块状步骤（含内容区域）*/
+.agent-tl-step.agent-tl-step-block {
+  display: block;
+  white-space: normal;
+  padding: 6px 0;
+}
+.agent-tl-step.agent-tl-step-block + .agent-tl-step.agent-tl-step-block {
+  border-top: 0.5px solid var(--border-color);
+  margin-top: 2px;
+  padding-top: 8px;
+}
+.agent-tl-step-block .agent-tl-icon {
+  vertical-align: middle;
+}
+.agent-tl-step-block .agent-tl-label {
+  vertical-align: middle;
+}
+.agent-tl-step-block .agent-tl-time {
+  vertical-align: middle;
+  margin-left: 4px;
+}
+/* KB 改写内容：键值对 — P6 ABCD 紧凑化 */
+.agent-tl-kv {
+  display: flex;
+  gap: 4px;
+  margin: 1px 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.agent-tl-kv-key {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 36px;
+}
+.agent-tl-kv-val {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-tl-kv-val.agent-tl-highlight {
+  color: var(--accent-color);
+  font-weight: 500;
+}
+.agent-tl-elapsed {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  display: inline-block;
+}
+/* KB 搜索结果项 — P6 ABCD 单行紧凑 */
+.agent-tl-source {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.agent-tl-source + .agent-tl-source {
+  margin-top: 0;
+}
+.agent-tl-source-num {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: #fff;
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agent-tl-source-label {
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+  flex-shrink: 0;
+}
+.agent-tl-source-snippet {
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* P6 ABCD：内容区域缩小 */
 .agent-tl-content {
   margin-top: 4px;
-  padding: 6px 8px;
+  padding: 4px 6px;
   background: var(--bg-secondary);
   border-radius: 4px;
   font-size: 11px;
-  line-height: 1.5;
-  max-height: 200px;
+  line-height: 1.4;
+  max-height: 100px;
   overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text-secondary);
   border: 0.5px solid var(--border-color);
 }
 [data-theme="dark"] .agent-tl-content {
   background: var(--card-bg, #1e1f25);
   border-color: var(--card-border, #2a2b33);
-  color: var(--text-secondary);
 }
 @keyframes agent-tl-step-in {
   from { opacity: 0; transform: translateX(-6px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+/* ============================================================
+   P6 打磨：Phase 阶段卡片（并行模式）
+   ============================================================ */
+.agent-phase-card {
+  margin-bottom: 6px;
+  border: 0.5px solid var(--border-color);
+  border-radius: var(--border-radius-md, 8px);
+  overflow: hidden;
+  animation: phase-card-in .3s ease-out;
+}
+.agent-phase-card.phase-active {
+  border-color: var(--accent-color, #534AB7);
+}
+.agent-phase-card.phase-done {
+  border-color: var(--success-color);
+  opacity: .85;
+}
+.agent-phase-card.phase-pending {
+  border-color: var(--border-color);
+  opacity: .5;
+}
+.agent-phase-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--bg-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: background .3s;
+}
+.phase-active .agent-phase-header {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.phase-done .agent-phase-header {
+  color: var(--text-secondary);
+}
+.agent-phase-num {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #534AB7;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background .3s;
+}
+.phase-done .agent-phase-num { background: var(--success-color); }
+.phase-active .agent-phase-num { animation: phase-num-pulse 1.2s ease-in-out infinite; }
+.agent-phase-title { flex: 1; }
+.agent-phase-status {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.phase-active .agent-phase-status { color: var(--accent-color); }
+.phase-done .agent-phase-status { color: var(--success-color); }
+.agent-phase-body {
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+@keyframes phase-card-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes phase-num-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+@keyframes agent-tl-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
 }
 @keyframes agent-tl-spin {
   from { transform: rotate(0deg); }

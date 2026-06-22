@@ -151,6 +151,17 @@ function _executeModeSwitch(mode) {
           var labels = { offline: '离线', online: '在线', parallel: '并行' };
           showToast('已切换到' + (labels[mode] || mode) + '模式', 'success');
         }
+        // P6 打磨：模式切换后刷新上下文窗口（cloud 模式远大于 local 的 8K）
+        fetch((typeof API !== 'undefined' ? API : '') + '/api/mode')
+          .then(function(r) { return r.json(); })
+          .then(function(md) {
+            if (md.context_window && typeof _maxPromptTokens !== 'undefined') {
+              _maxPromptTokens = md.context_window;
+              if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+                TokenEstimator.updateInputDisplay();
+              }
+            }
+          });
         if (typeof refreshStatus === 'function') refreshStatus();
         if (typeof refreshActionBar === 'function') refreshActionBar();
         if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
@@ -268,7 +279,11 @@ async function refreshStatus() {
     var info2 = results[1];
 
     if (typeof _maxPromptTokens !== 'undefined') {
-      _maxPromptTokens = (data.profile && data.profile.max_prompt_tokens) || 0;
+      // 本地模式用 Ollama 模型返回的 max_prompt_tokens；
+      // 在线模式由 /api/mode 的 context_window 控制，不在这里覆盖
+      if (!window._currentMode || window._currentMode === 'local') {
+        _maxPromptTokens = (data.profile && data.profile.max_prompt_tokens) || 0;
+      }
     }
     var tag = document.getElementById('modelTag');
     var stag = document.getElementById('settingsModelTag');
