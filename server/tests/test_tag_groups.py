@@ -238,6 +238,12 @@ class TestSetTagGroup:
         kb = _KBOpsMixin.__new__(_KBOpsMixin)
         kb.tag_groups = []
         kb._save_meta = MagicMock()  # Don't actually write to disk
+        # P6 审计修复 a3e2458 给 set_tag_group 加了守卫:
+        #   if not self.documents and os.path.exists(self.meta_path): return False
+        # 裸 __new__() 跳过 __init__, 必须补上这两个属性, 否则 AttributeError。
+        # documents={} 非空判断为 False → 守卫放行; meta_path 指向不存在路径, os.path.exists=False → 双保险。
+        kb.documents = {}
+        kb.meta_path = "/nonexistent/test_kb_meta.json"
         return kb
 
     def test_add_tag_to_new_group(self):

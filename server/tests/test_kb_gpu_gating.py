@@ -131,58 +131,50 @@ class TestGpuGatingCheck(unittest.TestCase):
 
 
 class TestGpuGatingInUploadContext(unittest.TestCase):
-    """Integration-style tests: verify the gating check is present in the source."""
+    """Integration-style tests: verify gating logic is present in the right place.
 
-    def test_gpu_gating_code_present_in_kb_py(self):
-        """Verify the GPU gating check exists in routers/kb.py."""
+    历史背景：gating 原本写在 routers/kb.py 里（手撸 batch_queue 检查 + 字面量日志），
+    后重构为「职责下沉」——kb.py 只调 scheduler.notify_doc_ready(doc_id) 触发，
+    真正的 gating 由 TaggingScheduler._is_batch_idle() + _worker 循环承担。
+    这组测试验证重构后的架构契约：gating 入口和实现各自在位。
+    """
+
+    @staticmethod
+    def _read(rel_path):
+        """读取 server/<rel_path> 源码。"""
         import os
-        kb_path = os.path.join(
+        path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "routers", "kb.py"
+            *rel_path.split("/")
         )
-        with open(kb_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-        # The key log message must be present
-        self.assertIn("batch_queue connected", content)
-        self.assertIn("NOT connected", content)
-        self.assertIn("_is_batch_idle()", content)
+    def test_kb_calls_notify_doc_ready_as_entry(self):
+        """kb.py 的上传流程通过 notify_doc_ready 触发 gating（而非自己手撸检查）。"""
+        content = self._read("routers/kb.py")
+        # 入口存在：上传完成后的 _process 里通知 scheduler
         self.assertIn("notify_doc_ready", content)
+        # 旧职责已移走：kb.py 不再手撸 batch_queue 连接状态判断
+        self.assertNotIn("batch_queue connected", content)
 
-    def test_gpu_gating_after_notify_not_before(self):
-        """Verify gating check appears AFTER notify_doc_ready call in source."""
-        import os
-        import re
-        kb_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "routers", "kb.py"
-        )
-        with open(kb_path, "r", encoding="utf-8") as f:
-            content = f.read()
+    def test_gating_lives_in_tagging_scheduler(self):
+        """gating 实现落在 tagging_scheduler.py：_is_batch_idle + _worker 循环。"""
+        content = self._read("core/tagging_scheduler.py")
+        self.assertIn("def _is_batch_idle", content)
+        self.assertIn("def _worker", content)
+        # worker 循环里必须调用 gating（否则职责下沉后功能就丢了）
+        self.assertIn("_is_batch_idle()", content)
 
-        # Find the positions
+    def test_kb_notify_before_gating_handoff(self):
+        """kb.py 中 notify_doc_ready 出现在 _process 流程内（向量化的合理时机）。"""
+        content = self._read("routers/kb.py")
         notify_pos = content.find("notify_doc_ready(doc_id)")
-        gating_pos = content.find("batch_queue connected")
+        # 入口必须存在
+        self.assertGreater(notify_pos, 0, "notify_doc_ready(doc_id) not found in kb.py")
+        # 上传处理上下文存在（确认是 _process 内的调用，不是孤儿）
+        self.assertIn("def _process", content)
 
-        self.assertGreater(notify_pos, 0, "notify_doc_ready(doc_id) not found")
-        self.assertGreater(gating_pos, notify_pos,
-                          "GPU gating check must appear AFTER notify_doc_ready")
-
-    def test_warning_message_exact_text(self):
-        """Verify the exact warning message format."""
-        import os
-        kb_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "routers", "kb.py"
-        )
-        with open(kb_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        expected_warning = (
-            "[KB] TaggingScheduler batch_queue NOT connected "
-            "— LLM may run during vectorization!"
-        )
-        self.assertIn(expected_warning, content)
 
 
 if __name__ == "__main__":
