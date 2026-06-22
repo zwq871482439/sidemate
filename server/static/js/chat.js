@@ -841,9 +841,10 @@ async function sendMessage() {
     }
 
     // 构建 body，检查是否有 doc_continue（Phase 2）
-    // 在线模式 agent 映射到 chat（后端 action_mode）
+    // 前后端协议映射：前端 action_id → 后端 action_mode
     var _actionModeForBackend = currentActionMode || 'chat';
     if (_actionModeForBackend === 'agent') _actionModeForBackend = 'chat';
+    if (_actionModeForBackend === 'kb_qa') _actionModeForBackend = 'kb';  // P6: 知识库问答映射
     var reqBody = {
       message: text,
       history: history,
