@@ -16,7 +16,6 @@ core/template_parser.py — 文档模板解析器
 
 import os
 import re
-import json
 import logging
 from typing import Optional
 
@@ -183,22 +182,3 @@ def _get_level(style_name: str) -> int:
     if "Title" in style_name:
         return 0
     return 1
-
-
-def template_to_outline_json(template: dict) -> str:
-    """将模板转为紧凑的 JSON 大纲（用于前端展示）
-
-    Returns:
-        str: JSON 格式的标题列表
-    """
-    if template.get("status") != "ok":
-        return "[]"
-
-    sections = template.get("sections", [])
-    outline = []
-    for sec in sections:
-        outline.append({
-            "h": sec["heading"],
-            "l": sec["level"],
-        })
-    return json.dumps(outline, ensure_ascii=False)

@@ -123,25 +123,6 @@ class GenerateQueue:
                 remaining.append((weight, seq, event, result))
         self._queue = remaining
 
-    @property
-    def queue_length(self) -> int:
-        """当前排队中的请求数量"""
-        with self._lock:
-            return len(self._queue)
-
-    @property
-    def queue_info(self) -> dict:
-        """队列状态快照"""
-        with self._lock:
-            high_count = sum(1 for w, _, _, _ in self._queue if w == 0)
-            low_count = sum(1 for w, _, _, _ in self._queue if w == 1)
-            return {
-                "active_priority": self._active_priority,
-                "queue_length": len(self._queue),
-                "high_waiting": high_count,
-                "low_waiting": low_count
-            }
-
 
 class GenerateTicket:
     """生成请求票据 — 持有者拥有设备使用权"""

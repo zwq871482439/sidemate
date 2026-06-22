@@ -279,11 +279,6 @@ class AccessTokenManager:
                 log.info("[ACCESS_TOKEN] 撤销会话 %s 的 %d 个令牌", session_id, count)
         return count
 
-    def _remove_token(self, token: str) -> bool:
-        """从缓存中移除令牌（线程安全版本，对外接口）"""
-        with self._lock:
-            return self._remove_token_unlocked(token)
-
     def _remove_token_unlocked(self, token: str) -> bool:
         """从缓存中移除令牌（无锁版本，调用方必须持锁）
 
@@ -346,33 +341,6 @@ class AccessTokenManager:
                 # level == "search" 或无有效令牌 → 跳过
 
         return accessible
-
-    def get_doc_access_level(self, doc_id: str, token: str) -> str:
-        """获取某文档的访问级别
-
-        Args:
-            doc_id: 文档 ID
-            token: 令牌字符串
-
-        Returns:
-            "full" | "search" | "none"
-        """
-        is_valid, level = self.verify_token(token, doc_id)
-        if is_valid:
-            return level
-        return "none"
-
-    def clear_all(self) -> int:
-        """清空所有令牌（重启效果模拟）
-
-        Returns:
-            清理的令牌数量
-        """
-        count = len(self._tokens_cache)
-        self._tokens_cache.clear()
-        self._doc_tokens.clear()
-        log.info("[ACCESS_TOKEN] 已清空所有令牌: %d 个", count)
-        return count
 
 
 # ===== 全局单例 =====

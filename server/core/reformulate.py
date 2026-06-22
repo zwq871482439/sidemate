@@ -24,19 +24,13 @@ def reformulate_query(query: str, history: list, mgr) -> str:
     """
     from prompts import REFORMULATE_PROMPT, REFORMULATE_NO_HISTORY_PROMPT
 
-    # 首轮提问：提取搜索关键词
-    if not history:
-        prompt = REFORMULATE_NO_HISTORY_PROMPT.format(query=query)
-    else:
-        # 拼接 history_summary（最近2轮的Q+A摘要，限制500字）
-        history_summary = _build_history_summary(history, max_chars=500)
-        if not history_summary:
-            prompt = REFORMULATE_NO_HISTORY_PROMPT.format(query=query)
-        else:
-            prompt = REFORMULATE_PROMPT.format(
-                history_summary=history_summary,
-                query=query,
-            )
+    # 有 history 才拼摘要（最近2轮的Q+A摘要，限制500字）；summary 为空时退化为无历史分支
+    history_summary = _build_history_summary(history, max_chars=500) if history else ""
+    prompt = (
+        REFORMULATE_PROMPT.format(history_summary=history_summary, query=query)
+        if history_summary
+        else REFORMULATE_NO_HISTORY_PROMPT.format(query=query)
+    )
 
     # 强制调用本地 StreamEngine（不走 CloudEngine，避免阻塞）
     try:

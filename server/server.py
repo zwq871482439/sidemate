@@ -232,7 +232,7 @@ def _bg_init_worker():
         if _cfg_get("ollama_auto_start", True):
             try:
                 _report_startup("ollama_start", 70, "启动 Ollama 推理引擎...")
-                result = ollama_manager.auto_start()
+                result = ollama_manager.start()
                 if result.get("status") in ("started", "already_running"):
                     log.info("[BG-INIT] Ollama 就绪: %s" % result.get("status"))
                 else:

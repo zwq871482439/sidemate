@@ -149,14 +149,6 @@ class OllamaManager:
                 status["model_count"] = 0
         return status
 
-    def auto_start(self) -> dict:
-        """自动启动 Ollama 并等待就绪。
-
-        Returns:
-            dict: 同 start() 的返回值
-        """
-        return self.start()
-
     # ====== 内部方法 ======
 
     def _launch_process(self):

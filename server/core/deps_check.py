@@ -109,12 +109,9 @@ CORE_PACKAGES = frozenset({"torch", "transformers", "sentence_transformers", "nu
 
 
 def sha256_file(filepath: str) -> str:
-    """计算文件的 SHA256 哈希值。"""
-    h = hashlib.sha256()
+    """计算文件的 SHA256 哈希值（用 3.11+ 的 hashlib.file_digest）。"""
     with open(filepath, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
+        return hashlib.file_digest(f, "sha256").hexdigest()
 
 
 def _extract_version(pkg_dir: str) -> str:

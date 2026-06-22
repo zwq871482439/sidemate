@@ -105,7 +105,6 @@ class BatchQueue:
 
         # worker 控制
         self._worker_threads: List[threading.Thread] = []  # P2-12: 多 worker 支持
-        self._worker_thread: Optional[threading.Thread] = None  # 兼容旧引用
         self._worker_stop = threading.Event()
         self._kb_instance = None  # KnowledgeBase 引用
 
@@ -468,8 +467,6 @@ class BatchQueue:
             t = threading.Thread(target=self._worker_loop, name="batch-worker-" + str(i), daemon=True)
             t.start()
             self._worker_threads.append(t)
-        # 兼容旧引用
-        self._worker_thread = self._worker_threads[0] if self._worker_threads else None
         log.info("[BATCH_QUEUE] %d 个 worker 线程已启动", len(self._worker_threads))
 
     def stop_worker(self, timeout: float = 5.0) -> None:
@@ -485,7 +482,6 @@ class BatchQueue:
         if self._worker_threads:
             log.info("[BATCH_QUEUE] %d 个 worker 线程已停止", len(self._worker_threads))
         self._worker_threads = []
-        self._worker_thread = None
 
     def close(self):
         """关闭所有线程的 SQLite 连接（lifespan shutdown 时调用）
