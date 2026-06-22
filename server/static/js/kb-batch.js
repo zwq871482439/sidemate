@@ -398,8 +398,8 @@ function kbRenderDuplicatesDialog(duplicates) {
   card.className = 'kb-dup-card';
 
   var html = '<div class="kb-dup-header">';
-  html += '<span class="kb-dup-title">📄 重复文档处理</span>';
-  html += '<button class="kb-dup-close" onclick="this.closest(\'.kb-dup-overlay\').remove()">✕</button>';
+  html += '<span class="kb-dup-title">重复文档处理</span>';
+  html += '<button class="kb-dup-close" onclick="this.closest(\'.kb-dup-overlay\').remove()">' + (typeof iconSvg === 'function' ? iconSvg('close', '14') : '×') + '</button>';
   html += '</div>';
   html += '<div class="kb-dup-desc">检测到 ' + duplicates.length + ' 个重复文档，请选择处理方式：</div>';
   html += '<div class="kb-dup-list">';

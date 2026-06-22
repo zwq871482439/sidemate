@@ -86,7 +86,7 @@ def _run_phase1(
         try:
             kb_loaded = getattr(kb, '_embedder_loaded', False)
             if kb_loaded:
-                yield ("mode_hint", "🔍 正在搜索文库...")
+                yield ("mode_hint", " 正在搜索文库...")
                 kb_result = kb.query(message, top_k=3)
                 if kb_result and kb_result.get("results"):
                     kb_refs = kb_result["results"]
@@ -106,7 +106,7 @@ def _run_phase1(
         _kb_context_cache["refs_count"] = len(kb_refs)
 
     # Step 2: 生成提纲
-    yield ("mode_hint", "📝 正在生成文档提纲...")
+    yield ("mode_hint", " 正在生成文档提纲...")
 
     from prompts import DOC_OUTLINE_PROMPT
     outline_prompt = DOC_OUTLINE_PROMPT.format(user_request=message)
@@ -154,7 +154,7 @@ def _run_phase2(
 ):
     """Phase 2: 基于已确认的提纲生成完整文档"""
 
-    yield ("mode_hint", "🚀 正在基于提纲生成完整文档...")
+    yield ("mode_hint", " 正在基于提纲生成完整文档...")
 
     from prompts import DOC_FULL_PROMPT
 

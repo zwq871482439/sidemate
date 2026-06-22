@@ -236,7 +236,7 @@ def handle_kb_retrieval(ctx: StreamContext) -> Generator[str, None, None]:
         kb_prompt = KB_USER_PROMPT_TEMPLATE.format(context=kb_context, question=ctx.prompt)
         ctx.prompt = kb_prompt
         log.info("[KB] 检索完成: %d条来源, %d字" % (len(kb_sources), len(kb_context)))
-        yield 'data: {"type": "mode_hint", "message": "📚 已检索文库（%d条相关文档），正在生成回答..."}\n\n' % len(kb_sources)
+        yield 'data: {"type": "mode_hint", "message": " 已检索文库（%d条相关文档），正在生成回答..."}\n\n' % len(kb_sources)
         if kb_sources:
             yield 'data: {"type": "kb_sources", "sources": %s}\n\n' % json.dumps(
                 [{"label": s.get("source_label", "?"), "snippet": s.get("text_snippet", "")[:100]}

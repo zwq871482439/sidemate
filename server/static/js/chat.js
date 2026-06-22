@@ -1293,10 +1293,10 @@ async function sendMessage() {
         // 用户手动中止，已有输出：保留原内容，加标记（不修改 fullText 本身）
       } else if (_hadError && _abortReason === 'user_stop' && !_persistContent) {
         // 用户手动中止，无输出：记录一条中止提示
-        _persistContent = '⚠️ 用户已手动终止响应';
+        _persistContent = '[用户已手动终止响应]';
       } else if (_hadError && _abortReason === 'network_error') {
         // 网络错误：保留已输出内容（如果有）
-        _persistContent = _persistContent || '⚠️ 连接错误，响应中断';
+        _persistContent = _persistContent || '[连接错误，响应中断]';
       }
 
       if (_persistContent) {

@@ -328,7 +328,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
                 "total_chars": 0,
                 "extracted_chars": 0,
                 "filename": filename,
-                "message": "❌ %s 文件过大（%.1fMB），最大支持 200MB" % (filename, file_size / 1024 / 1024),
+                "message": " %s 文件过大（%.1fMB），最大支持 200MB" % (filename, file_size / 1024 / 1024),
             }
     except OSError as e:
         log.error(f"文件大小检查失败: {e}")
@@ -338,7 +338,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "total_chars": 0,
             "extracted_chars": 0,
             "filename": filename,
-            "message": f"❌ 文件访问失败: {e}",
+            "message": f" 文件访问失败: {e}",
         }
 
     try:
@@ -351,7 +351,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "total_chars": 0,
             "extracted_chars": 0,
             "filename": filename,
-            "message": f"❌ 文件读取失败: {e}"
+            "message": f" 文件读取失败: {e}"
         }
     
     total = len(text)
@@ -363,7 +363,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "total_chars": 0,
             "extracted_chars": 0,
             "filename": filename,
-            "message": f"❌ {filename} 内容为空或无法提取文本"
+            "message": f" {filename} 内容为空或无法提取文本"
         }
     
     if total <= inline_limit:
@@ -374,7 +374,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "total_chars": total,
             "extracted_chars": total,
             "filename": filename,
-            "message": f"📎 {filename}（{total}字）"
+            "message": f" {filename}（{total}字）"
         }
     
     elif total <= extract_limit:
@@ -386,7 +386,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "total_chars": total,
             "extracted_chars": len(extracted),
             "filename": filename,
-            "message": f"📎 {filename}（{total}字）→ 已提取与问题最相关的 {len(extracted)} 字\n⚠️ 文件较长，查看完整内容请上传至📚文库"
+            "message": f" {filename}（{total}字）→ 已提取与问题最相关的 {len(extracted)} 字\n️ 文件较长，查看完整内容请上传至文库"
         }
     
     else:
@@ -397,5 +397,5 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "total_chars": total,
             "extracted_chars": 0,
             "filename": filename,
-            "message": f"📎 {filename}（{total}字）\n❌ 文件过长，无法在对话中完整使用\n💡 建议：上传至📚文库，可以随时检索提问"
+            "message": f" {filename}（{total}字）\n 文件过长，无法在对话中完整使用\n 建议：上传至文库，可以随时检索提问"
         }

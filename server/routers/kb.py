@@ -1005,7 +1005,7 @@ async def api_kb_ask(request: Request):
         import asyncio
         loop = asyncio.get_event_loop()
 
-        yield 'data: {"type":"status","content":"🔍 正在检索文库..."}\n\n'
+        yield 'data: {"type":"status","content":" 正在检索文库..."}\n\n'
 
         # Patch3: 有历史时做 Reformulation，把追问补全为完整查询
         search_query = question
@@ -1049,7 +1049,7 @@ async def api_kb_ask(request: Request):
             )
         chat_history = kb_history if kb_history else []
 
-        yield 'data: {"type":"status","content":"✍️ 正在生成回答..."}\n\n'
+        yield 'data: {"type":"status","content":"️ 正在生成回答..."}\n\n'
 
         answer_parts = []
         _last_token_stats = None  # Patch3: 捕获 Ollama 真实 token 统计

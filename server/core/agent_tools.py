@@ -473,7 +473,7 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
 #  会话上下文注入（Patch4 修复 2）
 # ============================================================
 
-# ⚠️ 注入云端的 system prompt 只能包含：
+# ️ 注入云端的 system prompt 只能包含：
 #   1. 用户主动上传的文件清单（文件名+类型，不含内容）
 #   2. 云端自己生成的产物（文档列表）
 #   3. 云端自己的工具调用历史
@@ -536,7 +536,7 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
         # 3) KB 标签概览
         kb_block = ""
         if kb is not None and kb_tag_str:
-            kb_block = "📚 KB 标签概览：" + kb_tag_str
+            kb_block = " KB 标签概览：" + kb_tag_str
 
         # 4) workspace 文件清单（含用户上传的文件）
         workspace_block = _collect_workspace_block(chat_id)
@@ -604,7 +604,7 @@ def _collect_assets_block(chat_path):
     if not items:
         return ""
 
-    return "📎 上传文件：\n" + "\n".join(items)
+    return " 上传文件：\n" + "\n".join(items)
 
 
 def _collect_docs_block(chat_id):
@@ -632,14 +632,14 @@ def _collect_docs_block(chat_id):
         status_label = "已完成" if is_done else "写作中"
         lines.append("- %s（%s，%s）" % (name, _format_size(size), status_label))
 
-    return "📄 文档状态：\n" + "\n".join(lines)
+    return " 文档状态：\n" + "\n".join(lines)
 
 
 def _collect_tool_history_block(history):
     """从对话历史的 agent_timeline 提取工具调用历史。
 
     格式示例：
-    🔍 本次会话工具调用历史：
+     本次会话工具调用历史：
     - search_web: "兵棋推演"(10条), "wargaming"(8条)
     - fetch_url: rand.org/...(2.3s)
     - search_kb: "兵棋推演"(无结果)
@@ -719,7 +719,7 @@ def _collect_tool_history_block(history):
     if not lines:
         return ""
 
-    return "🔍 工具调用历史：\n" + "\n".join(lines)
+    return " 工具调用历史：\n" + "\n".join(lines)
 
 
 def _collect_workspace_block(chat_id):
@@ -739,7 +739,7 @@ def _collect_workspace_block(chat_id):
         size = f.get("size", 0)
         lines.append("- %s（%s）" % (name, _format_size(size)))
 
-    return "🧰 工作区文件：\n" + "\n".join(lines)
+    return " 工作区文件：\n" + "\n".join(lines)
 
 
 def _format_size(n):

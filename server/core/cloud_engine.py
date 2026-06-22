@@ -62,7 +62,7 @@ def _translate_cloud_error(exc: Exception) -> dict:
     # DNS / 网络不通
     if "getaddrinfo" in err_lower or "enotfound" in err_lower or "name or service not known" in err_lower:
         return {
-            "user_msg": "🌐 网络连接失败：无法解析服务器地址。请检查网络连接是否正常。",
+            "user_msg": " 网络连接失败：无法解析服务器地址。请检查网络连接是否正常。",
             "error_type": "network_dns",
             "detail": err_str[:200],
         }
@@ -77,7 +77,7 @@ def _translate_cloud_error(exc: Exception) -> dict:
 
     if "connectionrefused" in err_lower or "connection refused" in err_lower:
         return {
-            "user_msg": "🔌 连接被拒绝：无法连接到服务器。请检查 API 地址是否正确。",
+            "user_msg": " 连接被拒绝：无法连接到服务器。请检查 API 地址是否正确。",
             "error_type": "network_refused",
             "detail": err_str[:200],
         }
@@ -85,7 +85,7 @@ def _translate_cloud_error(exc: Exception) -> dict:
     # SSL / 证书错误
     if "ssl" in err_lower or "certificate" in err_lower or "tls" in err_lower:
         return {
-            "user_msg": "🔒 安全连接失败：SSL 证书验证出错。请检查系统时间或网络环境。",
+            "user_msg": " 安全连接失败：SSL 证书验证出错。请检查系统时间或网络环境。",
             "error_type": "network_ssl",
             "detail": err_str[:200],
         }
@@ -102,43 +102,43 @@ def _translate_cloud_error(exc: Exception) -> dict:
     if status_code:
         if status_code == 401:
             return {
-                "user_msg": "🔑 认证失败：API Key 无效或已过期。请在设置中检查 API Key。",
+                "user_msg": " 认证失败：API Key 无效或已过期。请在设置中检查 API Key。",
                 "error_type": "auth_error",
                 "detail": err_str[:200],
             }
         elif status_code == 403:
             return {
-                "user_msg": "🚫 权限不足：当前 API Key 无权访问此模型或功能。",
+                "user_msg": " 权限不足：当前 API Key 无权访问此模型或功能。",
                 "error_type": "auth_forbidden",
                 "detail": err_str[:200],
             }
         elif status_code == 429:
             return {
-                "user_msg": "🔄 请求过于频繁：已触发限流。请等待几秒后重试。",
+                "user_msg": " 请求过于频繁：已触发限流。请等待几秒后重试。",
                 "error_type": "rate_limit",
                 "detail": err_str[:200],
             }
         elif status_code == 500:
             return {
-                "user_msg": "⚠️ 服务端错误（500）：云端模型服务暂时异常，请稍后重试。",
+                "user_msg": "️ 服务端错误（500）：云端模型服务暂时异常，请稍后重试。",
                 "error_type": "server_error",
                 "detail": err_str[:200],
             }
         elif status_code == 502:
             return {
-                "user_msg": "⚠️ 网关错误（502）：云端服务暂时不可用，请稍后重试。",
+                "user_msg": "️ 网关错误（502）：云端服务暂时不可用，请稍后重试。",
                 "error_type": "server_error",
                 "detail": err_str[:200],
             }
         elif status_code == 503:
             return {
-                "user_msg": "⚠️ 服务不可用（503）：云端模型正在维护或过载，请稍后重试。",
+                "user_msg": "️ 服务不可用（503）：云端模型正在维护或过载，请稍后重试。",
                 "error_type": "server_error",
                 "detail": err_str[:200],
             }
         elif status_code >= 400:
             return {
-                "user_msg": "⚠️ 请求错误（%d）：%s" % (status_code, err_str[:100]),
+                "user_msg": "️ 请求错误（%d）：%s" % (status_code, err_str[:100]),
                 "error_type": "http_error",
                 "detail": err_str[:200],
             }
@@ -146,7 +146,7 @@ def _translate_cloud_error(exc: Exception) -> dict:
     # openai SDK 特有：APIConnectionError
     if "apiconnectionerror" in type_name.lower() or "connection error" in err_lower:
         return {
-            "user_msg": "🌐 网络连接失败：无法连接到云端服务。请检查网络是否正常。",
+            "user_msg": " 网络连接失败：无法连接到云端服务。请检查网络是否正常。",
             "error_type": "network_error",
             "detail": err_str[:200],
         }
@@ -154,14 +154,14 @@ def _translate_cloud_error(exc: Exception) -> dict:
     # openai SDK：APIStatusError 的子类
     if "apistatuserror" in type_name.lower():
         return {
-            "user_msg": "⚠️ 云端 API 返回错误。请稍后重试。",
+            "user_msg": "️ 云端 API 返回错误。请稍后重试。",
             "error_type": "api_error",
             "detail": err_str[:200],
         }
 
     # 兜底：通用错误
     return {
-        "user_msg": "⚠️ 云端请求失败，请稍后重试。",
+        "user_msg": "️ 云端请求失败，请稍后重试。",
         "error_type": "unknown",
         "detail": err_str[:200],
     }
@@ -885,7 +885,7 @@ class CloudEngine:
         except openai.APITimeoutError:
             return (False, 0, "⏱️ 连接超时：服务器响应时间过长。请检查网络或稍后重试。")
         except openai.AuthenticationError:
-            return (False, 0, "🔑 认证失败：API Key 无效或已过期。请在设置中检查 API Key。")
+            return (False, 0, " 认证失败：API Key 无效或已过期。请在设置中检查 API Key。")
         except Exception as e:
             return (False, 0, str(e)[:200])
 

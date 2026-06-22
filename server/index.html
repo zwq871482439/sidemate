@@ -558,7 +558,7 @@
               <button class="btn btn-ghost kb-preset-btn" data-preset="offline" onclick="applyPermissionPreset('offline')">纯离线</button>
             </div>
             <details>
-              <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-primary);padding:4px 0">⚙️ 高级设置（工具级权限）</summary>
+              <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-primary);padding:4px 0">高级设置（工具级权限）</summary>
               <div id="permissionToolsList" style="margin-top:8px;font-size:13px"><span style="color:var(--text-muted)">加载中...</span></div>
             </details>
           </div>
@@ -691,7 +691,7 @@ let generating = false;
 let abortCtrl = null;
 // (pendingImageFile 已移除 — 图片上传功能已归档)
 let currentActionMode = 'chat';  // 当前 Action: chat|kb|doc
-let _refFilePath = null;      // 📎 引用文件路径
+let _refFilePath = null;      // 引用文件路径
 let _maxPromptTokens = 0;     // 当前模型的 prompt token 上限（从 /api/models 获取）
 let _lastMsgCount = 0;  // 上次检测到的消息数
 let _sessionPollTimer = null;
@@ -743,11 +743,11 @@ function renderOnboardRoute1() {
     '<div style="text-align:left;margin-bottom:20px">' +
     '<p style="font-size:.82em;color:var(--text-secondary);margin:0 0 12px 0;line-height:1.5">两种方式任选其一（或都配）：</p>' +
     '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:16px">🏠</span>' +
+    '<span style="font-size:16px">' + iconSvg('home','16') + '</span>' +
     '<div><div style="font-size:.85em;font-weight:600;color:var(--text-primary)">本地 AI</div><div style="font-size:.75em;color:var(--text-secondary)">安装 LLM 模型包，数据不出本机，无需联网</div></div>' +
     '</div>' +
     '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:16px">☁️</span>' +
+    '<span style="font-size:16px">' + iconSvg('cloud','16') + '</span>' +
     '<div><div style="font-size:.85em;font-weight:600;color:var(--text-primary)">云端 AI</div><div style="font-size:.75em;color:var(--text-secondary)">填入 API Key 即可使用，无需本地模型</div></div>' +
     '</div>' +
     '</div>' +
@@ -762,7 +762,7 @@ function renderOnboardRoute2(opts) {
     cloudSection = 
     '<div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary)">' +
     '<div style="font-size:.82em;color:var(--text-secondary);line-height:1.5">' +
-    '<span style="font-size:14px">☁️</span> <strong style="color:var(--text-primary)">在线模式</strong>：已切换到云端模型。模型会自动检索本地知识库辅助回答。<br>' +
+    '<span style="font-size:14px">' + iconSvg('cloud','14') + '</span> <strong style="color:var(--text-primary)">在线模式</strong>：已切换到云端模型。模型会自动检索本地知识库辅助回答。<br>' +
     '<span style="color:var(--text-muted)">本地数据不会上传，但你的问题会发送给云端服务</span>' +
     '</div></div>';
   }
@@ -775,15 +775,15 @@ function renderOnboardRoute2(opts) {
     '</div>' +
     '<div style="text-align:left;margin-bottom:16px">' +
     '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">💬</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">Chat 对话：和 AI 自由聊天，支持上传文件</div></div>' +
+    '<span style="font-size:14px">' + iconSvg('chat','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">Chat 对话：和 AI 自由聊天，支持上传文件</div></div>' +
     '</div>' +
     '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">🔒</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">隐私：所有数据存放在本机</div></div>' +
+    '<span style="font-size:14px">' + iconSvg('lock','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">隐私：所有数据存放在本机</div></div>' +
     '</div>' +
     cloudSection +
     '</div>' +
     '<div style="padding:8px 12px;border-radius:8px;background:var(--bg-secondary);margin-bottom:16px">' +
-    '<div style="font-size:.78em;color:var(--text-muted)">💡 安装文库扩展包可解锁更多能力</div>' +
+    '<div style="font-size:.78em;color:var(--text-muted)">' + iconSvg('light','12') + ' 安装文库扩展包可解锁更多能力</div>' +
     '</div>' +
     '<div style="display:flex;gap:10px;justify-content:center">' +
     '<button onclick="dismissOnboarding()" style="padding:8px 24px;border:1px solid var(--accent-color);border-radius:8px;background:var(--accent-color);color:#fff;font-size:.85em;cursor:pointer;font-weight:600">开始使用</button>' +
@@ -795,7 +795,7 @@ function renderOnboardRoute3(opts) {
   if (opts.hasCloud) {
     compareSection = 
     '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">🔄</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">对比模式：本地 + 云端同时回答，综合分析</div></div>' +
+    '<span style="font-size:14px">' + iconSvg('refresh','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">对比模式：本地 + 云端同时回答，综合分析</div></div>' +
     '</div>';
   }
   var card = document.getElementById('onboardCard');
@@ -807,15 +807,15 @@ function renderOnboardRoute3(opts) {
     '</div>' +
     '<div style="text-align:left;margin-bottom:16px">' +
     '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">💬</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">Chat 对话：和 AI 自由聊天，支持上传文件</div></div>' +
+    '<span style="font-size:14px">' + iconSvg('chat','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">Chat 对话：和 AI 自由聊天，支持上传文件</div></div>' +
     '</div>' +
     '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">📚</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">文库 Tab：上传文档，AI 基于你的文档回答</div></div>' +
+    '<span style="font-size:14px">' + iconSvg('books2','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">文库 Tab：上传文档，AI 基于你的文档回答</div></div>' +
     '</div>' +
     compareSection +
     '</div>' +
     '<div style="text-align:left;padding:12px;border-radius:8px;background:var(--bg-secondary);margin-bottom:16px">' +
-    '<div style="font-size:.82em;font-weight:600;color:var(--text-primary);margin-bottom:6px">🔒 隐私设计</div>' +
+    '<div style="font-size:.82em;font-weight:600;color:var(--text-primary);margin-bottom:6px">' + iconSvg('lock','12') + ' 隐私设计</div>' +
     '<div style="font-size:.75em;color:var(--text-secondary);line-height:1.6">' +
     '<div>• 所有数据存放在本机，不上传</div>' +
     (opts.hasCloud ? '<div>• 在线模式 Chat 会搜索本地知识库辅助回答</div>' : '') +

@@ -344,7 +344,7 @@ function updateWarmupBtn(modelsData) {
   var btn = document.getElementById('modelActionBtn');
   var delBtn = document.getElementById('modelDeleteBtn');
   console.log('[updateWarmupBtn] btn=', btn, 'hasModels=', modelsData.available && modelsData.available.length > 0, 'isLoaded=', !!modelsData.current, 'available=', modelsData.available);
-  if (!btn) { console.log('[updateWarmupBtn] ⚠️ modelActionBtn not found!'); return; }
+  if (!btn) { console.log('[updateWarmupBtn] modelActionBtn not found'); return; }
   if (!modelsData) return;
 
   var hasModels = modelsData.available && modelsData.available.length > 0;

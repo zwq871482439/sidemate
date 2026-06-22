@@ -46,7 +46,7 @@ def register_action(meta: dict):
     
     with _actions_lock:
         _installed_actions[action_id] = {
-            "label": meta.get("action_label", "🔧"),
+            "label": meta.get("action_label", ""),
             "title": meta.get("action_title", action_id),
             "placeholder": meta.get("action_placeholder", "输入指令…"),
             "action_config": meta.get("steps", []),

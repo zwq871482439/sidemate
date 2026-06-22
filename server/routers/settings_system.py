@@ -420,16 +420,16 @@ def api_workspace_list():
             size = os.path.getsize(f)
             ext = os.path.splitext(f)[1].lower()
             icons = {
-                ".txt": "📄", ".md": "📝", ".csv": "📊", ".json": "📋",
-                ".docx": "📕", ".xlsx": "📗", ".pdf": "📄",
-                ".py": "🐍", ".html": "🌐",
+                ".txt": "", ".md": "", ".csv": "", ".json": "",
+                ".docx": "", ".xlsx": "", ".pdf": "",
+                ".py": "", ".html": "",
             }
             files.append({
                 "name": os.path.basename(f),
                 "path": rel,
                 "size": size,
                 "size_human": "%.1fKB" % (size / 1024) if size < 1024 * 1024 else "%.1fMB" % (size / (1024 * 1024)),
-                "icon": icons.get(ext, "📄"),
+                "icon": icons.get(ext, ""),
                 "download_url": "/api/workspace/" + rel,
                 "modified": datetime.fromtimestamp(os.path.getmtime(f)).isoformat() if os.path.exists(f) else "",
             })

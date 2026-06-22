@@ -185,7 +185,7 @@ function _showKbPickerModal(files) {
     };
 
     var iconSpan = document.createElement('span');
-    iconSpan.innerHTML = iconSvg ? iconSvg('doc', '16') : '📄';
+    iconSpan.innerHTML = iconSvg ? iconSvg('doc', '16') : iconSvg('doc', '16');
     iconSpan.style.cssText = 'flex-shrink:0';
 
     var nameSpan = document.createElement('span');
