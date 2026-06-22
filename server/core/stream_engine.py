@@ -65,6 +65,10 @@ class StreamEngine:
         max_tokens = max_tokens if max_tokens is not None else profile.get("default_max_tokens", 1500)
 
         # ===== 智能任务分类 =====
+        # Bug1 修复：温度链路曾断裂——get_temperature_offset 是空壳恒返回 0.0，
+        # 导致所有策略的温度偏移失效。现在统一从 resolve_strategy + STRATEGY_CONFIG_V2
+        # 取 temperature_offset/top_p_offset，让策略温度真正生效。
+        # kb_mode/override/agent 三个分支保留各自的特殊温度（刻意设计），不受影响。
         if kb_mode:
             task_type = "text"
             confidence = 0.99
@@ -74,12 +78,7 @@ class StreamEngine:
             task_type = override_task_type
             confidence = 0.99
             classify_signals = {}
-            try:
-                from intelligence.task_classifier import get_temperature_offset, get_classify_signals
-                temp_offset = get_temperature_offset(task_type)
-                classify_signals = get_classify_signals(message, task_type)
-            except Exception:
-                temp_offset = 0.0
+            temp_offset = 0.0
         elif _agent_mode:
             task_type = "agent"
             confidence = 0.95
@@ -89,18 +88,13 @@ class StreamEngine:
             task_type = "text"
             confidence = 0.3
             classify_signals = {}
-            try:
-                from intelligence.task_classifier import classify_task, get_temperature_offset, get_classify_signals
-                task_type, confidence = classify_task(message, history)
-                temp_offset = get_temperature_offset(task_type)
-                classify_signals = get_classify_signals(message, task_type)
-            except Exception as e:
-                log.debug("[MODEL] task_classifier 辅助函数失败: %s" % str(e)[:60])
-                temp_offset = 0.0
-                classify_signals = {}
+            temp_offset = 0.0
         yield ("task_type", (task_type, confidence))
 
-        # ===== think_mode 读取 =====
+        # ===== 策略解析（统一入口：think_mode + temperature_offset + sampler_overrides）=====
+        # Bug1 修复：原来这里只取 think_mode，temperature 靠前面空壳函数（恒 0.0）。
+        # 现在统一从 strategy 取所有采样参数。自动分类分支(else)用 strategy 的温度；
+        # kb_mode/override/agent 分支只取 think_mode，温度保持各自的特殊值。
         think_mode = "off"
         sampler_overrides = {}
         try:
@@ -109,9 +103,22 @@ class StreamEngine:
             strategy = resolve_strategy(message)
             strategy_name = strategy.get("type", "default")
             strategy_config = STRATEGY_CONFIG_V2.get(strategy_name, {})
+
+            # 自动分类分支：用 strategy 的温度偏移（让 code -0.2 / creative +0.3 等真正生效）
+            if not kb_mode and not override_task_type and not _agent_mode:
+                temp_offset = strategy_config.get("temperature_offset", 0.0)
+
             think_mode = strategy_config.get("think_mode", "off")
+
+            # sampler_overrides：top_p / repeat_penalty 的策略微调
+            top_p_off = strategy_config.get("top_p_offset", 0.0)
+            rp_off = strategy_config.get("repeat_penalty_offset", 0.0)
+            if top_p_off:
+                sampler_overrides["top_p"] = max(0.1, min(1.0, profile.get("top_p", 0.9) + top_p_off))
+            if rp_off:
+                sampler_overrides["repeat_penalty"] = max(1.0, min(2.0, profile.get("repeat_penalty", 1.1) + rp_off))
         except Exception as e:
-            log.debug("[MODEL] think_mode 解析失败: %s" % str(e)[:60])
+            log.debug("[MODEL] 策略解析失败: %s" % str(e)[:60])
             think_mode = "off"
 
         # KB 模式强制禁用思考
@@ -123,22 +130,8 @@ class StreamEngine:
             from config import MAX_OUTPUT_TOKENS
             if max_tokens > MAX_OUTPUT_TOKENS:
                 max_tokens = MAX_OUTPUT_TOKENS
-        if not kb_mode:
-            try:
-                from intelligence.task_classifier import get_dynamic_max_tokens
-                task_max = get_dynamic_max_tokens(task_type, message)
-                if task_max and task_max > 0 and max_tokens > task_max:
-                    max_tokens = task_max
-            except Exception as e:
-                log.debug("[MODEL] get_dynamic_max_tokens 失败: %s" % str(e)[:60])
-
-            try:
-                from intelligence.task_classifier import check_mode_hint
-                mode_hint = check_mode_hint("chat", message)
-                if mode_hint:
-                    yield ("mode_hint", mode_hint)
-            except Exception as e:
-                log.debug("[MODEL] check_mode_hint 失败: %s" % str(e)[:60])
+        # 注：非 KB 模式原有一次 get_dynamic_max_tokens/check_mode_hint 调用，
+        # 但两者都是空壳函数（恒返回 0/空串），属死代码，已随 Bug1 温度修复一并清理。
 
         # 确保"模型已加载"
         if matched_name not in mm._loaded:
