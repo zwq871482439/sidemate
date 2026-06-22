@@ -2482,7 +2482,15 @@ async def api_kb_overview_refresh(request: Request):
     ) % (doc_count, cats_text if cats_text else "（暂无分类标签）")
 
     try:
-        result = mgr.chat(prompt, max_tokens=200, _priority="LOW")
+        from core.thread_pool import get_thread_pool
+        import asyncio
+
+        def _call_llm():
+            return mgr.chat(prompt, max_tokens=200, _priority="LOW")
+        
+        result = await asyncio.get_event_loop().run_in_executor(
+            get_thread_pool().executor, _call_llm
+        )
         overview = (result.get("text", "") or result.get("response", "") or "").strip()
     except Exception:
         # LLM 不可用时返回纯统计
