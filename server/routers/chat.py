@@ -1006,8 +1006,11 @@ def _calc_context_usage(chat_file: str = None):
         # 使用真实 input_tokens（包含 system prompt + FC schema + 历史消息的总开销）
         used_tokens = _last_token_stats["input_tokens"]
     else:
-        used_tokens = int(total_chars / 1.5)
-
+        # P6: 离线模式估算需包含 system prompt + FC schema + KB 注入等固定开销
+        # 纯消息字符 / 1.5 严重低估总上下文（差 ~800-1200 tokens）
+        SYSTEM_OVERHEAD = 800  # system prompt + FC schema + KB summary
+        used_tokens = int(total_chars / 1.5) + (SYSTEM_OVERHEAD if total_chars > 0 else 0)
+    
     # 获取模型上下文窗口大小
     if ai_mode == "cloud":
         # 优先用用户手动配置的上下文窗口
