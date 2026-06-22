@@ -883,6 +883,18 @@ async def api_kb_upload(file: UploadFile = File(...)):
             except Exception:
                 pass
 
+    # P6 打磨：重复文档不启动处理，暂停在队列中等待用户确认
+    if duplicate_detected:
+        doc = kb.get_document(doc_id)
+        if doc:
+            doc.status = "conflict"
+            kb._save_meta()
+        return {"ok": True, "doc_id": doc_id, "filename": file.filename,
+                "size": _upload_size, "chars": len(text), "status": "conflict",
+                "has_images": image_count > 0, "image_count": image_count,
+                "duplicate_detected": True,
+                "duplicate_info": duplicate_info}
+
     t = threading.Thread(target=_process, daemon=True)
     t.start()
 

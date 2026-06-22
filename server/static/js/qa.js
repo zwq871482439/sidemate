@@ -299,7 +299,10 @@ async function kbRefreshDocs() {
       var previewText = '';
       var previewExtraClass = '';
       if (d.status === 'processing' || d.status === 'indexing') {
-        previewText = '切片+向量化中...';
+        previewText = '队列中...';
+      } else if (d.status === 'conflict') {
+        previewText = '检测到冲突';
+        previewExtraClass = ' failed';
       } else if (d.status === 'ready') {
         if (d.tag_status === 'pending') {
           previewText = '排队等待 AI 生成摘要...';
@@ -394,11 +397,12 @@ async function kbRefreshDocs() {
     var statsEl = document.getElementById('kbStats');
     if (statsEl) {
       var totalDocs = docs.length;
-      var totalChunks = 0, totalBytes = 0;
-      docs.forEach(function(d) { totalChunks += (d.chunk_count || 0); totalBytes += (d.file_size || 0); });
+      var totalChunks = 0, totalBytes = 0, totalChars = 0;
+      docs.forEach(function(d) { totalChunks += (d.chunk_count || 0); totalBytes += (d.file_size || 0); totalChars += (d.total_chars || 0); });
       var sizeStr = totalBytes > 1073741824 ? (totalBytes/1073741824).toFixed(1)+'GB' : totalBytes > 1048576 ? (totalBytes/1048576).toFixed(1)+'MB' : (totalBytes/1024).toFixed(1)+'KB';
+      var charsStr = totalChars > 1000000 ? (totalChars/1000000).toFixed(1)+'M 字' : totalChars > 1000 ? (totalChars/1000).toFixed(1)+'K 字' : totalChars + ' 字';
       statsEl.style.display = totalDocs > 0 ? '' : 'none';
-      statsEl.textContent = '共 ' + totalDocs + ' 篇文档 · 已索引 ' + totalChunks + ' 块 · 占用 ' + sizeStr;
+      statsEl.textContent = '共 ' + totalDocs + ' 篇文档 · ' + charsStr + ' · 已索引 ' + totalChunks + ' 块 · 占用 ' + sizeStr;
     }
 
     // 通知 kb-batch.js
@@ -850,12 +854,12 @@ function _kbRenderQueue() {
       continue;
     }
 
-    // Fix 2: 显示完整的处理阶段
+    // Fix 2: 显示完整的处理阶段 + 实时百分比
     var phaseLabel;
     if (item.phase === 'chunking') {
-      phaseLabel = '切分段落 (' + item.pct + '%)';
+      phaseLabel = '切分段落 (' + (item.pct || 0) + '%)';
     } else if (item.phase === 'embedding') {
-      phaseLabel = '向量化 (' + item.pct + '%)';
+      phaseLabel = '向量化 (' + (item.pct || 0) + '%)';
     } else if (item.phase === 'queued') {
       phaseLabel = '排队等待处理';
     } else if (item.phase === 'tag_pending') {
@@ -936,7 +940,10 @@ async function kbUploadFile(f) {
           conflictInfo = data.duplicate_info;
         }
         _kbAddToQueue(data.doc_id, f.name, conflictInfo);
-        kbSubscribeProgress(data.doc_id, f.name);
+        // P6 打磨：冲突文档不建立 SSE（不处理），避免连接数爆仓
+        if (!conflictInfo) {
+          kbSubscribeProgress(data.doc_id, f.name);
+        }
       }
     } else {
       showToast('上传失败: ' + (data.error || '未知错误'), 'error');
@@ -947,12 +954,23 @@ async function kbUploadFile(f) {
 }
 
 // --- 文档处理进度 SSE ---
+var _kbActiveEventSources = 0;
+var _kbMaxEventSources = 3;
+var _kbPendingSubscriptions = [];
+
 function kbSubscribeProgress(docId, filename) {
+  // P6 打磨：限制并发 EventSource 数量
+  if (_kbActiveEventSources >= _kbMaxEventSources) {
+    _kbPendingSubscriptions.push({docId: docId, filename: filename});
+    return;
+  }
+
   var apiBase = (typeof API !== 'undefined') ? API : '';
   var url = apiBase + '/api/kb/progress/' + encodeURIComponent(docId);
   var es;
   try {
     es = new EventSource(url);
+    _kbActiveEventSources++;
   } catch (e) {
     console.warn('[KB] SSE 不支持，回退轮询', e);
     return;
@@ -993,14 +1011,32 @@ function kbSubscribeProgress(docId, filename) {
       }
       if (d.phase === 'done' || d.phase === 'error' || d.phase === 'timeout') {
         es.close();
+        _kbActiveEventSources--;
+        _kbTryNextSubscription();  // P6 打磨：释放连接槽位，处理下一个订阅
         // P6 B5: 从队列移除已完成/失败/超时条目
         _kbRemoveFromQueue(docId);
         kbRefreshDocs();
       }
     } catch (e) { console.warn('[KB] SSE 解析失败', e); }
   };
-  es.onerror = function() { try { es.close(); } catch (e) {} };
-  setTimeout(function() { try { es.close(); } catch (e) {} }, 60000);
+  es.onerror = function() {
+    try { es.close(); } catch (e) {}
+    _kbActiveEventSources--;
+    _kbTryNextSubscription();
+  };
+  setTimeout(function() {
+    try { es.close(); } catch (e) {}
+    _kbActiveEventSources--;
+    _kbTryNextSubscription();
+  }, 60000);
+}
+
+// P6 打磨：处理排队的 SSE 订阅
+function _kbTryNextSubscription() {
+  if (_kbPendingSubscriptions.length === 0) return;
+  if (_kbActiveEventSources >= _kbMaxEventSources) return;
+  var next = _kbPendingSubscriptions.shift();
+  kbSubscribeProgress(next.docId, next.filename);
 }
 
 // --- 文档操作 ---
