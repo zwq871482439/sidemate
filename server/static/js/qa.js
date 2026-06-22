@@ -472,6 +472,10 @@ async function kbRefreshDocs() {
     } else if (!hasProcessing && !hasPendingTags && _kbPollTimer) {
       clearInterval(_kbPollTimer);
       _kbPollTimer = null;
+      // P6: 所有文档处理完毕（含标签），自动触发 AI 洞察整理 + 标签筛选刷新
+      if (typeof kbRefreshOverviewLLM === 'function') {
+        setTimeout(function() { kbRefreshOverviewLLM(); }, 300);
+      }
     }
 
     // P6: 刷新令牌面板
@@ -1125,12 +1129,7 @@ function kbSubscribeProgress(docId, filename) {
         // P6 B5: 从队列移除已完成/失败/超时条目
         _kbRemoveFromQueue(docId);
         kbRefreshDocs();
-        // P6 打磨：全部处理完毕后自动触发 AI 洞察整理
-        if (_kbActiveEventSources <= 0 && _kbPendingSubscriptions.length === 0) {
-          setTimeout(function() {
-            if (typeof kbRefreshOverviewLLM === 'function') kbRefreshOverviewLLM();
-          }, 500);  // 延迟等 kbRefreshDocs 的 DOM 更新完成
-        }
+        // 自动触发 AI 洞察已移至轮询停止时（确保含标签全部完成）
       }
     } catch (e) { console.warn('[KB] SSE 解析失败', e); }
   };
