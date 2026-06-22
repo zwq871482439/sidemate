@@ -301,7 +301,19 @@ async function kbRefreshDocs() {
       var previewText = '';
       var previewExtraClass = '';
       if (d.status === 'processing' || d.status === 'indexing') {
-        previewText = '队列中...';
+        // P6: 从队列查找实时进度
+        var _qi = null;
+        for (var _qi2 = 0; _qi2 < _kbQueueItems.length; _qi2++) {
+          if (_kbQueueItems[_qi2].docId === d.doc_id) { _qi = _kbQueueItems[_qi2]; break; }
+        }
+        if (_qi && _qi.phase && _qi.pct != null) {
+          var _phaseLabels = { chunking: '切分段落', embedding: '向量化', queued: '排队中', tag_pending: '等AI摘要', tag_generating: 'AI摘要中' };
+          previewText = (_phaseLabels[_qi.phase] || _qi.phase) + ' ' + _qi.pct + '%';
+          previewExtraClass = ' generating';
+        } else {
+          previewText = '处理中...';
+          previewExtraClass = ' generating';
+        }
       } else if (d.status === 'conflict') {
         previewText = '检测到冲突';
         previewExtraClass = ' failed';
@@ -360,7 +372,7 @@ async function kbRefreshDocs() {
       if (tagsHtml) html += '<div class="ctags">' + tagsHtml + '</div>';
       // 3. AI 摘要
       html += '<div class="cpreview' + previewExtraClass + '">';
-      if (d.tag_status === 'generating') {
+      if (d.tag_status === 'generating' || d.status === 'processing' || d.status === 'indexing') {
         html += '<span class="cpreview-spinner"></span>';
       }
       html += esc(previewText) + '</div>';
