@@ -553,6 +553,10 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                                     "corrections": [],
                                     "truncated": True,
                                 })
+                                # Bug2 修复：同步截断后的正文到前端
+                                # 复用现有 truncate 事件通道（chat.js:1385 已支持），让前端 fullText
+                                # 从"完整车轱辘话"替换为"截断后正文"，与聊天记录三态一致。
+                                yield sse_event("truncate", {"content": truncated})
                                 break
 
                 # 只 yield 一次 filter 事件
