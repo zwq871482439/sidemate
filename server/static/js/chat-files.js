@@ -209,7 +209,8 @@ function _showKbPickerModal(files) {
         : '确认引用';
 
       if (overLimit) {
-        btnText += ' — 超出剩余容量 (可用' + (remainTokens/1000).toFixed(0) + 'K)';
+        var overflowK = ((totalTokens - remainTokens) / 1000).toFixed(1);
+        btnText += ' — 超出剩余容量 (超出 ' + overflowK + 'K 词元)';
         confirmBtn.style.cssText = confirmBtn.style.cssText + ';opacity:.5;cursor:not-allowed';
       } else {
         confirmBtn.style.cssText = confirmBtn.style.cssText.replace(';opacity:.5;cursor:not-allowed', '');
