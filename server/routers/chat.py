@@ -993,19 +993,20 @@ def _calc_context_usage(chat_file: str = None):
         except Exception:
             pass
 
-    # 估算 token 数：优先使用真实 token_stats 的 input_tokens，否则回退 chars/1.5
+    # 估算 token 数
     total_chars = sum(len(m.get("content", "")) for m in messages)
     used_tokens = 0
-    # 尝试从最近的 assistant 消息中获取真实 token 数据
-    _last_token_stats = None
-    for m in reversed(messages):
-        if m.get("role") == "assistant" and m.get("token_stats"):
-            _last_token_stats = m["token_stats"]
-            break
-    if _last_token_stats and _last_token_stats.get("input_tokens"):
-        # 使用真实 input_tokens（包含 system prompt + FC schema + 历史消息的总开销）
-        used_tokens = _last_token_stats["input_tokens"]
-    else:
+    # 在线/并行模式：优先用云端 API 返回的真实 input_tokens
+    # 离线模式：无真实 token_stats，用 chars/1.5 + 系统开销估算
+    if ai_mode in ("cloud", "parallel"):
+        _last_token_stats = None
+        for m in reversed(messages):
+            if m.get("role") == "assistant" and m.get("token_stats"):
+                _last_token_stats = m["token_stats"]
+                break
+        if _last_token_stats and _last_token_stats.get("input_tokens"):
+            used_tokens = _last_token_stats["input_tokens"]
+    if used_tokens == 0:
         # P6: 离线模式估算需包含 system prompt + FC schema + KB 注入等固定开销
         # 纯消息字符 / 1.5 严重低估总上下文（差 ~800-1200 tokens）
         SYSTEM_OVERHEAD = 800  # system prompt + FC schema + KB summary
