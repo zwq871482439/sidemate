@@ -146,6 +146,88 @@ function _handleAgentTimelineSSE(d) {
   }
 }
 
+// P6 打磨：并行模式流式内容渲染到对应 timeline 步骤
+var _parallelChannelRendered = {};  // 记录每个 channel 的 rendered 行数（带行号）
+
+function _renderParallelChannelContent(channel, fullContent, newChunk) {
+  var container = document.getElementById('agent-timeline');
+  if (!container) return;
+
+  var stepId = channel === 'local' ? 'local_gen' : (channel === 'cloud' ? 'cloud_gen' : 'merge');
+  var stepEl = container.querySelector('[data-step="' + stepId + '"]');
+  if (!stepEl) return;
+
+  // 获取或创建内容区域
+  var contentEl = stepEl.querySelector('.agent-tl-content');
+  if (!contentEl) {
+    contentEl = document.createElement('div');
+    contentEl.className = 'agent-tl-content';
+    contentEl.style.cssText = 'margin-top:4px;padding:6px 8px;background:var(--bg-tertiary,var(--bg-secondary));border-radius:4px;font-size:11px;line-height:1.5;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--text-secondary)';
+    var labelEl = stepEl.querySelector('.agent-tl-label');
+    if (labelEl) {
+      labelEl.parentNode.insertBefore(contentEl, labelEl.nextSibling);
+    } else {
+      stepEl.appendChild(contentEl);
+    }
+  }
+
+  // 流式追加：用 requestAnimationFrame 控制刷新率
+  if (!contentEl.__lastUpdate || Date.now() - contentEl.__lastUpdate > 60) {
+    contentEl.textContent = fullContent;
+    contentEl.__lastUpdate = Date.now();
+    // 自动滚底
+    contentEl.scrollTop = contentEl.scrollHeight;
+  }
+
+  // 如果这个 step 还在 spin 状态（进行中），保持同步
+  var iconEl = stepEl.querySelector('.agent-tl-icon');
+  if (iconEl && iconEl.classList.contains('spin')) {
+    // 仍在进行中，保留 spin 动画
+  }
+}
+
+// P6 打磨：并行模式检索结果展示
+function _renderParallelSources(channel, items) {
+  var container = document.getElementById('agent-timeline');
+  if (!container) return;
+
+  var stepEl = container.querySelector('[data-step="retrieve"]');
+  if (!stepEl) return;
+
+  var contentEl = stepEl.querySelector('.agent-tl-content');
+  if (!contentEl) {
+    contentEl = document.createElement('div');
+    contentEl.className = 'agent-tl-content';
+    contentEl.style.cssText = 'margin-top:4px;padding:6px 8px;background:var(--bg-tertiary,var(--bg-secondary));border-radius:4px;font-size:11px;line-height:1.5;max-height:160px;overflow-y:auto;color:var(--text-secondary)';
+    var labelEl = stepEl.querySelector('.agent-tl-label');
+    if (labelEl) {
+      labelEl.parentNode.insertBefore(contentEl, labelEl.nextSibling);
+    } else {
+      stepEl.appendChild(contentEl);
+    }
+  }
+
+  var html = '';
+  if (items && items.length > 0) {
+    html += '检索到 ' + items.length + ' 篇文档：';
+    for (var i = 0; i < Math.min(items.length, 5); i++) {
+      var item = items[i];
+      var name = (typeof item === 'string') ? item : (item.filename || item.title || item.name || '');
+      var score = (typeof item === 'object') ? (item.score || item.relevance || '') : '';
+      html += '\n  · ' + _esc(name || '文档 #' + (i+1));
+      if (score) html += ' (相关度: ' + (typeof score === 'number' ? score.toFixed(2) : score) + ')';
+    }
+  }
+  contentEl.textContent = html || '未检索到相关文档';
+}
+
+// 清理并行模式状态
+function _resetParallelState() {
+  window._parallelChannelTexts = {};
+  _parallelChannelRendered = {};
+}
+window._resetParallelState = _resetParallelState;
+
 function _buildAgentTimelineHtml(timelineData) {
   if (!timelineData || !timelineData.length) return '';
   var html = '<div class="agent-timeline">';
@@ -671,6 +753,7 @@ async function sendMessage() {
   _agentTimelineData = [];  // 重置时间线数据收集
   _agentCurrentStepEl = null;  // Patch4 v3：重置当前步骤
   _agentCurrentStepStartTs = 0;
+  _resetParallelState();  // P6 打磨：重置并行模式流式状态
 
   appendStreamingMsg('', '', 0, null, true);
   var msgEl = document.getElementById('messages');
@@ -682,6 +765,11 @@ async function sendMessage() {
   var thinkingPhase = false;
   var currentTaskType = 'text';  // Patch5 C7：默认设为 text，避免首帧因空字符串误进 thinkingPhase
   var localMaxPromptTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 0;
+
+  // P6 修复：fullText 必须在 SSE 循环之前声明（并行模式无 token 事件，直接走 stream 事件）
+  var fullText = '';
+  var thinkText = '';
+  var thinkLen = 0;
 
   var lastRender = 0;
   var RENDER_INTERVAL = (typeof STREAM_RENDER_INTERVAL !== 'undefined') ? STREAM_RENDER_INTERVAL : 100;
@@ -850,6 +938,21 @@ async function sendMessage() {
             else if (status === 'failed') appendStreamingMsg(iconSvg('cross','14') + ' ' + stepName + ' 失败', '', 0, null, false);
             lastRender = now;
           } else if (d.type === 'pipeline_progress') {
+          // P6 打磨：并行模式 stream 事件（带 channel 字段：local/cloud/merge）
+          } else if (d.type === 'stream') {
+            var ch = d.channel || 'merge';
+            if (!window._parallelChannelTexts) window._parallelChannelTexts = {};
+            if (!window._parallelChannelTexts[ch]) window._parallelChannelTexts[ch] = '';
+            window._parallelChannelTexts[ch] += d.content || '';
+            // 流式渲染到对应 timeline 步骤的内容区
+            _renderParallelChannelContent(ch, window._parallelChannelTexts[ch], d.content || '');
+            // 同步更新 fullText（最终 DONE 需要用到）
+            if (ch === 'merge') fullText = window._parallelChannelTexts[ch];
+          } else if (d.type === 'sources') {
+            // P6 打磨：检索结果展示
+            var srcCh = d.channel || 'local';
+            var srcItems = d.items || [];
+            _renderParallelSources(srcCh, srcItems);
           } else if (d.type === 'token') {
             fullText += d.content;
             // Patch5 C7 B3: 收到首个有内容的 token 时停止思考态计时 + 重置标记
