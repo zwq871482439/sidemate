@@ -1301,10 +1301,9 @@ async function sendMessage() {
                 _ti.innerHTML = _ti.innerHTML.replace('思考中', '回答中');
               }
             }
-            var noThinkTypes = ['text', 'code', 'agent'];
-            if (!thinkingPhase && !thinkText && !noThinkTypes.includes(currentTaskType)) {
-              thinkingPhase = true;
-            }
+            // P6 打磨：thinkingPhase 不再基于 task_type 自动进入
+            // 只由 think_start/fold 显式事件触发，避免正文被误渲染为思考内容
+            // (task_type=qa/reasoning/math 等导致本地模型 token 全成了斜体灰字)
             if (now - lastRender > RENDER_INTERVAL) {
               if (thinkingPhase) {
                 if (detectThinkRepetition(fullText)) {
