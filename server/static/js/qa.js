@@ -400,7 +400,8 @@ async function kbRefreshDocs() {
       var totalChunks = 0, totalBytes = 0, totalChars = 0;
       docs.forEach(function(d) { totalChunks += (d.chunk_count || 0); totalBytes += (d.file_size || 0); totalChars += (d.total_chars || 0); });
       var sizeStr = totalBytes > 1073741824 ? (totalBytes/1073741824).toFixed(1)+'GB' : totalBytes > 1048576 ? (totalBytes/1048576).toFixed(1)+'MB' : (totalBytes/1024).toFixed(1)+'KB';
-      var charsStr = totalChars > 1000000 ? (totalChars/1000000).toFixed(1)+'M 字' : totalChars > 1000 ? (totalChars/1000).toFixed(1)+'K 字' : totalChars + ' 字';
+      var totalTokens = Math.ceil(totalChars / 1.5);
+      var charsStr = totalTokens > 1000 ? (totalTokens/1000).toFixed(1)+'K 词元' : totalTokens + ' 词元';
       statsEl.style.display = totalDocs > 0 ? '' : 'none';
       statsEl.textContent = '共 ' + totalDocs + ' 篇文档 · ' + charsStr + ' · 已索引 ' + totalChunks + ' 块 · 占用 ' + sizeStr;
     }
