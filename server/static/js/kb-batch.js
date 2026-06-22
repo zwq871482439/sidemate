@@ -127,6 +127,8 @@ async function kbBatchDelete() {
       _resetSelectedDocs();
       kbUpdateBatchToolbar();
       await kbRefreshDocs();
+      // P6: 批量删除后自动刷新洞察
+      setTimeout(function() { if (typeof kbRefreshOverviewLLM === 'function') kbRefreshOverviewLLM(); }, 500);
     } else {
       showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
     }

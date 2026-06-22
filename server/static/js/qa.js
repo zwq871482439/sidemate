@@ -1107,6 +1107,8 @@ async function kbDeleteDoc(docId) {
   try {
     await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + docId, { method: 'DELETE' });
     kbRefreshDocs();
+    // P6: 删除后自动刷新洞察和标签归并
+    setTimeout(function() { if (typeof kbRefreshOverviewLLM === 'function') kbRefreshOverviewLLM(); }, 500);
   } catch (err) { showToast('删除失败: ' + err.message, 'error'); }
 }
 
