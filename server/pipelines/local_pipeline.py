@@ -168,10 +168,23 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             strategy = resolve_strategy(prompt, strategy_override=strategy_override)
             log.info("[LOCAL] 策略: %s (action=%s)", strategy["type"], action_mode)
 
-            # ====== 步骤 5: KB Action 已移除（Patch3），防御性 fallback ======
+            # ====== 步骤 5: KB 检索（恢复离线 KB 问答 pipeline） ======
             if action_mode == "kb":
-                log.warning("[LOCAL] action_mode=kb 已废弃，降级为 chat")
-                action_mode = "chat"
+                log.info("[LOCAL] KB 模式：检索文库")
+                budget = mgr.calc_kb_context_budget()
+                safe_chars = budget["safe_chars"]
+                kb_context, kb_sources = kb.get_context(prompt, max_chars=safe_chars, ai_mode='local')
+                if not kb_context:
+                    yield sse_event("mode_hint", {"hint": "文库中未找到与问题相关的内容，将作为普通对话处理"})
+                    action_mode = "chat"
+                else:
+                    yield sse_event("kb_sources", {"sources": kb_sources})
+                    from prompts import KB_USER_PROMPT_TEMPLATE
+                    kb_prompt = KB_USER_PROMPT_TEMPLATE.format(context=kb_context, question=prompt)
+                    prompt = kb_prompt
+                    _kb_mode = True
+                    # 保存 KB 来源信息供前端展示
+                    ctx.kb_sources = kb_sources
 
             _doc_mode = (action_mode == "doc")
             _research_mode = (action_mode == "research")
