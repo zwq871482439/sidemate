@@ -78,6 +78,10 @@ function hideFileIndicator() {
   _pendingFileSource = '';
   var bar = document.getElementById('fileIndicatorBar');
   if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+  // P6 打磨 bug1: 清除文件后刷新 token 计数
+  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+    TokenEstimator.updateInputDisplay();
+  }
 }
 
 function clearPendingFile(e) {
@@ -172,11 +176,15 @@ function _showKbPickerModal(files) {
       if (item._selected) {
         item.style.background = 'var(--primary-50,#e6f0ff)';
         item.style.color = 'var(--accent-color,#185FA5)';
-        _kbSelectedDocs.push({doc_id: f.doc_id, filename: f.filename, chunk_count: f.chunk_count || 0});
+        _kbSelectedDocs.push({doc_id: f.doc_id, filename: f.filename, file_size: f.file_size || 0, total_chars: f.total_chars || 0});
       } else {
         item.style.background = 'transparent';
         item.style.color = '';
         _kbSelectedDocs = _kbSelectedDocs.filter(function(d) { return d.doc_id !== f.doc_id; });
+      }
+      // P6 打磨 bug3: 选择/取消 KB 文档后刷新 token 计数
+      if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+        TokenEstimator.updateInputDisplay();
       }
       // 更新底部按钮文案
       var selCount = _kbSelectedDocs.length;
@@ -195,7 +203,9 @@ function _showKbPickerModal(files) {
     var metaSpan = document.createElement('span');
     metaSpan.style.cssText = 'font-size:11px;color:var(--text-muted,#999);flex-shrink:0';
     var tags = (f.tags && f.tags.length) ? f.tags.slice(0, 2).join(' / ') : '';
-    metaSpan.textContent = (f.chunk_count || 0) + ' 段' + (tags ? ' · ' + tags : '');
+    // P6 打磨 bug2: 显示词元数而非段数
+    var tokenEst = f.total_chars ? '约 ' + (f.total_chars/1000).toFixed(1) + 'K 词元' : (f.file_size ? '约 ' + (f.file_size/300).toFixed(0) + ' 词元' : '');
+    metaSpan.textContent = (tokenEst || '未知大小') + (tags ? ' · ' + tags : '');
 
     item.appendChild(iconSpan);
     item.appendChild(nameSpan);
