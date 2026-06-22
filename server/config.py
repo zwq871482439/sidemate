@@ -226,7 +226,7 @@ DEFAULTS = {
 }
 
 # ===== 本地模型统一 Token 限制（所有本地 LLM 调用共用）=====
-MAX_INPUT_TOKENS = 16384    # num_ctx，上下文窗口大小
+MAX_INPUT_TOKENS = 8192     # num_ctx，上下文窗口大小（P6 统一 8K，P7 改为动态读取）
 MAX_OUTPUT_TOKENS = 4096    # num_predict，最大输出 token 数
 
 # 导出顶层常量（供 validators/sidemate_validator.py 等模块使用）

@@ -55,7 +55,7 @@ var TokenEstimator = {
     var textTokens = this._estimateText();
     var docTokens = this._estimateDoc();
     var curTotal = textTokens + docTokens;  // 本轮（输入+文档）
-    var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
+    var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 8192;
 
     // 历史 token（从全局变量读取，由 chat.js 维护）
     var histTokens = 0;
@@ -99,7 +99,7 @@ var TokenEstimator = {
     var textTokens = this._estimateText();
     var docTokens = this._estimateDoc();
     var total = textTokens + docTokens;
-    var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
+    var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 8192;
     var fmtK = function(n) { return n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n); };
     var text = '';
     if (total > 0 && maxTokens > 0) {

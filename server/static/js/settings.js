@@ -47,7 +47,7 @@ function initModeSelector() {
       var frontMode = data.mode === 'local' ? 'offline' : (data.mode === 'cloud' ? 'online' : data.mode);
       window._currentMode = data.mode; // 保持后端值
       window._cloudConfigured = data.cloud_configured;
-      window._contextWindow = data.context_window || 16384;
+      window._contextWindow = data.context_window || 8192;
       // 更新按钮状态
       _updateModeButtons(frontMode);
       // 更新 placeholder

@@ -1057,7 +1057,7 @@ def _calc_context_usage(chat_file: str = None):
             except Exception:
                 total_tokens = 32768
     else:
-        total_tokens = 16000  # 本地模型固定 16K (num_ctx)
+        total_tokens = 8192   # 本地模型 8K (num_ctx, P6 统一)
 
     # 计算百分比和等级
     percentage = round(used_tokens / total_tokens * 100, 1) if total_tokens > 0 else 0

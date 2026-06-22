@@ -213,7 +213,7 @@ class StreamEngine:
             "messages": messages,
             "stream": True,
             "options": {
-                "num_ctx": 16384,
+                "num_ctx": 8192,   # P6 统一 8K
                 "num_predict": max_tokens,
                 "temperature": temperature,
                 "top_p": profile.get("top_p", 0.9),

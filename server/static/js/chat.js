@@ -645,7 +645,7 @@ async function sendMessage() {
   // Patch5 G：文档 token 预检 — 超过当前模型上下文窗口 95% 直接拒绝发送
   if (typeof TokenEstimator !== 'undefined') {
     var _docTok = TokenEstimator._estimateDoc();
-    var _maxTok = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
+    var _maxTok = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 8192;
     // 预留至少 2000 token 给 system + history + 输出
     var _threshold = Math.max(2000, _maxTok - 2000);
     if (_docTok > _threshold) {

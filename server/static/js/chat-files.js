@@ -193,7 +193,7 @@ function _showKbPickerModal(files) {
         totalChars += (_kbSelectedDocs[i].total_chars || 0);
       }
       var totalTokens = Math.ceil(totalChars / 1.5);  // 中文 token 估算
-      var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 16000;
+      var maxTokens = (typeof _maxPromptTokens !== 'undefined') ? _maxPromptTokens : 8192;
       var overLimit = totalTokens > maxTokens * 0.85;  // 85% 阈值
 
       var btnText = selCount > 0
