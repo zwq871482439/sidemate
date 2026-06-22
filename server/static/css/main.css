@@ -1634,6 +1634,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-doc-list .kb-card .cpreview{flex:2;-webkit-line-clamp:1;min-width:0}
 .kb-doc-list .kb-card .ctags{flex:1;min-width:0;overflow:hidden}
 .kb-doc-list .kb-card .cstats{flex-shrink:0;gap:8px}
+.kb-doc-list .kb-card .cstats-bottom{border-top:none;padding-top:0;margin-top:0;gap:4px}
+.kb-doc-list .kb-card .cmtime{display:none}
 
 /* P6: 视图切换按钮 */
 .kb-view-toggle{display:flex;border:0.5px solid var(--border-color);border-radius:6px;overflow:hidden}
@@ -1667,7 +1669,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-card .ctags{display:flex;gap:3px;flex-wrap:wrap}
 .kb-card .ctag{padding:1px 6px;border-radius:8px;font-size:10px;background:var(--tag-bg);color:var(--tag-text)}
 .kb-card .cstats{display:flex;gap:10px;font-size:10px;color:var(--text-muted);flex-wrap:wrap;align-items:center}
-.kb-card .cmtime{font-size:10px;color:var(--text-muted);margin-top:auto}
+.kb-card .cstats-bottom{display:flex;justify-content:space-between;align-items:flex-end;margin-top:auto;padding-top:4px;border-top:0.5px solid var(--border-color)}
+.kb-card .cmtime{font-size:10px;color:var(--text-muted);white-space:nowrap}
 
 /* 图标颜色 */
 .ic-lock{color:#D85A30}

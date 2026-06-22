@@ -346,20 +346,27 @@ async function kbRefreshDocs() {
       }
 
       html += '<div class="kb-card" data-doc-id="' + esc(d.doc_id) + '" onclick="kbCardClick(\'' + esc(d.doc_id) + '\')">';
+      // 1. 标题行
       html += '<div class="cbar">';
       html += '<span class="ctitle" title="' + esc(d.filename) + '">' + esc(d.filename) + '</span>';
       if (iconsHtml) html += '<div class="cicons">' + iconsHtml + '</div>';
       html += '</div>';
+      // 2. 标签（紧跟标题）
+      if (tagsHtml) html += '<div class="ctags">' + tagsHtml + '</div>';
+      // 3. AI 摘要
       html += '<div class="cpreview' + previewExtraClass + '">';
       if (d.tag_status === 'generating') {
         html += '<span class="cpreview-spinner"></span>';
       }
       html += esc(previewText) + '</div>';
-      if (tagsHtml) html += '<div class="ctags">' + tagsHtml + '</div>';
+      // 4. 文件信息 + 上传时间（下对齐）
+      html += '<div class="cstats-bottom">';
       html += '<div class="cstats">';
       html += '<span>文件大小 ' + sizeStr + '</span>';
       if (tokenInfo) html += '<span>' + tokenInfo + '</span>';
       html += '<span>' + hitStr + '</span>';
+      html += '</div>';
+      html += '<div class="cmtime">' + uploadTime + '</div>';
       html += '</div>';
       // P6: 私密文档的令牌按钮
       if (d.is_private) {
@@ -373,7 +380,6 @@ async function kbRefreshDocs() {
         html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbRetrySummary(\'' + esc(d.doc_id) + '\')" title="重新生成摘要">重新生成摘要</button>';
         html += '</div>';
       }
-      html += '<div class="cmtime">' + uploadTime + '</div>';
       html += '</div>';
     }
 
