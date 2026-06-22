@@ -354,6 +354,13 @@ function _buildAgentTimelineHtml(timelineData) {
 // ===== 最终渲染（消息列表）=====
 function _renderSingleMsg(m, idx) {
   var ts = m.ts ? '<div class="ts">' + esc(m.ts) + '</div>' : '';
+  // P6: action mode 标签（聊天/文档/知识库问答），放在时间旁边
+  var actionTag = '';
+  if (m.action_mode) {
+    var labels = { chat: '聊天', doc: '文档', kb_qa: '知识库', agent: '智能对话' };
+    var label = labels[m.action_mode] || m.action_mode;
+    actionTag = '<span class="action-tag">' + esc(label) + '</span>';
+  }
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
   // Patch5 C7：如果页面上已有活跃的 AgentTimeline（流式时建的），
@@ -361,7 +368,7 @@ function _renderSingleMsg(m, idx) {
   var _hasLiveTimeline = (_agentTimelineEl && _agentTimelineEl.parentNode);
   var timelineHtml = _hasLiveTimeline ? '' : _buildAgentTimelineHtml(m.agent_timeline);
   var html = '<div class="msg-copy-wrap">'
-    + timelineHtml + ts + bodyHtml;
+    + timelineHtml + actionTag + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
   if (m.doc_url) {
     var _dlUrl = m.doc_url;

@@ -212,6 +212,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .msg .latex-display .katex-display{margin:0}
 .msg .latex-display .katex-display>.katex{margin:0}
 .msg .ts{font-size:.72em;color:var(--text-muted,#888);margin-bottom:3px}
+.msg .action-tag{display:inline-block;font-size:.7em;padding:1px 6px;border-radius:8px;background:var(--tag-bg,#e8edf2);color:var(--tag-text,#4a6a8a);margin-right:6px;vertical-align:middle;line-height:1.4}
 .msg .stats{font-size:.72em;color:rgba(0,0,0,.35);margin-top:5px;padding-top:4px;border-top:1px solid rgba(0,0,0,.06);display:flex;align-items:center;gap:8px;font-family:inherit}
 .msg .stats .token-stats{opacity:.7;margin-left:auto;font-style:italic}
 .task-chip{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.75em;cursor:default;font-weight:600;border:none;font-family:inherit;transition:opacity .15s}
