@@ -496,14 +496,7 @@ if _kb_installed:
         log.warning("[KB] 模型自动加载异常: %s", str(e)[:100])
     _report_startup("kb_loaded", 40, "知识库模型已加载")
 
-# 录音纪要管理器（Patch 12: 从 recorder_pkg 包导入）
-_report_startup("recorder", 45, "初始化录音纪要...")
-from recorder_pkg.recorder_manager import RecorderManager
-recorder = RecorderManager()
-recorder.recover_sessions()
-log.info("[RECORDER] 录音纪要初始化完成: sessions=%d, whisper=%s" % (
-    len(recorder.sessions), "loaded" if recorder._whisper_loaded else "not_loaded"))
-_report_startup("recorder_loaded", 55, "录音纪要已加载")
+# P6 归档：录音纪要模块已移至 archive/recorder_pkg/，需要时参考 archive/README.md 复活
 
 # 动态选择默认模型
 _report_startup("model_select", 50, "选择默认模型...")
@@ -548,7 +541,7 @@ if _latest:
 
 # ===== 注册所有 Router =====
 _report_startup("routers", 55, "注册 API 路由...")
-from routers import chat as _r_chat, kb as _r_kb, recorder as _r_recorder
+from routers import chat as _r_chat, kb as _r_kb
 from routers import settings_system as _r_settings_sys, settings_cloud as _r_settings_cloud, settings_extensions as _r_settings_ext, skill as _r_skill
 from routers import files as _r_files
 from routers.backup import router as backup_router
@@ -556,7 +549,6 @@ from routers import diagnostics as _r_diag
 
 app.include_router(_r_chat.router)
 app.include_router(_r_kb.router)
-app.include_router(_r_recorder.router)
 app.include_router(_r_settings_sys.router)
 app.include_router(_r_settings_cloud.router)
 app.include_router(_r_settings_ext.router)

@@ -27,7 +27,7 @@ from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from routers.deps import (
-    get_mgr, get_kb, get_recorder,
+    get_mgr, get_kb,
     WORKSPACE_DIR,
 )
 
@@ -290,11 +290,11 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
             })
 
             progress(90, "加载 Whisper 模型...")
-            recorder = get_recorder()
-            recorder.load_whisper()
+            # P6 归档：recorder 已下线，跳过 whisper 加载
             result = {"ok": True, "type": "recorder", "name": ext_name,
                       "version": manifest.get("version", "1.0"),
-                      "auto_loaded": True}
+                      "auto_loaded": False,
+                      "note": "recorder module archived in P6"}
 
         elif ext_type == "llm":
             # LLM 模型包：safetensors/GGUF 文件，Ollama 直接读取
@@ -829,9 +829,7 @@ async def api_extensions_uninstall(ext_type: str, ext_name: str):
         return {"ok": True, "msg": "文库扩展已卸载"}
 
     elif ext_type == "recorder":
-        recorder = get_recorder()
-        if recorder._whisper_loaded:
-            recorder.unload_whisper()
+        # P6 归档：recorder 已下线，不再 unload whisper
         # 删除模型目录
         whisper_model_dir = os.path.join(_project_dir, "models", "whisper")
         if os.path.exists(whisper_model_dir):

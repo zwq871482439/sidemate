@@ -25,7 +25,7 @@ from fastapi import APIRouter, UploadFile, File, Request
 from fastapi.responses import JSONResponse, FileResponse
 
 from routers.deps import (
-    get_mgr, get_kb, get_recorder,
+    get_mgr, get_kb,
     get_log, WORKSPACE_DIR, UPLOAD_DIR,
 )
 
@@ -492,24 +492,15 @@ def api_resource_info():
     reranker_mb = kb._reranker_mem_mb if kb_reranker_loaded else 0
     embedder_mb = kb._embedder_mem_mb if kb_active else 0
 
-    # 获取纪要引擎内存
+    # P6 归档：recorder 已下线，内存占用归零
     recorder_mb = 0
     recorder_loaded = False
-    try:
-        recorder = get_recorder()
-        recorder_status = recorder.get_whisper_status()
-        recorder_loaded = recorder_status.get("loaded", False)
-        recorder_mb = recorder_status.get("mem_mb", 0) if recorder_loaded else 0
-    except Exception:
-        pass
 
     # V5.1: Ollama 架构下 LLM 跑在独立进程（ollama serve + llama-server.exe），
     # Python 进程的 RSS 不包含 LLM 内存。base 就是 Python 进程自身。
-    # 注意：Whisper(纪要) + Embedder + Reranker 都跑在 Python 进程内，
+    # 注意：Embedder + Reranker 都跑在 Python 进程内，
     # 其 RSS 已包含在 process_mb 中，需要减去以避免被算进"基础"
     _inproc_modules_mb = 0
-    if recorder_loaded and recorder_mb > 0:
-        _inproc_modules_mb += recorder_mb
     if embedder_mb > 0:
         _inproc_modules_mb += embedder_mb
     if reranker_mb > 0:
@@ -521,28 +512,25 @@ def api_resource_info():
 
     # 检测扩展是否已安装（不依赖是否加载到内存）
     kb_extension_installed = False
-    recorder_installed = False
+    # P6 归档：recorder_installed 永远 False（模块已下线）
     try:
         from core.extension_manager import ExtensionRegistry
         from config import EXTENSIONS_DIR
         _ext_dir = EXTENSIONS_DIR
         _registry = ExtensionRegistry(_ext_dir)
         kb_extension_installed = _registry.is_installed("knowledge")
-        recorder_installed = _registry.is_installed("recorder")
     except Exception:
         # fallback: 文件存在性检测
         try:
             from config import EXTENSIONS_DIR
             _ext_dir = EXTENSIONS_DIR
             kb_extension_installed = os.path.exists(os.path.join(_ext_dir, "knowledge.json"))
-            recorder_installed = os.path.exists(os.path.join(_ext_dir, "recorder.json"))
         except Exception:
             kb_extension_installed = kb_active
-            recorder_installed = recorder_loaded or recorder_mb > 0
 
     # B5: 移除内存预算报告（budget_report / recommended / MemoryManager 已废弃）
     # 预算汇总改为实时计算模块占用（不再依赖 memory_manager）
-    actual_modules_used = llm_mb + embedder_mb + reranker_mb + recorder_mb + base_mb
+    actual_modules_used = llm_mb + embedder_mb + reranker_mb + base_mb
 
     result = {
         "system": {
@@ -559,8 +547,9 @@ def api_resource_info():
                          "loaded": kb_active, "installed": kb_extension_installed},
             "reranker": {"name": "bge-reranker-base", "mb": reranker_mb,
                          "loaded": kb_reranker_loaded, "installed": kb_extension_installed},
-            "recorder": {"name": "whisper", "mb": recorder_mb,
-                         "loaded": recorder_loaded, "installed": recorder_installed},
+            # P6 归档：recorder 已下线，保留字段为兼容前端
+            "recorder": {"name": "whisper", "mb": 0,
+                         "loaded": False, "installed": False},
             "base": {"mb": base_mb, "loaded": True, "installed": True},
         },
     }
@@ -650,7 +639,7 @@ def api_onboard_status():
         "llm_installed": registry.is_installed("llm"),
         "cloud_configured": bool(cfg_get("cloud_api_key", "")),
         "kb_installed": registry.is_installed("knowledge"),
-        "recorder_installed": registry.is_installed("recorder"),
+        "recorder_installed": False,  # P6 归档：recorder 模块已下线
         "model_loaded": model_loaded,
     }
 

@@ -30,10 +30,7 @@ def get_kb():
     return kb
 
 
-def get_recorder():
-    """获取全局 RecorderManager 实例"""
-    from server import recorder
-    return recorder
+# P6 归档：get_recorder() 已移除（recorder_pkg 已归档）
 
 
 def get_ollama():
