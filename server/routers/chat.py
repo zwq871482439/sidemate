@@ -996,9 +996,9 @@ def _calc_context_usage(chat_file: str = None):
     # 估算 token 数
     total_chars = sum(len(m.get("content", "")) for m in messages)
     used_tokens = 0
-    # 在线/并行模式：优先用云端 API 返回的真实 input_tokens
-    # 离线模式：无真实 token_stats，用 chars/1.5 + 系统开销估算
-    if ai_mode in ("cloud", "parallel"):
+    # 仅在纯在线模式下使用云端 API 返回的真实 input_tokens
+    # 离线/并行模式：无可靠 token_stats，用 chars/1.5 + 系统开销估算
+    if ai_mode == "cloud":
         _last_token_stats = None
         for m in reversed(messages):
             if m.get("role") == "assistant" and m.get("token_stats"):
