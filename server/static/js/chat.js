@@ -47,10 +47,12 @@ function _buildKbSources(m) {
   if (!m.kb_sources || !m.kb_sources.length || m.role === 'user') return '';
   var html = '<div class="kb-sources-bar"><div class="kb-sources-title">' + iconSvg('books','14') + ' 参考来源</div>';
   m.kb_sources.forEach(function(s, i) {
+    var label = s.label || s.source_label || ('来源' + (i+1));
+    var snippet = s.snippet || s.text_snippet || '';
     html += '<div class="kb-source-item">'
       + '<span class="kb-source-num">' + (i + 1) + '</span>'
-      + '<span class="kb-source-label">' + esc(s.label || '来源' + (i+1)) + '</span>'
-      + (s.snippet ? '<div class="kb-source-snippet">' + esc(s.snippet) + '</div>' : '')
+      + '<span class="kb-source-label">' + esc(label) + '</span>'
+      + (snippet ? '<div class="kb-source-snippet">' + esc(snippet) + '</div>' : '')
       + '</div>';
   });
   return html + '</div>';
