@@ -17,9 +17,9 @@ async function refreshActionBar() {
       _lastActionMode = _modeKey;
     }
 
-    // ===== 在线模式：硬编码 2 个按钮 =====
+    // ===== 在线模式：单个"在线"按钮（模块4合并：取消智能对话/智能文档子按钮）=====
     if (curMode === 'cloud') {
-      var cacheKey = 'cloud|agent|doc';
+      var cacheKey = 'cloud|agent';
       if (cacheKey === _lastActionIds) return;
       _lastActionIds = cacheKey;
 
@@ -27,40 +27,23 @@ async function refreshActionBar() {
       if (!bar) return;
       bar.innerHTML = '';
 
-      // 如果当前激活的 mode 不在在线按钮列表中，回退到 agent
-      var validCloudIds = ['agent', 'chat', 'doc'];
-      if (typeof currentActionMode !== 'undefined' && validCloudIds.indexOf(currentActionMode) === -1) {
-        currentActionMode = 'agent';
-      }
+      // 在线模式只有一个按钮，LLM 自己决定是对话还是写文档（agent_mode 由后端根据有无模板文件判断）
+      currentActionMode = 'agent';
+      var validCloudIds = ['agent'];
 
-      // 智能对话按钮
       var agentBtn = document.createElement('button');
-      agentBtn.className = 'action-btn' + (currentActionMode === 'agent' || currentActionMode === 'chat' ? ' active' : '');
+      agentBtn.className = 'action-btn active';
       agentBtn.setAttribute('data-action', 'agent');
-      agentBtn.title = '智能对话 — AI 自动搜索、阅读、回答';
+      agentBtn.title = '在线 — AI 自动搜索、阅读、回答，也可生成文档';
       agentBtn.onclick = function() { setActionMode('agent', this); };
       var agentSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-      agentBtn.innerHTML = agentSvg + ' 智能对话';
+      agentBtn.innerHTML = agentSvg + ' 在线';
       bar.appendChild(agentBtn);
-
-      // 智能文档按钮
-      var docBtn = document.createElement('button');
-      docBtn.className = 'action-btn' + (currentActionMode === 'doc' ? ' active' : '');
-      docBtn.setAttribute('data-action', 'doc');
-      docBtn.title = '智能文档 — AI 自主搜索资料、规划大纲、撰写深度文档';
-      docBtn.onclick = function() { setActionMode('doc', this); };
-      var docSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
-      docBtn.innerHTML = docSvg + ' 智能文档';
-      bar.appendChild(docBtn);
 
       // 更新输入框 placeholder
       var input = document.getElementById('msgInput');
       if (input) {
-        if (currentActionMode === 'doc') {
-          input.placeholder = '描述要生成的文档，AI 会搜索资料并深度撰写...';
-        } else {
-          input.placeholder = '问任何问题，AI 会自动搜索、阅读、回答...';
-        }
+        input.placeholder = '问任何问题，或描述要生成的文档，AI 会自动处理...';
       }
       return;
     }
