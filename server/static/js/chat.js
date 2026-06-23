@@ -2932,18 +2932,25 @@ var CardRenderer = (function() {
   function _handleAgentStatus(d) {
     if (!_container) return;
     var status = d.status || '';
-    // 简化：把每个工具调用渲染为一个步骤
-    var isDone = status.indexOf('_done') >= 0 || status === 'completed';
+    // 优先用后端发的 phase 字段判断（比 _done 后缀匹配更可靠）
+    var isDone = (d.phase === 'done') || status.indexOf('_done') >= 0 ||
+                 status === 'completed' || status === 'budget_exceeded' || status === 'tool_limited';
     var label = _agentStatusLabel(status, d);
-    var stepId = 'agent_' + status;
     if (!isDone) {
-      _createStep(stepId, label);
+      // start 类：创建步骤（用 status 做 stepId，保持唯一）
+      var stepId = 'agent_' + status;
+      if (!_steps[stepId]) _createStep(stepId, label);
     } else {
-      // 找到对应的进行中步骤标记完成
-      var baseStatus = status.replace('_done', '');
-      var baseStep = _steps['agent_' + baseStatus];
-      if (baseStep) {
-        _completeStep('agent_' + baseStatus, d.elapsed_ms, d.count);
+      // done 类：找到对应的 start 步骤标记完成
+      // 后端 status 的 start 版本（search_done → searching, fetch_done → fetching 等）
+      var baseStatus = status.replace('_done', '').replace('completed', '').replace('budget_exceeded', '').replace('tool_limited', '');
+      // 尝试几种可能的 start stepId
+      var candidates = ['agent_' + baseStatus, 'agent_' + baseStatus + 'ing'];
+      for (var i = 0; i < candidates.length; i++) {
+        if (_steps[candidates[i]]) {
+          _completeStep(candidates[i], d.elapsed_ms, d.count);
+          break;
+        }
       }
     }
   }
