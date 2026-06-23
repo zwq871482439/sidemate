@@ -2521,10 +2521,29 @@ async def api_kb_overview_refresh(request: Request):
     insight = ""
     merges_applied = []
     try:
-        cats_text = "\n".join(
-            "  %s（%d 篇）" % (k, v)
-            for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])
-        )
+        # Fix: category 为空时，改用 doc.tags 收集碎片标签作为归并输入
+        if not cat_counts:
+            tag_counts = {}
+            for d in doc_list:
+                for t in d.get("tags", []):
+                    if t:
+                        tag_counts[t] = tag_counts.get(t, 0) + 1
+            cats_text = "\n".join(
+                "  %s（%d 篇）" % (k, v)
+                for k, v in sorted(tag_counts.items(), key=lambda x: -x[1])[:30]
+            ) if tag_counts else ""
+        else:
+            cats_text = "\n".join(
+                "  %s（%d 篇）" % (k, v)
+                for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])
+            )
+
+        if not cats_text:
+            cats_text = "\n".join(
+                "  %s" % d["title"]
+                for d in doc_list[:15]
+            )
+
         merge_prompt = (
             "你是一位知识库分类专家。以下文档的标签过于碎片化，需要归并为 3-5 个宽泛的大类。\n\n"
             "当前标签：\n%s\n\n"
@@ -2620,30 +2639,40 @@ async def api_kb_overview_refresh(request: Request):
             "空白 — 主干之间缺少什么连接？哪个聚类相对孤立？\n"
             "行动 — 补充什么方向能让碎片变成可用的知识框架？\n\n"
             "铁律：\n"
+            "- 只输出三段正文，不要输出额外标记\n"
             "- 禁止评价文档质量或用户水平（不说「你像是」「半懂不懂」「最尴尬」）\n"
             "- 禁止书面语套话（不说「您的」「以上」「本文」「综上所述」）\n"
             "- 只描述知识结构、缺失和补全路径\n"
             "- 语气像同事在白板上画架构图，不做老师批改作业\n\n"
-            "分析结束后，另起一行输出 [QUESTIONS]，紧接着输出 3 条建议追问的 JSON 数组：\n"
-            "[\"追问1\", \"追问2\", \"追问3\"]\n\n"
             "洞察分析：" % (cluster_summary, cluster_docs_text)
         )
         insight = await _run_async(insight_prompt, max_tokens=600)
 
-        # 解析 suggested_questions
+        # ==== 独立生成建议追问（基于实际聚类 + 洞察）====
         suggested_questions = []
-        if "[QUESTIONS]" in insight:
+        try:
+            questions_prompt = (
+                "你是一位知识库分析助手。基于以下知识库的聚类分布和洞察分析，生成 3 条用户最可能追问的问题。\n"
+                "问题必须紧扣文库中的具体文档主题，不能空泛。\n\n"
+                "聚类分布：%s\n\n"
+                "洞察分析：%s\n\n"
+                "要求：\n"
+                "1. 输出纯 JSON 数组：[\"问题1\", \"问题2\", \"问题3\"]\n"
+                "2. 不准输出 Markdown，不准加解释文字\n"
+                "3. 每个问题聚焦具体文档主题的交叉或空白\n\n"
+                "追问问题 JSON：" % (cluster_summary, insight[:300])
+            )
+            q_raw = await _run_async(questions_prompt, max_tokens=200)
             try:
-                _parts = insight.split("[QUESTIONS]", 1)
-                insight = _parts[0].strip()
-                _q_raw = _parts[1].strip()
-                _start = _q_raw.index("[")
-                _end = _q_raw.rindex("]") + 1
-                _parsed = json.loads(_q_raw[_start:_end])
+                _start = q_raw.index("[")
+                _end = q_raw.rindex("]") + 1
+                _parsed = json.loads(q_raw[_start:_end])
                 if isinstance(_parsed, list) and all(isinstance(q, str) for q in _parsed):
                     suggested_questions = _parsed[:3]
-            except Exception:
+            except (ValueError, json.JSONDecodeError):
                 pass
+        except Exception:
+            pass
 
     except Exception:
         # LLM 不可用：用分类统计回退

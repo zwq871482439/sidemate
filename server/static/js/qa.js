@@ -666,11 +666,14 @@ function kbCardClick(docId) {
 // P6 打磨 #10：LLM 驱动的概览刷新
 async function kbRefreshOverviewLLM() {
   var btn = document.getElementById('kbRefreshBtn');
+  var bodyEl = document.getElementById('kbOverviewBody');
   var sidebarHdr = document.querySelector('#kbSidebar .kb-sidebar-hdr');
   var sidebarOrig = sidebarHdr ? sidebarHdr.innerHTML : '';
+  var bodyPrev = bodyEl ? bodyEl.innerHTML : '';
 
   if (btn) { btn.disabled = true; btn.innerHTML = iconSvg('spin','11') + ' 整理中...'; }
   if (sidebarHdr) sidebarHdr.innerHTML = iconSvg('spin','12') + ' AI 智能筛选 — 重新整理中...';
+  if (bodyEl) bodyEl.innerHTML = '<div class="kb-dash-empty">AI 正在分析文档结构，生成洞察中…</div>';
 
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh', {
@@ -688,8 +691,13 @@ async function kbRefreshOverviewLLM() {
       if (data.merges_applied && data.merges_applied.length > 0) {
         try { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); } catch(e) {}
       }
+    } else if (bodyEl) {
+      bodyEl.innerHTML = bodyPrev;
     }
-  } catch (e) { showToast('AI 整理失败，请重试', 'error'); }
+  } catch (e) {
+    showToast('AI 整理失败，请重试', 'error');
+    if (bodyEl) bodyEl.innerHTML = bodyPrev;
+  }
   finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 整理'; }
     if (sidebarOrig) { try { var _sh = document.querySelector('#kbSidebar .kb-sidebar-hdr'); if (_sh) _sh.innerHTML = sidebarOrig; } catch(e) {} }
