@@ -169,58 +169,61 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             log.info("[LOCAL] 策略: %s (action=%s)", strategy["type"], action_mode)
 
             # ====== 步骤 5: KB 检索（恢复离线 KB 问答 pipeline） ======
+            # 阶段2 重构：8 处散乱 yield → 2 个 Step 对象(reformulate/search)，事件走 step_model
             if action_mode == "kb":
                 log.info("[LOCAL] KB 模式：检索文库")
+                from core.step_model import (Step, StepOutput, TransformData,
+                                              step_to_sse, step_output_to_sse)
 
                 # 5a. Reformulate: 始终执行，有历史时补全上下文，无历史时提取搜索关键词
-                reformulate_start = time.time()
-                yield sse_event("agent_timeline", {"step": "reformulate", "phase": "start", "label": "分析问题"})
+                s_reformulate = Step(id="reformulate", label="分析问题")
+                yield step_to_sse(s_reformulate, "start")
+                s_reformulate.mark_running()
                 search_query = prompt
                 reformulate_changed = False
                 try:
                     from core.reformulate import reformulate_query
                     reformulated = reformulate_query(prompt, history_raw or [], mgr)
-                    elapsed = round(time.time() - reformulate_start, 1)
                     if reformulated and reformulated != prompt:
                         reformulate_changed = True
                         search_query = reformulated
                         log.info("[LOCAL-KB] Reformulated: '%s' -> '%s'", prompt[:30], reformulated[:30])
-                    yield sse_event("kb_reformulate", {
-                        "original": prompt,
-                        "reformulated": reformulated or prompt,
-                        "changed": reformulate_changed,
-                        "elapsed": elapsed
-                    })
+                    s_reformulate.output = StepOutput("transform", TransformData(
+                        original=prompt,
+                        result=reformulated or prompt,
+                        changed=reformulate_changed,
+                    ))
                 except Exception as e:
-                    elapsed = round(time.time() - reformulate_start, 1)
                     log.warning("[LOCAL-KB] Reformulate failed: %s", str(e)[:60])
-                    yield sse_event("kb_reformulate", {
-                        "original": prompt,
-                        "reformulated": prompt,
-                        "changed": False,
-                        "elapsed": elapsed,
-                        "error": str(e)[:60]
-                    })
-                yield sse_event("agent_timeline", {"step": "reformulate", "phase": "done", "label": "分析问题", "elapsed": elapsed})
+                    s_reformulate.output = StepOutput("transform", TransformData(
+                        original=prompt, result=prompt, changed=False,
+                    ))
+                    s_reformulate.error = str(e)[:60]
+                s_reformulate.output_elapsed_ms = int((time.time() - s_reformulate._start_ts) * 1000)
+                s_reformulate.mark_done()
+                yield step_to_sse(s_reformulate, "done")
+                yield step_output_to_sse(s_reformulate)
 
                 # 5b. 检索文库
-                search_start = time.time()
-                yield sse_event("agent_timeline", {"step": "search", "phase": "start", "label": "检索文库"})
+                s_search = Step(id="search", label="检索文库")
+                yield step_to_sse(s_search, "start")
+                s_search.mark_running()
                 budget = mgr.calc_kb_context_budget()
                 safe_chars = budget["safe_chars"]
                 kb_context, kb_sources_raw = kb.get_context(search_query, max_chars=safe_chars, ai_mode='local')
-                search_elapsed = round(time.time() - search_start, 1)
                 # 规范化字段：统一为 label/snippet（和 compare/parallel pipeline 一致）
                 kb_sources = [
                     {"label": s.get("source_label", "?"), "snippet": s.get("text_snippet", "")[:100]}
                     for s in kb_sources_raw
                 ]
-                yield sse_event("agent_timeline", {"step": "search", "phase": "done", "label": "检索文库", "count": len(kb_sources), "elapsed": search_elapsed})
+                s_search.output = StepOutput("sources", kb_sources)
+                s_search.mark_done()
+                yield step_to_sse(s_search, "done")
                 if not kb_context:
                     yield sse_event("mode_hint", {"hint": "文库中未找到与问题相关的内容，将作为普通对话处理"})
                     action_mode = "chat"
                 else:
-                    yield sse_event("kb_sources", {"sources": kb_sources})
+                    yield step_output_to_sse(s_search)
                     from prompts import KB_USER_PROMPT_TEMPLATE
                     kb_prompt = KB_USER_PROMPT_TEMPLATE.format(context=kb_context, question=prompt)
                     prompt = kb_prompt
