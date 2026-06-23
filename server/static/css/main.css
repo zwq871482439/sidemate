@@ -2148,6 +2148,19 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 
 /* 摘要（agent_summary） */
 .cb-summary { padding:6px 10px; margin:4px 0; background:var(--bg-secondary); border-radius:4px; font-size:11px; color:var(--text-muted); }
+/* 推理单元（在线Agent每轮打包折叠） */
+.cb-reason { border:0.5px solid var(--border-color); border-radius:5px; margin:4px 0; overflow:hidden; }
+.cb-reason > summary { padding:6px 10px; cursor:pointer; font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:6px; background:var(--bg-secondary); list-style:none; }
+.cb-reason > summary::-webkit-details-marker { display:none; }
+.cb-reason > summary::before { content:'▶'; font-size:8px; color:var(--text-muted); transition:transform .15s; }
+.cb-reason[open] > summary::before { transform:rotate(90deg); }
+.cb-reason.current > summary { background:rgba(127,119,221,.06); }
+.cb-reason.current > summary .cb-reason-round { color:var(--dot-run); }
+.cb-reason-body { padding:4px 10px; }
+.cb-reason-round { color:var(--text-info); font-weight:500; }
+.cb-reason-time { margin-left:auto; color:var(--text-muted); font-size:10px; }
+.cb-reason .cb-step { padding:3px 0 3px 17px; font-size:11px; }
+.cb-reason .cb-output { margin:2px 0; }
 /* 提示文案（并行 fallback mode_hint） */
 .cb-hint { padding:6px 10px; margin:4px 0; background:var(--bg-info); border-radius:4px; font-size:11px; color:var(--text-info); border-left:2px solid var(--info-border-color); }
 

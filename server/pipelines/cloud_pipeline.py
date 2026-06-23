@@ -460,6 +460,8 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 else:
                     think_text += token
                     think_len = len(think_text)
+                    # 模块3a：透传 think token 到前端（供推理单元展示思考过程）
+                    yield sse_event("agent_think", {"content": token})
 
             elif phase == "agent_status":
                 # Patch4 v3：在 status=="doc_status_done" 时派生 doc_complete 事件

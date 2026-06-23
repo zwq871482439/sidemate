@@ -2480,6 +2480,9 @@ var CardRenderer = (function() {
   var _phase = 'working';     // 'working' | 'answering' | 'done'
   var _modeLabel = '';        // 模式标签（离线聊天/离线知识库/在线Agent/并行模式）
   var _data = [];             // 序列化数据（供 finalize 持久化）
+  // 模块3：推理单元（在线Agent每轮打包折叠）
+  var _reasonUnits = [];      // [{round, thinkText, tools:[{label,status,elapsed_ms}], startTime, el}]
+  var _currentUnit = null;    // 当前进行中的推理单元
 
   // 步骤标签映射（对齐原型的 label）
   var STEP_LABELS = {
@@ -2523,6 +2526,8 @@ var CardRenderer = (function() {
     _phase = 'working';
     _modeLabel = '';
     _data = [];
+    _reasonUnits = [];
+    _currentUnit = null;
   }
 
   function setModeLabel(label) {
@@ -2592,6 +2597,12 @@ var CardRenderer = (function() {
     // agent_status 事件（在线 Agent 工具调用）
     if (t === 'agent_status') {
       _handleAgentStatus(d);
+      return;
+    }
+
+    // agent_think 事件（推理内容，模块3a后端透传）
+    if (t === 'agent_think') {
+      _handleAgentThink(d);
       return;
     }
 
@@ -2690,6 +2701,16 @@ var CardRenderer = (function() {
       runDots.forEach(function(d) { d.className = 'cb-dot ok'; });
       var runSteps = cardArea.querySelectorAll('.cb-step[data-status="running"]');
       runSteps.forEach(function(s) { s.setAttribute('data-status', 'done'); });
+      // 模块3b：关闭最后一个推理单元（折叠 + 算耗时）
+      if (_currentUnit && _currentUnit.el) {
+        _currentUnit.el.classList.remove('current');
+        _currentUnit.el.removeAttribute('open');
+        if (_currentUnit.startTime) {
+          var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
+          var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
+          if (timeSpan) timeSpan.textContent = elapsed + 's';
+        }
+      }
     }
     // 5. 去掉 #card-area 和 #stream-content 的 id（防下一轮串扰）
     if (cardArea) cardArea.removeAttribute('id');
@@ -2974,27 +2995,113 @@ var CardRenderer = (function() {
   function _handleAgentStatus(d) {
     if (!_container) return;
     var status = d.status || '';
-    // 优先用后端发的 phase 字段判断（比 _done 后缀匹配更可靠）
     var isDone = (d.phase === 'done') || status.indexOf('_done') >= 0 ||
                  status === 'completed' || status === 'budget_exceeded' || status === 'tool_limited';
     var label = _agentStatusLabel(status, d);
-    if (!isDone) {
-      // start 类：创建步骤（用 status 做 stepId，保持唯一）
-      var stepId = 'agent_' + status;
-      if (!_steps[stepId]) _createStep(stepId, label);
-    } else {
-      // done 类：找到对应的 start 步骤标记完成
-      // 后端 status 的 start 版本（search_done → searching, fetch_done → fetching 等）
-      var baseStatus = status.replace('_done', '').replace('completed', '').replace('budget_exceeded', '').replace('tool_limited', '');
-      // 尝试几种可能的 start stepId
-      var candidates = ['agent_' + baseStatus, 'agent_' + baseStatus + 'ing'];
-      for (var i = 0; i < candidates.length; i++) {
-        if (_steps[candidates[i]]) {
-          _completeStep(candidates[i], d.elapsed_ms, d.count);
-          break;
+
+    // 模块3b：推理单元分组——thinking 开始新单元，工具事件归入当前单元
+    if (status === 'thinking' && !isDone) {
+      // 开新推理单元
+      _startReasonUnit();
+      return;
+    }
+
+    // 非思考事件：归入当前推理单元
+    if (_currentUnit && _currentUnit.body) {
+      if (!isDone) {
+        // start 类工具：在单元内创建步骤
+        var stepDiv = document.createElement('div');
+        stepDiv.className = 'cb-step';
+        stepDiv.setAttribute('data-status', 'running');
+        stepDiv.setAttribute('data-tool', status);
+        stepDiv.innerHTML = '<span class="cb-dot run"></span>' +
+          '<div class="cb-step-row"><span class="cb-label">' + label + '</span></div>';
+        _currentUnit.body.appendChild(stepDiv);
+        _currentUnit.tools.push({status: status, el: stepDiv, label: label});
+      } else {
+        // done 类工具：找到单元内对应的 start 步骤标记完成
+        var baseStatus = status.replace('_done', '').replace('completed', '');
+        for (var i = _currentUnit.tools.length - 1; i >= 0; i--) {
+          var tool = _currentUnit.tools[i];
+          if (tool.status === baseStatus || tool.status === baseStatus + 'ing') {
+            if (tool.el) {
+              tool.el.setAttribute('data-status', 'done');
+              var dot = tool.el.querySelector('.cb-dot');
+              if (dot) dot.className = 'cb-dot ok';
+              var elapsedTxt = d.elapsed_ms != null ? _formatElapsed(d.elapsed_ms) : '';
+              var countTxt = d.count != null ? ' (' + d.count + ')' : '';
+              if (elapsedTxt || countTxt) {
+                var row = tool.el.querySelector('.cb-step-row');
+                if (row) row.insertAdjacentHTML('beforeend',
+                  (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
+                  (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : ''));
+              }
+            }
+            break;
+          }
         }
       }
+    } else {
+      // 没有当前单元（非Agent模式或首事件非thinking），fallback 到扁平步骤
+      if (!isDone) {
+        var stepId = 'agent_' + status;
+        if (!_steps[stepId]) _createStep(stepId, label);
+      }
     }
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
+  // 模块3b：开新推理单元
+  function _startReasonUnit() {
+    // 关闭前一个单元（折叠）
+    if (_currentUnit && _currentUnit.el) {
+      _currentUnit.el.classList.remove('current');
+      _currentUnit.el.removeAttribute('open');
+      // 算耗时
+      if (_currentUnit.startTime) {
+        var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
+        var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
+        if (timeSpan) timeSpan.textContent = elapsed + 's';
+      }
+    }
+    // 创建新单元
+    var round = _reasonUnits.length + 1;
+    var det = document.createElement('details');
+    det.className = 'cb-reason current';
+    det.open = true;
+    det.innerHTML = '<summary><span class="cb-reason-round">推理第 ' + round + ' 轮</span>' +
+      '<span class="cb-reason-time"></span></summary>';
+    _container.appendChild(det);
+    var body = document.createElement('div');
+    body.className = 'cb-reason-body';
+    det.appendChild(body);
+    _currentUnit = {
+      round: round,
+      thinkText: '',
+      tools: [],
+      startTime: Date.now(),
+      el: det,
+      body: body
+    };
+    _reasonUnits.push(_currentUnit);
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
+  // 模块3b：处理 think 内容（填入当前推理单元）
+  function _handleAgentThink(d) {
+    if (!_currentUnit || !_currentUnit.body) return;
+    var token = d.content || '';
+    _currentUnit.thinkText += token;
+    // 渲染思考内容到单元 body 顶部
+    var thinkEl = _currentUnit.body.querySelector('.cb-thinking');
+    if (!thinkEl) {
+      thinkEl = document.createElement('div');
+      thinkEl.className = 'cb-output';
+      thinkEl.innerHTML = '<div class="cb-thinking"></div>';
+      _currentUnit.body.insertBefore(thinkEl, _currentUnit.body.firstChild);
+    }
+    var inner = thinkEl.querySelector('.cb-thinking');
+    if (inner) inner.textContent = _currentUnit.thinkText;
   }
 
   function _agentStatusLabel(status, d) {
