@@ -219,7 +219,8 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .msg .latex-display .katex-display>.katex{margin:0}
 .msg .ts{font-size:.72em;color:var(--text-muted,#888);margin-bottom:3px}
 .msg .action-tag{display:inline-block;font-size:.7em;padding:1px 6px;border-radius:8px;background:var(--tag-bg,#e8edf2);color:var(--tag-text,#4a6a8a);margin-right:6px;vertical-align:middle;line-height:1.4}
-.msg .stats{font-size:.72em;color:rgba(0,0,0,.35);margin-top:5px;padding-top:4px;border-top:1px solid rgba(0,0,0,.06);display:flex;align-items:center;gap:8px;font-family:inherit}
+.msg .stats{font-size:.72em;color:rgba(0,0,0,.35);margin-top:5px;padding-top:4px;border-top:1px solid rgba(0,0,0,.06);display:flex;align-items:center;gap:6px;font-family:inherit;flex-wrap:wrap}
+.msg .stats .stats-meta{opacity:.85}
 .msg .stats .token-stats{opacity:.7;margin-left:auto;font-style:italic}
 .task-chip{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.75em;cursor:default;font-weight:600;border:none;font-family:inherit;transition:opacity .15s}
 .task-chip.reasoning{background:var(--chip-reasoning-bg);color:var(--chip-reasoning-text)}
@@ -243,6 +244,11 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .msg code{background:var(--code-bg);padding:1px 4px;border-radius:2px;font-size:.85em;color:var(--code-text)}
 .msg pre{background:var(--code-bg);padding:6px 8px;border-radius:4px;overflow-x:auto;font-size:.85em;margin:4px 0}
 .msg pre code{background:none;padding:0}
+/* 标题字号限制（防止 # 开头被解析成大标题，在消息卡片里过于刺眼） */
+.msg h1{font-size:1.15em;font-weight:600;margin:.5em 0 .3em}
+.msg h2{font-size:1.08em;font-weight:600;margin:.5em 0 .3em}
+.msg h3{font-size:1em;font-weight:600;margin:.4em 0 .25em}
+.msg h4,.msg h5,.msg h6{font-size:.95em;font-weight:600;margin:.4em 0 .25em}
 
 .msg ul{margin:4px 0;padding-left:0;list-style:none}
 .msg ul li{position:relative;margin:3px 0;line-height:1.65;padding-left:16px}
@@ -665,6 +671,7 @@ body.has-offline-banner #app{padding-top:44px}
 .msg-copy-wrap{position:relative}
 .stream-content{position:relative}  /* 正文区基线（与流式/历史共用） */
 .msg-footer{margin-top:6px;padding-top:5px;border-top:0.5px dashed var(--border-color)}  /* 统计/复制栏（独立 footer） */
+.msg-footer .stats{border-top:none;padding-top:0;margin-top:0}  /* footer 已有分隔线，stats 不再重复画线 */
 .msg-copy-btn{position:absolute;bottom:2px;right:2px;padding:4px;border:none;border-radius:4px;background:var(--bg-secondary);color:var(--text-muted);cursor:pointer;opacity:0;transition:opacity .2s,background .15s,color .15s;display:flex;align-items:center;justify-content:center;line-height:1}
 .msg:hover .msg-copy-btn{opacity:.6}
 .msg:hover .msg-copy-btn:hover{opacity:1;background:var(--accent-color);color:var(--text-on-accent)}
@@ -1817,7 +1824,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
 
 /* 工具栏 */
-.kb-toolbar{display:flex;align-items:center;padding:6px 14px;gap:10px;border-bottom:0.5px solid var(--border-color);background:var(--bg-secondary);flex-shrink:0;flex-wrap:wrap}
+.kb-toolbar{display:flex;align-items:center;padding:6px 14px;gap:10px;border-bottom:0.5px solid var(--border-color);background:var(--bg-secondary);flex-shrink:0;flex-wrap:wrap;position:sticky;top:0;z-index:10}
 .kb-toolbar .btn{padding:4px 10px;border:0.5px solid var(--border-color);border-radius:4px;cursor:pointer;font-size:11px;background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:3px}
 .kb-toolbar .btn:hover{border-color:#B5D4F4}
 .kb-toolbar .btn.danger{color:#BA7517}
@@ -1932,7 +1939,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   font-size: .76em; color: #534AB7; cursor: pointer;
   text-align: left; display: flex; align-items: center; gap: 6px;
   transition: all .2s; line-height: 1.3;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  overflow-wrap: break-word; word-break: break-word;
 }
 .kb-dash-ask:hover { background: #534AB7; color: #fff; border-color: #534AB7; }
 .kb-dash-ask-rank {
