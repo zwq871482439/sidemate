@@ -719,7 +719,8 @@ function _kbRenderInsightDashboard(data) {
   var sourceEl = document.getElementById('kbOverviewSource');
   var countEl = document.getElementById('kbOverviewDocCount');
   var updatedEl = document.getElementById('kbOverviewUpdated');
-  if (!bodyEl) return;
+  if (!bodyEl) { console.warn('[KB] kbOverviewBody not found'); return; }
+  try {
 
   var insight = data.insight || '';
   var questions = data.suggested_questions || [];
@@ -792,6 +793,7 @@ function _kbRenderInsightDashboard(data) {
     var now = new Date();
     updatedEl.textContent = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0');
   }
+  } catch(e) { console.error('[KB] 仪表盘渲染失败:', e); }
 }
 
 function _kbDonutSliceClick(el) {
@@ -860,7 +862,7 @@ async function kbRefreshAIOverview() {
 
   if (_insight) {
     _kbLastInsightData = { insight: _insight, categories: _cats, suggested_questions: _questions, doc_count: _count || (_kbLastDocs.length || 0) };
-    _kbRenderInsightDashboard(_kbLastInsightData);
+    try { _kbRenderInsightDashboard(_kbLastInsightData); } catch(e) { console.error('[KB] 仪表盘渲染失败:', e); }
   } else {
     bodyEl.innerHTML = '<div class="kb-dash-empty">点击上方「整理」按钮，AI 将自动聚类并生成洞察分析。</div>';
   }
