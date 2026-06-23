@@ -50,18 +50,6 @@ def _sse_progress(step_id: str, status: str) -> str:
     return _sse_channel_event("progress", "step", {"step": step_id, "status": status})
 
 
-def _sse_agent_timeline(phase: str, step: str, label: str = None, elapsed_ms: float = None, count: int = None) -> str:
-    """构造 AgentTimeline SSE 事件"""
-    payload = {"type": "agent_timeline", "phase": phase, "step": step}
-    if label:
-        payload["label"] = label
-    if elapsed_ms is not None:
-        payload["elapsed_ms"] = int(elapsed_ms)
-    if count is not None:
-        payload["count"] = count
-    return 'data: %s\n\n' % json.dumps(payload, ensure_ascii=False)
-
-
 def _build_local_history(history_raw: list) -> list:
     """从 Chat Tab 的 history_raw 中提取本地列的对话历史
 
@@ -383,25 +371,22 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     local_error = None
     cloud_error = None
 
-    # AgentTimeline 步骤计时
-    _timeline_retrieve_start = time.time()
-    _timeline_retrieve_elapsed = 0
-    _timeline_retrieve_count = 0
-    _timeline_local_gen_start = 0
-    _timeline_local_gen_elapsed = 0
-    _timeline_cloud_gen_start = 0
-    _timeline_cloud_gen_elapsed = 0
-    _timeline_merge_start = 0
-    _timeline_merge_elapsed = 0
+    # AgentTimeline 步骤计时（阶段2重构：6 个计时变量 → 4 个 Step 对象）
+    # group 标记并发：retrieve/local_gen/cloud_gen = phase_1 并发，merge = phase_2 串行
+    from core.step_model import Step, StepOutput, step_to_sse, step_output_to_sse, steps_to_timeline
+    step_retrieve = Step(id="retrieve", label="本地知识库检索", group="phase_1")
+    step_local_gen = Step(id="local_gen", label="本地AI生成回答", group="phase_1")
+    step_cloud_gen = Step(id="cloud_gen", label="云端AI补充", group="phase_1")
+    step_merge = Step(id="merge", label="本地自动融合优化", group="phase_2")
+    _local_retrieve_done = False  # retrieve 是否已完成（sources/step_done 触发）
+    _local_gen_started = False    # local_gen 是否已开始（首个 token 触发）
+    _cloud_gen_started = False    # cloud_gen 是否已开始（首个 token 触发）
 
-    # 发射 AgentTimeline 初始事件
-    yield _sse_agent_timeline("start", "retrieve", label="本地知识库检索")
-    yield _sse_agent_timeline("start", "local_gen", label="本地AI生成回答")
-    yield _sse_agent_timeline("start", "cloud_gen", label="云端AI补充")
-
-    _local_retrieve_done = False
-    _local_gen_started = False
-    _cloud_gen_started = False
+    # 发射 AgentTimeline 初始事件（retrieve 立即开始，local_gen/cloud_gen 待首个 token 才 mark_running）
+    step_retrieve.mark_running()
+    yield step_to_sse(step_retrieve, "start")
+    yield step_to_sse(step_local_gen, "start")
+    yield step_to_sse(step_cloud_gen, "start")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         local_future = executor.submit(_run_local_column, ctx, local_query, local_queue, local_model, local_history)
@@ -419,27 +404,29 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
 
                     if evt_type == "token":
                         local_answer_parts.append(evt_data)
-                        # 首个 token 标记本地生成开始
+                        # 首个 token 标记本地生成开始（Step 化：mark_running 自动记 _start_ts）
                         if not _local_gen_started:
                             _local_gen_started = True
-                            _timeline_local_gen_start = time.time()
+                            step_local_gen.mark_running()
                         yield _sse_channel_event("local", "stream", {"content": evt_data})
                     elif evt_type == "step":
                         yield _sse_channel_event("local", "step", {"step": evt_data})
                     elif evt_type == "step_done":
-                        if evt_data == "search":
-                            _timeline_retrieve_elapsed = (time.time() - _timeline_retrieve_start) * 1000
+                        # search 的 step_done 只标记 retrieve 完成（不发 done 事件，等 sources 一起发）
+                        if evt_data == "search" and not _local_retrieve_done:
                             _local_retrieve_done = True
                         yield _sse_channel_event("local", "step_done", {"step": evt_data})
                     elif evt_type == "sources":
                         local_sources = evt_data
                         if not _local_retrieve_done:
-                            _timeline_retrieve_elapsed = (time.time() - _timeline_retrieve_start) * 1000
+                            step_retrieve.output = StepOutput("sources", [
+                                {"label": s.get("source_label", "?"),
+                                 "snippet": s.get("text_snippet", "")[:100]}
+                                for s in evt_data[:5]
+                            ])
+                            step_retrieve.mark_done()
                             _local_retrieve_done = True
-                        _timeline_retrieve_count = len(evt_data)
-                        yield _sse_agent_timeline("done", "retrieve",
-                                                   elapsed_ms=_timeline_retrieve_elapsed,
-                                                   count=_timeline_retrieve_count)
+                            yield step_to_sse(step_retrieve, "done")
                         yield _sse_channel_event("local", "sources", {
                             "sources": [
                                 {"label": s.get("source_label", "?"),
@@ -455,12 +442,10 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
                         local_error = evt_data
                     elif evt_type == "done":
                         local_done = True
-                        # 如果检索步骤还没标记完成，现在标记
+                        # 如果检索步骤还没标记完成，现在标记（done 兜底）
                         if not _local_retrieve_done:
-                            _timeline_retrieve_elapsed = (time.time() - _timeline_retrieve_start) * 1000
-                            yield _sse_agent_timeline("done", "retrieve",
-                                                       elapsed_ms=_timeline_retrieve_elapsed,
-                                                       count=0)
+                            step_retrieve.mark_done()
+                            yield step_to_sse(step_retrieve, "done")
                         break
 
             # 读取云端列事件（非阻塞，最多读 10 个）
@@ -475,7 +460,7 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
                         cloud_answer_parts.append(evt_data)
                         if not _cloud_gen_started:
                             _cloud_gen_started = True
-                            _timeline_cloud_gen_start = time.time()
+                            step_cloud_gen.mark_running()
                         yield _sse_channel_event("cloud", "stream", {"content": evt_data})
                     elif evt_type == "status":
                         yield _sse_channel_event("cloud", "status", {"status": evt_data})
@@ -497,13 +482,12 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
                     local_answer_parts.append(evt_data)
                     if not _local_gen_started:
                         _local_gen_started = True
-                        _timeline_local_gen_start = time.time()
+                        step_local_gen.mark_running()
                     yield _sse_channel_event("local", "stream", {"content": evt_data})
                 elif evt_type == "step":
                     yield _sse_channel_event("local", "step", {"step": evt_data})
                 elif evt_type == "step_done":
                     if evt_data == "search" and not _local_retrieve_done:
-                        _timeline_retrieve_elapsed = (time.time() - _timeline_retrieve_start) * 1000
                         _local_retrieve_done = True
                     yield _sse_channel_event("local", "step_done", {"step": evt_data})
                 elif evt_type == "error":
@@ -518,7 +502,7 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
                     cloud_answer_parts.append(evt_data)
                     if not _cloud_gen_started:
                         _cloud_gen_started = True
-                        _timeline_cloud_gen_start = time.time()
+                        step_cloud_gen.mark_running()
                     yield _sse_channel_event("cloud", "stream", {"content": evt_data})
                 elif evt_type == "status":
                     yield _sse_channel_event("cloud", "status", {"status": evt_data})
@@ -527,8 +511,7 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
             except queue.Empty:
                 break
 
-    # 本地列完成事件
-    _timeline_local_gen_elapsed = (time.time() - _timeline_local_gen_start) * 1000 if _timeline_local_gen_start else 0
+    # 本地列完成事件（Step 化：mark_done 自动算 elapsed_ms）
     local_answer = "".join(local_answer_parts).strip()
     if local_error and not local_answer:
         yield _sse_channel_event("local", "stream", {
@@ -540,10 +523,10 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         })
     yield _sse_channel_event("local", "phase", {"phase": "done"})
     yield _sse_progress("local", "done")
-    yield _sse_agent_timeline("done", "local_gen", elapsed_ms=_timeline_local_gen_elapsed)
+    step_local_gen.mark_done()
+    yield step_to_sse(step_local_gen, "done")
 
     # 云端列完成事件
-    _timeline_cloud_gen_elapsed = (time.time() - _timeline_cloud_gen_start) * 1000 if _timeline_cloud_gen_start else 0
     cloud_answer = "".join(cloud_answer_parts).strip()
     if cloud_error and not cloud_answer:
         yield _sse_channel_event("cloud", "stream", {
@@ -555,11 +538,12 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         })
     yield _sse_channel_event("cloud", "phase", {"phase": "done"})
     yield _sse_progress("cloud", "done")
-    yield _sse_agent_timeline("done", "cloud_gen", elapsed_ms=_timeline_cloud_gen_elapsed)
+    step_cloud_gen.mark_done()
+    yield step_to_sse(step_cloud_gen, "done")
 
     # ====== Step2: 融合 — 实时流式 ======
-    yield _sse_agent_timeline("start", "merge", label="本地自动融合优化")
-    _timeline_merge_start = time.time()
+    step_merge.mark_running()
+    yield step_to_sse(step_merge, "start")
     yield _sse_progress("merge", "doing")
     yield _sse_channel_event("merge", "phase", {"phase": "started"})
 
@@ -613,8 +597,9 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     else:
         merge_text = "两个来源均未返回有效结果"
 
-    _timeline_merge_elapsed = (time.time() - _timeline_merge_start) * 1000
-    yield _sse_agent_timeline("done", "merge", elapsed_ms=_timeline_merge_elapsed)
+    # 融合 done（Step 化）
+    step_merge.mark_done()
+    yield step_to_sse(step_merge, "done")
     yield _sse_progress("merge", "done")
     yield _sse_channel_event("merge", "phase", {"phase": "done"})
 
@@ -622,13 +607,8 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     elapsed = time.time() - t0
     final_response = merge_text or local_answer or cloud_answer or "无有效回答"
 
-    # 构建 agent_timeline 数据
-    agent_timeline = [
-        {"step": "retrieve", "elapsed_ms": int(_timeline_retrieve_elapsed), "count": _timeline_retrieve_count},
-        {"step": "local_gen", "elapsed_ms": int(_timeline_local_gen_elapsed)},
-        {"step": "cloud_gen", "elapsed_ms": int(_timeline_cloud_gen_elapsed)},
-        {"step": "merge", "elapsed_ms": int(_timeline_merge_elapsed)},
-    ]
+    # 构建 agent_timeline 数据（Step 化：steps_to_timeline 自动生成，双写 id/step 兼容前端）
+    agent_timeline = steps_to_timeline([step_retrieve, step_local_gen, step_cloud_gen, step_merge])
 
     try:
         from session.chat_store import save_chat
