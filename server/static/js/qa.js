@@ -466,7 +466,9 @@ async function kbRefreshDocs() {
 
     // 轮询管理
     var hasProcessing = docs.some(function(d) { return ['processing', 'indexing', 'summarizing'].indexOf(d.status) >= 0; });
-    var hasPendingTags = docs.some(function(d) { return ['pending','generating','failed'].indexOf(d.tag_status) >= 0 && d.status === 'ready'; });
+    var hasPendingTags = docs.some(function(d) {
+      return ['pending','generating','failed'].indexOf(d.tag_status) >= 0 && d.status === 'ready';
+    });
     if ((hasProcessing || hasPendingTags) && !_kbPollTimer) {
       _kbPollTimer = setInterval(kbRefreshDocs, 3000);
     } else if (!hasProcessing && !hasPendingTags && _kbPollTimer) {
@@ -656,6 +658,8 @@ async function kbRefreshOverviewLLM() {
   var sourceEl = document.getElementById('kbOverviewSource');
   var countEl = document.getElementById('kbOverviewDocCount');
   var updatedEl = document.getElementById('kbOverviewUpdated');
+  var sidebarHdr = document.querySelector('#kbSidebar .kb-sidebar-hdr');  // P6: 侧栏标题动画
+  var sidebarOrig = sidebarHdr ? sidebarHdr.innerHTML : '';
 
   if (btn) {
     btn.disabled = true;
@@ -663,6 +667,8 @@ async function kbRefreshOverviewLLM() {
   }
   if (bodyEl) bodyEl.textContent = '正在分析文档结构并发现洞察...';
   if (sourceEl) sourceEl.textContent = '本地 AI 生成';
+  // P6: 侧栏标题动画
+  if (sidebarHdr) sidebarHdr.innerHTML = iconSvg('spin','12') + ' AI 智能筛选 — 重新整理中...';
 
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh', {
@@ -698,6 +704,13 @@ async function kbRefreshOverviewLLM() {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 自动整理知识库';
+    }
+    // P6: 恢复侧栏标题
+    if (sidebarOrig) {
+      try {
+        var _sh = document.querySelector('#kbSidebar .kb-sidebar-hdr');
+        if (_sh) _sh.innerHTML = sidebarOrig;
+      } catch(e) {}
     }
   }
 }
