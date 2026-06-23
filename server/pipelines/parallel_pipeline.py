@@ -92,6 +92,98 @@ def _build_cloud_history(history_raw: list) -> list:
     return cloud_hist
 
 
+def _drain_local_events(q, state, step_retrieve, step_local_gen):
+    """从本地列 Queue 读取并处理单个事件（主循环和收尾共用，消除重复 + 修复丢事件 bug）。
+
+    state 是可变 dict，包含/更新：
+      answer_parts, error, done, retrieve_done, gen_started, sources, got_event
+    处理的事件: token/step/step_done/sources/mode_hint/error/done
+    （原收尾循环丢失 sources/mode_hint，本函数统一处理修复）
+
+    Yields: SSE 事件字符串
+    """
+    from core.step_model import StepOutput, step_to_sse
+    try:
+        evt_type, evt_data = q.get_nowait()
+    except queue.Empty:
+        state["got_event"] = False
+        return
+
+    state["got_event"] = True
+    if evt_type == "token":
+        state["answer_parts"].append(evt_data)
+        if not state["gen_started"]:
+            state["gen_started"] = True
+            step_local_gen.mark_running()
+        yield _sse_channel_event("local", "stream", {"content": evt_data})
+    elif evt_type == "step":
+        yield _sse_channel_event("local", "step", {"step": evt_data})
+    elif evt_type == "step_done":
+        # search 的 step_done 只标记 retrieve 完成（不发 done 事件，等 sources 一起发）
+        if evt_data == "search" and not state["retrieve_done"]:
+            state["retrieve_done"] = True
+        yield _sse_channel_event("local", "step_done", {"step": evt_data})
+    elif evt_type == "sources":
+        state["sources"] = evt_data
+        if not state["retrieve_done"]:
+            step_retrieve.output = StepOutput("sources", [
+                {"label": s.get("source_label", "?"),
+                 "snippet": s.get("text_snippet", "")[:100]}
+                for s in evt_data[:5]
+            ])
+            step_retrieve.mark_done()
+            state["retrieve_done"] = True
+            yield step_to_sse(step_retrieve, "done")
+        yield _sse_channel_event("local", "sources", {
+            "sources": [
+                {"label": s.get("source_label", "?"),
+                 "snippet": s.get("text_snippet", "")[:100]}
+                for s in evt_data[:5]
+            ]
+        })
+    elif evt_type == "mode_hint":
+        yield _sse_channel_event("local", "mode_hint", {"message": evt_data})
+    elif evt_type == "error":
+        state["error"] = evt_data
+    elif evt_type == "done":
+        state["done"] = True
+        # 如果检索步骤还没标记完成，现在标记（done 兜底）
+        if not state["retrieve_done"]:
+            step_retrieve.mark_done()
+            state["retrieve_done"] = True
+            yield step_to_sse(step_retrieve, "done")
+
+
+def _drain_cloud_events(q, state, step_cloud_gen):
+    """从云端列 Queue 读取并处理单个事件（主循环和收尾共用）。
+
+    state 是可变 dict，包含/更新：
+      answer_parts, error, done, gen_started, got_event
+    处理的事件: token/status/error/done
+
+    Yields: SSE 事件字符串
+    """
+    try:
+        evt_type, evt_data = q.get_nowait()
+    except queue.Empty:
+        state["got_event"] = False
+        return
+
+    state["got_event"] = True
+    if evt_type == "token":
+        state["answer_parts"].append(evt_data)
+        if not state["gen_started"]:
+            state["gen_started"] = True
+            step_cloud_gen.mark_running()
+        yield _sse_channel_event("cloud", "stream", {"content": evt_data})
+    elif evt_type == "status":
+        yield _sse_channel_event("cloud", "status", {"status": evt_data})
+    elif evt_type == "error":
+        state["error"] = evt_data
+    elif evt_type == "done":
+        state["done"] = True
+
+
 def _summarize_local_answer(local_answer: str, user_msg: str, mgr, max_chars: int = 300) -> str:
     """把本地列原始回答摘要化（≤300字），用于存入 memory_local。
 
@@ -392,124 +484,51 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         local_future = executor.submit(_run_local_column, ctx, local_query, local_queue, local_model, local_history)
         cloud_future = executor.submit(_run_cloud_column, ctx, message, cloud_history, cloud_queue)
 
-        # 主循环：交替从两个队列读取事件，实时 yield
-        while not (local_done and cloud_done):
+        # 主循环：交替从两个队列读取事件，实时 yield（drain 函数统一处理，消除重复）
+        # state 用 dict 封装可变状态（drain 函数修改它）
+        local_state = {"answer_parts": local_answer_parts, "error": None, "done": False,
+                       "retrieve_done": _local_retrieve_done, "gen_started": _local_gen_started,
+                       "sources": None, "got_event": False}
+        cloud_state = {"answer_parts": cloud_answer_parts, "error": None, "done": False,
+                       "gen_started": _cloud_gen_started, "got_event": False}
+        while not (local_state["done"] and cloud_state["done"]):
             # 读取本地列事件（非阻塞，最多读 10 个）
-            if not local_done:
+            if not local_state["done"]:
                 for _ in range(10):
-                    try:
-                        evt_type, evt_data = local_queue.get_nowait()
-                    except queue.Empty:
-                        break
-
-                    if evt_type == "token":
-                        local_answer_parts.append(evt_data)
-                        # 首个 token 标记本地生成开始（Step 化：mark_running 自动记 _start_ts）
-                        if not _local_gen_started:
-                            _local_gen_started = True
-                            step_local_gen.mark_running()
-                        yield _sse_channel_event("local", "stream", {"content": evt_data})
-                    elif evt_type == "step":
-                        yield _sse_channel_event("local", "step", {"step": evt_data})
-                    elif evt_type == "step_done":
-                        # search 的 step_done 只标记 retrieve 完成（不发 done 事件，等 sources 一起发）
-                        if evt_data == "search" and not _local_retrieve_done:
-                            _local_retrieve_done = True
-                        yield _sse_channel_event("local", "step_done", {"step": evt_data})
-                    elif evt_type == "sources":
-                        local_sources = evt_data
-                        if not _local_retrieve_done:
-                            step_retrieve.output = StepOutput("sources", [
-                                {"label": s.get("source_label", "?"),
-                                 "snippet": s.get("text_snippet", "")[:100]}
-                                for s in evt_data[:5]
-                            ])
-                            step_retrieve.mark_done()
-                            _local_retrieve_done = True
-                            yield step_to_sse(step_retrieve, "done")
-                        yield _sse_channel_event("local", "sources", {
-                            "sources": [
-                                {"label": s.get("source_label", "?"),
-                                 "snippet": s.get("text_snippet", "")[:100]}
-                                for s in evt_data[:5]
-                            ]
-                        })
-                    elif evt_type == "mode_hint":
-                        yield _sse_channel_event("local", "mode_hint", {
-                            "message": evt_data
-                        })
-                    elif evt_type == "error":
-                        local_error = evt_data
-                    elif evt_type == "done":
-                        local_done = True
-                        # 如果检索步骤还没标记完成，现在标记（done 兜底）
-                        if not _local_retrieve_done:
-                            step_retrieve.mark_done()
-                            yield step_to_sse(step_retrieve, "done")
+                    for sse_evt in _drain_local_events(local_queue, local_state, step_retrieve, step_local_gen):
+                        yield sse_evt
+                    if not local_state["got_event"] or local_state["done"]:
                         break
 
             # 读取云端列事件（非阻塞，最多读 10 个）
-            if not cloud_done:
+            if not cloud_state["done"]:
                 for _ in range(10):
-                    try:
-                        evt_type, evt_data = cloud_queue.get_nowait()
-                    except queue.Empty:
-                        break
-
-                    if evt_type == "token":
-                        cloud_answer_parts.append(evt_data)
-                        if not _cloud_gen_started:
-                            _cloud_gen_started = True
-                            step_cloud_gen.mark_running()
-                        yield _sse_channel_event("cloud", "stream", {"content": evt_data})
-                    elif evt_type == "status":
-                        yield _sse_channel_event("cloud", "status", {"status": evt_data})
-                    elif evt_type == "error":
-                        cloud_error = evt_data
-                    elif evt_type == "done":
-                        cloud_done = True
+                    for sse_evt in _drain_cloud_events(cloud_queue, cloud_state, step_cloud_gen):
+                        yield sse_evt
+                    if not cloud_state["got_event"] or cloud_state["done"]:
                         break
 
             # 如果两列都没数据且都没完成，短暂等待避免空转
-            if not local_done and not cloud_done:
+            if not local_state["done"] and not cloud_state["done"]:
                 time.sleep(0.02)  # 20ms
 
-        # 收尾：确保队列中的剩余事件被读取
+        # 收尾：确保队列中的剩余事件被读取（复用同一 drain 函数，修复原收尾丢失 sources/mode_hint 的 bug）
         for _ in range(100):
-            try:
-                evt_type, evt_data = local_queue.get_nowait()
-                if evt_type == "token":
-                    local_answer_parts.append(evt_data)
-                    if not _local_gen_started:
-                        _local_gen_started = True
-                        step_local_gen.mark_running()
-                    yield _sse_channel_event("local", "stream", {"content": evt_data})
-                elif evt_type == "step":
-                    yield _sse_channel_event("local", "step", {"step": evt_data})
-                elif evt_type == "step_done":
-                    if evt_data == "search" and not _local_retrieve_done:
-                        _local_retrieve_done = True
-                    yield _sse_channel_event("local", "step_done", {"step": evt_data})
-                elif evt_type == "error":
-                    local_error = evt_data
-            except queue.Empty:
+            for sse_evt in _drain_local_events(local_queue, local_state, step_retrieve, step_local_gen):
+                yield sse_evt
+            if not local_state["got_event"]:
                 break
 
         for _ in range(100):
-            try:
-                evt_type, evt_data = cloud_queue.get_nowait()
-                if evt_type == "token":
-                    cloud_answer_parts.append(evt_data)
-                    if not _cloud_gen_started:
-                        _cloud_gen_started = True
-                        step_cloud_gen.mark_running()
-                    yield _sse_channel_event("cloud", "stream", {"content": evt_data})
-                elif evt_type == "status":
-                    yield _sse_channel_event("cloud", "status", {"status": evt_data})
-                elif evt_type == "error":
-                    cloud_error = evt_data
-            except queue.Empty:
+            for sse_evt in _drain_cloud_events(cloud_queue, cloud_state, step_cloud_gen):
+                yield sse_evt
+            if not cloud_state["got_event"]:
                 break
+
+        # 同步 state 回局部变量（drain 函数修改的是 dict）
+        local_error = local_state["error"]
+        cloud_error = cloud_state["error"]
+        local_sources = local_state["sources"]
 
     # 本地列完成事件（Step 化：mark_done 自动算 elapsed_ms）
     local_answer = "".join(local_answer_parts).strip()
