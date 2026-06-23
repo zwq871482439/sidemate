@@ -2871,6 +2871,35 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
+  // 模块2a：双列折叠成摘要条（阶段1→阶段2过渡，方案Z）
+  function _collapseParallelCols() {
+    var parWrap = _container.querySelector('.cb-par');
+    if (!parWrap) return;
+    var localText = _parallelTexts.local || '';
+    var cloudText = _parallelTexts.cloud || '';
+    if (!localText && !cloudText) return;
+    var html = '<div class="cb-par-summary">';
+    if (localText) {
+      html += '<div class="cb-par-sum-item local" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
+        '<div class="cb-par-sum-head">本地原文</div>' +
+        '<div class="cb-par-sum-preview">' + _esc(localText.slice(0, 40)) + '...</div>' +
+        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(localText) + '</div>' +
+      '</div>';
+    }
+    if (cloudText) {
+      html += '<div class="cb-par-sum-item cloud" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
+        '<div class="cb-par-sum-head">云端原文</div>' +
+        '<div class="cb-par-sum-preview">' + _esc(cloudText.slice(0, 40)) + '...</div>' +
+        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(cloudText) + '</div>' +
+      '</div>';
+    }
+    html += '</div>';
+    parWrap.outerHTML = html;
+    // 清理并行列引用（已折叠）
+    _parallelCols = {};
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
   // 并行事件处理
   function _handleParallelEvent(evtType, d) {
     if (!_container) return;
@@ -2879,6 +2908,10 @@ var CardRenderer = (function() {
       // phase started/done：创建/完成阶段
       if (d.phase === 'started' && !_parallelCols[channel]) {
         _ensureParallelCol(channel);
+      }
+      // 模块2a：merge phase started 时，阶段1结束，把双列折叠成摘要条（方案Z）
+      if (channel === 'merge' && d.phase === 'started') {
+        _collapseParallelCols();
       }
     } else if (evtType === 'step' || evtType === 'step_done') {
       // 并行子步骤（searching/generating 等）
@@ -2993,19 +3026,30 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
-  // 历史回放：并行双列摘要
+  // 历史回放：并行三栏对比（本地/云端/融合，卡片堆叠，点击展开全文）
   function _renderParallelSummary(texts) {
     var html = '<div class="cb-par-summary">';
-    if (texts.local) {
-      html += '<div class="cb-par-sum-item local">' +
-        '<div class="cb-par-sum-head">本地原文</div>' +
-        '<div class="cb-par-sum-preview">' + _esc(texts.local.slice(0, 40)) + '...</div>' +
+    // 融合结果（默认展开，紫色，标注"已采用"）
+    if (texts.merge) {
+      html += '<div class="cb-par-sum-item merge" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
+        '<div class="cb-par-sum-head">融合结果（已采用）</div>' +
+        '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.merge) + '</div>' +
       '</div>';
     }
+    // 本地原文（默认折叠，绿色）
+    if (texts.local) {
+      html += '<div class="cb-par-sum-item local" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
+        '<div class="cb-par-sum-head">本地原文</div>' +
+        '<div class="cb-par-sum-preview">' + _esc(texts.local.slice(0, 40)) + '...</div>' +
+        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.local) + '</div>' +
+      '</div>';
+    }
+    // 云端原文（默认折叠，蓝色）
     if (texts.cloud) {
-      html += '<div class="cb-par-sum-item cloud">' +
+      html += '<div class="cb-par-sum-item cloud" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
         '<div class="cb-par-sum-head">云端原文</div>' +
         '<div class="cb-par-sum-preview">' + _esc(texts.cloud.slice(0, 40)) + '...</div>' +
+        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.cloud) + '</div>' +
       '</div>';
     }
     html += '</div>';

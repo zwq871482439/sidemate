@@ -2139,6 +2139,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-par-sum-item:hover { background:var(--bg-tertiary); }
 .cb-par-sum-item.local { border-left-color:var(--dot-ok); }
 .cb-par-sum-item.cloud { border-left-color:var(--primary-500); }
+.cb-par-sum-item.merge { border-left-color:var(--dot-run); background:rgba(127,119,221,.05); }
 .cb-par-sum-head { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text-muted); font-weight:500; margin-bottom:2px; }
 .cb-par-sum-preview { font-size:11px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
