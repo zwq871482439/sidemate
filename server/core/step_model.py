@@ -142,6 +142,9 @@ class Step:
     elapsed_ms: Optional[int] = None            # 耗时（毫秒，done 时填）
     thinking: Optional[str] = None              # 生成类步骤的思考内容（text/thinking 共用）
     error: Optional[str] = None                 # error 时填的错误文本
+    # output 专属耗时（毫秒）。transform 类 output（如 reformulate）有自己的耗时，
+    # 透传给前端的 kb_reformulate 事件（前端 chat.js:280 读 d.elapsed 渲染"X.Xs"）。
+    output_elapsed_ms: Optional[int] = None
 
     # 内部计时锚点（不序列化）
     _start_ts: Optional[float] = field(default=None, repr=False, compare=False)
@@ -186,6 +189,8 @@ class Step:
             d["output"] = self.output.to_dict()
         if self.elapsed_ms is not None:
             d["elapsed_ms"] = self.elapsed_ms
+        if self.output_elapsed_ms is not None:
+            d["output_elapsed_ms"] = self.output_elapsed_ms
         if self.thinking:
             d["thinking"] = self.thinking
         if self.error:
@@ -213,6 +218,7 @@ def step_from_dict(d: dict) -> Step:
         group=d.get("group"),
         output=output,
         elapsed_ms=d.get("elapsed_ms"),
+        output_elapsed_ms=d.get("output_elapsed_ms"),
         thinking=d.get("thinking"),
         error=d.get("error"),
     )
@@ -282,11 +288,15 @@ def step_output_to_sse(step: Step) -> Optional[str]:
         return sse_event("kb_sources", {"sources": raw})
     if o.type == "transform" and isinstance(raw, dict):
         # 兼容现有 kb_reformulate 字段名（reformulated 而非 result）
-        return sse_event("kb_reformulate", {
+        payload = {
             "original": raw.get("original", ""),
             "reformulated": raw.get("result", ""),
             "changed": raw.get("changed", False),
-        })
+        }
+        # 透传 output 耗时（前端 chat.js:280 读 d.elapsed 渲染"X.Xs"）
+        if step.output_elapsed_ms is not None:
+            payload["elapsed"] = round(step.output_elapsed_ms / 1000, 1)
+        return sse_event("kb_reformulate", payload)
     if o.type == "tool" and isinstance(raw, dict):
         return sse_event("agent_status", raw)
     return None
