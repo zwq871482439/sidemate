@@ -62,16 +62,24 @@ function _buildKbSources(m) {
 function _buildStats(m) {
   if (!m.model || m.time == null) return '';
   var base = formatStats(m.model, m.chars || 0, m.think_chars || 0, m.time, m.speed || 0);
-  // 如果有真实 token 统计，追加显示
-  if (m.token_stats) {
-    var ts = m.token_stats;
-    var parts = [];
-    if (ts.input_tokens) parts.push('输入 ' + ts.input_tokens.toLocaleString());
-    if (ts.output_tokens) parts.push('输出 ' + ts.output_tokens.toLocaleString());
-    if (ts.reasoning_tokens) parts.push('推理 ' + ts.reasoning_tokens.toLocaleString());
-    if (parts.length) {
-      base = base.replace('</div>', '') + ' <span class="token-stats">' + parts.join(' ') + '</span></div>';
-    }
+  // 模块5b：词元统计折叠（有真实值用真实值，无则估算标"约"）
+  var ts = m.token_stats || {};
+  var inputTok = ts.input_tokens || 0;
+  var outputTok = ts.output_tokens || 0;
+  var reasonTok = ts.reasoning_tokens || 0;
+  // 无真实值时用 chars/1.5 估算
+  if (!outputTok && m.chars) {
+    outputTok = Math.round(m.chars / 1.5);
+  }
+  if (inputTok || outputTok || reasonTok) {
+    var approx = m.token_stats ? '' : '约 ';  // 估算值标"约"
+    var rows = '';
+    if (inputTok) rows += '<div class="detail-kv"><span class="k">输入词元</span><span class="v">' + approx + inputTok.toLocaleString() + '</span></div>';
+    if (outputTok) rows += '<div class="detail-kv"><span class="k">输出词元</span><span class="v">' + approx + outputTok.toLocaleString() + '</span></div>';
+    if (reasonTok) rows += '<div class="detail-kv"><span class="k">推理词元</span><span class="v">' + approx + reasonTok.toLocaleString() + '</span></div>';
+    var detailHtml = '<details class="stats-detail"><summary>📋 词元统计</summary>' +
+      '<div class="stats-detail-body">' + rows + '</div></details>';
+    base = base.replace('</div>', '') + detailHtml + '</div>';
   }
   return base;
 }
@@ -1656,6 +1664,9 @@ async function sendMessage() {
             // 阶段3 Step2b：CardRenderer 渲染检索来源（替代 _injectStepContent）
             window._kbSources = d.sources || [];  // 持久化用，必须保留
             CardRenderer.handleEvent(d);
+          } else if (d.type === 'doc_loaded') {
+            // 模块5a：文档注入明盒（显示"已加载文档 XX（约N词元）"）
+            CardRenderer.handleEvent(d);
           } else if (d.type === 'kb_no_reference') {
             showToast('未找到相关文库内容', 'info');
           // 文档提纲确认（Phase 1 完成后）
@@ -2606,6 +2617,12 @@ var CardRenderer = (function() {
       return;
     }
 
+    // doc_loaded 事件（文档注入明盒，模块5a）
+    if (t === 'doc_loaded') {
+      _addDocLoaded(d);
+      return;
+    }
+
     // mode_hint 事件（并行 fallback 分支的提示文案）
     if (t === 'mode_hint') {
       _addHint(d.message || '');
@@ -3130,6 +3147,27 @@ var CardRenderer = (function() {
     hintDiv.className = 'cb-hint';
     hintDiv.textContent = message;
     _container.appendChild(hintDiv);
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
+  // 文档注入明盒（模块5a：显示"已加载文档 XX（约N词元）"）
+  function _addDocLoaded(d) {
+    if (!_container) return;
+    var filename = d.filename || '文档';
+    var tokens = d.tokens || 0;
+    var count = d.count || 1;
+    var tokensTxt = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : tokens;
+    var label = count > 1 ? '已加载 ' + count + ' 篇文档' : '已加载文档';
+    var div = document.createElement('div');
+    div.className = 'cb-step';
+    div.setAttribute('data-status', 'done');
+    div.innerHTML = '<span class="cb-dot ok"></span>' +
+      '<div class="cb-step-row">' +
+        '<span class="cb-label">' + label + '</span>' +
+        '<span class="cb-count">' + _esc(filename) + '</span>' +
+        '<span class="cb-time">约 ' + tokensTxt + ' 词元</span>' +
+      '</div>';
+    _container.appendChild(div);
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 

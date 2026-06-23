@@ -263,6 +263,12 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                             _kb_doc_content = _full_text
                             log.info("[LOCAL] doc_action KB引用提取: %s (%d字)",
                                      kb_doc_ref.filename, len(_kb_doc_content))
+                            # 模块5a：发 doc_loaded 事件，让明盒显示"已加载文档"
+                            yield sse_event("doc_loaded", {
+                                "filename": kb_doc_ref.filename,
+                                "tokens": int(len(_kb_doc_content) / 1.5),
+                                "count": 1,
+                            })
 
                 for phase, content in run_doc_action(
                     message=message,
@@ -338,6 +344,18 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 # 如果有 KB 文档内容，注入到 prompt
                 if _chat_kb_context:
                     prompt = "【用户引用的文档内容】\n\n" + _chat_kb_context + "\n\n【用户问题】\n" + (message or prompt)
+                    # 模块5a：发 doc_loaded 事件，让明盒显示"已加载文档"
+                    _doc_names = []
+                    for _fp in (file_path or "").split(","):
+                        _fp = _fp.strip()
+                        if _fp:
+                            _ref = kb.get_doc_ref(_fp) if hasattr(kb, 'get_doc_ref') else None
+                            _doc_names.append(_ref.filename if _ref else _fp)
+                    yield sse_event("doc_loaded", {
+                        "filename": "、".join(_doc_names) if _doc_names else "文档",
+                        "tokens": int(len(_chat_kb_context) / 1.5),
+                        "count": len(_doc_names),
+                    })
 
                 for phase, content in mgr.chat_stream(
                     prompt, model_choice, max_tokens, model_history,

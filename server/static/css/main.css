@@ -2161,6 +2161,15 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-reason-time { margin-left:auto; color:var(--text-muted); font-size:10px; }
 .cb-reason .cb-step { padding:3px 0 3px 17px; font-size:11px; }
 .cb-reason .cb-output { margin:2px 0; }
+/* 词元统计折叠（模块5b） */
+.stats-detail { display:inline-block; margin-left:6px; vertical-align:middle; }
+.stats-detail > summary { cursor:pointer; font-size:10px; color:var(--text-muted); list-style:none; display:inline; }
+.stats-detail > summary::-webkit-details-marker { display:none; }
+.stats-detail[open] > summary { display:block; margin-bottom:2px; }
+.stats-detail-body { padding:4px 8px; background:var(--bg-secondary); border-radius:4px; font-size:10px; }
+.stats-detail-body .detail-kv { display:flex; gap:6px; padding:1px 0; }
+.stats-detail-body .detail-kv .k { color:var(--text-muted); min-width:50px; }
+.stats-detail-body .detail-kv .v { color:var(--text-secondary); }
 /* 提示文案（并行 fallback mode_hint） */
 .cb-hint { padding:6px 10px; margin:4px 0; background:var(--bg-info); border-radius:4px; font-size:11px; color:var(--text-info); border-left:2px solid var(--info-border-color); }
 
