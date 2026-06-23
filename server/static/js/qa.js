@@ -409,7 +409,7 @@ async function kbRefreshDocs() {
         uploadTime = diffDays === 0 ? '今天上传' : diffDays === 1 ? '1 天前上传' : diffDays + ' 天前上传';
       }
 
-      html += '<div class="kb-card" data-doc-id="' + esc(d.doc_id) + '" onclick="kbCardClick(\'' + esc(d.doc_id) + '\')">';
+      html += '<div class="kb-card" data-doc-id="' + esc(d.doc_id) + '" onclick="kbCardClick(\'' + escAttr(d.doc_id) + '\')">';
       // 1. 标题行
       html += '<div class="cbar">';
       html += '<span class="ctitle" title="' + esc(d.filename) + '">' + esc(d.filename) + '</span>';
@@ -435,13 +435,13 @@ async function kbRefreshDocs() {
       // P6: 私密文档的令牌按钮
       if (d.is_private) {
         html += '<div class="ctoken-act">';
-        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbGenerateToken(\'' + esc(d.doc_id) + '\')" title="生成访问令牌"><svg width="10" height="10" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg> 令牌</button>';
+        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbGenerateToken(\'' + escAttr(d.doc_id) + '\')" title="生成访问令牌"><svg width="10" height="10" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg> 令牌</button>';
         html += '</div>';
       }
       // Fix B: 摘要生成失败 + 文档已选中 → 显示重试按钮
       if (d.tag_status === 'failed' && typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && _kbSelectedDocs.has(d.doc_id)) {
         html += '<div class="ctoken-act">';
-        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbRetrySummary(\'' + esc(d.doc_id) + '\')" title="重新生成摘要">重新生成摘要</button>';
+        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbRetrySummary(\'' + escAttr(d.doc_id) + '\')" title="重新生成摘要">重新生成摘要</button>';
         html += '</div>';
       }
       html += '</div>';
@@ -495,6 +495,10 @@ async function kbRefreshDocs() {
     _kbSyncQueueWithDocs(docs);
   } catch (err) {
     _kbSkipFetch = false;
+    // P6: 轮询中的错误静默，直接触发时才通知用户
+    if (!_kbPollTimer && typeof showToast === 'function') {
+      showToast('刷新文档列表失败', 'error');
+    }
     silentLog('[KB] 刷新文档列表失败:', err);
   }
 }
@@ -702,7 +706,7 @@ function _kbRefreshOverviewStatsOnly() {
   if (countEl) countEl.textContent = docs.length + ' 篇文档';
   if (updatedEl) {
     var now = new Date();
-    updatedEl.textContent = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ' 更新';
+    updatedEl.textContent = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ' 更新';
   }
 }
 
@@ -790,7 +794,7 @@ function _kbRenderInsightDashboard(data) {
   if (countEl) countEl.textContent = docCount + ' 篇';
   if (updatedEl) {
     var now = new Date();
-    updatedEl.textContent = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0');
+    updatedEl.textContent = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
   }
   } catch(e) { console.error('[KB] 仪表盘渲染失败:', e); }
 }
@@ -985,9 +989,9 @@ function _kbRenderQueue() {
     if (item.conflict && item.conflict_info) {
       listHtml += '<div class="kb-qitem kb-qconflict">';
       listHtml += '<span>' + esc(item.filename) + ' — 检测到重复</span>';
-      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + esc(item.docId) + '\',\'replace\')">替换</button>';
-      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + esc(item.docId) + '\',\'keep\')">保留</button>';
-      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + esc(item.docId) + '\',\'cancel\')">取消</button>';
+      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + escAttr(item.docId) + '\',\'replace\')">替换</button>';
+      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + escAttr(item.docId) + '\',\'keep\')">保留</button>';
+      listHtml += '<button class="btn btn-xs" onclick="kbResolveConflict(\'' + escAttr(item.docId) + '\',\'cancel\')">取消</button>';
       listHtml += '</div>';
       continue;
     }
@@ -1291,8 +1295,8 @@ function _kbRenderTokenPanel(tokens) {
     html += '<div class="kb-token-meta">' + levelLabel + sessionInfo + '</div>';
     html += '</div>';
     html += '<div class="kb-token-actions">';
-    html += '<button class="kb-token-btn" onclick="event.stopPropagation();kbCopyToken(\'' + esc(t.token) + '\')" title="复制令牌"><svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3.5" y="3.5" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.1"/><path d="M1.5 10.5V2a.5.5 0 01.5-.5h8.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></button>';
-    html += '<button class="kb-token-btn" onclick="event.stopPropagation();kbRevokeToken(\'' + esc(t.doc_id) + '\')" title="撤销">' + iconSvg('close', '11') + '</button>';
+    html += '<button class="kb-token-btn" onclick="event.stopPropagation();kbCopyToken(\'' + escAttr(t.token) + '\')" title="复制令牌"><svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3.5" y="3.5" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.1"/><path d="M1.5 10.5V2a.5.5 0 01.5-.5h8.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg></button>';
+    html += '<button class="kb-token-btn" onclick="event.stopPropagation();kbRevokeToken(\'' + escAttr(t.doc_id) + '\')" title="撤销">' + iconSvg('close', '11') + '</button>';
     html += '</div>';
     html += '</div>';
   }
