@@ -742,17 +742,31 @@ function _renderSingleMsg(m, idx) {
   } else if (m.agent_timeline) {
     timelineHtml = _buildAgentTimelineHtml(m.agent_timeline);  // 旧消息兼容
   }
-  var html = '<div class="msg-copy-wrap">'
-    + timelineHtml + _buildKbSources(m) + actionTag + ts + bodyHtml;
+  // 结构与流式 finalizeDOM 后同构：card-area(步骤) → stream-content(正文) → msg-footer(统计/复制)
+  // 这样刷新页面/历史回放与刚完成的卡片视觉完全一致，无闪变。
+  var bodyExtras = _buildKbSources(m) + actionTag + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
+  var docBarHtml = '';
   if (m.doc_url) {
     var _dlUrl = m.doc_url;
     if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
-    html += '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
+    docBarHtml = '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
   }
-  html += _buildFileTag(m) + _buildStats(m) + _buildCopyBtn();
-  html += '</div>';
-  return html;
+  var footerHtml = _buildStats(m);
+  if (footerHtml) {
+    // 有统计：正文区 + 独立 footer（与流式 done 路径一致）
+    return timelineHtml
+      + '<div class="stream-content">' + bodyExtras + _buildFileTag(m) + '</div>'
+      + docBarHtml
+      + '<div class="msg-footer msg-copy-wrap">' + footerHtml + _buildCopyBtn() + '</div>';
+  }
+  // 无统计（用户消息/纯文本）：正文区 + 复制按钮包裹
+  return '<div class="msg-copy-wrap">'
+    + timelineHtml
+    + '<div class="stream-content">' + bodyExtras + _buildFileTag(m) + '</div>'
+    + docBarHtml
+    + _buildCopyBtn()
+    + '</div>';
 }
 
 function renderMsg(m) {
@@ -844,6 +858,25 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     streamEl.appendChild(contentEl);
   }
 
+  // done 终态：stats 作为独立 footer 追加到 stream-msg（不重写 #stream-content，消除完成闪烁）
+  // 这样正文 DOM 原封不动，只新增一条统计/复制栏，视觉上无重排。
+  if (stats) {
+    // 空回复兜底：若正文区尚未渲染（空回复/友好提示场景），先补渲染正文
+    var _curBody = contentEl.querySelector('p, div:not(.thinking-indicator)');
+    if (!_curBody && content) {
+      contentEl.innerHTML = _renderMsgBody(content, {sanitize: false});
+    }
+    // 先清掉旧的 footer（重复 done / error 兜底时安全）
+    var _oldFooter = streamEl.querySelector('.msg-footer');
+    if (_oldFooter) _oldFooter.remove();
+    var _footer = document.createElement('div');
+    _footer.className = 'msg-footer msg-copy-wrap';
+    _footer.innerHTML = stats + _buildCopyBtn();
+    streamEl.appendChild(_footer);
+    if (!userScrolledUp) el.scrollTop = el.scrollHeight;
+    return;
+  }
+
   var html = '';
   if (isThinking) {
     var _isGenerating = (isThinking === 'generating');
@@ -888,12 +921,7 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     var _action_label = _labels[currentActionMode] || '聊天';
     html += '<div class="ts" style="margin-top:4px"><span class="action-tag">' + esc(_action_label) + '</span> ' + new Date().toTimeString().slice(0,8) + '</div>';
   }
-  if (stats) html += stats;
-
-  // 流式完成后添加复制按钮
-  if (stats) {
-    html = '<div class="msg-copy-wrap">' + html + _buildCopyBtn() + '</div>';
-  }
+  // 注：stats 分支已在上方提前 return（追加为独立 footer，不重写正文）
 
   // 只更新 #stream-content，不碰时间线/面板/下载栏
   // 修复：思考态计时器保持连续——重建 innerHTML 前保存已有 timer 的 start 值，重建后恢复

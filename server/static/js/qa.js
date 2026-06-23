@@ -409,7 +409,7 @@ async function kbRefreshDocs() {
         uploadTime = diffDays === 0 ? '今天上传' : diffDays === 1 ? '1 天前上传' : diffDays + ' 天前上传';
       }
 
-      html += '<div class="kb-card" data-doc-id="' + esc(d.doc_id) + '" onclick="kbCardClick(\'' + escAttr(d.doc_id) + '\')">';
+      html += '<div class="kb-card' + (_donutActiveCategory && d.category === _donutActiveCategory ? ' pinned' : '') + '" data-doc-id="' + esc(d.doc_id) + '" onclick="kbCardClick(\'' + escAttr(d.doc_id) + '\')">';
       // 1. 标题行
       html += '<div class="cbar">';
       html += '<span class="ctitle" title="' + esc(d.filename) + '">' + esc(d.filename) + '</span>';
@@ -577,8 +577,9 @@ function _kbRenderCategoryTree(docs) {
     var isSel = _kbActiveTagFilter === catName;
     var cls = 'kb-tag cat' + (isSel ? ' sel' : '');
     var escapedCat = catName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    var dotColor = _DONUT_COLORS[ci % _DONUT_COLORS.length];
     html += '<div class="' + cls + '" data-tag="' + esc(catName) + '" onclick="kbFilterByTag(\'' + escapedCat + '\',this)">' +
-      '<span class="dot"></span>' + esc(catName) +
+      '<span class="dot" style="background:' + dotColor + '"></span>' + esc(catName) +
       '<span class="cnt">' + count + '</span></div>';
   }
 
@@ -712,7 +713,7 @@ function _kbRefreshOverviewStatsOnly() {
 
 
 // P6: 环形图颜色表（10色，聚类≤10）
-var _DONUT_COLORS = ['#7F77DD','#378ADD','#1E9EBF','#639922','#A3B727','#EF9F27','#E05561','#C7528D','#6460B8','#6E8FA8'];
+var _DONUT_COLORS = ['#7F77DD','#4F8CC9','#3DA89E','#6BA845','#DA9A2E','#D95468','#8B5CF6','#3B82C4','#5C8A5A','#C97D60'];
 var _donutActiveCategory = null;
 var _kbLastInsightData = null;
 var _kbLastDocsOrigOrder = null;
@@ -746,7 +747,7 @@ function _kbRenderInsightDashboard(data) {
   var totalDocs = catEntries.reduce(function(s,c){ return s + c.count; }, 0);
   if (totalDocs === 0) totalDocs = docCount;
 
-  var donutSize = 78, donutR = 31, donutCx = 39, donutCy = 39, donutInner = 18;
+  var donutSize = 100, donutR = 44, donutCx = 50, donutCy = 50, donutInner = 24;
   var donutSvg = '<svg class="kb-dash-donut-svg" viewBox="0 0 ' + donutSize + ' ' + donutSize + '" width="' + donutSize + '" height="' + donutSize + '">';
   var angle = -Math.PI / 2;
   for (var ci = 0; ci < catEntries.length; ci++) {
@@ -761,13 +762,14 @@ function _kbRenderInsightDashboard(data) {
     angle = ea;
   }
   donutSvg += '<circle cx="' + donutCx + '" cy="' + donutCy + '" r="' + donutInner + '" fill="var(--bg-primary, #fff)"/>';
-  donutSvg += '<text x="' + donutCx + '" y="' + (donutCy - 2) + '" text-anchor="middle" class="kb-dash-donut-center" font-size="15">' + totalDocs + '</text>';
-  donutSvg += '<text x="' + donutCx + '" y="' + (donutCy + 9) + '" text-anchor="middle" class="kb-dash-donut-sub">篇</text>';
+  donutSvg += '<text x="' + donutCx + '" y="' + (donutCy - 3) + '" text-anchor="middle" class="kb-dash-donut-center" font-size="18">' + totalDocs + '</text>';
+  donutSvg += '<text x="' + donutCx + '" y="' + (donutCy + 11) + '" text-anchor="middle" class="kb-dash-donut-sub">篇</text>';
   donutSvg += '</svg>';
 
   var legendHtml = '<div class="kb-dash-donut-legend">';
   for (var li = 0; li < catEntries.length; li++) {
-    legendHtml += '<div class="kb-dash-donut-legend-item"><span class="kb-dash-donut-dot" style="background:' + _DONUT_COLORS[li % _DONUT_COLORS.length] + '"></span>' + esc(catEntries[li].name) + ' <span class="kb-dash-donut-count">' + catEntries[li].count + '</span></div>';
+    var legendCatName = catEntries[li].name;
+    legendHtml += '<div class="kb-dash-donut-legend-item" onclick="_kbDonutLegendClick(\'' + escAttr(legendCatName) + '\')"><span class="kb-dash-donut-dot" style="background:' + _DONUT_COLORS[li % _DONUT_COLORS.length] + '"></span>' + esc(legendCatName) + ' <span class="kb-dash-donut-count">' + catEntries[li].count + '</span></div>';
   }
   legendHtml += '</div>';
 
@@ -775,7 +777,7 @@ function _kbRenderInsightDashboard(data) {
   if (questions.length > 0) {
     asksHtml = '<div class="kb-dash-divider"></div><div class="kb-dash-asks">';
     for (var qi = 0; qi < questions.length; qi++) {
-      asksHtml += '<button class="kb-dash-ask" onclick="_kbDashAsk(\'' + escAttr(questions[qi]) + '\')"><span class="kb-dash-ask-rank">' + (qi + 1) + '</span>' + esc(questions[qi]) + '</button>';
+      asksHtml += '<button class="kb-dash-ask" title="' + escAttr(questions[qi]) + '" onclick="_kbDashAsk(\'' + escAttr(questions[qi]) + '\')"><span class="kb-dash-ask-rank">' + (qi + 1) + '</span>' + esc(questions[qi]) + '</button>';
     }
     asksHtml += '</div>';
   }
@@ -808,9 +810,25 @@ function _kbDonutSliceClick(el) {
   }
   var cached = _kbLastInsightData;
   if (cached) _kbRenderInsightDashboard(cached);
+  // 同步侧栏选中状态
+  _kbActiveTagFilter = _donutActiveCategory;
   _kbSortDocsByCategory(_donutActiveCategory);
 }
 window._kbDonutSliceClick = _kbDonutSliceClick;
+
+function _kbDonutLegendClick(catName) {
+  if (_donutActiveCategory === catName) {
+    _donutActiveCategory = null;
+  } else {
+    _donutActiveCategory = catName;
+  }
+  var cached = _kbLastInsightData;
+  if (cached) _kbRenderInsightDashboard(cached);
+  // 同步侧栏选中状态
+  _kbActiveTagFilter = _donutActiveCategory;
+  _kbSortDocsByCategory(_donutActiveCategory);
+}
+window._kbDonutLegendClick = _kbDonutLegendClick;
 
 function _kbSortDocsByCategory(matchCat) {
   if (!matchCat) {
@@ -826,6 +844,16 @@ function _kbSortDocsByCategory(matchCat) {
       else rest.push(_kbLastDocs[i]);
     }
     _kbLastDocs = matched.concat(rest);
+  }
+  // 更新排序提示条
+  var tipEl = document.getElementById('kbGridSectionTip');
+  if (tipEl) {
+    if (matchCat) {
+      tipEl.innerHTML = '按「' + esc(matchCat) + '」排序置顶 · <a href="#" onclick="_kbSortDocsByCategory(null);return false">取消</a>';
+      tipEl.classList.add('show');
+    } else {
+      tipEl.classList.remove('show');
+    }
   }
   _kbSkipFetch = true;
   kbRefreshDocs();

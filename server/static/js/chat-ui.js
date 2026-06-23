@@ -19,10 +19,20 @@ function _restoreChatUI() {
 
 // ===== 消息一键复制 =====
 function copyMsgContent(btn) {
-  var wrap = btn.closest('.msg-copy-wrap');
-  if (!wrap) return;
-  var clone = wrap.cloneNode(true);
-  var removeSelectors = ['.ts', 'details', '.stats', '.msg-copy-btn'];
+  // 优先从正文区 .stream-content 取文本（与流式/历史结构一致）；
+  // fallback 到旧的 .msg-copy-wrap 行为。
+  var msgEl = btn.closest('.msg');
+  var sourceEl = null;
+  if (msgEl) {
+    sourceEl = msgEl.querySelector('.stream-content');
+  }
+  if (!sourceEl) {
+    var wrap = btn.closest('.msg-copy-wrap');
+    if (!wrap) return;
+    sourceEl = wrap;
+  }
+  var clone = sourceEl.cloneNode(true);
+  var removeSelectors = ['.ts', 'details', '.stats', '.msg-copy-btn', '.msg-footer', '.card-area', '.kb-sources-bar', '.doc-download-bar', '.msg-file-tag'];
   removeSelectors.forEach(function(sel) {
     var els = clone.querySelectorAll(sel);
     els.forEach(function(el) { el.remove(); });

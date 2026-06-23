@@ -309,6 +309,7 @@
               <div class="s-title">
                 <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v4M7 9.5h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
                 AI 洞察
+                <span class="kb-insight-badge">结构报告</span>
               </div>
               <button class="s-refresh" onclick="kbRefreshOverviewLLM()" id="kbRefreshBtn">
                 <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -319,6 +320,12 @@
             <div class="s-meta"><span id="kbOverviewSource"></span><span class="dot"></span><span id="kbOverviewDocCount"></span><span class="dot"></span><span id="kbOverviewUpdated"></span></div>
           </div>
 
+          <!-- 文档网格过渡标头 (v2) -->
+          <div class="kb-grid-section-hdr" id="kbGridSectionHdr">
+            <span class="kb-grid-section-hdr-text">文档档案</span>
+            <span class="kb-grid-section-hdr-line"></span>
+            <span class="kb-grid-section-tip" id="kbGridSectionTip"></span>
+          </div>
           <!-- 文档卡片网格 -->
           <div class="kb-grid" id="kbDocGrid"></div>
 
