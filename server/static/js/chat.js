@@ -888,7 +888,18 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   }
 
   // 只更新 #stream-content，不碰时间线/面板/下载栏
+  // 修复：思考态计时器保持连续——重建 innerHTML 前保存已有 timer 的 start 值，重建后恢复
+  var _prevTimerStart = 0;
+  if (isThinking && !_isGenerating) {
+    var _prevTimer = contentEl.querySelector('.thinking-timer');
+    if (_prevTimer) _prevTimerStart = parseInt(_prevTimer.getAttribute('data-start') || '0', 10);
+  }
   contentEl.innerHTML = html;
+  // 恢复计时器 start 值（避免每个 token 重置为 Date.now()）
+  if (_prevTimerStart && isThinking && !_isGenerating) {
+    var _newTimer = contentEl.querySelector('.thinking-timer');
+    if (_newTimer) _newTimer.setAttribute('data-start', _prevTimerStart);
+  }
 
   if (!userScrolledUp) {
     el.scrollTop = el.scrollHeight;
@@ -2626,14 +2637,17 @@ var CardRenderer = (function() {
     var cardData = [];
     for (var id in _steps) {
       var s = _steps[id];
-      cardData.push({
+      var item = {
         id: id,
         label: s.label,
         status: s.status,
         elapsed_ms: s.elapsed_ms || null,
         count: s.count || null,
         channel: s.channel || null
-      });
+      };
+      // 序列化产出内容（transform/sources），供 renderHistory 重建
+      if (s.outputData) item.output = s.outputData;
+      cardData.push(item);
     }
     if (cardData.length > 0) {
       newMsg.card_data = cardData;
@@ -2661,7 +2675,6 @@ var CardRenderer = (function() {
     for (var i = 0; i < m.card_data.length; i++) {
       var s = m.card_data[i];
       var dotCls = _dotClass(s.status);
-      var icon = STEP_ICONS[s.id] || 'check';
       var elapsedTxt = s.elapsed_ms != null ? _formatElapsed(s.elapsed_ms) : '';
       var countTxt = s.count != null ? '(' + s.count + '篇)' : '';
       html += '<div class="cb-step" data-status="' + s.status + '">' +
@@ -2670,8 +2683,12 @@ var CardRenderer = (function() {
                   '<span class="cb-label">' + _esc(s.label) + '</span>' +
                   (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
                   (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : '') +
-                '</div>' +
-              '</div>';
+                '</div>';
+      // 重建产出区（transform/sources）
+      if (s.output) {
+        html += _renderOutputHtml(s.output);
+      }
+      html += '</div>';
     }
     html += '</div>';
     return html;
@@ -2745,10 +2762,38 @@ var CardRenderer = (function() {
     return ms + 'ms';
   }
 
+  // 把 output 数据转成 HTML（流式和历史回放共用，保证 DOM 同构）
+  function _renderOutputHtml(output) {
+    if (!output || !output.type) return '';
+    if (output.type === 'transform') {
+      var hl = output.changed ? ' hl' : '';
+      return '<div class="cb-output"><div class="cb-transform">' +
+        '<div class="cb-tf-row"><span class="cb-tf-key">原问题</span><span class="cb-tf-val">' + _esc(output.original) + '</span></div>' +
+        '<div class="cb-tf-row"><span class="cb-tf-key">改写为</span><span class="cb-tf-val' + hl + '">' + _esc(output.result) + '</span></div>' +
+      '</div></div>';
+    }
+    if (output.type === 'sources' && output.sources && output.sources.length) {
+      var items = '';
+      for (var i = 0; i < output.sources.length; i++) {
+        var src = output.sources[i];
+        items += '<div class="cb-src"><div class="cb-src-head">' +
+          '<span class="cb-src-num">' + (i + 1) + '</span>' +
+          '<span class="cb-src-label">' + _esc(src.label || src.source_label || '?') + '</span>' +
+          '</div>' +
+          '<div class="cb-src-snippet">' + _esc((src.snippet || src.text_snippet || '').slice(0, 100)) + '</div>' +
+        '</div>';
+      }
+      return '<div class="cb-output"><div class="cb-sources">' + items + '</div></div>';
+    }
+    return '';
+  }
+
   // transform 产出（reformulate 改写对比）
   function _setTransformOutput(stepId, original, result, changed, elapsed) {
     var s = _steps[stepId];
     if (!s || !s.el) return;
+    // 存储产出数据（供 finalize 序列化 + renderHistory 重建）
+    s.outputData = {type: 'transform', original: original, result: result, changed: changed};
     var out = s.el.querySelector('.cb-output');
     if (!out) {
       out = document.createElement('div');
@@ -2756,7 +2801,6 @@ var CardRenderer = (function() {
       s.el.appendChild(out);
     }
     var hlCls = changed ? ' hl' : '';
-    var elapsedTxt = elapsed != null ? ' · ' + elapsed + 's' : '';
     out.innerHTML = '<div class="cb-transform">' +
       '<div class="cb-tf-row"><span class="cb-tf-key">原问题</span><span class="cb-tf-val">' + _esc(original) + '</span></div>' +
       '<div class="cb-tf-row"><span class="cb-tf-key">改写为</span><span class="cb-tf-val' + hlCls + '">' + _esc(result) + '</span></div>' +
@@ -2767,6 +2811,8 @@ var CardRenderer = (function() {
   function _setSourcesOutput(stepId, sources) {
     var s = _steps[stepId];
     if (!s || !s.el || !sources || !sources.length) return;
+    // 存储产出数据
+    s.outputData = {type: 'sources', sources: sources};
     var out = s.el.querySelector('.cb-output');
     if (!out) {
       out = document.createElement('div');
