@@ -764,9 +764,17 @@ function _kbRenderInsightDashboard(data) {
     var sa = angle, ea = angle + sliceAngle;
     var x1 = donutCx + donutR * Math.cos(sa), y1 = donutCy + donutR * Math.sin(sa);
     var x2 = donutCx + donutR * Math.cos(ea), y2 = donutCy + donutR * Math.sin(ea);
-    var large = (ea - sa) > Math.PI ? 1 : 0;
     var isActive = _donutActiveCategory === cc.name;
-    donutSvg += '<path class="kb-donut-slice' + (isActive ? ' donut-active' : '') + '" data-cat="' + escAttr(cc.name) + '" d="M' + donutCx + ' ' + donutCy + ' L' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' A' + donutR + ' ' + donutR + ' 0 ' + large + ' 1 ' + x2.toFixed(1) + ' ' + y2.toFixed(1) + ' Z" fill="' + (_DONUT_COLORS[ci % _DONUT_COLORS.length]) + '" opacity=".88" onclick="_kbDonutSliceClick(this)" style="cursor:pointer"/>';
+    // Fix: 单分类全圆时用双弧避免 SVG 退化
+    var d;
+    if (sliceAngle >= 2 * Math.PI - 0.001) {
+      var xm = donutCx + donutR * Math.cos(sa + Math.PI), ym = donutCy + donutR * Math.sin(sa + Math.PI);
+      d = 'M' + donutCx + ' ' + donutCy + ' L' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' A' + donutR + ' ' + donutR + ' 0 1 0 ' + xm.toFixed(1) + ' ' + ym.toFixed(1) + ' A' + donutR + ' ' + donutR + ' 0 1 0 ' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' Z';
+    } else {
+      var large = (ea - sa) > Math.PI ? 1 : 0;
+      d = 'M' + donutCx + ' ' + donutCy + ' L' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' A' + donutR + ' ' + donutR + ' 0 ' + large + ' 1 ' + x2.toFixed(1) + ' ' + y2.toFixed(1) + ' Z';
+    }
+    donutSvg += '<path class="kb-donut-slice' + (isActive ? ' donut-active' : '') + '" data-cat="' + escAttr(cc.name) + '" d="' + d + '" fill="' + (_DONUT_COLORS[ci % _DONUT_COLORS.length]) + '" opacity=".88" onclick="_kbDonutSliceClick(this)" style="cursor:pointer"/>';
     angle = ea;
   }
   donutSvg += '<circle cx="' + donutCx + '" cy="' + donutCy + '" r="' + donutInner + '" fill="var(--bg-primary, #fff)"/>';
