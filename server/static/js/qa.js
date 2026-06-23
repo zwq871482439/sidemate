@@ -851,34 +851,35 @@ async function kbRefreshAIOverview() {
   var bodyEl = document.getElementById('kbOverviewBody');
   if (!bodyEl) return;
 
+  // P6: 始终先从服务端取最新洞察，localStorage 仅离线 fallback
   var cachedInsight = null, cachedCats = null, cachedQuestions = null, cachedCount = 0;
   try {
-    var _ci = localStorage.getItem('kb_ai_insight');
-    if (_ci) cachedInsight = _ci;
-    var _cc = localStorage.getItem('kb_ai_cats');
-    if (_cc) cachedCats = JSON.parse(_cc);
-    var _cq = localStorage.getItem('kb_ai_questions');
-    if (_cq) cachedQuestions = JSON.parse(_cq);
-    var _cn = localStorage.getItem('kb_ai_count');
-    if (_cn) cachedCount = parseInt(_cn, 10);
+    var _sr = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh');
+    var _sd = await _sr.json();
+    if (_sd.insight && Object.keys(_sd.categories || {}).length > 0) {
+      cachedInsight = _sd.insight;
+      cachedCats = _sd.categories || {};
+      cachedQuestions = _sd.suggested_questions || [];
+      cachedCount = _sd.doc_count || 0;
+      try {
+        localStorage.setItem('kb_ai_insight', cachedInsight);
+        localStorage.setItem('kb_ai_cats', JSON.stringify(cachedCats));
+        localStorage.setItem('kb_ai_questions', JSON.stringify(cachedQuestions));
+        localStorage.setItem('kb_ai_count', String(cachedCount));
+      } catch(e) {}
+    }
   } catch(e) {}
-
-  if (!cachedInsight || !cachedCats) {
+  // 服务端无数据 fallback
+  if (!cachedInsight) {
     try {
-      var _sr = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh');
-      var _sd = await _sr.json();
-      if (_sd.insight) {
-        cachedInsight = _sd.insight;
-        cachedCats = _sd.categories || {};
-        cachedQuestions = _sd.suggested_questions || [];
-        cachedCount = _sd.doc_count || 0;
-        try {
-          localStorage.setItem('kb_ai_insight', cachedInsight);
-          localStorage.setItem('kb_ai_cats', JSON.stringify(cachedCats));
-          localStorage.setItem('kb_ai_questions', JSON.stringify(cachedQuestions));
-          localStorage.setItem('kb_ai_count', String(cachedCount));
-        } catch(e) {}
-      }
+      var _ci = localStorage.getItem('kb_ai_insight');
+      if (_ci) cachedInsight = _ci;
+      var _cc = localStorage.getItem('kb_ai_cats');
+      if (_cc) cachedCats = JSON.parse(_cc);
+      var _cq = localStorage.getItem('kb_ai_questions');
+      if (_cq) cachedQuestions = JSON.parse(_cq);
+      var _cn = localStorage.getItem('kb_ai_count');
+      if (_cn) cachedCount = parseInt(_cn, 10);
     } catch(e) {}
   }
 
