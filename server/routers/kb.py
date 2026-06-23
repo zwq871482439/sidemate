@@ -2517,40 +2517,9 @@ async def api_kb_overview_refresh(request: Request):
             _run_llm, prompt, max_tokens
         )
 
-    # ==== 第一轮：B3 叙事型洞察 ====
+    # ==== 第一轮：标签归并（先聚类，后洞察）====
     insight = ""
     merges_applied = []
-    try:
-        docs_text = "\n".join(
-            "  《%s》  分类: %s  标签: %s" % (
-                d["title"],
-                d["category"] or "未分类",
-                ", ".join(d["tags"][:6]) if d["tags"] else "",
-            )
-            for d in doc_list
-        )
-        insight_prompt = (
-            "你是一位知识库分析顾问。请阅读以下用户的全部文档，用叙事方式写一段洞察分析（150-250 字）。\n\n"
-            "要求：\n"
-            "1. 发现文档在回答什么问题（不是列举标题，是找隐藏主题）\n"
-            "2. 哪些领域已经形成体系，哪些只是碎片收藏\n"
-            "3. 给出有判断的评价（如「像是看了门还没进去」「恰好覆盖了三个层次」）\n"
-            "4. 如果值得，给一条可执行的补全建议\n"
-            "5. 语气像人在聊天，不要用「您的」「以上」「本文」等书面语\n\n"
-            "文档列表：\n%s\n\n"
-            "洞察分析：" % docs_text
-        )
-        insight = await _run_async(insight_prompt, max_tokens=600)
-
-    except Exception:
-        # LLM 不可用：用分类统计回退
-        parts = ["%s（%d篇）" % (k, v) for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])[:3]]
-        if parts:
-            insight = "你的知识库主要覆盖" + "、".join(parts) + "等领域。"
-        else:
-            insight = "知识库共 %d 篇文档，AI 正在学习标签中。" % doc_count
-
-    # ==== 第二轮：标签归并 ====
     try:
         cats_text = "\n".join(
             "  %s（%d 篇）" % (k, v)
@@ -2560,7 +2529,7 @@ async def api_kb_overview_refresh(request: Request):
             "你是一位知识库分类专家。以下文档的标签过于碎片化，需要归并为 3-5 个宽泛的大类。\n\n"
             "当前标签：\n%s\n\n"
             "要求：\n"
-            "1. 含义相近的标签必须合并（如「中医养生」「中医流派」「中医病机」→ 「中医药」）\n"
+            "1. 含义相近的标签必须合并（如「中医养生」「中医流派」「中医病机」→ 「中医药与养生」）\n"
             "2. 归并到 3-5 个大类，宁少勿多\n"
             "3. 输出纯 JSON 数组，每项格式：{\"new\": \"新标签\", \"from\": [\"旧标签1\", \"旧标签2\"]}\n"
             "4. 不准输出 Markdown，不准加解释文字，只剩 JSON\n\n"
@@ -2610,12 +2579,59 @@ async def api_kb_overview_refresh(request: Request):
     try:
         refreshed = kb.list_documents()
         cat_counts = {}
+        doc_list = []
         for d in refreshed:
             cat = (d.get("category") or "").strip()
             if cat:
                 cat_counts[cat] = cat_counts.get(cat, 0) + 1
+            doc_list.append({
+                "title": d.get("filename", "未知"),
+                "category": cat,
+            })
     except Exception:
         pass
+
+    # ==== 第二轮：基于聚类分布生成洞察 ====
+    try:
+        # 聚类摘要
+        cluster_summary = "、".join(
+            "%s（%d篇）" % (k, v)
+            for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])[:6]
+        ) if cat_counts else "暂无聚类"
+        # 各聚类代表性文档（每类取前 3 篇）
+        cluster_docs = {}
+        for d in doc_list:
+            cat = d["category"] or "未分类"
+            if cat not in cluster_docs:
+                cluster_docs[cat] = []
+            if len(cluster_docs[cat]) < 3:
+                cluster_docs[cat].append(d["title"])
+        cluster_docs_text = "\n".join(
+            "  %s: %s" % (cat, "、".join(titles))
+            for cat, titles in cluster_docs.items()
+        )
+
+        insight_prompt = (
+            "你是一位知识库分析顾问。用户的知识库已按主题自动聚类，请基于聚类分布写一段洞察（150-200 字）。\n\n"
+            "聚类分布：%s\n\n"
+            "各聚类代表性文档：\n%s\n\n"
+            "要求：\n"
+            "1. 指出哪个聚类最成体系，哪个只是碎片收藏\n"
+            "2. 聚类之间有无可打通的交叉点（如「中医药」和「AI」能否用因果分析串联）\n"
+            "3. 如果有明显短板，给一条可执行的补全建议\n"
+            "4. 语气像人在聊天，不要用「您的」「以上」「本文」等书面语\n"
+            "5. 不要评价文档质量，只分析聚类结构和主题关系\n\n"
+            "洞察分析：" % (cluster_summary, cluster_docs_text)
+        )
+        insight = await _run_async(insight_prompt, max_tokens=600)
+
+    except Exception:
+        # LLM 不可用：用分类统计回退
+        parts = ["%s（%d篇）" % (k, v) for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])[:3]]
+        if parts:
+            insight = "你的知识库主要覆盖" + "、".join(parts) + "等领域。"
+        else:
+            insight = "知识库共 %d 篇文档，AI 正在学习标签中。" % doc_count
 
     # ==== 持久化洞察到文件（刷新页面不丢失）====
     try:
