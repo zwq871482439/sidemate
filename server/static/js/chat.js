@@ -727,8 +727,13 @@ function _renderSingleMsg(m, idx) {
   }
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
-  // 每条消息自主判断有无工具链，不做全局 live 判断（timerline 容器已由 stream-content 隔离保护）
-  var timelineHtml = _buildAgentTimelineHtml(m.agent_timeline);
+  // 阶段3 Step2b：CardRenderer 历史回放（优先读 card_data，旧消息 fallback 到 agent_timeline）
+  var timelineHtml = '';
+  if (m.card_data) {
+    timelineHtml = CardRenderer.renderHistory(m);
+  } else if (m.agent_timeline) {
+    timelineHtml = _buildAgentTimelineHtml(m.agent_timeline);  // 旧消息兼容
+  }
   var html = '<div class="msg-copy-wrap">'
     + timelineHtml + _buildKbSources(m) + actionTag + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
@@ -1089,6 +1094,10 @@ async function sendMessage() {
   window._parallelLastStatus = {};  // P6 打磨：重置云端状态去重
 
   appendStreamingMsg('', '', 0, null, true);
+  // 阶段3 Step2b：CardRenderer 重置 + 挂载到 #stream-msg
+  CardRenderer.reset();
+  var _streamMsgEl = document.getElementById('stream-msg');
+  if (_streamMsgEl) CardRenderer.mount(_streamMsgEl);
   var msgEl = document.getElementById('messages');
   msgEl.scrollTop = msgEl.scrollHeight;
 
@@ -1274,23 +1283,21 @@ async function sendMessage() {
             lastRender = now;
           } else if (d.type === 'pipeline_progress' || d.type === 'step' || d.type === 'step_done' ||
                      d.type === 'phase' || d.type === 'status') {
-            // P6 打磨：并行模式工具链事件 → 统一路由
-            if (typeof _handleParallelSSE === 'function') _handleParallelSSE(d);
-          // P6 打磨：并行模式 stream 事件（带 channel 字段：local/cloud/merge）
+            // 阶段3 Step2b：切换到 CardRenderer（旧 _handleParallelSSE 保留备用，Step2c 删除）
+            CardRenderer.handleEvent(d);
+          // 并行模式 stream 事件（带 channel 字段：local/cloud/merge）
           } else if (d.type === 'stream') {
             var ch = d.channel || 'merge';
             if (!window._parallelChannelTexts) window._parallelChannelTexts = {};
             if (!window._parallelChannelTexts[ch]) window._parallelChannelTexts[ch] = '';
             window._parallelChannelTexts[ch] += d.content || '';
-            // 流式渲染到对应 timeline 步骤的内容区
-            _renderParallelChannelContent(ch, window._parallelChannelTexts[ch], d.content || '');
-            // 同步更新 fullText（最终 DONE 需要用到）
+            // 阶段3 Step2b：CardRenderer 渲染双列流式（替代 _renderParallelChannelContent）
+            CardRenderer.handleStream(d);
+            // 同步更新 fullText（最终 DONE 需要用到）—— 必须保留
             if (ch === 'merge') fullText = window._parallelChannelTexts[ch];
           } else if (d.type === 'sources') {
-            // P6 打磨：检索结果展示
-            var srcCh = d.channel || 'local';
-            var srcItems = d.items || [];
-            _renderParallelSources(srcCh, srcItems);
+            // 阶段3 Step2b：检索结果 → CardRenderer（替代 _renderParallelSources）
+            CardRenderer.handleEvent(d);
           } else if (d.type === 'token') {
             fullText += d.content;
             // P6 打磨：思考→回答无缝过渡，只改文案不变DOM结构
@@ -1476,12 +1483,11 @@ async function sendMessage() {
                 streamEl2.appendChild(warnDiv);
               }
             }
-          // P6 T04: AgentTimeline SSE 事件处理
+          // 阶段3 Step2b：AgentTimeline/KB事件 → CardRenderer（旧 _handle* 保留备用）
           } else if (d.type === 'agent_timeline') {
-            _handleAgentTimelineSSE(d);
-          // P6 打磨：KB 改写结果展示在分析问题步骤下
+            CardRenderer.handleEvent(d);
           } else if (d.type === 'kb_reformulate') {
-            _handleKbReformulate(d);
+            CardRenderer.handleEvent(d);
           // Patch2 A5: Research Action SSE 事件
           } else if (d.type === 'search') {
             _appendResearchCard('search', d.query, d.results_count);
@@ -1554,19 +1560,19 @@ async function sendMessage() {
                 agentSteps4.appendChild(fileDiv);
               }
             }
-          // ===== Cloud Agent 新事件（agent_status / agent_summary / agent_think）=====
+          // ===== Cloud Agent 事件 → CardRenderer（保留 doc progress 副作用）=====
           } else if (d.type === 'agent_status') {
-            _handleAgentStatus(d);
-            // Patch4 v3：write_workspace 写入 .md 文件 → 进度面板显示"写作中"
+            // 阶段3 Step2b：CardRenderer 处理工具调用展示
+            CardRenderer.handleEvent(d);
+            // Patch4 v3：write_workspace 写入 .md 文件 → 进度面板显示"写作中"（副作用，必须保留）
             if (d.status === 'workspace_write_done' && typeof _handleDocProgressEvent === 'function') {
               var _wwName = d.name || d.path || '';
               if (_wwName && _wwName.toLowerCase().endsWith('.md')) {
-                // 字数从后端 done status 传来
                 _handleDocProgressEvent('write_workspace_md', {filename: _wwName, words: d.words || d.size || 0});
               }
             }
           } else if (d.type === 'agent_summary') {
-            _handleAgentSummary(d);
+            CardRenderer.handleEvent(d);
           } else if (d.type === 'agent_think') {
             // 新版 agent_think 事件（data = {content: string}）
             // 复用现有 think 机制
@@ -1633,7 +1639,9 @@ async function sendMessage() {
             showToast(d.message || '操作出错', 'error');
           // KB 引用来源 — P6 打磨：注入到搜索步骤的 .agent-tl-content，不再单独渲染 kb-sources-bar
           } else if (d.type === 'kb_sources') {
-            _injectStepContent('search', d.sources || [], 'kb');
+            // 阶段3 Step2b：CardRenderer 渲染检索来源（替代 _injectStepContent）
+            window._kbSources = d.sources || [];  // 持久化用，必须保留
+            CardRenderer.handleEvent(d);
           } else if (d.type === 'kb_no_reference') {
             showToast('未找到相关文库内容', 'info');
           // 文档提纲确认（Phase 1 完成后）
@@ -1733,11 +1741,13 @@ async function sendMessage() {
       var streamEl4 = document.getElementById('stream-msg');
       if (streamEl4) {
         streamEl4.removeAttribute('id');
-        // 清理子元素的 id，防止第二轮 timeline 找错容器
+        // 阶段3 Step2b：清理 #card-area id（新渲染器）+ #agent-timeline（旧，兼容）
+        var _oldCard = streamEl4.querySelector('#card-area');
+        if (_oldCard) _oldCard.removeAttribute('id');
         var _oldTl = streamEl4.querySelector('#agent-timeline');
         if (_oldTl) _oldTl.removeAttribute('id');
       }
-      // 彻底清掉引用，确保 renderMessages 从 m.agent_timeline 数据重建时间线
+      // 彻底清掉引用，确保 renderMessages 从数据重建
       _agentTimelineEl = null;
 
       // 计算要持久化的内容：正常输出 / 中止时已有内容 / 错误消息
@@ -1791,9 +1801,11 @@ async function sendMessage() {
           newMsg.kb_sources = window._kbSources;
           window._kbSources = null;
         }
-        // 如果有 Agent 时间线数据，保存到消息里（最终渲染时恢复）
+        // 阶段3 Step2b：CardRenderer 序列化卡片数据（替代 agent_timeline 持久化）
+        CardRenderer.finalize(newMsg);
+        // 旧 agent_timeline 兼容（Step2c 删除）
         if (_agentTimelineData.length > 0) {
-          newMsg.agent_timeline = _agentTimelineData.slice();  // 复制一份
+          newMsg.agent_timeline = _agentTimelineData.slice();
           _agentTimelineData = [];
         }
         // 保存真实 token 统计（从云端 API usage 返回）
@@ -1817,6 +1829,8 @@ async function sendMessage() {
             } else {
               // 正常完成：enrich 更新最后一条 assistant 消息的补充字段
               var _enrichFields = {};
+              if (newMsg.card_data) _enrichFields.card_data = newMsg.card_data;
+              if (newMsg.parallel_texts) _enrichFields.parallel_texts = newMsg.parallel_texts;
               if (newMsg.agent_timeline) _enrichFields.agent_timeline = newMsg.agent_timeline;
               if (newMsg.token_stats) _enrichFields.token_stats = newMsg.token_stats;
               if (newMsg.kb_sources) _enrichFields.kb_sources = newMsg.kb_sources;
