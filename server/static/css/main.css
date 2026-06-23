@@ -2147,5 +2147,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 
 /* 摘要（agent_summary） */
 .cb-summary { padding:6px 10px; margin:4px 0; background:var(--bg-secondary); border-radius:4px; font-size:11px; color:var(--text-muted); }
+/* 提示文案（并行 fallback mode_hint） */
+.cb-hint { padding:6px 10px; margin:4px 0; background:var(--bg-info); border-radius:4px; font-size:11px; color:var(--text-info); border-left:2px solid var(--info-border-color); }
 
 

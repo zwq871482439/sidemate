@@ -1309,6 +1309,9 @@ async function sendMessage() {
           } else if (d.type === 'sources') {
             // 阶段3 Step2b：检索结果 → CardRenderer（替代 _renderParallelSources）
             CardRenderer.handleEvent(d);
+          } else if (d.type === 'mode_hint') {
+            // 模块1修复：并行模式 mode_hint 不再静默丢弃（fallback 分支的提示文案）
+            CardRenderer.handleEvent(d);
           } else if (d.type === 'token') {
             fullText += d.content;
             // P6 打磨：思考→回答无缝过渡，只改文案不变DOM结构
@@ -2592,6 +2595,12 @@ var CardRenderer = (function() {
       return;
     }
 
+    // mode_hint 事件（并行 fallback 分支的提示文案）
+    if (t === 'mode_hint') {
+      _addHint(d.message || '');
+      return;
+    }
+
     // agent_summary 事件
     if (t === 'agent_summary') {
       _addSummary(d);
@@ -2972,6 +2981,16 @@ var CardRenderer = (function() {
     var fetches = d.fetches || 0;
     sumDiv.innerHTML = '<span class="cb-summary-text">共搜索 ' + searches + ' 次 · 阅读 ' + fetches + ' 篇</span>';
     _container.appendChild(sumDiv);
+  }
+
+  // 提示文案（并行 fallback 分支的 mode_hint）
+  function _addHint(message) {
+    if (!_container || !message) return;
+    var hintDiv = document.createElement('div');
+    hintDiv.className = 'cb-hint';
+    hintDiv.textContent = message;
+    _container.appendChild(hintDiv);
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
   // 历史回放：并行双列摘要

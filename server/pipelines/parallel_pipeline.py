@@ -616,6 +616,13 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     else:
         merge_text = "两个来源均未返回有效结果"
 
+    # fallback 分支补发 merge stream（模块1修复：避免前端 fullText 为空显示错误兜底）
+    # 正常分支（两边都有）已通过上面的流式 yield 发了 merge stream；
+    # 但三个 fallback 分支只发 mode_hint 不发 stream，导致前端 fullText 累加不到内容，
+    # done 时显示"模型未返回任何内容"。这里统一补发。
+    if not (local_has and cloud_has):
+        yield _sse_channel_event("merge", "stream", {"content": merge_text})
+
     # 融合 done（Step 化）
     step_merge.mark_done()
     yield step_to_sse(step_merge, "done")
