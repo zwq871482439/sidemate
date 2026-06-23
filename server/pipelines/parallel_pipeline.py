@@ -18,7 +18,7 @@ pipelines/parallel_pipeline.py — 并行模式管道（P6）
 
 设计要点：
   - SSE 事件包含 channel 字段（local/cloud/merge/progress）
-  - 双线记忆：memory_local=融合结果F, memory_cloud=云端回答C
+  - 双线记忆：memory_local=本地原始回答摘要(≤200字), memory_cloud=云端原始回答C
   - 错误处理：任何一列出错时另一列继续
   - 超时：本地60s，云端30s
   - 双线程实时流式：两个线程各自通过 Queue 实时推送 token
@@ -102,6 +102,43 @@ def _build_cloud_history(history_raw: list) -> list:
             if cloud_content:
                 cloud_hist.append({"role": "assistant", "content": cloud_content})
     return cloud_hist
+
+
+def _summarize_local_answer(local_answer: str, user_msg: str, mgr, max_chars: int = 300) -> str:
+    """把本地列原始回答摘要化（≤300字），用于存入 memory_local。
+
+    背景：8K 窗口下，本地原始回答全文（1500-3000字）撑不过 1-2 轮。决策（澄清1方案d）：
+    下一轮本地列看"自己原始回答的摘要"，不看全文，也不看融合结果（保持双线隔离 +
+    本地独立性）。摘要只用于下一轮上下文注入，不影响展示用的 content（融合结果）。
+
+    实现：包装 offline_compress_with_model，把 [user_msg, local_answer] 喂进去做摘要。
+    该函数 prompt 写"不超过200字"，比 max_chars 更保守，更省 token，符合"摘要"语义。
+
+    Args:
+        local_answer: 本地列原始回答全文
+        user_msg: 当轮用户提问（让模型有上下文，否则不知摘要对象）
+        mgr: ModelManager 实例
+        max_chars: 截断兜底的上限（摘要失败时用）
+
+    Returns:
+        str — 摘要文本。任何失败都 fallback 到截断 local_answer[:max_chars]，保证总有输出。
+    """
+    if not local_answer or len(local_answer) <= max_chars:
+        return local_answer or ""
+    try:
+        from common.context_compressor import offline_compress_with_model
+        messages = [
+            {"role": "user", "content": user_msg},
+            {"role": "assistant", "content": local_answer},
+        ]
+        summary = offline_compress_with_model(messages, model_manager=mgr)
+        if summary and len(summary) >= 10:
+            return summary
+        # 模型输出太短或失败，fallback 截断
+        return local_answer[:max_chars]
+    except Exception as e:
+        log.warning("[PARALLEL] memory_local 摘要失败, fallback 截断: %s", str(e)[:80])
+        return local_answer[:max_chars]
 
 
 def _run_local_column(ctx, query: str, q: queue.Queue, local_model: str = None, local_history: list = None):
@@ -595,7 +632,11 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
 
     try:
         from session.chat_store import save_chat
+        from session.context_cache import update_session_cache
         ts = time.strftime("%H:%M:%S")
+        # 子任务C: memory_local 摘要化（澄清1方案d）。下一轮本地列看摘要而非全文，
+        # 释放 8K 窗口空间。保留 memory_local_full 全文供调试。
+        _memory_local_summary = _summarize_local_answer(local_answer, message, mgr)
         messages = history_raw + [
             {"role": "user", "content": message, "ts": ts},
             {"role": "assistant",
@@ -605,14 +646,20 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
              "chars": len(final_response),
              "time": elapsed,
              "task_type": "parallel",
-             # P6 审计修复 C6：memory_local 存本地原始回答（非融合结果）
-             # 防止下一轮本地列收到混淆了云端内容的"历史回答"
-             "memory_local": local_answer or "",
+             # P6 审计修复 C6：memory_local 存本地原始回答（非融合结果）防止下一轮混淆。
+             # 重构阶段1-C：改为存摘要(≤200字)释放窗口空间。全文存 memory_local_full。
+             "memory_local": _memory_local_summary,
+             "memory_local_full": (local_answer or "") if _memory_local_summary != (local_answer or "") else None,
              "memory_cloud": cloud_answer or "",
              "agent_timeline": agent_timeline,
              },
         ]
-        save_chat(chat_file, messages)
+        # 子任务C: 接入 session 压缩（复刻 local_pipeline/_base 范式）。
+        # 原并行模式根本没调 update_session_cache，历史无限堆积。
+        new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
+        if did_compress:
+            yield sse_event("compress", {"msg": "正在压缩旧对话..."})
+        save_chat(chat_file, messages, context_cache=new_cache)
         _saved = True
     except Exception as e:
         log.warning("[PARALLEL] 保存对话失败: %s", str(e)[:80])
