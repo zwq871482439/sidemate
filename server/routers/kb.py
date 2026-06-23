@@ -2530,7 +2530,7 @@ async def api_kb_overview_refresh(request: Request):
             "当前标签：\n%s\n\n"
             "要求：\n"
             "1. 含义相近的标签必须合并（如「中医养生」「中医流派」「中医病机」→ 「中医药与养生」）\n"
-            "2. 归并到 3-5 个大类，宁少勿多\n"
+            "2. 归并到 3-5 个大类，最多不超过 10 个，宁少勿多\n"
             "3. 输出纯 JSON 数组，每项格式：{\"new\": \"新标签\", \"from\": [\"旧标签1\", \"旧标签2\"]}\n"
             "4. 不准输出 Markdown，不准加解释文字，只剩 JSON\n\n"
             "归并方案 JSON：" % cats_text
@@ -2624,9 +2624,26 @@ async def api_kb_overview_refresh(request: Request):
             "- 禁止书面语套话（不说「您的」「以上」「本文」「综上所述」）\n"
             "- 只描述知识结构、缺失和补全路径\n"
             "- 语气像同事在白板上画架构图，不做老师批改作业\n\n"
+            "分析结束后，另起一行输出 [QUESTIONS]，紧接着输出 3 条建议追问的 JSON 数组：\n"
+            "[\"追问1\", \"追问2\", \"追问3\"]\n\n"
             "洞察分析：" % (cluster_summary, cluster_docs_text)
         )
         insight = await _run_async(insight_prompt, max_tokens=600)
+
+        # 解析 suggested_questions
+        suggested_questions = []
+        if "[QUESTIONS]" in insight:
+            try:
+                _parts = insight.split("[QUESTIONS]", 1)
+                insight = _parts[0].strip()
+                _q_raw = _parts[1].strip()
+                _start = _q_raw.index("[")
+                _end = _q_raw.rindex("]") + 1
+                _parsed = json.loads(_q_raw[_start:_end])
+                if isinstance(_parsed, list) and all(isinstance(q, str) for q in _parsed):
+                    suggested_questions = _parsed[:3]
+            except Exception:
+                pass
 
     except Exception:
         # LLM 不可用：用分类统计回退
@@ -2646,6 +2663,7 @@ async def api_kb_overview_refresh(request: Request):
                 "insight": insight,
                 "doc_count": doc_count,
                 "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
+                "suggested_questions": suggested_questions,
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             }, _f, ensure_ascii=False)
     except Exception:
@@ -2657,4 +2675,5 @@ async def api_kb_overview_refresh(request: Request):
         "doc_count": doc_count,
         "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
         "merges_applied": merges_applied,
+        "suggested_questions": suggested_questions,
     }
