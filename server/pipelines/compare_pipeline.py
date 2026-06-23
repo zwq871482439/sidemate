@@ -28,8 +28,6 @@ import queue
 from typing import Generator
 from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 
-from config import MAX_OUTPUT_TOKENS
-
 log = logging.getLogger(__name__)
 
 
@@ -108,10 +106,12 @@ def _run_local_column(ctx, query: str, q: queue.Queue, local_model: str = None, 
         try:
             # 强制使用本地 StreamEngine（本地列始终用本地模型，不走 CloudEngine）
             se = mgr._stream_engine
+            # 动态预留：KB 模式预留 1500
+            _kb_reserved = mgr.calc_output_reservation(kb_mode=True, history_chars=0)
             for phase, content in se.run(
                 kb_prompt,
                 model=local_model,
-                max_tokens=MAX_OUTPUT_TOKENS,
+                max_tokens=_kb_reserved,
                 history=None,
                 context_cache=None,
                 override_task_type="text",
@@ -417,10 +417,12 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
             merge_parts = []
             # 强制使用本地 StreamEngine（融合始终用本地模型安全处理）
             se = mgr._stream_engine
+            # 融合列非 KB，预留 2048
+            _merge_reserved = mgr.calc_output_reservation(kb_mode=False, history_chars=0)
             for phase, content in se.run(
                 merge_prompt,
                 model=local_model,
-                max_tokens=MAX_OUTPUT_TOKENS,
+                max_tokens=_merge_reserved,
                 history=None,
                 context_cache=None,
                 override_task_type="text",

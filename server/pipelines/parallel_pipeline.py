@@ -34,8 +34,6 @@ import queue
 from typing import Generator, List
 from concurrent.futures import ThreadPoolExecutor
 
-from config import MAX_OUTPUT_TOKENS
-
 log = logging.getLogger(__name__)
 
 
@@ -163,10 +161,13 @@ def _run_local_column(ctx, query: str, q: queue.Queue, local_model: str = None, 
                  local_model, len(kb_prompt), len(local_history or []))
         try:
             se = mgr._stream_engine
+            # 动态预留替代固定 MAX_OUTPUT_TOKENS：本地列是 KB 模式，预留 1500 释放空间给历史
+            _hist_chars = sum(len(m.get("content", "")) for m in (local_history or []))
+            _local_reserved = mgr.calc_output_reservation(kb_mode=True, history_chars=_hist_chars)
             for phase, content in se.run(
                 kb_prompt,
                 model=local_model,
-                max_tokens=MAX_OUTPUT_TOKENS,
+                max_tokens=_local_reserved,
                 history=local_history,  # P6: 注入 memory_local 历史（不再 hardcode None）
                 context_cache=None,
                 override_task_type="text",
@@ -540,10 +541,12 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
 
             merge_parts = []
             se = mgr._stream_engine
+            # 融合列非 KB 模式（无 history），预留 2048
+            _merge_reserved = mgr.calc_output_reservation(kb_mode=False, history_chars=0)
             for phase, content in se.run(
                 merge_prompt,
                 model=local_model,
-                max_tokens=MAX_OUTPUT_TOKENS,
+                max_tokens=_merge_reserved,
                 history=None,
                 context_cache=None,
                 override_task_type="text",

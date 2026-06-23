@@ -125,11 +125,13 @@ class StreamEngine:
         if kb_mode:
             think_mode = "off"
 
-        # ===== KB 模式限制输出长度 =====
+        # ===== KB 模式限制输出长度（动态预留，原 MAX_OUTPUT_TOKENS=4096 浪费一半窗口）=====
         if kb_mode:
-            from config import MAX_OUTPUT_TOKENS
-            if max_tokens > MAX_OUTPUT_TOKENS:
-                max_tokens = MAX_OUTPUT_TOKENS
+            # 用动态预留替代固定 MAX_OUTPUT_TOKENS：KB 模式预留 1500，释放空间给历史
+            _hist_chars = sum(len(m.get("content", "")) for m in (history or []))
+            _reserved = mm.calc_output_reservation(kb_mode=True, history_chars=_hist_chars)
+            if max_tokens > _reserved:
+                max_tokens = _reserved
         # 注：非 KB 模式原有一次 get_dynamic_max_tokens/check_mode_hint 调用，
         # 但两者都是空壳函数（恒返回 0/空串），属死代码，已随 Bug1 温度修复一并清理。
 
@@ -206,7 +208,7 @@ class StreamEngine:
             "messages": messages,
             "stream": True,
             "options": {
-                "num_ctx": 8192,   # P6 统一 8K
+                "num_ctx": mm._get_device_token_limit(model_name),  # 动态读 config（原硬编码 8192）
                 "num_predict": max_tokens,
                 "temperature": temperature,
                 "top_p": profile.get("top_p", 0.9),

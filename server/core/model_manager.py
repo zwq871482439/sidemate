@@ -567,8 +567,43 @@ class ModelManager:
         from config import MAX_INPUT_TOKENS
         return MAX_INPUT_TOKENS
 
-    def calc_kb_context_budget(self) -> dict:
-        """计算 KB 问答的 context 预算"""
+    def calc_output_reservation(self, kb_mode: bool = False, history_chars: int = 0) -> int:
+        """动态计算输出预留（num_predict）。
+
+        问题背景：原 MAX_OUTPUT_TOKENS=4096 固定占用一半 8K 窗口，导致历史空间不足
+        （KB 模式下历史只剩 ~511 token）。本地 4B 模型实际生成通常 500-1500 字
+        （~350-1000 token），预留 4096 是严重浪费。
+
+        动态策略：
+        - 无 KB（普通对话）：预留 2048（足够生成长回答，释放一半空间给历史）
+        - 有 KB（知识库问答）：预留 1500（KB 回答通常更聚焦，且 KB context 已占 ~40%）
+        - 历史很长时进一步压缩预留（按 history_chars 线性下调，但不低于 768）
+
+        Args:
+            kb_mode: 是否 KB 模式
+            history_chars: 当前历史字符数（用于进一步压缩预留）
+
+        Returns:
+            int — 输出预留 token 数
+        """
+        from config import MAX_OUTPUT_TOKENS
+        # 基线预留
+        base = 1500 if kb_mode else 2048
+        # 历史占用大时（>4000 字 ≈ 2700 token），逐步压缩预留到下限 768
+        if history_chars > 4000:
+            # 每 1000 字历史压缩 150 token 预留，但不低于 768
+            compressed = base - (history_chars - 4000) / 1000 * 150
+            base = max(768, int(compressed))
+        # 不超过原 MAX_OUTPUT_TOKENS 上限
+        return min(base, MAX_OUTPUT_TOKENS)
+
+    def calc_kb_context_budget(self, kb_mode: bool = True, history_chars: int = 0) -> dict:
+        """计算 KB 问答的 context 预算。
+
+        Args:
+            kb_mode: 是否 KB 模式（影响输出预留计算）
+            history_chars: 当前历史字符数（透传给 calc_output_reservation）
+        """
         max_prompt_tokens = self._get_device_token_limit()
 
         try:
@@ -580,7 +615,9 @@ class ModelManager:
         except Exception:
             overhead_tokens = 500
 
-        safe_tokens = int((max_prompt_tokens - overhead_tokens) * 0.95)
+        # 输出预留动态化：扣掉 calc_output_reservation（原代码完全没考虑输出预留）
+        output_reservation = self.calc_output_reservation(kb_mode=kb_mode, history_chars=history_chars)
+        safe_tokens = int((max_prompt_tokens - overhead_tokens - output_reservation) * 0.95)
         safe_tokens = max(200, safe_tokens)
         safe_chars = int(safe_tokens / 1.5)
         safe_chars = min(safe_chars, 8000)
@@ -588,6 +625,7 @@ class ModelManager:
         return {
             "max_prompt_tokens": max_prompt_tokens,
             "overhead_tokens": overhead_tokens,
+            "output_reservation": output_reservation,
             "safe_tokens": safe_tokens,
             "safe_chars": safe_chars,
         }
