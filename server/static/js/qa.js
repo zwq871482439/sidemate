@@ -47,13 +47,13 @@ async function kbRouteState() {
 
     if (loading) loading.style.display = 'none';
     if (fullInterface) fullInterface.style.display = 'flex';
-    kbRefreshDocs();
+    await kbRefreshDocs();
     kbRefreshAIOverview();  // P6: 页面加载时恢复洞察
   } catch (e) {
     silentLog('[KB] 状态路由失败:', e);
     if (loading) loading.style.display = 'none';
     if (fullInterface) fullInterface.style.display = 'flex';
-    kbRefreshDocs();
+    await kbRefreshDocs();
     kbRefreshAIOverview();  // P6: 异常兜底也恢复洞察
   }
 }
@@ -129,7 +129,10 @@ async function _updateKbOverlay() {
   var btnEl = document.getElementById('kbOverlayBtn');
   var btn2El = document.getElementById('kbOverlayBtn2');
 
-  if (!overlay || !_kbModuleStatus || !_kbModuleStatus.installed) return;
+  if (!overlay || !_kbModuleStatus || !_kbModuleStatus.installed) {
+    if (overlay) overlay.style.display = 'none';
+    return;
+  }
 
   var models = _kbModuleStatus.models || {};
   var embedderPresent = (models.embedder && models.embedder.present);
@@ -222,11 +225,6 @@ async function kbRefreshDocs() {
 
     _kbModelsLoaded = stats.models_loaded || false;
     _updateKbOverlay();
-
-    // 更新模型 overlay 和 dropzone
-    var modelLoaded = _kbModelsLoaded || (stats.models_loaded === true);
-    var overlay = document.getElementById('kbModelOverlay');
-    if (overlay) overlay.style.display = !modelLoaded ? 'flex' : 'none';
 
     var hasSummarizing = (stats.summarizing_documents || 0) > 0;
     _kbBusyProcessing = hasSummarizing;
@@ -496,6 +494,7 @@ async function kbRefreshDocs() {
     // P6 修复：同步队列条目和文档 tag_status
     _kbSyncQueueWithDocs(docs);
   } catch (err) {
+    _kbSkipFetch = false;
     silentLog('[KB] 刷新文档列表失败:', err);
   }
 }
@@ -685,7 +684,7 @@ async function kbRefreshOverviewLLM() {
         try { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); } catch(e) {}
       }
     }
-  } catch (e) { }
+  } catch (e) { showToast('AI 整理失败，请重试', 'error'); }
   finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 整理'; }
     if (sidebarOrig) { try { var _sh = document.querySelector('#kbSidebar .kb-sidebar-hdr'); if (_sh) _sh.innerHTML = sidebarOrig; } catch(e) {} }
@@ -1098,7 +1097,6 @@ var _kbMaxEventSources = 3;
 var _kbPendingSubscriptions = [];
 
 function kbSubscribeProgress(docId, filename) {
-  // P6 打磨：限制并发 EventSource 数量
   if (_kbActiveEventSources >= _kbMaxEventSources) {
     _kbPendingSubscriptions.push({docId: docId, filename: filename});
     return;
@@ -1114,18 +1112,27 @@ function kbSubscribeProgress(docId, filename) {
     console.warn('[KB] SSE 不支持，回退轮询', e);
     return;
   }
+
+  var _closed = false;
+  var _cleanup = function() {
+    if (_closed) return;
+    _closed = true;
+    try { es.close(); } catch (e) {}
+    _kbActiveEventSources--;
+    _kbTryNextSubscription();
+  };
+
   es.onmessage = function(ev) {
     try {
       var d = JSON.parse(ev.data);
-      // Fix A: 两阶段进度映射 — chunking: 0-5%, embedding: 5-100%
       var phaseText;
       var pct;
       if (d.phase === 'chunking') {
         phaseText = '切片中...';
-        pct = Math.round((d.progress || 0) * 100);  // 0-5%
+        pct = Math.round((d.progress || 0) * 100);
       } else if (d.phase === 'embedding') {
         phaseText = '生成向量...';
-        pct = Math.round((d.progress || 0) * 100);  // 5-100%
+        pct = Math.round((d.progress || 0) * 100);
       } else {
         phaseText = {
           'subscribed': '准备中', 'chunking_done': '切块完成',
@@ -1138,7 +1145,6 @@ function kbSubscribeProgress(docId, filename) {
       if (d.chunk_total) detail = ' · ' + (d.chunk_done || 0) + '/' + d.chunk_total + ' 块';
       if (d.batch_total && d.batch_total > 1) detail += ' · 第 ' + (d.batch_idx || 0) + '/' + d.batch_total + ' 批';
 
-      // P6 B4/B5: 更新队列面板
       _kbUpdateQueue(docId, d.phase, pct);
 
       if (typeof showToast === 'function') {
@@ -1149,25 +1155,17 @@ function kbSubscribeProgress(docId, filename) {
         }
       }
       if (d.phase === 'done' || d.phase === 'error' || d.phase === 'timeout') {
-        es.close();
-        _kbActiveEventSources--;
-        _kbTryNextSubscription();  // P6 打磨：释放连接槽位，处理下一个订阅
-        // P6 B5: 从队列移除已完成/失败/超时条目
+        _cleanup();
         _kbRemoveFromQueue(docId);
         kbRefreshDocs();
-        // 自动触发 AI 洞察已移至轮询停止时（确保含标签全部完成）
       }
     } catch (e) { console.warn('[KB] SSE 解析失败', e); }
   };
   es.onerror = function() {
-    try { es.close(); } catch (e) {}
-    _kbActiveEventSources--;
-    _kbTryNextSubscription();
+    _cleanup();
   };
   setTimeout(function() {
-    try { es.close(); } catch (e) {}
-    _kbActiveEventSources--;
-    _kbTryNextSubscription();
+    _cleanup();
   }, 60000);
 }
 
