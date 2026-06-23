@@ -354,8 +354,8 @@ async function kbRefreshDocs() {
           if (_kbQueueItems[_qi2].docId === d.doc_id) { _qi = _kbQueueItems[_qi2]; break; }
         }
         if (_qi && _qi.phase && _qi.pct != null) {
-          var _phaseLabels = { chunking: '切分段落', embedding: '向量化', queued: '排队中', tag_pending: '等AI摘要', tag_generating: 'AI摘要中' };
-          previewText = (_phaseLabels[_qi.phase] || _qi.phase) + ' ' + _qi.pct + '%';
+          var _phaseLabels = { chunking: '正在切分段落', chunking_done: '段落切分完成', embedding: '正在向量化', queued: '排队中', tag_pending: '等待AI摘要', tag_generating: '正在生成摘要' };
+          previewText = (_phaseLabels[_qi.phase] || '处理中') + ' · ' + _qi.pct + '%';
           previewExtraClass = ' generating';
         } else {
           previewText = '处理中...';
@@ -1043,9 +1043,11 @@ function _kbRenderQueue() {
     // Fix 2: 显示完整的处理阶段 + 实时百分比
     var phaseLabel;
     if (item.phase === 'chunking') {
-      phaseLabel = '切分段落 (' + (item.pct || 0) + '%)';
+      phaseLabel = '正在切分段落 · ' + (item.pct || 0) + '%';
+    } else if (item.phase === 'chunking_done') {
+      phaseLabel = '段落切分完成 · ' + (item.pct || 0) + '%';
     } else if (item.phase === 'embedding') {
-      phaseLabel = '向量化 (' + (item.pct || 0) + '%)';
+      phaseLabel = '正在向量化 · ' + (item.pct || 0) + '%';
     } else if (item.phase === 'queued') {
       phaseLabel = '排队等待处理';
     } else if (item.phase === 'tag_pending') {
@@ -1053,7 +1055,7 @@ function _kbRenderQueue() {
     } else if (item.phase === 'tag_generating') {
       phaseLabel = 'AI 正在生成摘要';
     } else {
-      phaseLabel = '处理中';
+      phaseLabel = '处理中 · ' + (typeof item.pct === 'number' ? item.pct + '%' : '');
     }
 
     listHtml += '<div class="kb-qitem">' + esc(item.filename) + ' <span class="qi-pct">' + phaseLabel + '</span></div>';
