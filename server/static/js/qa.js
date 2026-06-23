@@ -863,7 +863,7 @@ async function kbRefreshAIOverview() {
     if (_cn) cachedCount = parseInt(_cn, 10);
   } catch(e) {}
 
-  if (!cachedInsight) {
+  if (!cachedInsight || !cachedCats) {
     try {
       var _sr = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh');
       var _sd = await _sr.json();
