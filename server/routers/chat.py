@@ -687,7 +687,7 @@ async def api_chats_enrich(chat_name: str, request: Request):
 
     # 要回写的字段（白名单，只接受前端补充的元数据字段）
     enrich_fields = {}
-    for key in ("agent_timeline", "agent_summary", "token_stats", "kb_sources", "doc_url", "doc_filename"):
+    for key in ("card_data", "parallel_texts", "agent_timeline", "agent_summary", "token_stats", "kb_sources", "doc_url", "doc_filename"):
         val = body.get(key)
         if val is not None:
             enrich_fields[key] = val
