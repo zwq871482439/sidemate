@@ -348,11 +348,20 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 @keyframes tbGlow{0%,100%{box-shadow:0 2px 12px rgba(0,0,0,.08),0 0 0 3px rgba(24,95,165,.10)}50%{box-shadow:0 2px 12px rgba(0,0,0,.08),0 0 0 5px rgba(24,95,165,.16)}}
 /* 输入行（附件+文本框+发送）*/
 .input-row-inner{display:flex;gap:4px;align-items:flex-end}
-/* 快捷指令行（顶部，小图标横排）*/
-.quick-chips-row{display:flex;gap:2px;align-items:center;padding:2px 2px 4px;border-bottom:0.5px solid var(--border-color);margin-bottom:2px}
-.quick-chip-icon{width:28px;height:24px;border:none;border-radius:5px;background:transparent;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0}
-.quick-chip-icon:hover{background:var(--bg-secondary);color:var(--accent-color)}
-.quick-chip-icon svg{display:block;margin:0 !important;vertical-align:baseline !important}
+/* 输入框顶部行：左侧 action 模式按钮 + 右侧模型 tag */
+.quick-chips-row{display:flex;align-items:center;gap:4px;padding:0 2px 4px;border-bottom:0.5px solid var(--border-color);margin-bottom:3px}
+.action-bar-inline{display:flex;gap:4px;align-items:center;flex:1;min-width:0}
+/* 内联 action 按钮（紧凑 tag 样式）*/
+.input-area .action-bar-inline .action-btn{height:auto;min-height:0;padding:1px 8px;border-radius:9px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:10px;font-family:inherit;display:inline-flex;align-items:center;gap:3px;line-height:1.5;border:none;cursor:pointer;transition:all .15s;white-space:nowrap}
+.input-area .action-bar-inline .action-btn svg{width:11px;height:11px;flex-shrink:0}
+.input-area .action-bar-inline .action-btn:hover{background:var(--border-color)}
+.input-area .action-bar-inline .action-btn.active{background:var(--accent-color);color:var(--text-on-accent)}
+/* 模型 tag（内联在右侧）*/
+.model-tag-inline{font-size:10px;padding:1px 8px;border-radius:9px;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:auto;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.model-tag-inline.none{background:transparent;color:var(--text-muted)}
+/* 气泡/列表切换：浮动在消息区右上角 */
+.float-style-toggle{position:absolute;top:6px;right:8px;z-index:20;font-size:10px;padding:2px 8px;border:0.5px solid var(--border-color);border-radius:9px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary);opacity:.6;transition:opacity .15s;font-family:inherit}
+.float-style-toggle:hover{opacity:1;color:var(--accent-color);border-color:var(--accent-color)}
 /* 胶囊内文本框：去边框去背景，融入容器；单行严格 38px 与按钮等高 */
 .input-capsule textarea{border:none;background:transparent;border-radius:0;padding:0 4px;flex:1;height:38px;min-height:38px;max-height:120px;box-sizing:border-box;line-height:38px;font-size:14px;overflow:hidden}
 .input-capsule textarea::placeholder{color:var(--text-muted);line-height:38px}
@@ -2099,6 +2108,9 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 
 /* P6: 分类标签（侧栏） */
 .kb-tag.cat{padding:5px 10px;cursor:pointer;font-size:12px}
+.kb-tag-pending{opacity:.55;font-style:italic}
+.kb-tag-pending .dot{border:1px dashed var(--text-muted);background:transparent !important}
+.kb-tag-pending.sel{opacity:.8;font-style:normal}
 
 /* 文档卡片 */
 .kb-card{background:var(--card-bg);border:0.5px solid var(--card-border);border-radius:var(--border-radius-md, 8px);padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;position:relative;transition:all .2s cubic-bezier(.4,0,.2,1);box-shadow:0 1px 2px rgba(0,0,0,.03)}

@@ -583,11 +583,11 @@ function _kbRenderCategoryTree(docs) {
       '<span class="cnt">' + count + '</span></div>';
   }
 
-  // 没有 category 的文档（tag_status != done 的）
+  // 没有 category 的文档（等待 AI 智能筛选）
   if (noCategoryCount > 0) {
     var isUnSel = _kbActiveTagFilter === '__uncategorized__';
-    html += '<div class="kb-tag cat' + (isUnSel ? ' sel' : '') + '" style="opacity:.6" data-tag="__uncategorized__" onclick="kbFilterByTag(\'__uncategorized__\',this)">' +
-      '<span class="dot"></span>未分类' +
+    html += '<div class="kb-tag cat kb-tag-pending' + (isUnSel ? ' sel' : '') + '" data-tag="__uncategorized__" onclick="kbFilterByTag(\'__uncategorized__\',this)">' +
+      '<span class="dot"></span>正在等待智能筛选' +
       '<span class="cnt">' + noCategoryCount + '</span></div>';
   }
 
@@ -688,9 +688,8 @@ async function kbRefreshOverviewLLM() {
         doc_count: data.doc_count || 0
       };
       _kbRenderInsightDashboard(_kbLastInsightData);
-      if (data.merges_applied && data.merges_applied.length > 0) {
-        try { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); } catch(e) {}
-      }
+      // 整理完成后总是刷新文档列表和侧栏（分类可能已变更）
+      try { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); } catch(e) {}
     } else if (bodyEl) {
       bodyEl.innerHTML = bodyPrev;
     }
