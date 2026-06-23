@@ -338,6 +338,20 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 /* ===== 附件菜单（合并上传+文库） ===== */
 .input-area-inner{display:flex;flex-direction:column;flex:1;min-width:0}
 .input-row{display:flex;gap:6px;align-items:center}
+/* 融合胶囊式输入区：附件+文本框+发送融为统一容器 */
+.input-capsule{background:var(--bg-primary);border:1px solid var(--border-color);border-radius:10px;padding:4px 6px;gap:4px;align-items:flex-end;transition:border-color .15s,box-shadow .15s}
+.input-capsule:focus-within{border-color:var(--accent-color);box-shadow:0 0 0 2px rgba(24,95,165,.1)}
+/* 胶囊内文本框：去边框去背景，融入容器；单行时与按钮等高、文字垂直居中 */
+.input-capsule textarea{border:none;background:transparent;border-radius:0;padding:9px 4px;flex:1;min-height:38px;max-height:120px;box-sizing:border-box;line-height:20px}
+.input-capsule textarea::placeholder{color:var(--text-muted)}
+.input-capsule textarea:focus{border:none;box-shadow:none}
+.input-capsule textarea:disabled{opacity:.5;background:transparent}
+/* 胶囊内附件按钮：透明背景，hover 时浅底 */
+.btn-capsule{background:transparent !important;border-radius:8px;width:36px;flex-shrink:0}
+.btn-capsule:hover{background:var(--bg-secondary) !important}
+/* 胶囊内发送按钮：圆形，内嵌 */
+.btn-capsule-send{border-radius:8px !important;width:100% !important}
+.btn-capsule-stop{border-radius:8px !important}
 .attach-menu{position:absolute;bottom:calc(100% + 4px);left:0;min-width:148px;
   background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;
   box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:100;overflow:hidden;
@@ -991,9 +1005,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 
 /* B1: 批量操作工具栏 */
 .kb-batch-toolbar{
-  display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px 10px;
+  display:flex;align-items:center;gap:6px;margin-bottom:-36px;padding:6px 10px;
   background:var(--bg-tertiary);border-radius:6px;flex-wrap:wrap;
   animation:fadeIn .15s ease;
+  position:sticky;top:0;z-index:9;
 }
 .kb-batch-btn{
   font-size:.75em;padding:3px 8px;border:0.5px solid var(--border-color);
@@ -1239,15 +1254,40 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* ============================================================
    P6: Token 条
    ============================================================ */
-.token-bar{margin:0 0 6px 0;padding:5px 12px;background:var(--bg-secondary);border-radius:8px;border:0.5px solid var(--border-color);display:flex;align-items:center;gap:0;font-size:11px}
-.token-bar .seg{display:flex;align-items:center;gap:4px;padding:0 10px}
-.token-bar .seg:first-child{padding-left:0}
-.token-bar .divider{width:1px;height:12px;background:var(--border-color)}
-.token-bar .val{font-weight:500;color:var(--text-primary)}
+/* 上下文空间进度条（双条：已用历史 + 本轮预判）*/
+.token-bar{margin:0 0 6px 0;padding:7px 12px;background:var(--bg-secondary);border-radius:8px;border:0.5px solid var(--border-color);display:flex;align-items:center;gap:12px;font-size:11px}
+.tb-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+/* 进度条轨道 + 双填充 */
+.tb-track{position:relative;height:8px;background:var(--bg-tertiary);border-radius:4px;overflow:hidden;display:flex}
+.tb-fill{height:100%;transition:width .2s ease}
+.tb-used{background:var(--text-muted)}  /* 已用历史：中性灰 */
+.tb-cur{background:var(--accent-color)}  /* 本轮预判：强调色蓝 */
+/* 状态色：紧张/不足时本轮条变黄/红，强化警示 */
+.tb-track.tb-warn .tb-cur{background:var(--warning-color)}
+.tb-track.tb-over .tb-cur{background:var(--error-color)}
+/* 进度条下方文字 */
+.tb-labels{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px}
+.tb-lbl-left{color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
+.tb-lbl-right{color:var(--text-muted);white-space:nowrap;flex-shrink:0}
+.tb-remain{color:var(--text-primary);font-weight:500}
+/* 统一 tag 风格（已用/本轮/状态 都是小圆角标签，各自配色）*/
+.tb-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:500;line-height:1.5}
+.tb-tag-used{background:var(--bg-tertiary);color:var(--text-muted)}  /* 已用：中性灰底 */
+.tb-tag-cur{background:rgba(24,95,165,.12);color:var(--accent-color)}  /* 本轮：蓝色浅底 */
+.tb-tag-used > span{color:var(--text-primary);font-weight:500}  /* 已用数值：深色强调 */
+.tb-tag-cur > span{font-weight:600}  /* 本轮数值：加粗 */
+/* 状态 tag：三档配色（绿/黄/红浅底）*/
+.tb-tag-status.status-ok{background:rgba(5,150,105,.12);color:var(--success-color)}
+.tb-tag-status.status-warn{background:rgba(217,119,6,.12);color:var(--warning-color)}
+.tb-tag-status.status-over{background:rgba(185,28,28,.12);color:var(--error-color)}
+.tb-plus{color:var(--text-muted)}
+/* 右侧信息区（总计）*/
+.tb-info{display:flex;align-items:center;flex-shrink:0}
+.tb-limit{color:var(--text-muted);font-size:10px}
+/* 状态色（状态 tag 现在在左侧）*/
 .token-bar .status-ok{color:var(--success-color);font-weight:500}
 .token-bar .status-warn{color:var(--warning-color);font-weight:500}
 .token-bar .status-over{color:var(--error-color);font-weight:500}
-.token-bar .lbl{color:var(--text-muted)}
 
 /* ============================================================
    P6: 融合输入框
@@ -2207,11 +2247,19 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-reason .cb-step { padding:3px 0 3px 17px; font-size:11px; }
 .cb-reason .cb-output { margin:2px 0; }
 /* 词元统计折叠（模块5b） */
-.stats-detail { display:inline-block; margin-left:6px; vertical-align:middle; }
-.stats-detail > summary { cursor:pointer; font-size:10px; color:var(--text-muted); list-style:none; display:inline; }
+/* 统计栏合并折叠（模型+数字+词元一体）*/
+.stats-detail { display:block; }
+.stats-detail > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .stats-detail > summary::-webkit-details-marker { display:none; }
-.stats-detail[open] > summary { display:block; margin-bottom:2px; }
-.stats-detail-body { padding:4px 8px; background:var(--bg-secondary); border-radius:4px; font-size:10px; }
+.stats-detail > summary::before { content:'▸'; font-size:8px; color:var(--text-muted); transition:transform .15s; }
+.stats-detail[open] > summary::before { transform:rotate(90deg); }
+.stats-detail .stats-meta { opacity:.85; }
+/* 展开后横向词元详情 */
+.stats-detail-body { display:flex; gap:14px; padding:5px 0 0 14px; flex-wrap:wrap; }
+.stats-detail-body .tk { display:inline-flex; align-items:baseline; gap:4px; }
+.stats-detail-body .tk-k { color:var(--text-muted); font-size:10px; }
+.stats-detail-body .tk-v { color:var(--text-secondary); font-size:11px; font-weight:500; }
+/* 旧的纵向 detail-kv（兼容）*/
 .stats-detail-body .detail-kv { display:flex; gap:6px; padding:1px 0; }
 .stats-detail-body .detail-kv .k { color:var(--text-muted); min-width:50px; }
 .stats-detail-body .detail-kv .v { color:var(--text-secondary); }

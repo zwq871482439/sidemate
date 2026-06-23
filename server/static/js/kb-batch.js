@@ -169,7 +169,8 @@ async function kbBatchPrivacy(isPrivate) {
   if (docIds.length === 0) return;
 
   var label = isPrivate ? '设为私密' : '取消私密';
-  var confirmed = await showDialog(label, '确定对选中的 ' + docIds.length + ' 个文档' + label + '？', {confirm: true, confirmLabel: label, cancelLabel: '取消'});
+  var desc = isPrivate ? '设为私密后，云端模型将无法读取该文档内容。' : '取消私密后，文档将恢复对云端模型可见，所有已有令牌将被撤销。';
+  var confirmed = await showDialog(label, desc, {confirm: true, confirmLabel: label, cancelLabel: '取消'});
   if (!confirmed) return;
 
   try {
