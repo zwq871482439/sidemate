@@ -1824,7 +1824,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
    P6 打磨：AI 洞察仪表盘卡片
    ============================================================ */
 .kb-summary {
-  background: var(--bg-primary, #fff);
+  background: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-lg, 14px);
   overflow: hidden;
