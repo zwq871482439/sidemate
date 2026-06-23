@@ -2440,3 +2440,475 @@ function _handleDocProgressEvent(eventType, data) {
 }
 window._handleDocProgressEvent = _handleDocProgressEvent;
 window._resetDocProgress = _resetDocProgress;
+
+
+// ============================================================
+// CardRenderer — 卡片式明盒渲染器（阶段3 Step2a 新增，新旧并存）
+// 对齐原型 docs/prototypes/clearbox-096.html 的 DOM 结构和 CSS class。
+// Step2a 只定义不启用；Step2b 切换 SSE 分发到此；Step2c 删除旧三套系统。
+// ============================================================
+
+var CardRenderer = (function() {
+  // ---- 内部状态 ----
+  var _container = null;      // #card-area 容器 DOM（挂载在 #stream-msg 内）
+  var _steps = {};            // {stepId: {el, label, status, outputEl, startTime, channel}}
+  var _parallelCols = {};     // {local: {el, streamEl}, cloud: {el, streamEl}}（并行双列）
+  var _parallelTexts = {};    // {local: '累积文本', cloud: '累积文本'}（流式累加，供 fullText 用）
+  var _phase = 'working';     // 'working' | 'answering' | 'done'
+  var _modeLabel = '';        // 模式标签（离线聊天/离线知识库/在线Agent/并行模式）
+  var _data = [];             // 序列化数据（供 finalize 持久化）
+
+  // 步骤标签映射（对齐原型的 label）
+  var STEP_LABELS = {
+    reformulate: '分析问题',
+    search: '检索文库',
+    retrieve: '本地知识库检索',
+    local_gen: '本地生成',
+    cloud_gen: '云端生成',
+    merge: '自动融合优化',
+    understanding: '理解问题',
+    thinking: '思考中',
+    generating: '生成回答'
+  };
+
+  // 步骤图标映射
+  var STEP_ICONS = {
+    reformulate: 'search', search: 'book', retrieve: 'book',
+    local_gen: 'write', cloud_gen: 'cloud', merge: 'check',
+    understanding: 'brain', thinking: 'think', generating: 'write'
+  };
+
+  // ---- DOM 辅助 ----
+  function _dotClass(status) {
+    if (status === 'done') return 'ok';
+    if (status === 'running') return 'run';
+    if (status === 'error') return 'err';
+    return 'wait';
+  }
+
+  function _esc(s) {
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ---- 公开 API ----
+
+  function reset() {
+    _container = null;
+    _steps = {};
+    _parallelCols = {};
+    _parallelTexts = {};
+    _phase = 'working';
+    _modeLabel = '';
+    _data = [];
+  }
+
+  function setModeLabel(label) {
+    _modeLabel = label;
+  }
+
+  // 在 #stream-msg 内创建卡片容器（挂载在 #stream-content 之前）
+  function mount(streamMsgEl) {
+    if (!streamMsgEl) return;
+    var existing = streamMsgEl.querySelector('#card-area');
+    if (existing) { _container = existing; return; }
+    _container = document.createElement('div');
+    _container.id = 'card-area';
+    _container.className = 'card-area';
+    // 插到 stream-msg 最前面（#stream-content 之前）
+    var streamContent = streamMsgEl.querySelector('#stream-content');
+    if (streamContent) {
+      streamMsgEl.insertBefore(_container, streamContent);
+    } else {
+      streamMsgEl.insertBefore(_container, streamMsgEl.firstChild);
+    }
+  }
+
+  // 统一事件入口（替代 7 个 _handle* 函数）
+  // 归一化模型: {step, phase:'start'|'done', label, channel?, elapsed_ms?, count?, detail?}
+  function handleEvent(d) {
+    if (!d) return;
+    var t = d.type;
+
+    // agent_timeline 事件（local/parallel 的步骤进度）
+    if (t === 'agent_timeline') {
+      var stepId = d.step;
+      var phase = d.phase;  // 'start' | 'done'
+      var label = d.label || STEP_LABELS[stepId] || stepId;
+      if (phase === 'start') {
+        _createStep(stepId, label);
+      } else if (phase === 'done') {
+        _completeStep(stepId, d.elapsed_ms, d.count);
+      }
+      return;
+    }
+
+    // kb_reformulate 事件（reformulate 的产出内容）
+    if (t === 'kb_reformulate') {
+      _setTransformOutput('reformulate', d.original, d.reformulated, d.changed, d.elapsed);
+      return;
+    }
+
+    // kb_sources 事件（检索来源）
+    if (t === 'kb_sources') {
+      _setSourcesOutput('search', d.sources);
+      return;
+    }
+
+    // 并行模式事件（phase/step/step_done/status/sources 带 channel）
+    if (t === 'phase' || t === 'step' || t === 'step_done' || t === 'status') {
+      _handleParallelEvent(t, d);
+      return;
+    }
+    if (t === 'sources' && d.channel) {
+      // 并行模式的检索来源（channel=local）
+      _setSourcesOutput('retrieve', d.sources);
+      _handleParallelEvent('sources', d);
+      return;
+    }
+
+    // agent_status 事件（在线 Agent 工具调用）
+    if (t === 'agent_status') {
+      _handleAgentStatus(d);
+      return;
+    }
+
+    // agent_summary 事件
+    if (t === 'agent_summary') {
+      _addSummary(d);
+      return;
+    }
+  }
+
+  // 并行双列流式正文（替代 _renderParallelChannelContent）
+  // 保留 fullText 累加逻辑（调用方需要 fullText 做 done 渲染）
+  function handleStream(d) {
+    if (!d || !d.channel) return '';
+    var ch = d.channel;  // local/cloud/merge
+    if (!_parallelTexts[ch]) _parallelTexts[ch] = '';
+    _parallelTexts[ch] += (d.content || '');
+
+    // 阶段1时渲染到双列的流式区
+    if (ch === 'local' || ch === 'cloud') {
+      _ensureParallelCol(ch);
+      var col = _parallelCols[ch];
+      if (col && col.streamEl) {
+        col.streamEl.textContent = _parallelTexts[ch];
+        if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+      }
+      // 首个 token 标记对应步骤开始
+      var stepId = ch === 'local' ? 'local_gen' : 'cloud_gen';
+      if (_steps[stepId] && _steps[stepId].status === 'pending') {
+        _steps[stepId].status = 'running';
+        _steps[stepId].startTime = Date.now();
+        _updateStepDot(stepId, 'running');
+      }
+    }
+    return _parallelTexts[ch];
+  }
+
+  // done 时序列化卡片数据到 newMsg（替代 agent_timeline 持久化）
+  function finalize(newMsg) {
+    if (!newMsg) return;
+    var cardData = [];
+    for (var id in _steps) {
+      var s = _steps[id];
+      cardData.push({
+        id: id,
+        label: s.label,
+        status: s.status,
+        elapsed_ms: s.elapsed_ms || null,
+        count: s.count || null,
+        channel: s.channel || null
+      });
+    }
+    if (cardData.length > 0) {
+      newMsg.card_data = cardData;
+    }
+    // 并行模式保留双列原文（供三栏对比）
+    if (_parallelTexts.local || _parallelTexts.cloud) {
+      newMsg.parallel_texts = {
+        local: _parallelTexts.local || '',
+        cloud: _parallelTexts.cloud || '',
+        merge: _parallelTexts.merge || ''
+      };
+    }
+    _data = cardData;
+  }
+
+  // 历史回放（替代 _buildAgentTimelineHtml）
+  function renderHistory(m) {
+    if (!m || !m.card_data || !m.card_data.length) return '';
+    var html = '<div class="card-area card-history">';
+    // 并行模式：检查是否有 parallel_texts，渲染双列摘要
+    if (m.parallel_texts) {
+      html += _renderParallelSummary(m.parallel_texts);
+    }
+    // 渲染步骤
+    for (var i = 0; i < m.card_data.length; i++) {
+      var s = m.card_data[i];
+      var dotCls = _dotClass(s.status);
+      var icon = STEP_ICONS[s.id] || 'check';
+      var elapsedTxt = s.elapsed_ms != null ? _formatElapsed(s.elapsed_ms) : '';
+      var countTxt = s.count != null ? '(' + s.count + '篇)' : '';
+      html += '<div class="cb-step" data-status="' + s.status + '">' +
+                '<span class="cb-dot ' + dotCls + '"></span>' +
+                '<div class="cb-step-row">' +
+                  '<span class="cb-label">' + _esc(s.label) + '</span>' +
+                  (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
+                  (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : '') +
+                '</div>' +
+              '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function getState() {
+    return { phase: _phase, modeLabel: _modeLabel, steps: _steps, parallelTexts: _parallelTexts };
+  }
+
+  // ---- 内部实现 ----
+
+  function _createStep(stepId, label) {
+    if (_steps[stepId]) return;  // 已存在
+    if (!_container) return;
+    var step = {
+      el: null, label: label, status: 'running',
+      outputEl: null, startTime: Date.now(), elapsed_ms: null, count: null
+    };
+    var div = document.createElement('div');
+    div.className = 'cb-step';
+    div.setAttribute('data-status', 'running');
+    div.setAttribute('data-id', stepId);
+    div.innerHTML = '<span class="cb-dot run"></span>' +
+      '<div class="cb-step-row"><span class="cb-label">' + _esc(label) + '</span></div>';
+    _container.appendChild(div);
+    step.el = div;
+    _steps[stepId] = step;
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
+  function _updateStepDot(stepId, status) {
+    var s = _steps[stepId];
+    if (!s || !s.el) return;
+    s.status = status;
+    s.el.setAttribute('data-status', status);
+    var dot = s.el.querySelector('.cb-dot');
+    if (dot) {
+      dot.className = 'cb-dot ' + _dotClass(status);
+    }
+  }
+
+  function _completeStep(stepId, elapsed_ms, count) {
+    var s = _steps[stepId];
+    if (!s) return;
+    _updateStepDot(stepId, 'done');
+    if (elapsed_ms != null) {
+      s.elapsed_ms = elapsed_ms;
+      var timeEl = s.el.querySelector('.cb-time');
+      var elapsedTxt = _formatElapsed(elapsed_ms);
+      if (timeEl) {
+        timeEl.textContent = elapsedTxt;
+      } else {
+        var row = s.el.querySelector('.cb-step-row');
+        if (row) row.insertAdjacentHTML('beforeend', '<span class="cb-time">' + elapsedTxt + '</span>');
+      }
+    }
+    if (count != null) {
+      s.count = count;
+      var row2 = s.el.querySelector('.cb-step-row');
+      if (row2 && !row2.querySelector('.cb-count')) {
+        var labelEl = row2.querySelector('.cb-label');
+        if (labelEl) labelEl.insertAdjacentHTML('afterend', '<span class="cb-count">(' + count + '篇)</span>');
+      }
+    }
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
+  function _formatElapsed(ms) {
+    if (ms == null) return '';
+    if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
+    return ms + 'ms';
+  }
+
+  // transform 产出（reformulate 改写对比）
+  function _setTransformOutput(stepId, original, result, changed, elapsed) {
+    var s = _steps[stepId];
+    if (!s || !s.el) return;
+    var out = s.el.querySelector('.cb-output');
+    if (!out) {
+      out = document.createElement('div');
+      out.className = 'cb-output';
+      s.el.appendChild(out);
+    }
+    var hlCls = changed ? ' hl' : '';
+    var elapsedTxt = elapsed != null ? ' · ' + elapsed + 's' : '';
+    out.innerHTML = '<div class="cb-transform">' +
+      '<div class="cb-tf-row"><span class="cb-tf-key">原问题</span><span class="cb-tf-val">' + _esc(original) + '</span></div>' +
+      '<div class="cb-tf-row"><span class="cb-tf-key">改写为</span><span class="cb-tf-val' + hlCls + '">' + _esc(result) + '</span></div>' +
+    '</div>';
+  }
+
+  // sources 产出（检索来源列表）
+  function _setSourcesOutput(stepId, sources) {
+    var s = _steps[stepId];
+    if (!s || !s.el || !sources || !sources.length) return;
+    var out = s.el.querySelector('.cb-output');
+    if (!out) {
+      out = document.createElement('div');
+      out.className = 'cb-output';
+      s.el.appendChild(out);
+    }
+    var items = '';
+    for (var i = 0; i < sources.length; i++) {
+      var src = sources[i];
+      items += '<div class="cb-src"><div class="cb-src-head">' +
+        '<span class="cb-src-num">' + (i + 1) + '</span>' +
+        '<span class="cb-src-label">' + _esc(src.label || src.source_label || '?') + '</span>' +
+        '</div>' +
+        '<div class="cb-src-snippet">' + _esc((src.snippet || src.text_snippet || '').slice(0, 100)) + '</div>' +
+      '</div>';
+    }
+    out.innerHTML = '<div class="cb-sources">' + items + '</div>';
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
+  // 并行事件处理
+  function _handleParallelEvent(evtType, d) {
+    if (!_container) return;
+    var channel = d.channel;  // local/cloud/merge
+    if (evtType === 'phase') {
+      // phase started/done：创建/完成阶段
+      if (d.phase === 'started' && !_parallelCols[channel]) {
+        _ensureParallelCol(channel);
+      }
+    } else if (evtType === 'step' || evtType === 'step_done') {
+      // 并行子步骤（searching/generating 等）
+      var col = _parallelCols[channel];
+      if (col && col.el) {
+        var stepDiv = document.createElement('div');
+        stepDiv.className = 'cb-step';
+        stepDiv.setAttribute('data-status', evtType === 'step_done' ? 'done' : 'running');
+        stepDiv.innerHTML = '<span class="cb-dot ' + (evtType === 'step_done' ? 'ok' : 'run') + '"></span>' +
+          '<div class="cb-step-row"><span class="cb-label">' + _esc(d.step || '') + '</span></div>';
+        col.el.appendChild(stepDiv);
+      }
+    } else if (evtType === 'status') {
+      // 云端列状态（understanding/thinking/generating）
+      var col2 = _parallelCols[channel];
+      if (col2 && col2.el) {
+        var stDiv = document.createElement('div');
+        stDiv.className = 'cb-step';
+        stDiv.setAttribute('data-status', 'done');
+        stDiv.innerHTML = '<span class="cb-dot ok"></span>' +
+          '<div class="cb-step-row"><span class="cb-label">' + _esc(d.status || '') + '</span></div>';
+        col2.el.appendChild(stDiv);
+      }
+    }
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
+  // 确保并行列容器存在
+  function _ensureParallelCol(channel) {
+    if (_parallelCols[channel]) return _parallelCols[channel];
+    if (!_container) return null;
+    // 找或创建并行容器
+    var parWrap = _container.querySelector('.cb-par');
+    if (!parWrap) {
+      parWrap = document.createElement('div');
+      parWrap.className = 'cb-par';
+      _container.appendChild(parWrap);
+    }
+    var col = document.createElement('div');
+    col.className = 'cb-par-col';
+    col.id = 'cb-par-' + channel;
+    var title = channel === 'local' ? '本地（知识库）' : (channel === 'cloud' ? '云端（通用知识）' : '融合');
+    var titleIcon = channel === 'local' ? 'book' : (channel === 'cloud' ? 'cloud' : 'check');
+    col.innerHTML = '<div class="cb-par-col-title">' + (typeof iconSvg === 'function' ? iconSvg(titleIcon, '12') : '') + ' ' + title + '</div>' +
+      '<div class="cb-par-stream-area"></div>';
+    parWrap.appendChild(col);
+    var streamEl = col.querySelector('.cb-par-stream-area');
+    if (streamEl) {
+      streamEl.className = streamEl.className + ' cb-par-stream';
+    } else {
+      streamEl = document.createElement('div');
+      streamEl.className = 'cb-par-stream';
+      col.appendChild(streamEl);
+    }
+    _parallelCols[channel] = { el: col, streamEl: streamEl };
+    return _parallelCols[channel];
+  }
+
+  // 在线 Agent 状态（工具调用）
+  function _handleAgentStatus(d) {
+    if (!_container) return;
+    var status = d.status || '';
+    // 简化：把每个工具调用渲染为一个步骤
+    var isDone = status.indexOf('_done') >= 0 || status === 'completed';
+    var label = _agentStatusLabel(status, d);
+    var stepId = 'agent_' + status;
+    if (!isDone) {
+      _createStep(stepId, label);
+    } else {
+      // 找到对应的进行中步骤标记完成
+      var baseStatus = status.replace('_done', '');
+      var baseStep = _steps['agent_' + baseStatus];
+      if (baseStep) {
+        _completeStep('agent_' + baseStatus, d.elapsed_ms, d.count);
+      }
+    }
+  }
+
+  function _agentStatusLabel(status, d) {
+    if (status === 'thinking') return '思考中';
+    if (status === 'searching') return '搜索：' + _esc(d.query || '');
+    if (status === 'fetching') return '阅读：' + _esc(d.url || '');
+    if (status === 'kb_searching') return '检索知识库：' + _esc(d.query || '');
+    if (status === 'workspace_writing') return '写入文档：' + _esc(d.name || '');
+    return _esc(status);
+  }
+
+  function _addSummary(d) {
+    if (!_container) return;
+    var sumDiv = document.createElement('div');
+    sumDiv.className = 'cb-summary';
+    var searches = d.searches || 0;
+    var fetches = d.fetches || 0;
+    sumDiv.innerHTML = '<span class="cb-summary-text">共搜索 ' + searches + ' 次 · 阅读 ' + fetches + ' 篇</span>';
+    _container.appendChild(sumDiv);
+  }
+
+  // 历史回放：并行双列摘要
+  function _renderParallelSummary(texts) {
+    var html = '<div class="cb-par-summary">';
+    if (texts.local) {
+      html += '<div class="cb-par-sum-item local">' +
+        '<div class="cb-par-sum-head">本地原文</div>' +
+        '<div class="cb-par-sum-preview">' + _esc(texts.local.slice(0, 40)) + '...</div>' +
+      '</div>';
+    }
+    if (texts.cloud) {
+      html += '<div class="cb-par-sum-item cloud">' +
+        '<div class="cb-par-sum-head">云端原文</div>' +
+        '<div class="cb-par-sum-preview">' + _esc(texts.cloud.slice(0, 40)) + '...</div>' +
+      '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // ---- 导出公开 API ----
+  return {
+    reset: reset,
+    setModeLabel: setModeLabel,
+    mount: mount,
+    handleEvent: handleEvent,
+    handleStream: handleStream,
+    finalize: finalize,
+    renderHistory: renderHistory,
+    getState: getState
+  };
+})();
+
+// 暴露到 window（供 SSE 分发切换用，Step2b 启用）
+window.CardRenderer = CardRenderer;
