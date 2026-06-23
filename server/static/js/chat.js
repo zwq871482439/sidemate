@@ -1750,15 +1750,8 @@ async function sendMessage() {
       _lastMsgCount = currentMessages.length;
     } else {
       var streamEl4 = document.getElementById('stream-msg');
-      if (streamEl4) {
-        streamEl4.removeAttribute('id');
-        // 阶段3 Step2b：清理 #card-area id（新渲染器）+ #agent-timeline（旧，兼容）
-        var _oldCard = streamEl4.querySelector('#card-area');
-        if (_oldCard) _oldCard.removeAttribute('id');
-        var _oldTl = streamEl4.querySelector('#agent-timeline');
-        if (_oldTl) _oldTl.removeAttribute('id');
-      }
-      // 彻底清掉引用，确保 renderMessages 从数据重建
+      // C方案：id 清理交给 finalizeDOM（在 finally 末尾调），这里先保留引用
+      // 彻底清掉旧引用
       _agentTimelineEl = null;
 
       // 计算要持久化的内容：正常输出 / 中止时已有内容 / 错误消息
@@ -1866,7 +1859,7 @@ async function sendMessage() {
     if (typeof resumeHeartbeat === 'function') resumeHeartbeat();
     uploadedFilePath = null;
     if (!_isDocOutlineMode) {
-      // error/abort 时保留错误卡片（不 renderMessages），只恢复 UI 按钮 + 刷新列表
+      // error/abort 时保留错误卡片（不重建），只恢复 UI 按钮 + 刷新列表
       if (_hadError) {
         var streamErrFix = document.getElementById('stream-msg');
         if (streamErrFix) streamErrFix.removeAttribute('id');  // 固化错误卡片
@@ -1875,7 +1868,9 @@ async function sendMessage() {
         loadChatList();
         fetchContextUsage();
       } else {
-        renderMessages();
+        // C方案：原地固化流式气泡（替代 renderMessages 全量重建，消除闪烁）
+        // 用户正在看的过程信息（步骤/产出）不会消失，只清理过程态痕迹（计时器/光标/动画）
+        CardRenderer.finalizeDOM(streamEl4);
         _restoreChatUI();
         input.focus();
         setTimeout(function() { if (!generating) _restoreChatUI(); }, 100);
@@ -2663,6 +2658,40 @@ var CardRenderer = (function() {
     _data = cardData;
   }
 
+  // 原地固化当前流式气泡的 DOM（C方案：不重建，原地清理过程态痕迹）
+  // 调用时机：finally 块正常完成时，替代 renderMessages() 全量重建。
+  // 保证固化后的 DOM 和 renderHistory 从 card_data 重建的 DOM 同构。
+  function finalizeDOM(streamMsgEl) {
+    if (!streamMsgEl) return;
+    // 1. 停止思考态计时器
+    if (_thinkingTimerInterval) {
+      clearInterval(_thinkingTimerInterval);
+      _thinkingTimerInterval = null;
+    }
+    // 2. 去掉 thinking-indicator（流式过程态，静态消息不需要）
+    var indicator = streamMsgEl.querySelector('.thinking-indicator');
+    if (indicator) indicator.remove();
+    // 3. 去掉打字光标（streaming class）
+    var streamContent = streamMsgEl.querySelector('#stream-content');
+    if (streamContent) streamContent.classList.remove('streaming');
+    // 4. 卡片区域：圆点全固化为 done（防残留 running 动画）
+    var cardArea = streamMsgEl.querySelector('#card-area');
+    if (cardArea) {
+      var runDots = cardArea.querySelectorAll('.cb-dot.run');
+      runDots.forEach(function(d) { d.className = 'cb-dot ok'; });
+      var runSteps = cardArea.querySelectorAll('.cb-step[data-status="running"]');
+      runSteps.forEach(function(s) { s.setAttribute('data-status', 'done'); });
+    }
+    // 5. 去掉 #card-area 和 #stream-content 的 id（防下一轮串扰）
+    if (cardArea) cardArea.removeAttribute('id');
+    if (streamContent) streamContent.removeAttribute('id');
+    // 6. 去掉 stream-msg 的 id（固化）
+    streamMsgEl.removeAttribute('id');
+    // 注：不清理旧 #agent-timeline（Step2c 删除旧系统后自然消失）
+    var oldTl = streamMsgEl.querySelector('#agent-timeline');
+    if (oldTl) oldTl.removeAttribute('id');
+  }
+
   // 历史回放（替代 _buildAgentTimelineHtml）
   function renderHistory(m) {
     if (!m || !m.card_data || !m.card_data.length) return '';
@@ -2965,6 +2994,7 @@ var CardRenderer = (function() {
     handleEvent: handleEvent,
     handleStream: handleStream,
     finalize: finalize,
+    finalizeDOM: finalizeDOM,
     renderHistory: renderHistory,
     getState: getState
   };
