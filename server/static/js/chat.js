@@ -775,7 +775,7 @@ function _buildAgentTimelineHtml(timelineData) {
         stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">信息已收集完毕，正在撰写回复...</span>';
         break;
       case 'tool_limited':
-        stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">部分工具已达上限</span>';
+        stepHtml = '<span class="agent-icon agent-warn">' + iconSvg('warn','14') + '</span> <span class="agent-label">工具调用次数已达上限，转入回答</span>';
         break;
       case 'error':
         // Patch4 v3.1 BUG#17：按工具类型差异化文案

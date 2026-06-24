@@ -161,29 +161,72 @@ function _sidebarSelectChat(path) {
   });
 }
 
+// 内联重命名弹窗（替代 prompt()）
+function _showRenameModal(defaultName, callback) {
+  // 移除已有弹窗
+  var existing = document.getElementById('renameModalBackdrop');
+  if (existing) existing.remove();
+
+  var backdrop = document.createElement('div');
+  backdrop.id = 'renameModalBackdrop';
+  backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease';
+
+  var card = document.createElement('div');
+  card.className = 'modal-confirm-card';
+  card.style.cssText = 'width:340px;padding:20px 24px';
+  card.innerHTML =
+    '<h3 style="font-size:15px;font-weight:600;margin:0 0 12px 0">重命名会话</h3>' +
+    '<input type="text" id="renameModalInput" value="' + (defaultName || '').replace(/"/g, '&quot;') + '" ' +
+    'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border-color);border-radius:6px;font-size:14px;font-family:inherit;background:var(--bg-primary);color:var(--text-primary);outline:none">' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+    '<button id="renameModalCancel" style="padding:6px 14px;border:1px solid var(--border-color);border-radius:6px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px">取消</button>' +
+    '<button id="renameModalOk" style="padding:6px 16px;border:none;border-radius:6px;background:var(--accent-color);color:var(--text-on-accent);cursor:pointer;font-size:13px;font-weight:500">确认</button>' +
+    '</div>';
+  backdrop.appendChild(card);
+  document.body.appendChild(backdrop);
+
+  var input = document.getElementById('renameModalInput');
+  var close = function() { backdrop.remove(); };
+  var submit = function() {
+    var val = input.value.trim();
+    close();
+    if (val && callback) callback(val);
+  };
+
+  input.focus();
+  input.select();
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') submit();
+    if (e.key === 'Escape') close();
+  });
+  document.getElementById('renameModalOk').addEventListener('click', submit);
+  document.getElementById('renameModalCancel').addEventListener('click', close);
+  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
+}
+
 async function _sidebarRenameChat(path) {
   var name = path.split(/[\\/]/).pop().replace('.json','');
-  var newName = prompt('请输入新名称：', name);
-  if (!newName || newName === name) return;
-  try {
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(name) + '/rename', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({new_name: newName})
-    });
-    var data = await resp.json();
-    if (data.ok) {
-      // 如果重命名的是当前会话，更新 currentChatFile 指向新路径
-      if (data.new_file && currentChatFile === path) {
-        currentChatFile = data.new_file;
+  _showRenameModal(name, async function(newName) {
+    if (!newName || newName === name) return;
+    try {
+      var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(name) + '/rename', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({new_name: newName})
+      });
+      var data = await resp.json();
+      if (data.ok) {
+        if (data.new_file && currentChatFile === path) {
+          currentChatFile = data.new_file;
+        }
+        if (typeof showToast === 'function') showToast('会话已重命名');
+        await loadChatList();
+      } else {
+        if (typeof showToast === 'function') showToast(data.error || '重命名失败', 'error');
       }
-      if (typeof showToast === 'function') showToast('会话已重命名');
-      await loadChatList();
-    } else {
-      if (typeof showToast === 'function') showToast(data.error || '重命名失败', 'error');
+    } catch(e) {
+      if (typeof showToast === 'function') showToast('重命名失败', 'error');
     }
-  } catch(e) {
-    if (typeof showToast === 'function') showToast('重命名失败', 'error');
-  }
+  });
 }
 
 function _sidebarExportChat(path) {
