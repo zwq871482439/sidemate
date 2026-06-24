@@ -52,10 +52,8 @@ def reformulate_query(query: str, history: list, mgr) -> str:
         if not response:
             return query
 
-        # 取第一行作为 reformulated query
-        result = response.split('\n')[0].strip()
-        # 去掉可能的引号包裹
-        result = result.strip('"').strip("'").strip("\u201c").strip("\u201d")
+        # P6 精简：清洗 LLM 输出，去除元分析/编号列表等啰嗦内容
+        result = _clean_reformulate_output(response, query)
         if not result or len(result) < 2:
             return query
 
@@ -72,6 +70,47 @@ def reformulate_query(query: str, history: list, mgr) -> str:
     except Exception as e:
         log.warning("[REFORMULATE] 失败，使用原 query: %s", str(e)[:100])
         return query
+
+
+def _clean_reformulate_output(response: str, original: str) -> str:
+    """清洗 LLM 的 reformulate 输出，去除元分析/编号列表等啰嗦内容
+
+    LLM 有时会输出"1. 判断话题关联性：..."这种分析过程，
+    而不是简洁的搜索关键词。本函数提取真正的搜索词。
+    """
+    lines = [l.strip() for l in response.strip().split('\n') if l.strip()]
+
+    # 策略1：如果只有一行，直接用（去引号）
+    if len(lines) == 1:
+        return lines[0].strip('"').strip("'").strip("\u201c").strip("\u201d")
+
+    # 策略2：过滤掉编号列表/元分析行，找真正的关键词行
+    # 元分析特征：以数字编号开头、包含"判断/分析/策略/关联/属于/可以"等分析词
+    _META_KEYWORDS = ['判断', '分析', '策略', '关联', '属于', '可以', '应该',
+                      '需要', '首先', '然后', '步骤', '思路', '目标', '属于全新']
+    candidates = []
+    for line in lines:
+        # 去掉编号前缀 "1." "1、" "(1)" "1)" "1:"
+        cleaned = re.sub(r'^[\d]+[.、):]\s*', '', line)
+        cleaned = re.sub(r'^\([\d]+\)\s*', '', cleaned)
+        # 跳过元分析行
+        if any(kw in cleaned for kw in _META_KEYWORDS):
+            continue
+        # 跳过过长的行（关键词应该简短，<30字）
+        if len(cleaned) > 30:
+            continue
+        # 跳过以"用户"/"搜索"开头的标签行
+        if cleaned.startswith('用户') or cleaned.startswith('搜索') or cleaned.startswith('关键词'):
+            continue
+        candidates.append(cleaned.strip('"').strip("'").strip("\u201c").strip("\u201d"))
+
+    if candidates:
+        # 取第一个候选（通常是最相关的关键词）
+        return candidates[0]
+
+    # 策略3：全部被过滤了，退回取第一行去编号
+    first = re.sub(r'^[\d]+[.、):]\s*', '', lines[0])
+    return first.strip('"').strip("'").strip("\u201c").strip("\u201d")
 
 
 def _check_keyword_preservation(original: str, reformulated: str, history: list) -> bool:

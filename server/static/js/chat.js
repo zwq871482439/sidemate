@@ -755,8 +755,8 @@ function _renderSingleMsg(m, idx) {
     timelineHtml = _buildAgentTimelineHtml(m.agent_timeline);  // 旧消息兼容
   }
   // 结构与流式 finalizeDOM 后同构：card-area(步骤) → stream-content(正文) → msg-footer(统计/复制)
-  // 这样刷新页面/历史回放与刚完成的卡片视觉完全一致，无闪变。
-  var bodyExtras = _buildKbSources(m) + actionTag + ts + bodyHtml;
+  // actionTag 统一放最前面（所有消息位置一致），KB 来源放正文前
+  var bodyExtras = actionTag + ts + _buildKbSources(m) + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
   var docBarHtml = '';
   if (m.doc_url) {

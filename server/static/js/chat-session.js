@@ -105,8 +105,9 @@ function _renderChatSidebar(chats, currentPath) {
       html += '<span class="si-count">' + c.msg_count + '</span>';
     }
     html += '<span class="si-actions">';
-    html += '<button class="si-rename" data-idx="' + idx + '" title="重命名">' + iconSvg('write','11') + '</button>';
-    html += '<button class="si-delete" data-idx="' + idx + '" title="删除">' + iconSvg('close','11') + '</button>';
+    var encPath = encodeURIComponent(c.path);
+    html += '<button class="si-rename" data-idx="' + idx + '" title="重命名" onclick="event.stopPropagation();_sidebarRenameByPath(\'' + encPath + '\')">' + iconSvg('write','11') + '</button>';
+    html += '<button class="si-delete" data-idx="' + idx + '" title="删除" onclick="event.stopPropagation();_sidebarDeleteByPath(\'' + encPath + '\')">' + iconSvg('close','11') + '</button>';
     html += '</span>';
     html += '</div>';
   });
@@ -119,6 +120,18 @@ function _renderChatSidebar(chats, currentPath) {
   var sel = document.getElementById('sessionSelect');
   if (sel && currentPath) sel.value = currentPath;
 }
+
+// 通过编码 path 直接调用重命名/删除（内联 onclick 用，最可靠）
+function _sidebarRenameByPath(encPath) {
+  var path = decodeURIComponent(encPath);
+  if (path) _sidebarRenameChat(path);
+}
+function _sidebarDeleteByPath(encPath) {
+  var path = decodeURIComponent(encPath);
+  if (path) _sidebarDeleteChat(path);
+}
+window._sidebarRenameByPath = _sidebarRenameByPath;
+window._sidebarDeleteByPath = _sidebarDeleteByPath;
 
 function _sidebarSelectChat(path) {
   if (typeof generating !== 'undefined' && generating) return;

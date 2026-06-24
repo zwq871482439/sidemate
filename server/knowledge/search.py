@@ -646,6 +646,23 @@ class _KBSearchMixin:
             log.info("[KB] get_context(): 无检索结果, query=%s", query[:50])
             return "", []
 
+        # P6 检索精度优化：reranker 相关性阈值过滤
+        # reranker_score 高于阈值的才保留，过滤掉弱相关/不相关文档
+        # 阈值 0.1：实测相关文档 >0.8，不相关 <0.01，0.1 是安全的分界线
+        RERANKER_THRESHOLD = 0.1
+        filtered = []
+        for r in results:
+            rs = r.get("reranker_score")
+            if rs is None or rs >= RERANKER_THRESHOLD:
+                filtered.append(r)
+            else:
+                log.info("[KB] 过滤低相关文档: score=%.4f doc=%s", rs, r.get("source_label", "?")[:30])
+        # 兜底：如果全被过滤了（极端情况），保留 score 最高的 1 条
+        if not filtered and results:
+            filtered = [results[0]]
+            log.info("[KB] 全部低于阈值，保留最高分 1 条兜底")
+        results = filtered
+
         # 按 score 降序拼接，不超过 max_chars
         context_parts = []
         total_chars = 0
