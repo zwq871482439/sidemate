@@ -398,7 +398,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 _preloaded_kb = True
                 log.info("[CLOUD-AGENT] 预注入 KB 文档: %d 篇, %d 字",
                          len(_doc_ids), len(_kb_content))
-                # P6: 发 doc_loaded 事件，让前端显示"已加载 N 篇文档"
+                # P6: 发 doc_loaded + agent_status 事件，让前端显示"已加载文档"推理单元
                 _doc_names = []
                 for _did in _doc_ids:
                     _d = kb.get_document(_did)
@@ -409,6 +409,23 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                     "count": len(_doc_names),
                     "source": "kb_preload",
                 })
+                # 发 thinking + kb_searching(start) + kb_done 事件，让 CardRenderer 显示推理轮次
+                yield sse_event("agent_status", {"status": "thinking", "phase": "start"})
+                yield sse_event("agent_status", {"status": "kb_searching", "phase": "start",
+                    "query": "读取引用文档"})
+                _preload_label = "、".join(_doc_names[:3])
+                if len(_doc_names) > 3:
+                    _preload_label += "等%d篇" % len(_doc_names)
+                yield sse_event("agent_status", {
+                    "status": "kb_done", "phase": "done",
+                    "count": len(_doc_names),
+                    "query": _preload_label,
+                    "elapsed_ms": 0,
+                    "detail": "\n".join(["· " + n for n in _doc_names]),
+                })
+                _agent_timeline_buf.append({"status": "kb_searching", "query": "读取引用文档"})
+                _agent_timeline_buf.append({"status": "kb_done", "count": len(_doc_names),
+                                            "query": _preload_label, "elapsed_ms": 0})
         except Exception as e:
             log.warning("[CLOUD-AGENT] KB 文档预注入失败: %s", str(e)[:80])
 
