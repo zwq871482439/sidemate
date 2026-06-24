@@ -2740,12 +2740,18 @@ var CardRenderer = (function() {
       runSteps.forEach(function(s) { s.setAttribute('data-status', 'done'); });
       // 模块3b：关闭最后一个推理单元（折叠 + 算耗时）
       if (_currentUnit && _currentUnit.el) {
-        _currentUnit.el.classList.remove('current');
-        _currentUnit.el.removeAttribute('open');
-        if (_currentUnit.startTime) {
-          var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
-          var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
-          if (timeSpan) timeSpan.textContent = elapsed + 's';
+        // P6: 最后一个单元如果没有工具调用，也删除（空轮次不渲染）
+        if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
+          _currentUnit.el.remove();
+          _reasonUnits.pop();
+        } else {
+          _currentUnit.el.classList.remove('current');
+          _currentUnit.el.removeAttribute('open');
+          if (_currentUnit.startTime) {
+            var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
+            var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
+            if (timeSpan) timeSpan.textContent = elapsed + 's';
+          }
         }
       }
     }
@@ -3092,13 +3098,19 @@ var CardRenderer = (function() {
   function _startReasonUnit() {
     // 关闭前一个单元（折叠）
     if (_currentUnit && _currentUnit.el) {
-      _currentUnit.el.classList.remove('current');
-      _currentUnit.el.removeAttribute('open');
-      // 算耗时
-      if (_currentUnit.startTime) {
-        var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
-        var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
-        if (timeSpan) timeSpan.textContent = elapsed + 's';
+      // P6: 空轮次不渲染——如果上一轮没有工具调用，删除它
+      if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
+        _currentUnit.el.remove();
+        _reasonUnits.pop();
+      } else {
+        _currentUnit.el.classList.remove('current');
+        _currentUnit.el.removeAttribute('open');
+        // 算耗时
+        if (_currentUnit.startTime) {
+          var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
+          var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
+          if (timeSpan) timeSpan.textContent = elapsed + 's';
+        }
       }
     }
     // 创建新单元
@@ -3147,16 +3159,45 @@ var CardRenderer = (function() {
     if (status === 'fetching') return '阅读：' + _esc(d.url || '');
     if (status === 'kb_searching') return '检索知识库：' + _esc(d.query || '');
     if (status === 'workspace_writing') return '写入文档：' + _esc(d.name || '');
-    return _esc(status);
+    // P6 补全：英文 status 中文化
+    if (status === 'workspace_listing') return '列出工作区文件';
+    if (status === 'workspace_reading') return '读取文档：' + _esc(d.name || '');
+    if (status === 'workspace_deleting') return '删除文档：' + _esc(d.name || '');
+    if (status === 'workspace_appending') return '追加内容：' + _esc(d.name || '');
+    if (status === 'workspace_editing') return '编辑文档：' + _esc(d.name || '');
+    if (status === 'doc_status') return '标记文档完成：' + _esc(d.name || d.filename || '');
+    if (status === 'docs_listing') return '列出文档列表';
+    if (status === 'error') {
+      // error 显示原因而非裸 "error"
+      var reason = d.reason || d.message || '';
+      return reason ? '操作受限：' + _esc(reason) : '操作异常';
+    }
+    if (status === 'tool_limited') return '工具调用已达上限，转入回答';
+    // _done 后缀的状态：提取前缀映射
+    if (status.indexOf('_done') > 0) {
+      var prefix = status.replace('_done', '');
+      return _agentStatusLabel(prefix, d);
+    }
+    // 未知 status：友好显示而非裸英文
+    return _esc(status.replace(/_/g, ' '));
   }
 
   function _addSummary(d) {
     if (!_container) return;
     var sumDiv = document.createElement('div');
     sumDiv.className = 'cb-summary';
+    // P6 统计修正：纳入知识库检索和文档生成
+    var parts = [];
     var searches = d.searches || 0;
     var fetches = d.fetches || 0;
-    sumDiv.innerHTML = '<span class="cb-summary-text">共搜索 ' + searches + ' 次 · 阅读 ' + fetches + ' 篇</span>';
+    var kbHits = d.kb_hits || 0;
+    var docs = d.docs || 0;
+    if (searches > 0) parts.push('搜索 ' + searches + ' 次');
+    if (fetches > 0) parts.push('阅读 ' + fetches + ' 篇');
+    if (kbHits > 0) parts.push('检索知识库 ' + kbHits + ' 次');
+    if (docs > 0) parts.push('生成文档 ' + docs + ' 篇');
+    var text = parts.length > 0 ? '共 ' + parts.join(' · ') : '直接回答（未使用工具）';
+    sumDiv.innerHTML = '<span class="cb-summary-text">' + text + '</span>';
     _container.appendChild(sumDiv);
   }
 
