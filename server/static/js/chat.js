@@ -2792,11 +2792,7 @@ var CardRenderer = (function() {
   function renderHistory(m) {
     if (!m || !m.card_data || !m.card_data.length) return '';
     var html = '<div class="card-area card-history">';
-    // 并行模式：检查是否有 parallel_texts，渲染双列摘要
-    if (m.parallel_texts) {
-      html += _renderParallelSummary(m.parallel_texts);
-    }
-    // 渲染步骤
+    // 渲染步骤（并行模式的原文嵌入对应步骤下方）
     for (var i = 0; i < m.card_data.length; i++) {
       var s = m.card_data[i];
       // P6: 推理轮次（在线 Agent）—重建 .cb-reason 结构
@@ -2831,6 +2827,16 @@ var CardRenderer = (function() {
       // 重建产出区（transform/sources）
       if (s.output) {
         html += _renderOutputHtml(s.output);
+      }
+      // P6: 并行模式——本地/云端步骤嵌入对应原文卡片
+      if (m.parallel_texts) {
+        if (s.id === 'local_gen' && m.parallel_texts.local) {
+          html += '<div class="cb-par-card local" style="margin-top:6px">' +
+            '<div class="cb-par-card-body">' + _esc(m.parallel_texts.local) + '</div></div>';
+        } else if (s.id === 'cloud_gen' && m.parallel_texts.cloud) {
+          html += '<div class="cb-par-card cloud" style="margin-top:6px">' +
+            '<div class="cb-par-card-body">' + _esc(m.parallel_texts.cloud) + '</div></div>';
+        }
       }
       html += '</div>';
     }
