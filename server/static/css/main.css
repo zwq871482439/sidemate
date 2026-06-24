@@ -1277,31 +1277,30 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   border-bottom: 1px solid var(--border-color) !important;
 }
 #messages.msg-list-mode .msg:last-child { border-bottom: none !important; }
-/* 头像（用 ::before 模拟，不动 DOM 结构） */
-#messages.msg-list-mode .msg.user::before {
-  content: '你';
+/* 列表模式头像：用 ::before 显示圆形头像（覆盖卡片的色条 ::before）*/
+#messages.msg-list-mode .msg::before {
+  content: '' !important;
   grid-column: 1;
   width: 32px; height: 32px;
-  background: var(--accent-color);
-  color: var(--text-on-accent);
   border-radius: 50%;
-  font-size: 12px;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 500;
-}
-#messages.msg-list-mode .msg.ai::before {
-  content: '伴';
-  grid-column: 1;
-  width: 32px; height: 32px;
   background: var(--gray-200);
   color: var(--text-primary);
-  border-radius: 50%;
   font-size: 12px;
   display: flex; align-items: center; justify-content: center;
   font-weight: 500;
 }
+#messages.msg-list-mode .msg.user::before { content: '你'; background: var(--accent-color); color: var(--text-on-accent); }
+#messages.msg-list-mode .msg.ai::before { content: '伴'; }
 #messages.msg-list-mode .msg > *:not(::before) {
   grid-column: 2;
+}
+/* 列表模式：恢复卡片内部元素背景（msg 被 transparent 了，内部元素需要自己的背景）*/
+#messages.msg-list-mode .msg .stream-content,
+#messages.msg-list-mode .msg .msg-footer,
+#messages.msg-list-mode .msg .card-area {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 8px 12px;
 }
 
 /* Token 显示状态 */
