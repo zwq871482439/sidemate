@@ -17,6 +17,20 @@ var _kbModelsLoaded = false;
 var _kbTagClusters = [];
 var _kbLastDocs = [];
 var _kbViewMode = 'card';  // P6: 'card' | 'list'
+
+// P6: KB 文档视图切换（卡片/列表）
+function kbSwitchView(mode, btn) {
+  _kbViewMode = mode;
+  // 更新按钮选中态
+  var toggle = document.getElementById('kbViewToggle');
+  if (toggle) {
+    toggle.querySelectorAll('.kb-view-btn').forEach(function(b) { b.classList.remove('sel'); });
+    if (btn) btn.classList.add('sel');
+  }
+  // 重新渲染文档列表
+  if (typeof kbRefreshDocs === 'function') kbRefreshDocs();
+}
+window.kbSwitchView = kbSwitchView;
 var _kbQueueItems = [];  // P6 B4: 处理队列 [{{docId, filename, phase, pct, error}}]
 
 // 标签分组（LLM 语义归并）
