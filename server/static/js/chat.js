@@ -50,13 +50,72 @@ function _buildKbSources(m) {
   m.kb_sources.forEach(function(s, i) {
     var label = s.label || ('来源' + (i+1));
     var snippet = s.snippet || '';
-    html += '<div class="kb-source-item">'
+    var score = s.reranker_score || s.score || 0;
+    // 相关度分数条（可视化，0-100%）
+    var scorePct = Math.min(100, Math.round(score * 100));
+    var scoreBar = score > 0 ? '<div class="kb-source-score" title="相关度 ' + scorePct + '%"><div class="kb-source-score-fill" style="width:' + scorePct + '%"></div></div>' : '';
+    html += '<div class="kb-source-item" data-src-idx="' + i + '">'
       + '<span class="kb-source-num">' + (i + 1) + '</span>'
-      + '<span class="kb-source-label">' + esc(label) + '</span>'
+      + '<div class="kb-source-content">'
+      + '<div class="kb-source-head"><span class="kb-source-label">' + esc(label) + '</span>' + scoreBar + '</div>'
       + (snippet ? '<div class="kb-source-snippet">' + esc(snippet) + '</div>' : '')
+      + '</div>'
       + '</div>';
   });
   return html + '</div>';
+}
+
+// 绑定引用上标点击事件：点击高亮对应参考来源
+function _bindCitationClicks(el) {
+  if (!el) el = document.getElementById('messages');
+  if (!el) return;
+  var refs = el.querySelectorAll('.cite-ref');
+  refs.forEach(function(ref) {
+    ref.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var idx = this.getAttribute('data-cite');
+      // 找同一条消息内的参考来源项
+      var msg = this.closest('.msg');
+      if (!msg) return;
+      var srcItem = msg.querySelector('.kb-source-item[data-src-idx="' + idx + '"]');
+      if (srcItem) {
+        // 移除其他高亮
+        msg.querySelectorAll('.kb-source-item.cite-highlight').forEach(function(s) {
+          s.classList.remove('cite-highlight');
+        });
+        // 高亮当前项
+        srcItem.classList.add('cite-highlight');
+        srcItem.scrollIntoView({behavior:'smooth', block:'nearest'});
+        // 2秒后自动取消高亮
+        setTimeout(function() { srcItem.classList.remove('cite-highlight'); }, 2000);
+      }
+    });
+  });
+}
+
+// 把正文里的 [1] [2] 渲染成可交互的引用上标（链接到参考来源）
+function _renderCitationSuperscripts(html, kbSources) {
+  if (!kbSources || !kbSources.length) return html;
+  // 匹配 [1] [2] 等引用标注（不匹配代码块内的）
+  // 用占位符保护 <code> 和 <pre> 内容
+  var codeBlocks = [];
+  html = html.replace(/<(code|pre)[^>]*>[\s\S]*?<\/\1>/gi, function(m) {
+    codeBlocks.push(m);
+    return '\x00CB' + (codeBlocks.length - 1) + '\x00';
+  });
+  // 替换 [n] 为上标
+  html = html.replace(/\[(\d+)\]/g, function(match, num) {
+    var idx = parseInt(num, 10) - 1;
+    if (idx >= 0 && idx < kbSources.length) {
+      return '<sup class="cite-ref" data-cite="' + idx + '">' + num + '</sup>';
+    }
+    return match;
+  });
+  // 还原代码块
+  for (var i = 0; i < codeBlocks.length; i++) {
+    html = html.replace('\x00CB' + i + '\x00', codeBlocks[i]);
+  }
+  return html;
 }
 
 function _buildStats(m) {
@@ -747,6 +806,10 @@ function _renderSingleMsg(m, idx) {
   }
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
+  // 引用标注 [1][2] 渲染成上标（仅 KB 消息）
+  if (m.kb_sources && m.kb_sources.length) {
+    bodyHtml = _renderCitationSuperscripts(bodyHtml, m.kb_sources);
+  }
   // 阶段3 Step2b：CardRenderer 历史回放（优先读 card_data，旧消息 fallback 到 agent_timeline）
   var timelineHtml = '';
   if (m.card_data) {
@@ -832,12 +895,16 @@ function renderMessages() {
     }
     applyCodeHighlight(el);
     if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
+    _bindCitationClicks(el);
     if (_lastScrollBottom) { el.scrollTop = el.scrollHeight; }
     return;
   }
   el.innerHTML = currentMessages.map(function(m) { return renderMsg(m); }).join('');
   applyCodeHighlight(el);
   if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
+
+  // 绑定引用上标点击：高亮对应参考来源
+  _bindCitationClicks(el);
 
   // 恢复未完成的文档提纲（页面刷新后重建确认栏）
   if (currentMessages.length > 0) {

@@ -211,9 +211,10 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 budget = mgr.calc_kb_context_budget()
                 safe_chars = budget["safe_chars"]
                 kb_context, kb_sources_raw = kb.get_context(search_query, max_chars=safe_chars, ai_mode='local')
-                # 规范化字段：统一为 label/snippet（和 compare/parallel pipeline 一致）
+                # 规范化字段：统一为 label/snippet/score（和 compare/parallel pipeline 一致）
                 kb_sources = [
-                    {"label": s.get("source_label", "?"), "snippet": s.get("text_snippet", "")[:100]}
+                    {"label": s.get("source_label", "?"), "snippet": s.get("text_snippet", "")[:100],
+                     "reranker_score": s.get("reranker_score") or s.get("score", 0)}
                     for s in kb_sources_raw
                 ]
                 s_search.output = StepOutput("sources", kb_sources)

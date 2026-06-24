@@ -777,6 +777,18 @@ body.has-offline-banner #app{padding-top:44px}
   display:flex;align-items:center;justify-content:center;font-size:.75em;font-weight:600}
 .kb-source-label{color:var(--text-primary);font-weight:500}
 .kb-source-snippet{color:var(--text-muted);font-size:.9em;margin-top:2px;word-break:break-all;max-height:40px;overflow:hidden}
+/* 参考来源：相关度分数条 */
+.kb-source-content{flex:1;min-width:0}
+.kb-source-head{display:flex;align-items:center;gap:8px}
+.kb-source-score{flex-shrink:0;width:50px;height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden}
+.kb-source-score-fill{height:100%;background:var(--accent-color);border-radius:2px;transition:width .3s}
+/* 引用上标 [1] → 可交互 */
+.cite-ref{display:inline-flex;align-items:center;justify-content:center;min-width:14px;height:14px;padding:0 3px;
+  margin:0 1px;font-size:9px;font-weight:600;line-height:1;color:#fff;background:var(--accent-color);
+  border-radius:7px;cursor:pointer;vertical-align:super;transition:transform .12s,background .12s}
+.cite-ref:hover{transform:scale(1.2);background:var(--primary-700,#1e3a5f)}
+/* 引用对应的来源项高亮 */
+.kb-source-item.cite-highlight{background:rgba(24,95,165,.08);border-radius:6px;transition:background .3s}
 
 /* ===== 消息复制按钮 ===== */
 .msg-copy-wrap{position:relative}
