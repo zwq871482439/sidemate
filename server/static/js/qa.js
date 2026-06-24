@@ -1335,14 +1335,14 @@ async function kbShowDiagnosis() {
         var icon = issue.level === 'error' ? '✕' : issue.level === 'warn' ? '!' : issue.level === 'ok' ? '✓' : 'i';
         html += '<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:11px;color:var(--text-secondary)">';
         html += '<span style="color:' + color + ';font-weight:600;flex-shrink:0;width:14px;text-align:center">' + icon + '</span>';
-        html += '<span>' + esc(issue.msg) + '</span>';
+        html += '<span>' + (issue.msg || '') + '</span>';
         html += '</div>';
       });
     }
 
     el.innerHTML = html;
   } catch(e) {
-    el.innerHTML = '<span style="color:var(--error-color);font-size:12px">诊断失败: ' + esc(e.message) + '</span>';
+    el.innerHTML = '<span style="color:var(--error-color);font-size:12px">诊断失败: ' + (e.message || '') + '</span>';
   }
 }
 function _diagMetric(label, value) {
