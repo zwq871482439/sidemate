@@ -3311,26 +3311,21 @@ var CardRenderer = (function() {
 
   // 历史回放：并行三栏对比（本地/云端/融合，卡片堆叠，点击展开全文）
   function _renderParallelSummary(texts) {
-    var html = '<div class="cb-par-summary">';
-    // 融合结果（默认展开，紫色，标注"已采用"）
-    if (texts.merge) {
-      html += '<div class="cb-par-sum-item merge">' +
-        '<div class="cb-par-sum-head">融合结果（已采用）</div>' +
-        '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.merge) + '</div>' +
-      '</div>';
-    }
-    // 本地AI生成回答（默认展开）
+    // P6: 双卡片布局——本地/云端各自独立卡片，体现"两条线"
+    // 融合结果已在正文区显示，摘要区不再重复
+    var html = '<div class="cb-par-dual">';
+    // 本地卡片
     if (texts.local) {
-      html += '<div class="cb-par-sum-item local">' +
-        '<div class="cb-par-sum-head">本地AI生成回答</div>' +
-        '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.local) + '</div>' +
+      html += '<div class="cb-par-card local">' +
+        '<div class="cb-par-card-head"><span class="cb-par-dot local"></span>本地AI生成回答</div>' +
+        '<div class="cb-par-card-body">' + _esc(texts.local) + '</div>' +
       '</div>';
     }
-    // 云端AI生成回答（默认展开）
+    // 云端卡片
     if (texts.cloud) {
-      html += '<div class="cb-par-sum-item cloud">' +
-        '<div class="cb-par-sum-head">云端AI生成回答</div>' +
-        '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.cloud) + '</div>' +
+      html += '<div class="cb-par-card cloud">' +
+        '<div class="cb-par-card-head"><span class="cb-par-dot cloud"></span>云端AI生成回答</div>' +
+        '<div class="cb-par-card-body">' + _esc(texts.cloud) + '</div>' +
       '</div>';
     }
     html += '</div>';
