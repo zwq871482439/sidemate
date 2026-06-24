@@ -2348,8 +2348,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-par-stream { margin-top:6px; font-size:11px; line-height:1.6; color:var(--text-secondary); min-height:14px; white-space:pre-wrap; word-break:break-all; }
 
 /* 并行摘要条（阶段2折叠后） */
-.cb-par-summary { display:flex; gap:8px; margin:4px 0; }
-.cb-par-sum-item { flex:1; min-width:0; padding:6px 10px; background:var(--bg-secondary); border-radius:5px; cursor:pointer; border-left:2px solid var(--bg-tertiary); transition:background .15s; }
+.cb-par-summary { display:flex; flex-direction:column; gap:6px; margin:4px 0; }
+.cb-par-sum-item { padding:8px 12px; background:var(--bg-secondary); border-radius:6px; border-left:3px solid var(--bg-tertiary); transition:background .15s; }
 .cb-par-sum-item:hover { background:var(--bg-tertiary); }
 .cb-par-sum-item.local { border-left-color:var(--dot-ok); }
 .cb-par-sum-item.cloud { border-left-color:var(--primary-500); }
