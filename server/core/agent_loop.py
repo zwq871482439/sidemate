@@ -419,8 +419,6 @@ class AgentLoop:
 
             elif tool_name == "search_kb":
                 query = args.get("query", "")
-                # Patch5 T03: 支持 token 参数进行私密文档过滤
-                token = args.get("token", "")
                 if self.kb is None:
                     return {
                         "success": False,
@@ -429,20 +427,18 @@ class AgentLoop:
                         "message": "当前没有知识库，请使用 search_web 搜索互联网。",
                     }
 
-                # Patch5 T03: 如果有 token，构建 accessible_doc_ids 进行私密文档过滤
+                # 云端 Agent 访问知识库：过滤掉私密文档（单文档粒度权限）
+                # 私密文档只对本地可见，云端 Agent 的 search_kb 结果不含私密文档
                 _accessible_doc_ids = None
-                if token:
-                    try:
-                        from core.access_token import get_access_token_manager
-                        _token_mgr = get_access_token_manager()
-                        _is_private_map = {d.doc_id: getattr(d, 'is_private', False)
-                                           for d in self.kb.documents.values()}
-                        _all_doc_ids = list(self.kb.documents.keys())
-                        _accessible_doc_ids = set(_token_mgr.filter_private_docs(
-                            _all_doc_ids, token, _is_private_map))
-                    except Exception as e:
-                        log.warning("[AGENT] search_kb token 过滤失败，忽略 token: %s", str(e)[:80])
-                # 使用 KB 的 get_context 方法（Patch5 T03: 支持 accessible_doc_ids）
+                try:
+                    _all_doc_ids = list(self.kb.documents.keys())
+                    _accessible_doc_ids = set(
+                        doc_id for doc_id in _all_doc_ids
+                        if not getattr(self.kb.documents.get(doc_id), 'is_private', False)
+                    )
+                except Exception as e:
+                    log.warning("[AGENT] search_kb 私密文档过滤失败: %s", str(e)[:80])
+                # 使用 KB 的 get_context 方法
                 kb_context, kb_sources = self.kb.get_context(
                     query, max_chars=4000, accessible_doc_ids=_accessible_doc_ids)
                 stats["kb_hits"] += 1

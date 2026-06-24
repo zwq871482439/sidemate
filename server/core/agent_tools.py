@@ -82,17 +82,13 @@ TOOL_REGISTRY = {
             "type": "function",
             "function": {
                 "name": "search_kb",
-                "description": "【优先使用】搜索本地知识库。知识库包含用户上传的专业文档，信息质量通常高于互联网搜索。回答用户问题时应先查知识库，找不到再搜互联网。",
+                "description": "【优先使用】搜索本地知识库。知识库包含用户上传的专业文档，信息质量通常高于互联网搜索。回答用户问题时应先查知识库，找不到再搜互联网。注意：私密文档不会出现在搜索结果中。",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
                             "description": "搜索关键词"
-                        },
-                        "token": {
-                            "type": "string",
-                            "description": "访问令牌（可选，用于访问私密文档。无令牌时私密文档不出现在结果中）"
                         }
                     },
                     "required": ["query"]
