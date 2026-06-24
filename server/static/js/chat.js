@@ -2687,6 +2687,7 @@ var CardRenderer = (function() {
   function finalize(newMsg) {
     if (!newMsg) return;
     var cardData = [];
+    // 1. 扁平步骤（离线 KB 的 reformulate/search 等）
     for (var id in _steps) {
       var s = _steps[id];
       var item = {
@@ -2700,6 +2701,28 @@ var CardRenderer = (function() {
       // 序列化产出内容（transform/sources），供 renderHistory 重建
       if (s.outputData) item.output = s.outputData;
       cardData.push(item);
+    }
+    // 2. 在线 Agent 推理轮次（每轮含工具步骤），序列化供刷新后重建
+    if (_reasonUnits && _reasonUnits.length > 0) {
+      for (var ri = 0; ri < _reasonUnits.length; ri++) {
+        var unit = _reasonUnits[ri];
+        if (!unit.tools || unit.tools.length === 0) continue;  // 跳过空轮次
+        // 计算耗时
+        var unitElapsed = 0;
+        if (unit.startTime) {
+          unitElapsed = Math.round((Date.now() - unit.startTime) / 1000 * 10) / 10;
+        }
+        var reasonItem = {
+          id: '_reason_' + (ri + 1),
+          type: 'reason_unit',
+          round: ri + 1,
+          elapsed_s: unitElapsed,
+          tools: unit.tools.map(function(t) {
+            return {status: t.status, label: t.label};
+          })
+        };
+        cardData.push(reasonItem);
+      }
     }
     if (cardData.length > 0) {
       newMsg.card_data = cardData;
@@ -2776,6 +2799,25 @@ var CardRenderer = (function() {
     // 渲染步骤
     for (var i = 0; i < m.card_data.length; i++) {
       var s = m.card_data[i];
+      // P6: 推理轮次（在线 Agent）—重建 .cb-reason 结构
+      if (s.type === 'reason_unit') {
+        html += '<details class="cb-reason">';
+        html += '<summary><span class="cb-reason-round">推理第 ' + s.round + ' 轮</span>';
+        html += '<span class="cb-reason-time">' + (s.elapsed_s || 0) + 's</span></summary>';
+        html += '<div class="cb-reason-body">';
+        if (s.tools && s.tools.length) {
+          for (var ti = 0; ti < s.tools.length; ti++) {
+            var t = s.tools[ti];
+            html += '<div class="cb-step" data-status="done">' +
+              '<span class="cb-dot ok"></span>' +
+              '<div class="cb-step-row"><span class="cb-label">' + _esc(t.label || t.status) + '</span></div>' +
+              '</div>';
+          }
+        }
+        html += '</div></details>';
+        continue;
+      }
+      // 普通扁平步骤（离线 KB 等）
       var dotCls = _dotClass(s.status);
       var elapsedTxt = s.elapsed_ms != null ? _formatElapsed(s.elapsed_ms) : '';
       var countTxt = s.count != null ? '(' + s.count + '篇)' : '';
