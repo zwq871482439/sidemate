@@ -2314,6 +2314,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-step[data-status="done"] .cb-label { color:var(--text-primary); }
 .cb-step[data-status="running"] .cb-label { color:var(--dot-run); }
 .cb-step[data-status="error"] .cb-label { color:var(--dot-err); }
+/* P6: 可展开步骤（点击查看详情）*/
+.cb-step-expandable::after { content:'▸'; position:absolute; right:0; top:3px; font-size:9px; color:var(--text-muted); transition:transform .15s }
+.cb-step-expanded::after { transform:rotate(90deg) }
+.cb-step-detail { margin-top:4px; padding:6px 8px; background:var(--bg-secondary); border-radius:4px; font-size:10px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap; word-break:break-all; max-height:120px; overflow-y:auto }
 .cb-time { color:var(--text-muted); font-size:11px; margin-left:auto; padding-left:8px; }
 .cb-count { color:var(--text-muted); font-size:11px; }
 

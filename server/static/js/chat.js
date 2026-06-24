@@ -3079,6 +3079,24 @@ var CardRenderer = (function() {
                   (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
                   (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : ''));
               }
+              // P6: 如果有详情(detail)，添加可展开内容
+              if (d.detail) {
+                tool.el.classList.add('cb-step-expandable');
+                var detailDiv = document.createElement('div');
+                detailDiv.className = 'cb-step-detail';
+                detailDiv.style.display = 'none';
+                detailDiv.textContent = d.detail;
+                tool.el.appendChild(detailDiv);
+                // 点击切换展开
+                tool.el.style.cursor = 'pointer';
+                tool.el.addEventListener('click', function(e) {
+                  var det = this.querySelector('.cb-step-detail');
+                  if (det) {
+                    det.style.display = det.style.display === 'none' ? 'block' : 'none';
+                    this.classList.toggle('cb-step-expanded');
+                  }
+                });
+              }
             }
             break;
           }

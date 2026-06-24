@@ -839,11 +839,19 @@ class AgentLoop:
 
         data = result.get("data", {})
         if tool_name == "search_web":
-            return get_status_event(tool_name, "done", count=data.get("count", 0))
+            return get_status_event(tool_name, "done", count=data.get("count", 0),
+                                    detail=data.get("results_preview", ""))
         elif tool_name == "fetch_url":
-            return get_status_event(tool_name, "done", length=data.get("length", 0))
+            return get_status_event(tool_name, "done", length=data.get("length", 0),
+                                    detail=data.get("title", ""))
         elif tool_name == "search_kb":
-            return get_status_event(tool_name, "done", count=data.get("count", 0))
+            # P6: 带检索结果摘要（来源标题列表）
+            _sources = data.get("sources", [])
+            _detail = ""
+            if _sources:
+                _detail = "\n".join(["· " + (s.get("label", "?")[:40]) for s in _sources[:5]])
+            return get_status_event(tool_name, "done", count=data.get("count", 0),
+                                    detail=_detail)
         elif tool_name == "set_doc_status":
             # Patch4 v3：携带 filename / docx_path（pipeline 据此派生 doc_complete 事件）
             return get_status_event(tool_name, "done",
@@ -860,10 +868,12 @@ class AgentLoop:
             # Patch4 v3：write_workspace done 带 size（字节）和 words（字数，供进度面板展示）
             _size = data.get("size", 0)
             _words = len(args.get("content", "")) if args.get("content") else 0
+            _preview = (args.get("content", "") or "")[:200]
             return get_status_event(tool_name, "done",
                                     name=data.get("name", ""),
                                     size=_size,
-                                    words=_words)
+                                    words=_words,
+                                    detail=_preview)
         elif tool_name == "append_workspace":
             # Patch4 v3.1：append done 带总 size + 本次追加字节数
             _words = len(args.get("content", "")) if args.get("content") else 0
