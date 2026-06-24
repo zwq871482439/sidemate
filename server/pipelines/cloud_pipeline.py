@@ -398,6 +398,17 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 _preloaded_kb = True
                 log.info("[CLOUD-AGENT] 预注入 KB 文档: %d 篇, %d 字",
                          len(_doc_ids), len(_kb_content))
+                # P6: 发 doc_loaded 事件，让前端显示"已加载 N 篇文档"
+                _doc_names = []
+                for _did in _doc_ids:
+                    _d = kb.get_document(_did)
+                    if _d:
+                        _doc_names.append(_d.filename or _did)
+                yield sse_event("doc_loaded", {
+                    "docs": [{"name": n, "doc_id": _doc_ids[i]} for i, n in enumerate(_doc_names)],
+                    "count": len(_doc_names),
+                    "source": "kb_preload",
+                })
         except Exception as e:
             log.warning("[CLOUD-AGENT] KB 文档预注入失败: %s", str(e)[:80])
 

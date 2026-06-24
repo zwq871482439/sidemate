@@ -54,10 +54,10 @@ var MessageStyleManager = {
       msgs.classList.remove('msg-list-mode');
       msgs.classList.add('msg-bubble-mode');
     }
-    // 同步切换按钮的文案
+    // 同步切换按钮的文案（卡片/列表）
     var btn = document.getElementById('msgStyleToggle');
     if (btn) {
-      btn.textContent = (this.getMode() === 'list') ? '列表' : '气泡';
+      btn.textContent = (this.getMode() === 'list') ? '卡片' : '列表';
     }
   }
 };
