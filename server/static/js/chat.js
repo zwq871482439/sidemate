@@ -2514,6 +2514,10 @@ var CardRenderer = (function() {
   // 模块3：推理单元（在线Agent每轮打包折叠）
   var _reasonUnits = [];      // [{round, thinkText, tools:[{label,status,elapsed_ms}], startTime, el}]
   var _currentUnit = null;    // 当前进行中的推理单元
+  // P6: 流式过程数据存储（供 finalize 序列化，确保刷新后重建一致）
+  var _docLoadedItems = [];   // [{name, doc_id, tokens}]
+  var _summaryData = null;    // {searches, fetches, kb_hits, docs}
+  var _hintText = '';         // mode_hint 文本
 
   // 步骤标签映射（对齐原型的 label）
   var STEP_LABELS = {
@@ -2559,6 +2563,9 @@ var CardRenderer = (function() {
     _data = [];
     _reasonUnits = [];
     _currentUnit = null;
+    _docLoadedItems = [];   // P6: 清理
+    _summaryData = null;
+    _hintText = '';
   }
 
   function setModeLabel(label) {
@@ -2717,8 +2724,9 @@ var CardRenderer = (function() {
           type: 'reason_unit',
           round: ri + 1,
           elapsed_s: unitElapsed,
+          think: unit.thinkText || '',  // P6: 序列化思考内容
           tools: unit.tools.map(function(t) {
-            return {status: t.status, label: t.label};
+            return {status: t.status, label: t.label, detail: t.detail || ''};  // P6: 序列化 detail
           })
         };
         cardData.push(reasonItem);
@@ -2734,6 +2742,16 @@ var CardRenderer = (function() {
         cloud: _parallelTexts.cloud || '',
         merge: _parallelTexts.merge || ''
       };
+    }
+    // P6: 序列化 doc_loaded / summary / hint（确保刷新后重建一致）
+    if (_docLoadedItems.length > 0) {
+      cardData.push({id: '_doc_loaded', type: 'doc_loaded', items: _docLoadedItems});
+    }
+    if (_summaryData) {
+      cardData.push({id: '_summary', type: 'summary', data: _summaryData});
+    }
+    if (_hintText) {
+      cardData.push({id: '_hint', type: 'hint', text: _hintText});
     }
     _data = cardData;
   }
@@ -2795,22 +2813,62 @@ var CardRenderer = (function() {
     // 渲染步骤（并行模式的原文嵌入对应步骤下方）
     for (var i = 0; i < m.card_data.length; i++) {
       var s = m.card_data[i];
-      // P6: 推理轮次（在线 Agent）—重建 .cb-reason 结构
+      // P6: 推理轮次（在线 Agent）—重建 .cb-reason 结构（含思考内容+工具详情）
       if (s.type === 'reason_unit') {
         html += '<details class="cb-reason">';
         html += '<summary><span class="cb-reason-round">推理第 ' + s.round + ' 轮</span>';
         html += '<span class="cb-reason-time">' + (s.elapsed_s || 0) + 's</span></summary>';
         html += '<div class="cb-reason-body">';
+        // P6: 重建思考内容
+        if (s.think) {
+          html += '<div class="cb-output"><div class="cb-thinking">' + _esc(s.think.slice(0, 500)) + (s.think.length > 500 ? '...' : '') + '</div></div>';
+        }
         if (s.tools && s.tools.length) {
           for (var ti = 0; ti < s.tools.length; ti++) {
             var t = s.tools[ti];
-            html += '<div class="cb-step" data-status="done">' +
+            html += '<div class="cb-step' + (t.detail ? ' cb-step-expandable' : '') + '" data-status="done">' +
               '<span class="cb-dot ok"></span>' +
-              '<div class="cb-step-row"><span class="cb-label">' + _esc(t.label || t.status) + '</span></div>' +
-              '</div>';
+              '<div class="cb-step-row"><span class="cb-label">' + _esc(t.label || t.status) + '</span></div>';
+            // P6: 重建工具详情
+            if (t.detail) {
+              html += '<div class="cb-step-detail" style="display:block">' + _esc(t.detail) + '</div>';
+            }
+            html += '</div>';
           }
         }
         html += '</div></details>';
+        continue;
+      }
+      // P6: doc_loaded（已加载文档提示）
+      if (s.type === 'doc_loaded' && s.items) {
+        for (var di = 0; di < s.items.length; di++) {
+          var item = s.items[di];
+          var tokensTxt = item.tokens >= 1000 ? (item.tokens/1000).toFixed(1)+'K' : item.tokens;
+          var label = item.count > 1 ? '已加载 ' + item.count + ' 篇文档' : '已加载文档';
+          html += '<div class="cb-step" data-status="done">' +
+            '<span class="cb-dot ok"></span>' +
+            '<div class="cb-step-row">' +
+              '<span class="cb-label">' + label + '</span>' +
+              '<span class="cb-count">' + _esc(item.filename) + '</span>' +
+              '<span class="cb-time">约 ' + tokensTxt + ' 词元</span>' +
+            '</div></div>';
+        }
+        continue;
+      }
+      // P6: summary（统计条）
+      if (s.type === 'summary' && s.data) {
+        var parts = [];
+        if (s.data.searches > 0) parts.push('搜索 ' + s.data.searches + ' 次');
+        if (s.data.fetches > 0) parts.push('阅读 ' + s.data.fetches + ' 篇');
+        if (s.data.kb_hits > 0) parts.push('检索知识库 ' + s.data.kb_hits + ' 次');
+        if (s.data.docs > 0) parts.push('生成文档 ' + s.data.docs + ' 篇');
+        var sumText = parts.length > 0 ? '共 ' + parts.join(' · ') : '直接回答（未使用工具）';
+        html += '<div class="cb-summary"><span class="cb-summary-text">' + sumText + '</span></div>';
+        continue;
+      }
+      // P6: hint（提示文案）
+      if (s.type === 'hint' && s.text) {
+        html += '<div class="cb-hint">' + _esc(s.text) + '</div>';
         continue;
       }
       // 普通扁平步骤（离线 KB 等）
@@ -3150,8 +3208,9 @@ var CardRenderer = (function() {
                   (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
                   (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : ''));
               }
-              // P6: 如果有详情(detail)，添加可展开内容
+              // P6: 如果有详情(detail)，添加可展开内容 + 存储到 tool 对象供 finalize
               if (d.detail) {
+                tool.detail = d.detail;  // 存储供序列化
                 tool.el.classList.add('cb-step-expandable');
                 var detailDiv = document.createElement('div');
                 detailDiv.className = 'cb-step-detail';
@@ -3273,6 +3332,8 @@ var CardRenderer = (function() {
 
   function _addSummary(d) {
     if (!_container) return;
+    // P6: 存储数据供 finalize 序列化
+    _summaryData = {searches: d.searches||0, fetches: d.fetches||0, kb_hits: d.kb_hits||0, docs: d.docs||0};
     var sumDiv = document.createElement('div');
     sumDiv.className = 'cb-summary';
     // P6 统计修正：纳入知识库检索和文档生成
@@ -3293,6 +3354,7 @@ var CardRenderer = (function() {
   // 提示文案（并行 fallback 分支的 mode_hint）
   function _addHint(message) {
     if (!_container || !message) return;
+    _hintText = message;  // P6: 存储供 finalize 序列化
     var hintDiv = document.createElement('div');
     hintDiv.className = 'cb-hint';
     hintDiv.textContent = message;
@@ -3306,6 +3368,8 @@ var CardRenderer = (function() {
     var filename = d.filename || '文档';
     var tokens = d.tokens || 0;
     var count = d.count || 1;
+    // P6: 存储供 finalize 序列化
+    _docLoadedItems.push({filename: filename, tokens: tokens, count: count});
     var tokensTxt = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'K' : tokens;
     var label = count > 1 ? '已加载 ' + count + ' 篇文档' : '已加载文档';
     var div = document.createElement('div');
