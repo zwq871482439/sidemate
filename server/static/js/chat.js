@@ -2019,7 +2019,14 @@ async function sendMessage() {
       } else {
         // C方案：原地固化流式气泡（替代 renderMessages 全量重建，消除闪烁）
         // 用户正在看的过程信息（步骤/产出）不会消失，只清理过程态痕迹（计时器/光标/动画）
+        // KB 消息：流式正文补渲染引用上标 [1]→¹（流式时未做上标转换）
+        var _streamContent = streamEl4.querySelector('#stream-content');
+        var _savedKbSources = (newMsg.kb_sources || (window._kbSources && window._kbSources.length ? window._kbSources : null));
+        if (_streamContent && _savedKbSources && _savedKbSources.length) {
+          _streamContent.innerHTML = _renderCitationSuperscripts(_streamContent.innerHTML, _savedKbSources);
+        }
         CardRenderer.finalizeDOM(streamEl4);
+        _bindCitationClicks(streamEl4);  // 流式完成后绑定引用上标点击
         _restoreChatUI();
         input.focus();
         setTimeout(function() { if (!generating) _restoreChatUI(); }, 100);
