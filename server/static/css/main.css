@@ -787,8 +787,8 @@ body.has-offline-banner #app{padding-top:44px}
   margin:0 1px;font-size:9px;font-weight:600;line-height:1;color:#fff;background:var(--accent-color);
   border-radius:7px;cursor:pointer;vertical-align:super;transition:transform .12s,background .12s}
 .cite-ref:hover{transform:scale(1.2);background:var(--primary-700,#1e3a5f)}
-/* 引用对应的来源项高亮 */
-.kb-source-item.cite-highlight{background:rgba(24,95,165,.08);border-radius:6px;transition:background .3s}
+/* 引用对应的来源项高亮（工具链卡片 .cb-src 或参考来源 .kb-source-item）*/
+.kb-source-item.cite-highlight,.cb-src.cite-highlight{background:rgba(24,95,165,.12);border-radius:6px;transition:background .3s}
 
 /* ===== 消息复制按钮 ===== */
 .msg-copy-wrap{position:relative}

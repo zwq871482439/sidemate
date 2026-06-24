@@ -65,7 +65,7 @@ function _buildKbSources(m) {
   return html + '</div>';
 }
 
-// 绑定引用上标点击事件：点击高亮对应参考来源
+// 绑定引用上标点击事件：点击高亮对应参考来源（在工具链卡片内）
 function _bindCitationClicks(el) {
   if (!el) el = document.getElementById('messages');
   if (!el) return;
@@ -74,13 +74,14 @@ function _bindCitationClicks(el) {
     ref.addEventListener('click', function(e) {
       e.stopPropagation();
       var idx = this.getAttribute('data-cite');
-      // 找同一条消息内的参考来源项
       var msg = this.closest('.msg');
       if (!msg) return;
-      var srcItem = msg.querySelector('.kb-source-item[data-src-idx="' + idx + '"]');
+      // 优先找工具链卡片里的来源项（.cb-src），fallback 到旧 .kb-source-item
+      var srcItem = msg.querySelectorAll('.cb-src')[idx]
+                 || msg.querySelector('.kb-source-item[data-src-idx="' + idx + '"]');
       if (srcItem) {
         // 移除其他高亮
-        msg.querySelectorAll('.kb-source-item.cite-highlight').forEach(function(s) {
+        msg.querySelectorAll('.cite-highlight').forEach(function(s) {
           s.classList.remove('cite-highlight');
         });
         // 高亮当前项
@@ -818,8 +819,8 @@ function _renderSingleMsg(m, idx) {
     timelineHtml = _buildAgentTimelineHtml(m.agent_timeline);  // 旧消息兼容
   }
   // 结构与流式 finalizeDOM 后同构：card-area(步骤) → stream-content(正文) → msg-footer(统计/复制)
-  // actionTag 统一放最前面（所有消息位置一致），KB 来源放正文前
-  var bodyExtras = actionTag + ts + _buildKbSources(m) + bodyHtml;
+  // actionTag 统一放最前面；KB 参考来源已在工具链卡片里展示，正文区不再重复
+  var bodyExtras = actionTag + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
   var docBarHtml = '';
   if (m.doc_url) {
