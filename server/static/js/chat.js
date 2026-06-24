@@ -3314,25 +3314,23 @@ var CardRenderer = (function() {
     var html = '<div class="cb-par-summary">';
     // 融合结果（默认展开，紫色，标注"已采用"）
     if (texts.merge) {
-      html += '<div class="cb-par-sum-item merge" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
+      html += '<div class="cb-par-sum-item merge">' +
         '<div class="cb-par-sum-head">融合结果（已采用）</div>' +
         '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.merge) + '</div>' +
       '</div>';
     }
-    // 本地AI生成回答（默认折叠，绿色）
+    // 本地AI生成回答（默认展开）
     if (texts.local) {
-      html += '<div class="cb-par-sum-item local" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
+      html += '<div class="cb-par-sum-item local">' +
         '<div class="cb-par-sum-head">本地AI生成回答</div>' +
-        '<div class="cb-par-sum-preview">' + _esc(texts.local.slice(0, 40)) + '...</div>' +
-        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.local) + '</div>' +
+        '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.local) + '</div>' +
       '</div>';
     }
-    // 云端AI生成回答（默认折叠，蓝色）
+    // 云端AI生成回答（默认展开）
     if (texts.cloud) {
-      html += '<div class="cb-par-sum-item cloud" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
+      html += '<div class="cb-par-sum-item cloud">' +
         '<div class="cb-par-sum-head">云端AI生成回答</div>' +
-        '<div class="cb-par-sum-preview">' + _esc(texts.cloud.slice(0, 40)) + '...</div>' +
-        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.cloud) + '</div>' +
+        '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.cloud) + '</div>' +
       '</div>';
     }
     html += '</div>';
