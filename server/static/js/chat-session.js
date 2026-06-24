@@ -3,7 +3,7 @@
 // ===== 事件代理：避免 inline onclick 传 Windows 路径（反斜杠转义问题） =====
 document.addEventListener('click', function(e) {
   // 操作按钮（重命名/导出/删除）
-  var actionBtn = e.target.closest('[data-idx].si-rename, [data-idx].si-export, [data-idx].si-delete');
+  var actionBtn = e.target.closest('[data-idx].si-rename, [data-idx].si-delete');
   if (actionBtn) {
     e.stopPropagation();
     var path = actionBtn.closest('.chat-sidebar-item');
@@ -11,7 +11,6 @@ document.addEventListener('click', function(e) {
     path = path._chatPath;
     if (!path) return;
     if (actionBtn.classList.contains('si-rename')) _sidebarRenameChat(path);
-    else if (actionBtn.classList.contains('si-export')) _sidebarExportChat(path);
     else if (actionBtn.classList.contains('si-delete')) _sidebarDeleteChat(path);
     return;
   }
@@ -107,7 +106,6 @@ function _renderChatSidebar(chats, currentPath) {
     }
     html += '<span class="si-actions">';
     html += '<button class="si-rename" data-idx="' + idx + '" title="重命名">' + iconSvg('write','11') + '</button>';
-    html += '<button class="si-export" data-idx="' + idx + '" title="导出">' + iconSvg('doc','11') + '</button>';
     html += '<button class="si-delete" data-idx="' + idx + '" title="删除">' + iconSvg('close','11') + '</button>';
     html += '</span>';
     html += '</div>';
@@ -115,7 +113,7 @@ function _renderChatSidebar(chats, currentPath) {
   list.innerHTML = html;
   // 缓存路径到 DOM 上，供事件代理使用
   chats.forEach(function(c, idx) {
-    var item = list.querySelector('[data-idx="' + idx + '"]');
+    var item = list.querySelector('.chat-sidebar-item[data-idx="' + idx + '"]');
     if (item) item._chatPath = c.path;
   });
   var sel = document.getElementById('sessionSelect');

@@ -123,37 +123,8 @@ def _build_memory_local_from_history(history_raw: list) -> list:
     return result
 
 
-def _sanitize_output(text: str) -> str:
-    """轻量排版清理（不删正文内容，只做格式修整）
-
-    V2 新增：首字修正（截掉开头的逗号/顿号，防幻觉续写兜底）
-
-    处理项：
-    1. 连续空格压缩（4+ 空格 → 1 空格）
-    2. 连续空行限制（最多保留 2 个空行）
-    3. 末尾残缺标签清理（<think, <thinking 等）
-    4. V2 首字修正：截掉开头的标点（逗号/顿号/分号/冒号）
-    5. 首尾空白清理
-    """
-    if not text or not text.strip():
-        return text
-
-    # 1. 连续空格压缩
-    text = re.sub(r' {4,}', ' ', text)
-
-    # 2. 连续空行限制
-    text = re.sub(r'\n{4,}', '\n\n\n', text)
-
-    # 3. 末尾残缺标签清理
-    text = re.sub(r'<+<?\s*(think|thinking|reason|reasoning|thought)\s*[^\w]*$', '', text)
-
-    # 4. V2 首字修正：截掉开头的标点（幻觉续写兜底）
-    text = re.sub(r'^[，、；：]\s*', '', text)
-
-    # 5. 首尾空白
-    text = text.strip()
-
-    return text
+# 注：_sanitize_output 的唯一实现位于 pipelines/_base.py（含代码块缩进保护）。
+# 此处历史副本已删除，避免重复维护导致代码缩进被误压缩。
 
 
 # （以下函数已移至 session/ 子模块，通过顶部 import 引入）
@@ -687,7 +658,7 @@ async def api_chats_enrich(chat_name: str, request: Request):
 
     # 要回写的字段（白名单，只接受前端补充的元数据字段）
     enrich_fields = {}
-    for key in ("card_data", "parallel_texts", "agent_timeline", "agent_summary", "token_stats", "kb_sources", "doc_url", "doc_filename"):
+    for key in ("card_data", "parallel_texts", "agent_timeline", "agent_summary", "token_stats", "kb_sources", "doc_url", "doc_filename", "action_mode"):
         val = body.get(key)
         if val is not None:
             enrich_fields[key] = val
@@ -996,19 +967,19 @@ def _calc_context_usage(chat_file: str = None):
     # 估算 token 数
     # P6 精度优化：计算真实注入的上下文，而非简单消息字符累加
     used_tokens = 0
-    
-    if ai_mode == "cloud":
-        # 在线模式：优先使用云端 API 返回的真实 input_tokens
-        _last_token_stats = None
-        for m in reversed(messages):
-            if m.get("role") == "assistant" and m.get("token_stats"):
-                _last_token_stats = m["token_stats"]
-                break
-        if _last_token_stats and _last_token_stats.get("input_tokens"):
-            used_tokens = _last_token_stats["input_tokens"]
+
+    # 所有模式：优先使用最近一条 assistant 消息的真实 input_tokens（模型 API 返回的精确值）
+    # 这样 tokenBar 的"历史"与卡片里的"输入词元"同源，避免两个不一致的数字让用户困惑
+    _last_token_stats = None
+    for m in reversed(messages):
+        if m.get("role") == "assistant" and m.get("token_stats"):
+            _last_token_stats = m["token_stats"]
+            break
+    if _last_token_stats and _last_token_stats.get("input_tokens"):
+        used_tokens = _last_token_stats["input_tokens"]
     
     if used_tokens == 0:
-        # 离线/并行模式：精确估算注入上下文
+        # 离线/并行模式无真实值时：精确估算注入上下文
         # 1. System prompt（从 prompts 模块读取）
         sys_chars = 0
         try:

@@ -701,13 +701,55 @@ def api_system_info():
     # 当前模式（local / cloud）
     ai_mode = cfg_get("ai_mode", "local")
 
-    # GPU 信息
-    gpu_info = "无 GPU 信息"
+    # GPU 信息（检测显示适配器，含集成显卡）
+    gpu_info = "集成显卡/CPU"
     try:
-        mgr = get_mgr()
-        devices = mgr.list_devices() if hasattr(mgr, 'list_devices') else []
-        if devices:
-            gpu_info = ", ".join(d.get("name", "Unknown") for d in devices)
+        import subprocess
+        _gpu_result = subprocess.run(
+            ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
+            capture_output=True, text=True, timeout=5
+        )
+        _gpu_names = [line.strip() for line in _gpu_result.stdout.split('\n')
+                      if line.strip() and line.strip().lower() != 'name']
+        if _gpu_names:
+            gpu_info = ' · '.join(_gpu_names[:3])  # 最多显示3个
+    except Exception:
+        # 回退到 LLM 框架设备检测
+        try:
+            mgr = get_mgr()
+            devices = mgr.list_devices() if hasattr(mgr, 'list_devices') else []
+            if devices:
+                gpu_info = ", ".join(d.get("name", "Unknown") for d in devices)
+        except Exception:
+            pass
+
+    # 总内存 + 操作系统
+    total_mem_gb = 0
+    os_info = ""
+    try:
+        import psutil
+        total_mem_gb = round(psutil.virtual_memory().total / (1024 ** 3), 1)
+    except Exception:
+        pass
+    try:
+        os_info = platform.platform()
+    except Exception:
+        pass
+
+    # 数据目录大小（递归统计）
+    data_dir = ""
+    data_size_mb = 0
+    try:
+        from config import DATA_DIR
+        data_dir = DATA_DIR
+        _total_bytes = 0
+        for _root, _dirs, _files in os.walk(DATA_DIR):
+            for _f in _files:
+                try:
+                    _total_bytes += os.path.getsize(os.path.join(_root, _f))
+                except Exception:
+                    pass
+        data_size_mb = round(_total_bytes / 1024 / 1024, 1)
     except Exception:
         pass
 
@@ -720,6 +762,10 @@ def api_system_info():
         "mode": ai_mode,
         "gpu_info": gpu_info,
         "build_date": "2026-06-11",
+        "data_dir": data_dir,
+        "data_size_mb": data_size_mb,
+        "total_mem_gb": total_mem_gb,
+        "os_info": os_info,
     }
 
 

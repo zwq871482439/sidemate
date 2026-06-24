@@ -240,7 +240,7 @@ async function refreshResourcePanel() {
       if (embedderInfo.installed) {
         var kbTotal = (embedderInfo.mb || 0) + (rerankerInfo.mb || 0);
         var kbLoaded = embedderInfo.loaded || rerankerInfo.loaded;
-        parts.push(kbLoaded ? ('文库 ' + fmtMB(kbTotal)) : '文库 未加载');
+        parts.push(kbLoaded ? ('知识库 ' + fmtMB(kbTotal)) : '知识库 未加载');
       }
       var recorderInfo = mod.recorder || {};
       if (recorderInfo.installed) {
@@ -326,21 +326,21 @@ async function refreshStatus() {
       // P6 打磨 #4：并行模式同时展示双模型
       var _local = currentDisplay || '离线 AI';
       var _cloud = window._cloudModelName || '云端 AI';
-      tag.className = 'model-tag';
+      tag.className = 'model-tag model-tag-inline';
       tag.textContent = '离线 ' + _local + ' · 云端 ' + _cloud;
       stag.innerHTML = '<span class="model-tag">离线 ' + esc(_local) + ' · 云端 ' + esc(_cloud) + '</span>';
     } else if (typeof _currentMode !== 'undefined' && _currentMode === 'cloud') {
       currentDisplay = window._cloudModelName || '云端模型';
-      tag.className = 'model-tag';
+      tag.className = 'model-tag model-tag-inline';
       tag.textContent = '在线 AI · ' + currentDisplay;
       stag.innerHTML = '<span class="model-tag">在线 AI · ' + esc(currentDisplay) + '</span>';
     } else if (data.current) {
-      tag.className = 'model-tag';
+      tag.className = 'model-tag model-tag-inline';
       tag.textContent = '离线 AI · ' + currentDisplay;
       stag.innerHTML = '<span class="model-tag">离线 AI · ' + esc(currentDisplay) + '</span>';
       localStorage.setItem('_model_ever_loaded', '1');
     } else {
-      tag.className = 'model-tag none';
+      tag.className = 'model-tag model-tag-inline none';
       tag.textContent = '未加载';
       stag.innerHTML = '<span class="model-tag none">未加载</span>';
     }
@@ -661,13 +661,13 @@ async function refreshExtensions() {
     var data = await resp.json();
     var exts = data.extensions || [];
     if (exts.length === 0) {
-      listEl.innerHTML = '<span style="color:var(--text-muted)">暂无已安装扩展。上传 .sidemate 官方包安装模型、文库、语音等扩展。</span>';
+      listEl.innerHTML = '<span style="color:var(--text-muted)">暂无已安装扩展。上传 .sidemate 官方包安装模型、知识库、语音等扩展。</span>';
       return;
     }
     var html = '';
     exts.forEach(function(ext) {
       var typeIcons = {model:'\\u{1F9E0}', knowledge:'\\u{1F4DA}', recorder:'\\u{1F399}', whisper:'\\u{1F399}', action:'\\u{2699}'};
-      var displayNames = {knowledge:'文库扩展', recorder:'纪要扩展'};
+      var displayNames = {knowledge:'知识库扩展', recorder:'纪要扩展'};
       html += '<div style="padding:8px 0;border-bottom:0.5px solid var(--border-color);display:flex;align-items:center;gap:8px">' +
         '<span style="font-size:13px"><strong>' + esc(displayNames[ext.name] || ext.name || '未知') + '</strong>' +
         ' <span style="font-size:.72em;padding:1px 6px;background:var(--bg-secondary);color:var(--accent-color);border-radius:3px">' + esc(ext.name || '?') + '</span>' +
@@ -1125,12 +1125,12 @@ async function loadPermissionTools() {
     for (var i = 0; i < data.tools.length; i++) {
       var tool = data.tools[i];
       var checked = tool.enabled ? 'checked' : '';
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border-color)">';
+      html += '<div class="perm-item">';
       html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">';
-      html += '<input type="checkbox" data-tool-id="'+esc(tool.tool_id)+'" '+checked+' onchange="toggleToolPermission(\''+esc(tool.tool_id)+'\', this.checked)" style="width:15px;height:15px">';
+      html += '<input type="checkbox" data-tool-id="'+esc(tool.tool_id)+'" '+checked+' onchange="toggleToolPermission(\''+esc(tool.tool_id)+'\', this.checked)" style="width:15px;height:15px;flex-shrink:0">';
       html += '<div>';
-      html += '<div style="font-weight:500;color:var(--text-primary)">'+esc(tool.name)+'</div>';
-      html += '<div style="font-size:.82em;color:var(--text-muted)">'+esc(tool.description)+'</div>';
+      html += '<div class="perm-name">'+esc(tool.name)+'</div>';
+      html += '<div class="perm-desc">'+esc(tool.description)+'</div>';
       html += '</div>';
       html += '</label>';
       html += '</div>';
@@ -1151,6 +1151,16 @@ async function toggleToolPermission(toolId, enabled) {
     var data = await resp.json();
     if (data.ok) {
       showToast('已' + (enabled ? '启用' : '禁用') + '「' + toolId + '」', 'success');
+      // 知识库检索开关同步 kb_permission（开=full，关=disabled）
+      if (toolId === 'kb_search') {
+        try {
+          await fetch(_apiBase + '/api/cloud/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({kb_permission: enabled ? 'full' : 'disabled'})
+          });
+        } catch(e2) {}
+      }
     } else {
       showToast('设置失败: ' + (data.error || '未知错误'), 'error');
       loadPermissionTools();
@@ -1387,20 +1397,29 @@ async function refreshAboutInfo() {
 }
 
 // ===== Patch5 C7 T03: 隐私声明 + 诊断报告 =====
-function loadPrivacyDetail() {
+function togglePrivacyDetail() {
   var el = document.getElementById('privacyContent');
+  var btn = document.getElementById('privacyDetailBtn');
   if (!el) return;
-  var summary =
-    '<div style="line-height:1.8">' +
-    '<div style="font-weight:600;color:var(--text-primary);margin-bottom:6px">桌伴隐私承诺</div>' +
-    '<div style="margin-bottom:4px"><b>数据本地存储</b>：所有数据（对话、文档、设置）100% 存储在您的电脑本地。</div>' +
-    '<div style="margin-bottom:4px"><b>不主动上传</b>：程序不会主动上传任何用户数据到任何服务器。</div>' +
-    '<div style="margin-bottom:4px"><b>仅必要时联网</b>：仅在启用云端 AI、网页搜索、版本检查时与外部通信。</div>' +
-    '<div style="margin-bottom:4px"><b>文库权限保护</b>：文档受 full/search/none 三级令牌授权保护。</div>' +
-    '<div style="margin-bottom:4px"><b>开源组件透明</b>：所有第三方组件遵循原始开源许可证。</div>' +
-    '<div style="margin-bottom:4px"><b>随时可清除</b>：删除安装目录即可彻底卸载，数据随之清除。</div>' +
-    '</div>';
-  el.innerHTML = summary;
+  if (el.style.display === 'none' || !el.innerHTML) {
+    var detail =
+      '<div style="line-height:1.8;font-size:12px">' +
+      '<div style="font-weight:600;color:var(--text-primary);margin-bottom:6px">完整隐私声明</div>' +
+      '<div style="margin-bottom:4px"><b>本地存储</b>：对话记录、上传文档、知识库索引、用户设置均存储在本地磁盘，不上传到任何 Sidemate 服务器（本程序无自有服务器）。</div>' +
+      '<div style="margin-bottom:4px"><b>云端 AI 通信</b>：使用在线/并行模式时，对话内容（含历史上下文）会发送到你配置的云端 API 提供商（如 DeepSeek）。通信直接在你和 API 提供商之间进行，不经过第三方中转。请参阅对应 API 提供商的隐私政策。</div>' +
+      '<div style="margin-bottom:4px"><b>网页搜索</b>：Agent 启用联网搜索工具时，会向搜索引擎（如 Bing）发送查询关键词，搜索引擎返回结果由 Agent 阅读。</div>' +
+      '<div style="margin-bottom:4px"><b>文件读取</b>：Agent 文件读写工具仅限沙盒目录（当前会话工作区），不会访问沙盒外的系统文件。</div>' +
+      '<div style="margin-bottom:4px"><b>知识库权限</b>：知识库文档受三级令牌保护（完全访问/仅检索/禁用），私密文档需令牌才能访问。</div>' +
+      '<div style="margin-bottom:4px"><b>开源组件</b>：所有第三方组件遵循原始开源许可证。</div>' +
+      '<div style="margin-bottom:4px"><b>随时可清除</b>：删除安装目录即可彻底卸载，所有数据随之清除。</div>' +
+      '</div>';
+    el.innerHTML = detail;
+    el.style.display = 'block';
+    if (btn) btn.textContent = '收起隐私声明';
+  } else {
+    el.style.display = 'none';
+    if (btn) btn.textContent = '查看完整隐私声明';
+  }
 }
 
 async function exportDiagnostics() {
@@ -1468,7 +1487,7 @@ function switchSettingsTab(tabId, navEl) {
   }
 }
 
-// ===== P6: 关于 Tab — 系统诊断 =====
+// ===== P6: 关于 Tab — 运行状态 =====
 async function refreshAboutDiagnostics() {
   try {
     var resp = await fetch(_apiBase + '/api/system/info');
@@ -1477,28 +1496,71 @@ async function refreshAboutDiagnostics() {
     var vEl = document.getElementById('versionDisplay');
     if (vEl) vEl.textContent = data.version ? ('v' + data.version) : (window.APP_VERSION ? ('v' + window.APP_VERSION) : '');
 
+    // 环境信息
     var pyEl = document.getElementById('diagPython');
     if (pyEl) pyEl.textContent = data.python || '--';
-
-    var olEl = document.getElementById('diagOllama');
-    if (olEl) {
-      var olStatus = data.ollama_status === 'running' ? '运行中' : '未运行';
-      olEl.textContent = olStatus + '（' + (data.ollama_version || '-') + '）';
-    }
-
+    var osEl = document.getElementById('diagOs');
+    if (osEl) osEl.textContent = data.os_info || '--';
     var gpuEl = document.getElementById('diagGpu');
-    if (gpuEl) gpuEl.textContent = data.gpu_info || '无 GPU 信息';
+    if (gpuEl) gpuEl.textContent = data.gpu_info || 'CPU';
+    var totalMemEl = document.getElementById('diagTotalMem');
+    if (totalMemEl) totalMemEl.textContent = data.total_mem_gb ? (data.total_mem_gb + ' GB') : '--';
 
-    var diskEl = document.getElementById('diagDisk');
-    if (diskEl) diskEl.textContent = data.disk_info || '--';
+    // 拉取资源信息（内存占用 + 组件状态 + 显存）
+    var compEl = document.getElementById('diagComponents');
+    var usedMemEl = document.getElementById('diagUsedMem');
+    var vramEl = document.getElementById('diagVram');
+    try {
+      var resResp = await fetch(_apiBase + '/api/resource-info');
+      var resData = await resResp.json();
 
-    var modeEl = document.getElementById('diagMode');
-    if (modeEl) {
-      var modeMap = {local: '本地 AI', cloud: '云端 AI', parallel: '并行模式'};
-      modeEl.textContent = modeMap[data.mode] || data.mode || '--';
+      // 组件状态点
+      if (compEl && resData.modules) {
+        var comps = [
+          {name:'本地 LLM', loaded: !!(resData.modules.llm && resData.modules.llm.loaded), detail: resData.modules.llm ? resData.modules.llm.name : ''},
+          {name:'向量化引擎', loaded: !!(resData.modules.embedder && resData.modules.embedder.loaded), detail: ''},
+          {name:'Reranker', loaded: !!(resData.modules.reranker && resData.modules.reranker.loaded), detail: ''},
+        ];
+        try {
+          var cfgResp = await fetch(_apiBase + '/api/cloud/config');
+          var cfgData = await cfgResp.json();
+          comps.push({name:'云端 API', loaded: !!(cfgData.base_url && cfgData.model), detail: cfgData.model || ''});
+        } catch(e2) {
+          comps.push({name:'云端 API', loaded: false, detail: ''});
+        }
+        var html = '';
+        for (var i = 0; i < comps.length; i++) {
+          var c = comps[i];
+          var dot = c.loaded ? 'comp-dot-ok' : 'comp-dot-off';
+          var label = c.loaded ? '就绪' : '未加载';
+          var detail = c.detail && c.loaded ? (' · ' + c.detail) : '';
+          html += '<div class="comp-row"><span class="' + dot + '"></span><span class="comp-name">' + c.name + '</span><span class="comp-status">' + label + detail + '</span></div>';
+        }
+        compEl.innerHTML = html;
+      }
+
+      // 已用内存
+      if (usedMemEl && resData.mem) {
+        var usedMB = (resData.mem.process_mb || 0) + (resData.modules && resData.modules.llm ? (resData.modules.llm.mb || 0) : 0);
+        usedMemEl.textContent = usedMB >= 1024 ? (usedMB/1024).toFixed(1) + ' GB' : usedMB + ' MB';
+      }
+
+      // 显存
+      if (vramEl) {
+        if (data.gpu_info && data.gpu_info.indexOf('Intel') !== -1) {
+          vramEl.textContent = '共享系统内存（集成显卡）';
+        } else if (data.gpu_info && data.gpu_info !== 'CPU') {
+          vramEl.textContent = '独显（见显卡规格）';
+        } else {
+          vramEl.textContent = '无';
+        }
+      }
+    } catch(e3) {
+      if (compEl) compEl.innerHTML = '<span style="color:var(--text-muted);font-size:11px">加载失败</span>';
     }
+
   } catch (e) {
-    var els = ['diagPython', 'diagOllama', 'diagGpu', 'diagDisk', 'diagMode'];
+    var els = ['diagPython', 'diagOs', 'diagGpu', 'diagTotalMem', 'diagUsedMem', 'diagVram'];
     for (var i = 0; i < els.length; i++) {
       var el = document.getElementById(els[i]);
       if (el) el.textContent = '加载失败';
@@ -1516,16 +1578,9 @@ async function refreshPrivacyInfo() {
     if (dirEl && data.data_dir) dirEl.textContent = data.data_dir;
 
     var diskEl = document.getElementById('privacyDiskUsage');
-    if (diskEl && data.data_dir) {
-      diskEl.textContent = '计算中...';
-      // 尝试获取磁盘占用
-      try {
-        var diskResp = await fetch(_apiBase + '/api/resource-info');
-        var diskData = await diskResp.json();
-        if (diskData && diskData.system) {
-          diskEl.textContent = fmtMB(diskData.system.used_mb);
-        }
-      } catch (e) { diskEl.textContent = '--'; }
+    if (diskEl && data.data_size_mb != null) {
+      var mb = data.data_size_mb;
+      diskEl.textContent = mb >= 1024 ? (mb/1024).toFixed(1) + ' GB' : mb + ' MB';
     }
   } catch (e) {
     // 静默失败
@@ -1582,7 +1637,7 @@ window.applyPermissionPreset = applyPermissionPreset;
 window.toggleToolPermission = toggleToolPermission;
 // 关于
 window.refreshAboutInfo = refreshAboutInfo;
-window.loadPrivacyDetail = loadPrivacyDetail;
+window.togglePrivacyDetail = togglePrivacyDetail;
 window.exportDiagnostics = exportDiagnostics;
 
 (function addKeyframes() {

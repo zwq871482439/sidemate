@@ -62,24 +62,32 @@ var TokenEstimator = {
     if (typeof _historyTokenCount !== 'undefined') histTokens = _historyTokenCount || 0;
 
     var total = curTotal + histTokens;
-    var fmtK = function(n) { return n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n); };
+    // fmtK: 统一以 K 为单位（最小 0.1K）
+    var fmtK = function(n) { return (n/1000).toFixed(1) + 'K'; };
+    var fmtKUnit = function(n) { return (n/1000).toFixed(1) + 'K词元'; };
 
-    // 更新各字段
+    // 更新进度条宽度（双条：已用历史 + 本轮预判）
+    var usedPct = maxTokens > 0 ? Math.min(100, (histTokens / maxTokens) * 100) : 0;
+    var curPct = maxTokens > 0 ? Math.min(100 - usedPct, (curTotal / maxTokens) * 100) : 0;
+    var tbUsed = document.getElementById('tbUsed');
+    var tbCur = document.getElementById('tbCur');
+    if (tbUsed) tbUsed.style.width = usedPct + '%';
+    if (tbCur) tbCur.style.width = curPct + '%';
+
+    // 文字字段
     var curEl = document.getElementById('tokenCur');
     var histEl = document.getElementById('tokenHist');
-    var totalEl = document.getElementById('tokenTotal');
     var limitEl = document.getElementById('tokenLimit');
     var statusEl = document.getElementById('tokenStatus');
     var remainEl = document.getElementById('tokenRemain');
 
     if (curEl) curEl.textContent = fmtK(curTotal);
     if (histEl) histEl.textContent = fmtK(histTokens);
-    if (totalEl) totalEl.textContent = '= ' + fmtK(total);
-    if (limitEl) limitEl.textContent = fmtK(maxTokens);
+    if (limitEl) limitEl.textContent = fmtKUnit(maxTokens);
 
-    // 状态
+    // 状态（基于 历史+本轮 的总占用）
     var ratio = maxTokens > 0 ? total / maxTokens : 0;
-    var statusText = ratio < 0.5 ? '空间充足' : (ratio < 0.8 ? '空间尚可' : '空间不足');
+    var statusText = ratio < 0.5 ? '空间充足' : (ratio < 0.8 ? '空间紧张' : '空间不足');
     if (statusEl) {
       statusEl.textContent = statusText;
       statusEl.classList.remove('status-ok', 'status-warn', 'status-over');
@@ -87,10 +95,39 @@ var TokenEstimator = {
       else if (ratio >= 0.5) statusEl.classList.add('status-warn');
       else statusEl.classList.add('status-ok');
     }
+    // 进度条轨道随状态变色（视觉强化）
+    var tbTrack = document.querySelector('.tb-track');
+    if (tbTrack) {
+      tbTrack.classList.remove('tb-warn', 'tb-over');
+      if (ratio >= 0.8) tbTrack.classList.add('tb-over');
+      else if (ratio >= 0.5) tbTrack.classList.add('tb-warn');
+    }
 
     // 剩余容量
     var remain = Math.max(0, maxTokens - total);
-    if (remainEl) remainEl.textContent = fmtK(remain) + ' 词元';
+    if (remainEl) remainEl.textContent = fmtKUnit(remain);
+
+    // 同步发送按钮激活态 + 环形进度（本轮占剩余空间的比例）
+    var remain4send = maxTokens > 0 ? Math.max(0, maxTokens - histTokens) : 1;
+    var curRatio4send = remain4send > 0 ? Math.min(1, curTotal / remain4send) : 1;
+    this._syncSendBtn(curTotal > 0, curRatio4send);
+  },
+
+  _syncSendBtn: function(hasContent, ratio) {
+    var btn = document.getElementById('sendBtn');
+    if (!btn || btn.disabled) return;  // 生成中不干扰
+    if (hasContent) {
+      btn.classList.add('btn-active');
+    } else {
+      btn.classList.remove('btn-active');
+    }
+    // 环形进度：用 CSS 变量驱动 conic-gradient（0~360 度）
+    if (ratio != null) {
+      var deg = Math.round(ratio * 360);
+      btn.style.setProperty('--send-progress', deg + 'deg');
+      // 快满时（本轮占剩余 >70%）加警示 class
+      btn.classList.toggle('btn-near-full', ratio > 0.7);
+    }
   },
 
   _updateLegacyDisplay: function() {
@@ -130,6 +167,16 @@ var TokenEstimator = {
   },
 
   _estimateDoc: function() {
+    // 多文件上传：累加 _uploadedFiles 的 tokens
+    if (typeof window !== 'undefined' && window._uploadedFiles && window._uploadedFiles.length > 0) {
+      var upTotal = 0;
+      for (var ui = 0; ui < window._uploadedFiles.length; ui++) {
+        var uf = window._uploadedFiles[ui];
+        if (uf.tokens) upTotal += uf.tokens;
+        else if (uf.file_size) upTotal += Math.ceil((uf.file_size || 0) / 1024 * this.FILE_TOKENS_PER_KB);
+      }
+      if (upTotal > 0) return upTotal;
+    }
     // Patch5 G：优先用后端算好的真实 tokens
     // 1. 普通上传：chat-files.js 预上传后 pendingFile.tokens 由 /api/file_upload 返回
     // 2. KB 引用：window._kbSelectedFiles[].file_size 粗估

@@ -625,7 +625,7 @@ function _buildAgentTimelineHtml(timelineData) {
       var icon = 'check';
       switch (item.step) {
         case 'reformulate': label = '分析问题'; icon = 'search'; break;
-        case 'search':      label = '检索文库' + countTxt; icon = 'book'; break;
+        case 'search':      label = '检索知识库' + countTxt; icon = 'book'; break;
         case 'retrieve':    label = '本地知识库检索' + countTxt; icon = 'book'; break;
         case 'local_gen':   label = '本地 AI 生成回答'; icon = 'write'; break;
         case 'cloud_gen':   label = '云端 AI 补充'; icon = 'cloud'; break;
@@ -807,7 +807,7 @@ function renderMessages() {
           '<div style="font-size:.78em;color:var(--text-muted);margin-top:10px;display:flex;gap:12px;justify-content:center;align-items:center">' +
             '<span>' + iconSvg('file','11') + ' 可上传 PDF/Word/TXT</span>' +
             '<span>·</span>' +
-            '<span>' + iconSvg('book','11') + ' 支持引用文库文档</span>' +
+            '<span>' + iconSvg('book','11') + ' 支持引用知识库文档</span>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -1116,7 +1116,7 @@ async function sendMessage() {
       // 形态 2/3：已经上传过（upload）或不需要上传（kb）→ 直接用 path
       uploadedFilePath = pendingFile.path;
       var _refLabel = pendingFile.source === 'kb'
-        ? ('[用户引用了文库文档: ' + (pendingFile.name || '') + '，请读取并参考]')
+        ? ('[用户引用了知识库文档: ' + (pendingFile.name || '') + '，请读取并参考]')
         : ('[用户上传了文件: ' + (pendingFile.name || '') + '，请读取并参考]');
       userMsg.content += '\n\n' + _refLabel;
       pendingFile = null;
@@ -1741,7 +1741,7 @@ async function sendMessage() {
             // 模块5a：文档注入明盒（显示"已加载文档 XX（约N词元）"）
             CardRenderer.handleEvent(d);
           } else if (d.type === 'kb_no_reference') {
-            showToast('未找到相关文库内容', 'info');
+            showToast('未找到相关知识库内容', 'info');
           // 文档提纲确认（Phase 1 完成后）
           } else if (d.type === 'doc_outline') {
             // 标记：doc_outline 模式，done 后不要覆盖确认按钮
@@ -2443,7 +2443,7 @@ var CardRenderer = (function() {
   // 步骤标签映射（对齐原型的 label）
   var STEP_LABELS = {
     reformulate: '分析问题',
-    search: '检索文库',
+    search: '检索知识库',
     retrieve: '本地知识库检索',
     local_gen: '本地生成',
     cloud_gen: '云端生成',

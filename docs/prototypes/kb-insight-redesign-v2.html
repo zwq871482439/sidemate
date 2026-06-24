@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KB Insight · 设计方案 v2</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --card: #ffffff;
+    --t1: #1f2937;
+    --t2: #4b5563;
+    --t3: #9ca3af;
+    --border: #d9d9d3;
+    /* Sidemate 系统色 */
+    --sys-blue: #3270b0;
+    --sys-blue-light: #e8eef5;
+    /* KB 知识库特色色 — Indigo 族 */
+    --kb-primary: #534AB7;
+    --kb-light: #F3F2FD;
+    --kb-light2: #EDECFA;
+    --kb-border: #CFCDF0;
+    /* 环形图调色板 — 10 色低饱和 */
+    --d1: #7F77DD; --d2: #4F8CC9; --d3: #3DA89E; --d4: #6BA845;
+    --d5: #DA9A2E; --d6: #D95468; --d7: #8B5CF6; --d8: #3B82C4;
+    --d9: #5C8A5A; --d10: #C97D60;
+    --radius: 14px;
+    --radius-sm: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--t1); padding: 36px 24px; min-height: 100vh;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+
+  /* ===== 设计说明区 ===== */
+  .spec { margin-bottom: 28px; }
+  .spec h1 { font-size: 1.3em; margin-bottom: 4px; }
+  .spec h1 span { color: var(--kb-primary); }
+  .spec .sub { font-size: .82em; color: var(--t3); margin-bottom: 16px; }
+  .spec-grid { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .spec-swatch {
+    width: 48px; height: 48px; border-radius: 8px; border: 1px solid var(--border);
+    display: flex; align-items: flex-end; justify-content: center;
+    font-size: .58em; color: #fff; padding-bottom: 3px; font-weight: 500;
+  }
+  .spec-label { font-size: .65em; color: var(--t3); margin-top: 4px; text-align: center; }
+
+  /* ===== 洞察卡片 — 新设计 ===== */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.03);
+    margin-bottom: 20px;
+  }
+  /* 顶条：从粗渐变 → 细 Indigo 线 */
+  .card-topbar {
+    height: 3px;
+    background: var(--kb-primary);
+    /* 渐变暗示多样性 */
+    background: linear-gradient(90deg, var(--kb-primary), #7F77DD 40%, #8B5CF6 70%, #A78BFA);
+  }
+  .card-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px 0; margin-bottom: 4px;
+  }
+  .card-title {
+    font-size: .92em; font-weight: 600; color: var(--t1);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .card-title svg { color: var(--kb-primary); opacity: .65; }
+  .card-badge {
+    font-size: .65em; padding: 2px 8px; border-radius: 10px;
+    background: var(--kb-light); color: var(--kb-primary); font-weight: 500;
+  }
+  .card-refresh {
+    font-size: .74em; color: var(--t3); cursor: pointer;
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: 20px;
+    background: none; display: flex; align-items: center; gap: 4px;
+    transition: all .2s;
+  }
+  .card-refresh:hover { border-color: var(--kb-primary); color: var(--kb-primary); }
+
+  /* 主体：环形图 100px + 文字 */
+  .card-body-row {
+    display: flex; gap: 20px; padding: 8px 20px 6px; align-items: flex-start;
+  }
+  .card-donut-col {
+    flex-shrink: 0; width: 150px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .card-text-col {
+    flex: 1; font-size: .84em; line-height: 1.8; color: var(--t2);
+    padding-top: 4px;
+    /* 改用左侧微弱的 kb 色竖线 */
+    border-left: 2px solid var(--kb-light2);
+    padding-left: 14px;
+  }
+  .card-text-col strong { color: var(--t1); }
+
+  /* 统计 pill — 改为紧凑横排，去掉 emoji */
+  .card-stats {
+    display: flex; gap: 6px; padding: 2px 20px 8px; font-size: .68em; color: var(--t3);
+    flex-wrap: wrap;
+  }
+  .card-stat {
+    background: var(--bg); padding: 3px 10px; border-radius: 20px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .card-stat-val { font-weight: 600; color: var(--t2); }
+
+  /* 分割线 — 改用 kb 色半透明 */
+  .card-divider {
+    height: 1px; background: var(--kb-border); margin: 0 20px; opacity: .4;
+  }
+
+  /* 追问 — 保持横排，增加截断 tooltip */
+  .card-asks {
+    display: flex; gap: 10px; padding: 10px 20px 14px;
+  }
+  .card-ask {
+    flex: 1; padding: 10px 14px; border-radius: var(--radius-sm);
+    background: var(--kb-light); border: 1px solid rgba(83,74,183,.1);
+    font-size: .76em; color: var(--kb-primary); cursor: pointer;
+    text-align: left; display: flex; align-items: center; gap: 6px;
+    transition: all .2s; line-height: 1.3;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    position: relative;
+  }
+  .card-ask:hover { background: var(--kb-primary); color: #fff; border-color: var(--kb-primary); }
+  .card-ask-rank {
+    font-size: .85em; font-weight: 700; opacity: .4; flex-shrink: 0;
+  }
+  .card-ask:hover .card-ask-rank { opacity: 1; }
+
+  /* Meta — 精简 */
+  .card-meta {
+    padding: 0 20px 12px; display: flex; gap: 14px;
+    font-size: .68em; color: var(--t3); align-items: center;
+  }
+  .card-meta-dot { width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--t3); opacity: .4; }
+
+  /* ===== 色板展示 ===== */
+  .palette-row { display: flex; gap: 10px; margin-bottom: 16px; align-items: flex-start; }
+  .palette-item { text-align: center; }
+  .palette-swatch {
+    width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--border);
+    margin: 0 auto; position: relative; overflow: hidden;
+  }
+  .palette-swatch.dark .palette-hex { color: #fff; }
+  .palette-hex {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    font-size: .55em; padding: 1px 0; text-align: center;
+    background: rgba(0,0,0,.08); color: var(--t2);
+  }
+  .palette-hex.light-text { color: #fff; }
+  .palette-name { font-size: .62em; color: var(--t3); margin-top: 4px; max-width: 56px; }
+
+  /* 设计要点 */
+  .notes {
+    background: #FFFDF5; border: 1px solid #EFE9C8; border-radius: var(--radius-sm);
+    padding: 16px 20px; margin-top: 28px; font-size: .78em; color: #8B7D14; line-height: 1.8;
+  }
+  .notes strong { color: #6B5E0A; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="spec">
+  <h1><span>桌伴·知识库</span> · 色彩体系 v2</h1>
+  <div class="sub">基于 Sidemate Indigo 设计系统延伸，为「AI 洞察」注入知识感</div>
+
+  <div style="display:flex;gap:36px;flex-wrap:wrap;margin-bottom:20px">
+    <div>
+      <div style="font-size:.72em;color:var(--t3);margin-bottom:8px">系统主色 · Blue</div>
+      <div class="palette-item">
+        <div class="palette-swatch dark" style="background:#3270b0"><span class="palette-hex" style="color:#fff">#3270B0</span></div>
+        <div class="palette-name">Accent</div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:.72em;color:var(--t3);margin-bottom:8px">知识库特色 · Indigo</div>
+      <div style="display:flex;gap:8px">
+        <div class="palette-item">
+          <div class="palette-swatch dark" style="background:#534AB7"><span class="palette-hex" style="color:#fff">#534AB7</span></div>
+          <div class="palette-name">KB Primary</div>
+        </div>
+        <div class="palette-item">
+          <div class="palette-swatch" style="background:#F3F2FD"><span class="palette-hex" style="color:#534AB7">#F3F2FD</span></div>
+          <div class="palette-name">KB Light</div>
+        </div>
+        <div class="palette-item">
+          <div class="palette-swatch dark" style="background:#7F77DD"><span class="palette-hex" style="color:#fff">#7F77DD</span></div>
+          <div class="palette-name">KB Accent</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size:.72em;color:var(--t3);margin-bottom:8px">环形图 10 色调色板 (HSL 均匀分布, 等饱和度)</div>
+  <div class="palette-row">
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#7F77DD"><span class="palette-hex" style="color:#fff">D1</span></div><div class="palette-name">Indigo</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#4F8CC9"><span class="palette-hex" style="color:#fff">D2</span></div><div class="palette-name">Steel</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#3DA89E"><span class="palette-hex" style="color:#fff">D3</span></div><div class="palette-name">Teal</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#6BA845"><span class="palette-hex" style="color:#fff">D4</span></div><div class="palette-name">Olive</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#DA9A2E"><span class="palette-hex" style="color:#fff">D5</span></div><div class="palette-name">Gold</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#D95468"><span class="palette-hex" style="color:#fff">D6</span></div><div class="palette-name">Rose</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#8B5CF6"><span class="palette-hex" style="color:#fff">D7</span></div><div class="palette-name">Violet</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#3B82C4"><span class="palette-hex" style="color:#fff">D8</span></div><div class="palette-name">Sky</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#5C8A5A"><span class="palette-hex" style="color:#fff">D9</span></div><div class="palette-name">Forest</div></div>
+    <div class="palette-item"><div class="palette-swatch dark" style="background:#C97D60"><span class="palette-hex" style="color:#fff">D10</span></div><div class="palette-name">Terra</div></div>
+  </div>
+</div>
+
+<!-- ===== 新设计预览 ===== -->
+<div class="spec sub" style="margin-top:12px;margin-bottom:12px">↓ 新洞察卡片设计（环形图 100px, Indigo 配色, 追问截断, 侧栏联动）</div>
+
+<div class="card">
+  <div class="card-topbar"></div>
+  <div class="card-hdr">
+    <div class="card-title">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v4M7 9.5h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      AI 洞察
+      <span class="card-badge">结构报告</span>
+    </div>
+    <button class="card-refresh">
+      <svg width="10" height="10" viewBox="0 0 14 14"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      整理
+    </button>
+  </div>
+  <div class="card-body-row">
+    <div class="card-donut-col" id="donutTarget"></div>
+    <div class="card-text-col">
+      知识库以<strong>中医药与养生</strong>为知识主干，覆盖病机理论、流派传承与实操手法。<strong>企业管理与人工智能技术</strong>形成次级骨架。<strong>心理健康</strong>仅 1 篇，呈孤岛状态，且未与中医线建立病灶—心理关联。
+    </div>
+  </div>
+  <div class="card-stats">
+    <span class="card-stat">文档 <span class="card-stat-val">13</span> 篇</span>
+    <span class="card-stat">主题 <span class="card-stat-val">4</span> 个</span>
+  </div>
+  <div class="card-divider"></div>
+  <div class="card-asks">
+    <button class="card-ask" title="如何系统性补全心理健康的知识体系？"><span class="card-ask-rank">1</span>如何系统性补全心理健康的知识体系？</button>
+    <button class="card-ask" title="中医药与AI因果分析怎么落地？"><span class="card-ask-rank">2</span>中医药与AI因果分析怎么落地？</button>
+    <button class="card-ask" title="企业管理类的战略理论够用吗？"><span class="card-ask-rank">3</span>企业管理类的战略理论够用吗？</button>
+  </div>
+  <div class="card-meta">
+    <span>本地 AI 整理</span><span class="card-meta-dot"></span><span>13 篇</span><span class="card-meta-dot"></span><span>13:52</span>
+  </div>
+</div>
+
+<div class="notes">
+  <strong>改动清单（对比旧版）</strong><br>
+  ① 色彩：顶条从四色渐变 → Indigo 渐变（与 Sidemate 主色分离但协调）<br>
+  ② 环形：78→100px，图例字号从 .66em → .7em，保留 hover+click 交互<br>
+  ③ 分割线：border-color → kb-border 半透明，视觉归属感更强<br>
+  ④ 追问按钮：增加 title 属性完整展示，长文字截断时 hover 看全<br>
+  ⑤ 统计 Pills：去掉 emoji，字号微调<br>
+  ⑥ 标题：加 "结构报告" badge 增强信息层次<br>
+  ⑦ 文字区竖线：从通用 accent → kb-light2 色，降低视觉重量<br>
+  ⑧ 暗色主题：--kb-primary / --kb-light 在 dark 下调整为更高对比度的暖紫
+</div>
+
+</div>
+
+<script>
+  var clusters = [
+    { name: "中医药与养生", count: 7 },
+    { name: "企业管理与战略", count: 3 },
+    { name: "人工智能技术", count: 2 },
+    { name: "心理健康", count: 1 }
+  ];
+  var colors = ["#7F77DD","#4F8CC9","#3DA89E","#6BA845","#DA9A2E","#D95468","#8B5CF6","#3B82C4","#5C8A5A","#C97D60"];
+  var total = 13;
+
+  var el = document.getElementById('donutTarget');
+  var r = 44, cx = 50, cy = 50, size = 100, innerR = 24;
+
+  var svg = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" style="overflow:visible">';
+  var angle = -Math.PI / 2;
+  for (var i = 0; i < clusters.length; i++) {
+    var c = clusters[i];
+    var sa = angle, ea = angle + (c.count / total) * 2 * Math.PI;
+    var x1 = cx + r * Math.cos(sa), y1 = cy + r * Math.sin(sa);
+    var x2 = cx + r * Math.cos(ea), y2 = cy + r * Math.sin(ea);
+    var large = (ea - sa) > Math.PI ? 1 : 0;
+    svg += '<path d="M' + cx + ' ' + cy + ' L' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + x2.toFixed(1) + ' ' + y2.toFixed(1) + ' Z" fill="' + colors[i] + '" opacity=".88" style="cursor:pointer;transition:opacity .2s,transform .2s;transform-origin:center"/>';
+    angle = ea;
+  }
+  svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + innerR + '" fill="white"/>';
+  svg += '<text x="' + cx + '" y="' + (cy - 3) + '" text-anchor="middle" font-size="18" font-weight="700" fill="#1f2937">' + total + '</text>';
+  svg += '<text x="' + cx + '" y="' + (cy + 11) + '" text-anchor="middle" font-size="9" fill="#9ca3af">篇</text>';
+  svg += '</svg>';
+
+  var legend = '<div style="display:flex;flex-direction:column;gap:4px;font-size:.7em;color:var(--t3)">';
+  for (var j = 0; j < clusters.length; j++) {
+    legend += '<div style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:2px;background:' + colors[j] + ';flex-shrink:0"></span>' + clusters[j].name + ' <span style="color:var(--t2);font-weight:500;margin-left:auto">' + clusters[j].count + '</span></div>';
+  }
+  legend += '</div>';
+  el.innerHTML = svg + legend;
+
+  // hover
+  setTimeout(function() {
+    var paths = el.querySelectorAll('path');
+    for (var k = 0; k < paths.length; k++) {
+      paths[k].addEventListener('mouseenter', function(){ this.setAttribute('opacity','1'); this.style.transform='scale(1.04)'; });
+      paths[k].addEventListener('mouseleave', function(){ this.setAttribute('opacity','.88'); this.style.transform='scale(1)'; });
+    }
+  }, 50);
+</script>
+</body>
+</html>

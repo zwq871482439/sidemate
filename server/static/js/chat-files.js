@@ -66,12 +66,82 @@ function showFileIndicator(name, source) {
   var bar = document.getElementById('fileIndicatorBar');
   if (!bar) return;
   bar.style.display = 'flex';
-  bar.innerHTML = '<span class="file-indicator-tag">' +
-    (_pendingFileSource === 'kb' ? iconSvg('books','12') : iconSvg('file','12')) +
-    ' ' + esc(name) +
-    '</span>' +
-    '<button class="file-indicator-remove" onclick="clearPendingFile(event)" title="移除">' + iconSvg('close','12') + '</button>';
+
+  // KB 多文档：可点击展开浮窗，单独取消
+  var kbFiles = (typeof window !== 'undefined' && window._kbSelectedFiles) ? window._kbSelectedFiles : [];
+  if (source === 'kb' && kbFiles.length > 1) {
+    bar.innerHTML = '<span class="file-indicator-tag" onclick="toggleFileIndicatorPopup()">' +
+      iconSvg('books','12') + ' ' + esc(name) +
+      '</span>' +
+      '<button class="file-indicator-remove" onclick="clearPendingFile(event)" title="全部移除">' + iconSvg('close','12') + '</button>';
+    // 构建浮窗
+    var popup = document.createElement('div');
+    popup.className = 'file-indicator-popup';
+    popup.id = 'fileIndicatorPopup';
+    kbFiles.forEach(function(f, idx) {
+      // 词元估算：优先用 total_chars/1.5，无则用 file_size 估算
+      var tokEst = 0;
+      if (f.total_chars) tokEst = Math.ceil(f.total_chars / 1.5);
+      else if (f.file_size) tokEst = Math.ceil(f.file_size / 1024 * 200);
+      var tokStr = tokEst > 0 ? (tokEst >= 1000 ? (tokEst/1000).toFixed(1)+'K词元' : tokEst+'词元') : '';
+      var item = document.createElement('div');
+      item.className = 'file-indicator-popup-item';
+      item.innerHTML = '<span class="pip-name">' + iconSvg('doc','11') + ' ' + esc(f.filename || f.doc_id || ('文档'+(idx+1))) + '</span>' +
+        (tokStr ? '<span class="pip-tok">' + tokStr + '</span>' : '') +
+        '<button class="pip-remove" onclick="removeSingleKbDoc(' + idx + ')" title="移除">' + iconSvg('close','11') + '</button>';
+      popup.appendChild(item);
+    });
+    bar.appendChild(popup);
+  } else {
+    bar.innerHTML = '<span class="file-indicator-tag">' +
+      (_pendingFileSource === 'kb' ? iconSvg('books','12') : iconSvg('file','12')) +
+      ' ' + esc(name) +
+      '</span>' +
+      '<button class="file-indicator-remove" onclick="clearPendingFile(event)" title="移除">' + iconSvg('close','12') + '</button>';
+  }
 }
+
+// 切换浮窗显隐
+function toggleFileIndicatorPopup() {
+  var popup = document.getElementById('fileIndicatorPopup');
+  if (popup) popup.classList.toggle('show');
+}
+window.toggleFileIndicatorPopup = toggleFileIndicatorPopup;
+
+// 单独移除一篇文档（KB 或上传文件，统一处理）
+function removeSingleKbDoc(idx) {
+  // 判断来源：上传文件还是 KB 文档
+  var isUpload = (_pendingFileSource === 'upload') || (window._uploadedFiles && window._uploadedFiles.length > 0 && (!window._kbSelectedFiles || !window._kbSelectedFiles.length));
+  if (isUpload) {
+    if (!window._uploadedFiles) return;
+    window._uploadedFiles.splice(idx, 1);
+    if (window._uploadedFiles.length === 0) {
+      clearPendingFile();
+      return;
+    }
+    _syncUploadedPending();
+    _refreshUploadIndicator();
+  } else {
+    if (!window._kbSelectedFiles) return;
+    window._kbSelectedFiles.splice(idx, 1);
+    if (window._kbSelectedFiles.length === 0) {
+      clearPendingFile();
+      return;
+    }
+    if (typeof pendingFile !== 'undefined') {
+      var allIds = window._kbSelectedFiles.map(function(d) { return d.doc_id; }).join(',');
+      pendingFile = {name: window._kbSelectedFiles.length + ' 篇知识库文档', path: allIds, source: 'kb'};
+    }
+    showFileIndicator(window._kbSelectedFiles.length + ' 篇知识库文档', 'kb');
+  }
+  // 重新展开浮窗 + 刷新 token
+  var popup = document.getElementById('fileIndicatorPopup');
+  if (popup) popup.classList.add('show');
+  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+    TokenEstimator.updateInputDisplay();
+  }
+}
+window.removeSingleKbDoc = removeSingleKbDoc;
 
 function hideFileIndicator() {
   _pendingFileName = '';
@@ -93,7 +163,10 @@ function clearPendingFile(e) {
   if (kbPicker) kbPicker.value = '';
   // P6: 清理 KB 选择状态
   if (typeof _kbSelectedDocs !== 'undefined') _kbSelectedDocs = [];
-  if (typeof window !== 'undefined') window._kbSelectedFiles = [];
+  if (typeof window !== 'undefined') {
+    window._kbSelectedFiles = [];
+    window._uploadedFiles = [];  // 清理上传文件状态
+  }
   // P6: 清理文件后刷新 token（必须在 pendingFile=null 之后）
   if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
     TokenEstimator.updateInputDisplay();
@@ -114,7 +187,7 @@ function pickKbFile() {
       files = files.filter(function(f) { return f.status === 'ready'; });
 
       if (files.length === 0) {
-        if (typeof showToast === 'function') showToast('文库中没有文档，请先上传', 'warning');
+        if (typeof showToast === 'function') showToast('知识库中没有文档，请先上传', 'warning');
         return;
       }
 
@@ -122,7 +195,7 @@ function pickKbFile() {
     })
     .catch(function(e) {
       console.error('[chat.pickKbFile]', e);
-      if (typeof showToast === 'function') showToast('获取文库文件列表失败', 'error');
+      if (typeof showToast === 'function') showToast('获取知识库文件列表失败', 'error');
     });
 }
 
@@ -148,7 +221,7 @@ function _showKbPickerModal(files) {
   // 头部
   var header = document.createElement('div');
   header.style.cssText = 'padding:16px 20px;border-bottom:1px solid var(--border-color,#e5e5e5);display:flex;justify-content:space-between;align-items:center';
-  header.innerHTML = '<div style="font-weight:500;font-size:15px;color:var(--text-primary,#333)">选择文库文档</div>';
+  header.innerHTML = '<div style="font-weight:500;font-size:15px;color:var(--text-primary,#333)">选择知识库文档</div>';
   var closeBtn = document.createElement('button');
   closeBtn.innerHTML = iconSvg ? iconSvg('close', '16') : '×';
   closeBtn.style.cssText = 'background:none;border:none;cursor:pointer;color:var(--text-muted,#999);padding:4px;border-radius:4px';
@@ -264,16 +337,16 @@ function _showKbPickerModal(files) {
     if (typeof pendingFile !== 'undefined') {
       // 多选时把所有 doc_id 拼成逗号分隔，后端按逗号拆分（如支持）
       var allIds = _kbSelectedDocs.map(function(d) { return d.doc_id; }).join(',');
-      pendingFile = {name: _kbSelectedDocs.length > 1 ? (_kbSelectedDocs.length + ' 篇文库文档') : first.filename, path: allIds, source: 'kb'};
+      pendingFile = {name: _kbSelectedDocs.length > 1 ? (_kbSelectedDocs.length + ' 篇知识库文档') : first.filename, path: allIds, source: 'kb'};
     }
     // 显示文件指示器
     var displayName = _kbSelectedDocs.length > 1
-      ? (_kbSelectedDocs.length + ' 篇文库文档')
+      ? (_kbSelectedDocs.length + ' 篇知识库文档')
       : first.filename;
     showFileIndicator(displayName, 'kb');
     // 多选时把所有文件名存到 window._kbSelectedFiles 供后端使用
     window._kbSelectedFiles = _kbSelectedDocs.slice();
-    if (typeof showToast === 'function') showToast('已引用 ' + _kbSelectedDocs.length + ' 篇文库文档', 'success');
+    if (typeof showToast === 'function') showToast('已引用 ' + _kbSelectedDocs.length + ' 篇知识库文档', 'success');
     overlay.remove();
   };
   // disabled 状态视觉同步
@@ -310,68 +383,104 @@ function _showKbPickerModal(files) {
 window._showKbPickerModal = _showKbPickerModal;
 
 function onUnifiedPicked(e) {
-  var file = e.target.files && e.target.files[0];
-  if (!file) return;
+  var files = e.target.files;
+  if (!files || !files.length) return;
+  // 多文件：收集到 window._uploadedFiles
+  if (typeof window._uploadedFiles === 'undefined') window._uploadedFiles = [];
+  var fileArr = [];
+  for (var fi = 0; fi < files.length; fi++) fileArr.push(files[fi]);
 
-  // 更新文件引用
-  if (typeof _refFilePath !== 'undefined') _refFilePath = file.name;
-  if (typeof pendingFile !== 'undefined') pendingFile = file;
-
-  showFileIndicator(file.name, 'upload');
-  if (typeof showToast !== 'function') {} else showToast('已选择: ' + file.name, 'success');
-
-  // Patch5 G：任何模式下都立即上传到 session workspace/，拿到真实 path 和 tokens
-  // 没有当前会话则先新建（否则后端 fallback 到 cache/uploads，污染全局）
-  var _doUpload = function() {
-    var formData = new FormData();
-    formData.append('file', file);
-    formData.append('mode', 'chat_attach');
+  var _doUploadAll = function() {
     var _preChatId = '';
     if (typeof currentChatFile !== 'undefined' && currentChatFile) {
       _preChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
     }
-    var _preUrl = (typeof API !== 'undefined' ? API : '') + '/api/file_upload';
-    if (_preChatId) _preUrl += '?chat_id=' + encodeURIComponent(_preChatId);
-    fetch(_preUrl, {
-      method: 'POST',
-      body: formData
-    }).then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d.path) {
-          if (typeof pendingFile !== 'undefined') pendingFile = {
-            name: file.name, path: d.path, source: 'upload',
-            tokens: d.tokens || 0, size: file.size || 0
-          };
-          if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
-            TokenEstimator.updateInputDisplay();
+    var uploaded = 0;
+    fileArr.forEach(function(file) {
+      var formData = new FormData();
+      formData.append('file', file);
+      formData.append('mode', 'chat_attach');
+      var _preUrl = (typeof API !== 'undefined' ? API : '') + '/api/file_upload';
+      if (_preChatId) _preUrl += '?chat_id=' + encodeURIComponent(_preChatId);
+      fetch(_preUrl, { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.path) {
+            window._uploadedFiles.push({
+              filename: file.name,
+              path: d.path,
+              tokens: d.tokens || 0,
+              file_size: file.size || 0,
+              source: 'upload'
+            });
+            uploaded++;
+            // 更新 pendingFile（多文件用数组第一个 path，或后端支持的逗号拼接）
+            _syncUploadedPending();
+            _refreshUploadIndicator();
+            if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+              TokenEstimator.updateInputDisplay();
+            }
+            if (uploaded === fileArr.length && typeof showToast === 'function') {
+              showToast(fileArr.length + ' 个文件已上传', 'success');
+            }
+          } else {
+            if (typeof showToast === 'function') showToast((d.error || '上传失败') + ': ' + file.name, 'error');
           }
-          if (typeof showToast === 'function') showToast('文件已上传', 'success');
-        } else {
-          if (typeof showToast === 'function') showToast(d.error || '上传失败', 'error');
-          clearPendingFile();
-        }
-      })
-      .catch(function() {
-        if (typeof showToast === 'function') showToast('上传失败', 'error');
-        clearPendingFile();
-      });
+        })
+        .catch(function() {
+          if (typeof showToast === 'function') showToast('上传失败: ' + file.name, 'error');
+        });
+    });
   };
 
-  // Patch5 G：没有 session 则先新建会话再上传，避免后端 fallback 到 cache/uploads
+  // 先显示指示器（上传中）
+  _refreshUploadIndicator();
+
   if (typeof currentChatFile === 'undefined' || !currentChatFile) {
     if (typeof newChat === 'function') {
-      newChat().then(_doUpload).catch(function() {
+      newChat().then(_doUploadAll).catch(function() {
         if (typeof showToast === 'function') showToast('创建会话失败，请手动新建', 'error');
       });
     } else {
-      _doUpload();
+      _doUploadAll();
     }
   } else {
-    _doUpload();
+    _doUploadAll();
   }
-
-  // 重置 input 以便再次选择同一文件
+  // 清空 input 允许重复选同一文件
   e.target.value = '';
+}
+
+// 同步 pendingFile 从 _uploadedFiles
+function _syncUploadedPending() {
+  if (typeof pendingFile === 'undefined') return;
+  if (!window._uploadedFiles || !window._uploadedFiles.length) {
+    pendingFile = null;
+    return;
+  }
+  var paths = window._uploadedFiles.map(function(f) { return f.path; });
+  pendingFile = {
+    name: window._uploadedFiles.length > 1 ? (window._uploadedFiles.length + ' 个上传文件') : window._uploadedFiles[0].filename,
+    path: paths.join(','),
+    source: 'upload'
+  };
+}
+
+// 刷新上传文件指示器（复用 showFileIndicator 浮窗逻辑）
+function _refreshUploadIndicator() {
+  var ufiles = window._uploadedFiles || [];
+  if (!ufiles.length) {
+    hideFileIndicator();
+    return;
+  }
+  var name = ufiles.length > 1 ? (ufiles.length + ' 个上传文件') : ufiles[0].filename;
+  // 临时把 _kbSelectedFiles 指向 _uploadedFiles，复用浮窗渲染
+  var savedKb = window._kbSelectedFiles;
+  window._kbSelectedFiles = ufiles.map(function(f) {
+    return { filename: f.filename, doc_id: f.path, total_chars: f.tokens ? f.tokens * 1.5 : 0, file_size: f.file_size };
+  });
+  showFileIndicator(name, 'kb');  // 用 'kb' 走浮窗逻辑
+  window._kbSelectedFiles = savedKb;  // 恢复
 }
 
 window.toggleAttachMenu = toggleAttachMenu;

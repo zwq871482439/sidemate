@@ -201,6 +201,33 @@ def _detect_unclosed_structures(text: str) -> List[str]:
     return warnings
 
 
+def _fix_unclosed_markdown(text: str) -> str:
+    """自愈未闭合的 Markdown 标记（静默修复，不告知用户）
+
+    模型常见问题：写了 **开头 加粗但忘了写结尾 **，导致渲染错乱。
+    策略：代码块外，若 ** 数量为奇数，在最后一个 ** 后的内容末尾补 ** 闭合。
+    """
+    if not text:
+        return text
+    # 保护代码块（代码里的 ** 是指针/乘法，不能动）
+    code_blocks = []
+    def _stash(m):
+        code_blocks.append(m.group(0))
+        return '\x00CB%d\x00' % (len(code_blocks) - 1)
+    protected = re.sub(r'```.*?```', _stash, text, flags=re.DOTALL)
+    # 统计代码块外的 ** 数量
+    bold_count = len(re.findall(r'(?<!\*)\*\*(?!\*)', protected))
+    if bold_count % 2 == 1:
+        # 找到最后一个 ** 的位置，在其后的正文末尾补闭合
+        last_bold = protected.rfind('**')
+        if last_bold >= 0:
+            protected = protected + '**'
+    # 还原代码块
+    for i, block in enumerate(code_blocks):
+        protected = protected.replace('\x00CB%d\x00' % i, block)
+    return protected
+
+
 def _detect_thinking_leak(text: str) -> List[str]:
     """检测正文中外泄的"思考过程"
     
@@ -376,6 +403,33 @@ def _looks_like_math_text(text: str) -> bool:
     return len(matches) >= 2  # 至少2个数学特征
 
 
+# 代码文本检测：含代码块的文本不应被前缀累积清理误伤
+# （代码的缩进/重复关键字/方法链会触发 4-gram 高频，但那是正常的代码结构）
+_CODE_BLOCK_PATTERN = re.compile(r'```')
+# 显著缩进（4空格/tab 开头的行 ≥ 3 行）—— 函数体/类体的标志
+_INDENT_LINE_PATTERN = re.compile(r'^(?: {4,}|\t+)\S', re.MULTILINE)
+# 常见编程关键字密集出现
+_CODE_KEYWORD_PATTERN = re.compile(
+    r'(?:def |class |function |import |from |return |if |for |while |'
+    r'public |private |const |let |var |=>|;|\{\}|\[\])'
+)
+
+def _looks_like_code_text(text: str) -> bool:
+    """判断文本是否含代码（代码的重复结构不应被当作前缀累积误清理）"""
+    if not text or len(text) < 30:
+        return False
+    # 1. 含 markdown 代码块（``` 围栏）—— 最强信号
+    if _CODE_BLOCK_PATTERN.search(text):
+        return True
+    # 2. 显著缩进行 ≥ 3（函数体/循环体的标志）
+    if len(_INDENT_LINE_PATTERN.findall(text)) >= 3:
+        return True
+    # 3. 编程关键字密集（≥ 4 个）
+    if len(_CODE_KEYWORD_PATTERN.findall(text)) >= 4:
+        return True
+    return False
+
+
 def detect_prefix_accumulation(text: str) -> Tuple[bool, str]:
     """检测前缀累积重复模式
     
@@ -446,6 +500,11 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
     
     # 数学/公式推理文本跳过（与 detect_prefix_accumulation 保持一致）
     if _looks_like_math_text(text):
+        return text[:max_len]
+    
+    # 代码文本跳过：代码的缩进/重复结构会触发 4-gram 误判，但那是正常代码结构，
+    # 不应被前缀累积清理误伤（否则会把完整函数截断成一两行）
+    if _looks_like_code_text(text):
         return text[:max_len]
     
     from collections import Counter
@@ -1035,6 +1094,7 @@ def filter_response(text: str, user_msg: str = "") -> Dict:
     # 清理流程：
     # 1. 前缀累积重复清理（严重问题时自动截取有效部分）
     # 2. 废话前缀清理（去掉"好的，让我来分析"等）
+    # 3. 未闭合 Markdown 标记自愈（补全缺失的 ** 等，不告知用户）
     cleaned = clean_prefix_accumulation(text)
     if cleaned != text:
         # 前缀累积重复已被清理，在清理后文本上再做废话前缀清理
@@ -1042,6 +1102,10 @@ def filter_response(text: str, user_msg: str = "") -> Dict:
     else:
         # 无前缀累积重复，仅做废话前缀清理
         cleaned = _clean_thinking_prefix(text)
+    # 自愈：补全未闭合的 ** 标记（静默修复，不产生警告）
+    cleaned = _fix_unclosed_markdown(cleaned)
+    # 修复后重新过滤警告：已自愈的问题不再报
+    all_warnings = [w for w in all_warnings if '未闭合的 Markdown' not in w]
 
     has_issues = len(all_warnings) > 0
 

@@ -141,7 +141,7 @@ def _sanitize_output(text: str) -> str:
     """轻量排版清理（不删正文内容，只做格式修整）
 
     处理项：
-    1. 连续空格压缩（4+ 空格 → 1 空格）
+    1. 连续空格压缩（4+ 空格 → 1 空格）—— 代码块内除外（保留缩进）
     2. 连续空行限制（最多保留 2 个空行）
     3. 末尾残缺标签清理（<think, <thinking 等）
     4. 首字修正：截掉开头的标点（逗号/顿号/分号/冒号）
@@ -150,7 +150,14 @@ def _sanitize_output(text: str) -> str:
     if not text or not text.strip():
         return text
 
-    # 1. 连续空格压缩
+    # 代码块保护：用占位符替换 ``` 围栏内的内容，避免后续空格压缩破坏缩进
+    _code_blocks = []
+    def _stash_code(m):
+        _code_blocks.append(m.group(0))
+        return '\x00CODEBLOCK%d\x00' % (len(_code_blocks) - 1)
+    text = re.sub(r'```.*?```', _stash_code, text, flags=re.DOTALL)
+
+    # 1. 连续空格压缩（仅作用于代码块外的普通文本）
     text = re.sub(r' {4,}', ' ', text)
 
     # 2. 连续空行限制
@@ -161,6 +168,10 @@ def _sanitize_output(text: str) -> str:
 
     # 4. 首字修正：截掉开头的标点（幻觉续写兜底）
     text = re.sub(r'^[，、；：]\s*', '', text)
+
+    # 还原代码块
+    for i, block in enumerate(_code_blocks):
+        text = text.replace('\x00CODEBLOCK%d\x00' % i, block)
 
     # 5. 首尾空白
     text = text.strip()

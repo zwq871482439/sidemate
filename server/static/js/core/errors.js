@@ -21,7 +21,7 @@ window.silentLog = silentLog;
  */
 var ERROR_MAP = {
   MODEL_LOAD_ERROR: { message: '模型加载失败', action: '检查模型文件完整性' },
-  KB_NOT_READY: { message: '文库未就绪', action: '请先安装文库模块' },
+  KB_NOT_READY: { message: '知识库未就绪', action: '请先安装知识库模块' },
   AGENT_TIMEOUT: { message: 'Agent 响应超时', action: '请简化问题后重试' },
   NO_MODEL: { message: '未加载模型', action: '请先在设置中加载模型' },
   NETWORK_ERROR: { message: '网络连接异常', action: '检查网络或稍后重试' },

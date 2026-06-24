@@ -420,12 +420,31 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
     kb_available = kb is not None and kb_permission != "disabled"
     doc_mode = mode == "doc"
 
+    # 读取工具级权限配置（tool_permissions 接线）
+    # 映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。
+    from config import get as _cfg
+    _TOOL_PERM_MAP = {
+        "search_kb": "tool_enabled_kb_search",
+        "search_web": "tool_enabled_web_search",
+        "fetch_url": "tool_enabled_web_search",      # 抓取网页归入联网搜索
+        "read_workspace": "tool_enabled_file_rw",
+        "write_workspace": "tool_enabled_file_rw",
+        "list_workspace": "tool_enabled_file_rw",
+        "delete_workspace": "tool_enabled_file_rw",
+        "append_workspace": "tool_enabled_file_rw",
+        "edit_workspace": "tool_enabled_file_rw",
+    }
+
     for name, tool_def in TOOL_REGISTRY.items():
         # 条件检查
         condition = tool_def.get("condition")
         if condition == "kb_available" and not kb_available:
             continue
         if condition == "doc_mode" and not doc_mode:
+            continue
+        # 工具级权限检查（用户可在设置里禁用）
+        perm_key = _TOOL_PERM_MAP.get(name)
+        if perm_key and not _cfg(perm_key, True):
             continue
 
         tools.append(tool_def["schema"])

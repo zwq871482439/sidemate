@@ -250,13 +250,14 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
     _FONT_EN = 'Calibri'
 
     # 用 pandoc 转换 markdown → docx
+    # 注意：不传 --metadata title，因为模型正文里的 # 一级标题就是文档标题，
+    # 传 metadata title 会导致标题区出现两层（pandoc 元数据标题 + 正文 H1）
     try:
         pypandoc.convert_text(
             content, 'docx', format='markdown',
             outputfile=output_path,
             extra_args=[
                 '--from=markdown+autolink_bare_uris+task_lists',
-                '--metadata', 'title=' + title,
             ]
         )
     except Exception as e:
@@ -289,11 +290,46 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
             if _full in _rfonts.attrib:
                 del _rfonts.attrib[_full]
 
-    # 遍历所有段落，统一字体
+    # 遍历所有段落，统一字体 + 排版美化
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_LINE_SPACING
+    _TITLE_COLOR = RGBColor(0x1F, 0x29, 0x37)    # 深灰，标题色
+    _ACCENT_COLOR = RGBColor(0x2D, 0x4A, 0x6F)   # 品牌蓝，H1
     for _para in doc.paragraphs:
+        _style_name = _para.style.name if _para.style else ''
+        # 统一字体
         for _run in _para.runs:
             _run.font.name = _FONT_EN
             _run._element.rPr.rFonts.set(qn('w:eastAsia'), _FONT_CN)
+        # 排版美化：按样式类型设置字号/间距/颜色
+        if _style_name == 'Title' or _style_name == 'Heading 1':
+            for _run in _para.runs:
+                _run.font.size = Pt(20)
+                _run.font.bold = True
+                _run.font.color.rgb = _ACCENT_COLOR
+            _para.paragraph_format.space_before = Pt(18)
+            _para.paragraph_format.space_after = Pt(12)
+        elif _style_name == 'Heading 2':
+            for _run in _para.runs:
+                _run.font.size = Pt(15)
+                _run.font.bold = True
+                _run.font.color.rgb = _TITLE_COLOR
+            _para.paragraph_format.space_before = Pt(14)
+            _para.paragraph_format.space_after = Pt(8)
+        elif _style_name == 'Heading 3':
+            for _run in _para.runs:
+                _run.font.size = Pt(13)
+                _run.font.bold = True
+                _run.font.color.rgb = _TITLE_COLOR
+            _para.paragraph_format.space_before = Pt(10)
+            _para.paragraph_format.space_after = Pt(6)
+        else:
+            # 正文段落：统一行距 + 字号
+            for _run in _para.runs:
+                if not _run.font.size:
+                    _run.font.size = Pt(11)
+            _para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+            _para.paragraph_format.space_after = Pt(6)
 
     doc.save(output_path)
     file_size = os.path.getsize(output_path)

@@ -313,64 +313,34 @@ function showModeConfirmModal(mode, callback) {
  * @param {HTMLElement} bar - actionBar 容器
  */
 function _renderGearMenu(bar) {
-  // 移除已有齿轮菜单
-  var existing = bar.querySelector('.gear-menu');
+  // 移除已有
+  var existing = bar.querySelector('.gear-inline');
   if (existing) return existing;
 
-  var menu = document.createElement('div');
-  menu.className = 'gear-menu';
+  var wrap = document.createElement('div');
+  wrap.className = 'gear-inline';
 
-  var btn = document.createElement('button');
-  btn.className = 'gear-btn';
-  btn.title = '并行模式设置';
-  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M7 1v2M7 11v2M1 7h2M11 7h2M2.5 2.5l1.5 1.5M10 10l1.5 1.5M2.5 11.5L4 10M10 4l1.5-1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
-  btn.onclick = function(e) {
-    e.stopPropagation();
-    var dd = menu.querySelector('.gear-dropdown');
-    if (dd) {
-      dd.style.display = dd.style.display === 'none' ? '' : 'none';
-    }
-  };
-  menu.appendChild(btn);
-
-  // 下拉菜单
-  var dropdown = document.createElement('div');
-  dropdown.className = 'gear-dropdown';
-  dropdown.style.display = 'none';
-
-  // 读取当前 toggle 状态
+  // 直接渲染内联开关（无齿轮、无下拉）
   _fetchParallelConfig(function(keywordGen) {
     var toggle = document.createElement('label');
-    toggle.className = 'gear-toggle';
+    toggle.className = 'gear-toggle gear-toggle-inline';
     toggle.innerHTML =
-      '<span class="gear-toggle-label">允许云端模型生成关键词</span>' +
+      '<span class="gear-toggle-label">云端辅助生成关键词</span>' +
       '<span class="gear-toggle-switch">' +
       '<input type="checkbox"' + (keywordGen ? ' checked' : '') + '>' +
       '<span class="gear-toggle-slider"></span>' +
       '</span>';
-
     var checkbox = toggle.querySelector('input');
     if (checkbox) {
       checkbox.addEventListener('change', function() {
         _saveParallelConfig(this.checked);
       });
     }
-    dropdown.appendChild(toggle);
+    wrap.appendChild(toggle);
   });
 
-  menu.appendChild(dropdown);
-
-  // P6 审计修复 M4：命名 close handler 以便移除，防止多次切换累积泄漏
-  var _closeGearHandler = function(e) {
-    if (!menu.contains(e.target)) {
-      dropdown.style.display = 'none';
-    }
-  };
-  menu._closeGearHandler = _closeGearHandler;  // 保存引用以便卸载
-  document.addEventListener('click', _closeGearHandler);
-
-  bar.appendChild(menu);
-  return menu;
+  bar.appendChild(wrap);
+  return wrap;
 }
 
 /**

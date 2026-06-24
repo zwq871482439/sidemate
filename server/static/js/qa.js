@@ -153,14 +153,14 @@ async function _updateKbOverlay() {
     if (!embedderPresent) missing.push('嵌入模型');
     if (!rerankerPresent) missing.push('精排模型');
     if (titleEl) titleEl.textContent = '模型文件缺失';
-    if (descEl) descEl.textContent = missing.join('、') + ' 文件未找到，请重新安装文库模块。';
+    if (descEl) descEl.textContent = missing.join('、') + ' 文件未找到，请重新安装知识库模块。';
     if (btnEl) { btnEl.textContent = '前往扩展管理'; btnEl.style.display = ''; }
     if (btn2El) btn2El.style.display = 'none';
   } else {
     var err = _kbModuleStatus.error || '';
     if (titleEl) titleEl.textContent = '模型加载失败';
     if (descEl) {
-      var msg = '文库模型未能成功加载，请重试。';
+      var msg = '知识库模型未能成功加载，请重试。';
       if (err) msg += ' 错误信息：' + err;
       descEl.textContent = msg;
     }
@@ -1267,7 +1267,7 @@ async function kbRetrySummary(docId) {
   } catch (err) { showToast('重试失败: ' + err.message, 'error'); }
 }
 
-// --- 文库功能说明弹窗 ---
+// --- 知识库功能说明弹窗 ---
 function showKbInfo() {
   var overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease';
@@ -1277,15 +1277,15 @@ function showKbInfo() {
   card.innerHTML = [
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">',
     '<svg width="22" height="22" viewBox="0 0 64 64" fill="none"><rect x="8" y="6" width="20" height="20" rx="3" stroke="#1e3a5f" stroke-width="2"/><rect x="36" y="34" width="20" height="20" rx="3" stroke="#c9976c" stroke-width="2"/><path d="M14 14h8M14 20h12" stroke="rgba(30,58,95,.25)" stroke-width="1" stroke-linecap="round"/><path d="M42 44l4 4 8-8" stroke="#c9976c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    '<span style="font-size:15px;font-weight:600;color:var(--text-primary)">文库功能介绍</span></div>',
+    '<span style="font-size:15px;font-weight:600;color:var(--text-primary)">知识库功能介绍</span></div>',
     '<div style="line-height:1.7;font-size:.92em;color:var(--text-secondary)">',
-    '<p style="margin:0 0 8px">文库是你的<b>本地知识库助手</b>，核心功能：</p>',
+    '<p style="margin:0 0 8px">知识库是你的<b>本地知识库助手</b>，核心功能：</p>',
     '<ul style="padding-left:18px;margin:8px 0">',
     '<li><b>文档上传</b>：支持 TXT / MD / CSV / DOCX / PDF 等格式</li>',
     '<li><b>语义检索</b>：基于 Embedding 模型理解语义，精准匹配</li>',
     '<li><b>智能问答</b>：在对话 Tab 选择「查知识库」action，AI 基于文档内容回答</li>',
     '</ul>',
-    '<p style="margin:8px 0 0;color:var(--text-muted);font-size:.85em">' + iconSvg('info','12') + ' 文库模型会在后台自动加载，无需手动操作。</p>',
+    '<p style="margin:8px 0 0;color:var(--text-muted);font-size:.85em">' + iconSvg('info','12') + ' 知识库模型会在后台自动加载，无需手动操作。</p>',
     '</div>',
     '<div style="margin-top:16px;display:flex;justify-content:flex-end">',
     '<button style="padding:6px 20px;border:none;border-radius:6px;background:var(--accent-color);color:var(--text-on-accent,#fff);cursor:pointer;font-size:13px" onclick="this.closest(\'div\').parentNode.parentNode.remove()">知道了</button>',

@@ -17,6 +17,18 @@ function _restoreChatUI() {
   if (dc) dc.disabled = false;
 }
 
+// ===== 会话侧边栏折叠/展开 =====
+function toggleChatSidebar() {
+  var sidebar = document.getElementById('chatSidebar');
+  var expandBtn = document.getElementById('chatSidebarExpand');
+  if (!sidebar) return;
+  var collapsed = sidebar.classList.toggle('collapsed');
+  if (expandBtn) expandBtn.style.display = collapsed ? 'flex' : 'none';
+}
+window.toggleChatSidebar = toggleChatSidebar;
+
+// ===== 会话侧边栏折叠/展开 结束 =====
+
 // ===== 消息一键复制 =====
 function copyMsgContent(btn) {
   // 优先从正文区 .stream-content 取文本（与流式/历史结构一致）；
