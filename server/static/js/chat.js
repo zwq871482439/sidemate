@@ -61,27 +61,39 @@ function _buildKbSources(m) {
 
 function _buildStats(m) {
   if (!m.model || m.time == null) return '';
-  var base = formatStats(m.model, m.chars || 0, m.think_chars || 0, m.time, m.speed || 0);
-  // 模块5b：词元统计折叠（有真实值用真实值，无则估算标"约"）
+  // 模型短名（去掉 :latest / :tag 后缀）+ 离线/在线前缀
+  var _shortModel = (m.model || '').replace(/:.*$/, '');
+  var _prefix = (m.action_mode === 'agent') ? '在线 AI' : '离线 AI';
+  var modelTag = '<span class="action-tag">' + _prefix + ' · ' + esc(_shortModel) + '</span>';
+  // 核心数字（summary 里显示）
+  var _timeStr = Number(m.time).toFixed(1) + 's';
+  var _speedStr = Math.round(m.speed || 0) + '字/s';
+  var _charsStr = (m.chars || 0) + '字';
+  var _thinkStr = (m.think_chars && m.think_chars > 0) ? ' · 深思' + m.think_chars + '字' : '';
+  var _summaryMeta = _charsStr + _thinkStr + ' · ' + _timeStr + ' · ' + _speedStr;
+  // 词元统计（展开后横向显示）
   var ts = m.token_stats || {};
   var inputTok = ts.input_tokens || 0;
   var outputTok = ts.output_tokens || 0;
   var reasonTok = ts.reasoning_tokens || 0;
-  // 无真实值时用 chars/1.5 估算
   if (!outputTok && m.chars) {
     outputTok = Math.round(m.chars / 1.5);
   }
-  if (inputTok || outputTok || reasonTok) {
-    var approx = m.token_stats ? '' : '约 ';  // 估算值标"约"
-    var rows = '';
-    if (inputTok) rows += '<div class="detail-kv"><span class="k">输入词元</span><span class="v">' + approx + inputTok.toLocaleString() + '</span></div>';
-    if (outputTok) rows += '<div class="detail-kv"><span class="k">输出词元</span><span class="v">' + approx + outputTok.toLocaleString() + '</span></div>';
-    if (reasonTok) rows += '<div class="detail-kv"><span class="k">推理词元</span><span class="v">' + approx + reasonTok.toLocaleString() + '</span></div>';
-    var detailHtml = '<details class="stats-detail"><summary>📋 词元统计</summary>' +
-      '<div class="stats-detail-body">' + rows + '</div></details>';
-    base = base.replace('</div>', '') + detailHtml + '</div>';
+  // 合并为单个 details：summary = 模型tag + 核心数字；展开 = 词元详情横向排列
+  var hasToken = (inputTok || outputTok || reasonTok);
+  var approx = m.token_stats ? '' : '约 ';
+  var detailRows = '';
+  if (inputTok) detailRows += '<span class="tk"><span class="tk-k">输入</span><span class="tk-v">' + approx + inputTok.toLocaleString() + ' 词元</span></span>';
+  if (outputTok) detailRows += '<span class="tk"><span class="tk-k">输出</span><span class="tk-v">' + approx + outputTok.toLocaleString() + ' 词元</span></span>';
+  if (reasonTok) detailRows += '<span class="tk"><span class="tk-k">推理</span><span class="tk-v">' + approx + reasonTok.toLocaleString() + ' 词元</span></span>';
+  if (!hasToken) {
+    // 无词元数据：不展开，直接显示一行
+    return '<div class="stats">' + modelTag + '<span class="stats-meta">' + _summaryMeta + '</span></div>';
   }
-  return base;
+  return '<details class="stats-detail stats-fold">' +
+    '<summary>' + modelTag + '<span class="stats-meta">' + _summaryMeta + '</span></summary>' +
+    '<div class="stats-detail-body">' + detailRows + '</div>' +
+    '</details>';
 }
 
 // ===== P6 T04: AgentTimeline SSE 事件处理 =====
@@ -924,17 +936,20 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   // 注：stats 分支已在上方提前 return（追加为独立 footer，不重写正文）
 
   // 只更新 #stream-content，不碰时间线/面板/下载栏
-  // 修复：思考态计时器保持连续——重建 innerHTML 前保存已有 timer 的 start 值，重建后恢复
+  // 修复：计时器 start 值跨渲染保持连续（思考中/回答中均需保存恢复，否则每个 token 重置）
+  // 关键：恢复时不仅要写回 data-start，还要立即重算 textContent，否则重建后的 "0.0s" 会停留到下一个 interval tick
   var _prevTimerStart = 0;
-  if (isThinking && !_isGenerating) {
+  if (isThinking) {
     var _prevTimer = contentEl.querySelector('.thinking-timer');
     if (_prevTimer) _prevTimerStart = parseInt(_prevTimer.getAttribute('data-start') || '0', 10);
   }
   contentEl.innerHTML = html;
-  // 恢复计时器 start 值（避免每个 token 重置为 Date.now()）
-  if (_prevTimerStart && isThinking && !_isGenerating) {
+  if (_prevTimerStart && isThinking) {
     var _newTimer = contentEl.querySelector('.thinking-timer');
-    if (_newTimer) _newTimer.setAttribute('data-start', _prevTimerStart);
+    if (_newTimer) {
+      _newTimer.setAttribute('data-start', _prevTimerStart);
+      _newTimer.textContent = ((Date.now() - _prevTimerStart) / 1000).toFixed(1) + 's';
+    }
   }
 
   if (!userScrolledUp) {
@@ -1007,7 +1022,8 @@ function updateContextRing(percentage, level, used, total) {
 async function sendMessage() {
   var input = document.getElementById('msgInput');
   var text = input.value.trim();
-  if (!text && (typeof pendingFile !== 'undefined') && !pendingFile) return;
+  // 文档 Phase2 确认时消息为空（由 doc_continue 驱动），允许通过
+  if (!text && !(window._docContinueOutline) && (typeof pendingFile !== 'undefined') && !pendingFile) return;
   if (typeof generating !== 'undefined' && generating) return;
 
   var modelTag = document.getElementById('modelTag');
@@ -1060,7 +1076,10 @@ async function sendMessage() {
   if (_sentFileName) {
     userMsg._file_tag = {name: _sentFileName, source: _sentFileSource || 'upload'};
   }
-  currentMessages.push(userMsg);
+  // 文档 Phase2（doc_continue）不显示 user 消息气泡（避免空的"请基于提纲生成"假消息）
+  if (!(window._docContinueOutline) && text) {
+    currentMessages.push(userMsg);
+  }
   _lastMsgCount = currentMessages.length;
 
   // 立即锁住 session poll，防止竞态覆盖用户消息
@@ -1418,7 +1437,11 @@ async function sendMessage() {
               } else if (!fullText.trim() && !thinkText.trim()) {
                 fullText = iconSvg('warn','14') + ' 模型未返回任何内容，请重试。';
               }
-              finalStats = formatStats(d.model, d.chars, d.think_chars || 0, d.time, d.speed);
+              finalStats = _buildStats({
+                model: d.model, chars: d.chars, think_chars: d.think_chars || 0,
+                time: d.time, speed: d.speed, token_stats: d.token_stats,
+                action_mode: currentActionMode || 'chat'
+              });
               thinkingPhase = false;
               _cloudThinking = false;
               // Patch4 v3.1 BUG#10：done 事件最终渲染时，清空 thinkText 避免 appendStreamingMsg
@@ -1512,6 +1535,15 @@ async function sendMessage() {
               }
             }
           } else if (d.type === 'filter') {
+            if (d.warnings && d.warnings.length > 0) {
+              // 过滤掉纯格式类警告（未闭合粗体/括号等）：对用户无实际价值，反而刺眼。
+              // 只保留真正影响阅读/内容的语义类警告（重复截断、幻觉等）。
+              var _fmtKw = ['未闭合的 Markdown', '未闭合代码块', '未闭合的括号', '多余的括号', '个未闭合', '个多余的'];
+              var _meaningful = d.warnings.filter(function(w) {
+                return !_fmtKw.some(function(k) { return w.indexOf(k) !== -1; });
+              });
+              d.warnings = _meaningful;  // 全过滤完则为空数组，下方 if 自然跳过
+            }
             if (d.warnings && d.warnings.length > 0) {
               var hallucinationKw = ['语言混淆', '模板套用', '内容空洞', '指令偏离', '未遵从指令', '疑似幻觉'];
               var hasHallucination = d.warnings.some(function(w) { return hallucinationKw.some(function(k) { return w.includes(k); }); });
@@ -1708,7 +1740,13 @@ async function sendMessage() {
               var confirmBar = document.createElement('div');
               confirmBar.className = 'doc-confirm-bar';
               confirmBar.id = 'docConfirmBar';
-              confirmBar.innerHTML = '<span class="doc-confirm-text">' + iconSvg('doc','14') + ' 文档提纲已生成，请确认后生成完整文档</span>' +
+              confirmBar.innerHTML =
+                '<details class="doc-outline-edit-wrap"><summary>' + iconSvg('doc','14') + ' 文档提纲已生成 — 点击查看，可编辑章节后确认</summary>' +
+                '<div class="doc-outline-hint">编辑下方 Markdown 提纲后点击「确认生成」，按钮旁可切换预览</div>' +
+                '<div class="doc-outline-toolbar"><button class="doc-outline-toggle-btn active" id="docOutlineEditBtn" onclick="toggleOutlinePreview(false)">编辑</button><button class="doc-outline-toggle-btn" id="docOutlinePreviewBtn" onclick="toggleOutlinePreview(true)">预览</button></div>' +
+                '<textarea class="doc-outline-editor" id="docOutlineEditor">' + esc(window._docOutlineText) + '</textarea>' +
+                '<div class="doc-outline-preview" id="docOutlinePreview"></div>' +
+                '</details>' +
                 '<div class="doc-confirm-actions">' +
                 '<button class="doc-confirm-ok" onclick="confirmDocOutline()">' + iconSvg('check','14') + ' 确认生成</button>' +
                 '<button class="doc-confirm-cancel" onclick="cancelDocOutline()">取消</button>' +
@@ -1882,6 +1920,7 @@ async function sendMessage() {
               if (newMsg.kb_sources) _enrichFields.kb_sources = newMsg.kb_sources;
               if (newMsg.doc_url) _enrichFields.doc_url = newMsg.doc_url;
               if (newMsg.doc_filename) _enrichFields.doc_filename = newMsg.doc_filename;
+              if (newMsg.action_mode) _enrichFields.action_mode = newMsg.action_mode;
               if (Object.keys(_enrichFields).length > 0) {
                 await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(_chatName) + '/enrich', {
                   method: 'POST',
@@ -2104,9 +2143,11 @@ function confirmDocOutline() {
   // 把 stream-msg 的 id 移除，让 sendMessage 创建新的
   var oldStream = document.getElementById('stream-msg');
   if (oldStream) oldStream.removeAttribute('id');
-  var outline = window._docOutlineText || '';
+  // 读取编辑后的提纲（用户可能修改了）
+  var editor = document.getElementById('docOutlineEditor');
+  var outline = editor ? editor.value : (window._docOutlineText || '');
   window._docOutlineText = null;
-  if (!outline) {
+  if (!outline.trim()) {
     showToast('提纲内容为空，无法生成', 'error');
     return;
   }
@@ -2116,10 +2157,10 @@ function confirmDocOutline() {
   }
   // 保存 doc_continue 参数
   window._docContinueOutline = outline;
-  // 直接调用 sendMessage（不修改输入框，sendMessage 会读取 _docContinueOutline）
+  // 直接调用 sendMessage，用空消息（不在聊天里显示"请基于提纲生成"这种假话）
   var input = document.getElementById('msgInput');
   if (input) {
-    input.value = '请基于已确认的提纲，生成完整文档';
+    input.value = '';  // 空消息，Phase2 由 doc_continue 驱动
   }
   sendMessage();
 }
@@ -2137,8 +2178,36 @@ function cancelDocOutline() {
   showToast('已取消文档撰写', 'info');
 }
 
+// 提纲编辑/预览切换
+function toggleOutlinePreview(showPreview) {
+  var textarea = document.getElementById('docOutlineEditor');
+  var preview = document.getElementById('docOutlinePreview');
+  var editBtn = document.getElementById('docOutlineEditBtn');
+  var previewBtn = document.getElementById('docOutlinePreviewBtn');
+  if (!textarea || !preview) return;
+
+  if (showPreview) {
+    // 用当前 textarea 内容渲染 Markdown 预览
+    if (typeof md === 'function') {
+      preview.innerHTML = md(textarea.value || '');
+    } else {
+      preview.innerHTML = '<pre>' + esc(textarea.value || '') + '</pre>';
+    }
+    textarea.style.display = 'none';
+    preview.style.display = 'block';
+    if (editBtn) editBtn.classList.remove('active');
+    if (previewBtn) previewBtn.classList.add('active');
+  } else {
+    textarea.style.display = '';
+    preview.style.display = 'none';
+    if (editBtn) editBtn.classList.add('active');
+    if (previewBtn) previewBtn.classList.remove('active');
+  }
+}
+
 window.confirmDocOutline = confirmDocOutline;
 window.cancelDocOutline = cancelDocOutline;
+window.toggleOutlinePreview = toggleOutlinePreview;
 
 // ===== Patch4 v3: DocProgressTracker — 文档进度面板（基于文件 + 字数） =====
 // 不再有"章节"概念，只有"文件 + 字数 + 状态（drafting/completed）"。

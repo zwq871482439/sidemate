@@ -159,6 +159,19 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 
 /* 标题 */
 .header{display:flex;align-items:center;gap:8px;padding-bottom:4px;flex-shrink:0;position:relative}
+/* 合并后的 header：标题栏 + Tab 导航一行 */
+.header-merged{padding-bottom:6px;border-bottom:2px solid var(--border-color)}
+/* 内联 Tab 导航：连体胶囊 + 圆点选中（与模式按钮 .mode 统一风格）*/
+.tabs-nav-inline{display:flex;gap:0;border-radius:8px;border:0.5px solid var(--border-color);border-bottom:0.5px solid var(--border-color);overflow:hidden;background:transparent;margin-top:0;margin-left:8px}
+/* 内联 Tab 导航样式放在此处（必须在 .tabs-nav 全局规则之后，确保覆盖）*/
+.header .tabs-nav-inline button{height:28px;padding:0 14px;border:none;border-bottom:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text-secondary);border-right:0.5px solid var(--border-color);transition:all .2s cubic-bezier(.4,0,.2,1);white-space:nowrap;position:relative;overflow:hidden;box-sizing:border-box;display:flex;align-items:center;margin-bottom:0}
+.header .tabs-nav-inline button:last-child{border-right:none}
+.header .tabs-nav-inline button:hover{background:var(--bg-secondary);color:var(--text-primary)}
+.header .tabs-nav-inline button.active{color:var(--accent-color);font-weight:600;border-bottom:none}
+.header .tabs-nav-inline button.active:last-child{border-right:none}
+/* 圆点选中标记（和模式按钮一致）*/
+.header .tabs-nav-inline button.active::before{content:'';position:absolute;left:8px;top:50%;transform:translateY(-50%);width:5px;height:5px;background:var(--accent-color);border-radius:50%;opacity:.85}
+.header .tabs-nav-inline button.active{padding-left:22px}
 .header h1{font-size:1.1em;font-weight:600;color:var(--text-primary)}
 .header .tag{font-size:.7em;padding:2px 6px;background:var(--bg-tertiary);border-radius:3px;color:var(--text-secondary)}
 .header .tag.device{background:var(--bg-tertiary);color:var(--text-muted);font-weight:600}
@@ -357,7 +370,7 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .input-area .action-bar-inline .action-btn:hover{background:var(--border-color)}
 .input-area .action-bar-inline .action-btn.active{background:var(--accent-color);color:var(--text-on-accent)}
 /* 模型 tag（内联在右侧）*/
-.model-tag-inline{font-size:10px;padding:1px 8px;border-radius:9px;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:auto;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.model-tag-inline{font-size:10px;padding:1px 8px;border-radius:9px;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:auto;max-width:260px;overflow:hidden;text-overflow:ellipsis}
 .model-tag-inline.none{background:transparent;color:var(--text-muted)}
 /* 气泡/列表切换：浮动在消息区右上角 */
 .float-style-toggle{position:absolute;top:6px;right:8px;z-index:20;font-size:10px;padding:2px 8px;border:0.5px solid var(--border-color);border-radius:9px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary);opacity:.6;transition:opacity .15s;font-family:inherit}
@@ -393,14 +406,32 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .attach-menu-item svg{color:var(--text-secondary)}
 
 /* ===== 文件指示器（输入框上方） ===== */
-.file-indicator-bar{display:flex;align-items:center;gap:6px;padding:4px 10px;margin-bottom:2px;
-  border-radius:6px;background:var(--bg-tertiary);font-size:.78em;color:var(--text-secondary);
-  animation:fadeIn .15s ease}
+.file-indicator-bar{display:flex;align-items:center;gap:6px;padding:2px 10px;margin-bottom:2px;
+  border-radius:6px;background:var(--bg-tertiary);font-size:11px;color:var(--text-secondary);
+  animation:fadeIn .15s ease;height:24px;box-sizing:border-box;position:relative}
 .file-indicator-bar .fi-icon{flex-shrink:0;display:flex;align-items:center}
 .file-indicator-bar .fi-name{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--text-primary);font-weight:500}
 .file-indicator-bar .fi-close{cursor:pointer;flex-shrink:0;display:flex;align-items:center;
   opacity:.5;transition:opacity .12s}
 .file-indicator-bar .fi-close:hover{opacity:1}
+/* KB 多文档：标签可点击展开浮窗 */
+.file-indicator-tag{display:flex;align-items:center;gap:4px;cursor:pointer;flex:1}
+.file-indicator-tag:hover{color:var(--accent-color)}
+.file-indicator-remove{border:none;background:transparent;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;opacity:.5;padding:0}
+.file-indicator-remove:hover{opacity:1;color:var(--error-color)}
+/* 浮窗：文档列表（向上弹，最多6行滚动）*/
+.file-indicator-popup{position:absolute;bottom:calc(100% + 4px);left:0;right:0;min-width:240px;
+  background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;
+  box-shadow:0 -2px 12px rgba(0,0,0,.1);z-index:100;overflow:hidden;display:none;max-height:180px;overflow-y:auto}
+.file-indicator-popup.show{display:block}
+.file-indicator-popup-item{display:flex;align-items:center;gap:6px;padding:3px 10px;font-size:10px;color:var(--text-primary);transition:background .12s;line-height:1.4;height:24px;box-sizing:border-box}
+.file-indicator-popup-item:hover{background:var(--bg-secondary)}
+.file-indicator-popup-item .pip-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.file-indicator-popup-item .pip-name svg{vertical-align:baseline !important;flex-shrink:0}
+.file-indicator-popup-item .pip-tok{color:var(--text-muted);font-size:9px;flex-shrink:0;white-space:nowrap}
+.file-indicator-popup-item .pip-remove{border:none;background:transparent;cursor:pointer;color:var(--text-muted);padding:0;flex-shrink:0;display:flex;align-items:center}
+.file-indicator-popup-item .pip-remove svg{vertical-align:baseline !important}
+.file-indicator-popup-item .pip-remove:hover{color:var(--error-color)}
 
 /* ===== 用户消息气泡内的文件标签 ===== */
 .msg-file-tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;margin-top:8px;
@@ -683,11 +714,29 @@ body.has-offline-banner #app{padding-top:44px}
 [data-theme="dark"] .think-details { background: var(--think-bg); }
 [data-theme="dark"] .think-details summary { color: var(--think-color); }
 
-/* ===== 文档确认倒计时 ===== */
-.doc-confirm-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;margin:8px 0;border-radius:8px;
-  background:var(--bg-secondary);border:1px dashed var(--border-color);flex-wrap:wrap}
-.doc-confirm-text{flex:1;font-size:.9em;color:var(--text-muted);min-width:200px}
-.doc-confirm-actions{display:flex;gap:8px;flex-shrink:0}
+/* ===== 文档确认（提纲可编辑）===== */
+.doc-confirm-bar{display:flex;flex-direction:column;gap:8px;padding:10px 14px;margin:8px 0;border-radius:8px;
+  background:var(--bg-secondary);border:1px dashed var(--border-color)}
+.doc-outline-edit-wrap{width:100%}
+.doc-outline-edit-wrap > summary{cursor:pointer;font-size:.88em;color:var(--text-muted);list-style:none;display:flex;align-items:center;gap:6px}
+.doc-outline-edit-wrap > summary::-webkit-details-marker{display:none}
+.doc-outline-edit-wrap > summary::before{content:'▸';font-size:9px;transition:transform .15s}
+.doc-outline-edit-wrap[open] > summary::before{transform:rotate(90deg)}
+.doc-outline-editor{width:100%;min-height:220px;margin-top:8px;padding:10px;border:1px solid var(--border-color);border-radius:6px;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7;color:var(--text-primary);background:var(--bg-primary);resize:vertical;box-sizing:border-box}
+.doc-outline-editor:focus{outline:none;border-color:var(--accent-color)}
+.doc-outline-preview{width:100%;min-height:220px;margin-top:8px;padding:12px;border:1px solid var(--border-color);border-radius:6px;
+  background:var(--bg-primary);overflow-y:auto;font-size:13px;line-height:1.7;color:var(--text-primary);box-sizing:border-box;display:none}
+.doc-outline-preview h1{font-size:1.2em;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border-color)}
+.doc-outline-preview h2{font-size:1.05em;margin:12px 0 4px}
+.doc-outline-preview ul{margin:4px 0;padding-left:18px}
+.doc-outline-preview li{margin:2px 0}
+.doc-outline-toolbar{display:flex;align-items:center;gap:8px;margin-top:8px}
+.doc-outline-toggle-btn{padding:3px 10px;border:0.5px solid var(--border-color);border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:11px;transition:all .15s}
+.doc-outline-toggle-btn:hover{border-color:var(--accent-color);color:var(--accent-color)}
+.doc-outline-toggle-btn.active{background:var(--accent-color);color:var(--text-on-accent);border-color:var(--accent-color)}
+.doc-outline-hint{font-size:11px;color:var(--text-muted);margin-top:6px;padding:4px 0}
+.doc-confirm-actions{display:flex;gap:8px;justify-content:flex-end;width:100%}
 .doc-confirm-ok{padding:6px 16px;border:1px solid var(--accent-color);border-radius:6px;
   background:var(--accent-color);color:var(--text-on-accent);cursor:pointer;font-size:.85em;font-weight:500;
   transition:opacity .15s}
@@ -790,7 +839,7 @@ body.has-offline-banner #app{padding-top:44px}
 .chat-sidebar{width:180px;flex-shrink:0;border-right:1px solid var(--border-color);display:flex;flex-direction:column;overflow:hidden;background:var(--bg-secondary)}
 .chat-sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--border-color);flex-shrink:0}
 .chat-sidebar-title{font-size:.78em;color:var(--text-muted);font-weight:600}
-.chat-sidebar-new-btn{padding:2px 8px;font-size:.72em;border:0.5px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--accent-color);cursor:pointer}
+.chat-sidebar-new-btn{display:block;width:calc(100% - 8px);margin:6px 4px;padding:6px 10px;font-size:12px;border:0.5px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--accent-color);cursor:pointer;box-sizing:border-box;text-align:center}
 .chat-sidebar-new-btn:hover{background:var(--primary-50)}
 .chat-sidebar-list{flex:1;overflow-y:auto;padding:4px}
 .chat-sidebar-empty{padding:12px 8px;font-size:.75em;color:var(--text-muted);text-align:center}
@@ -809,6 +858,12 @@ body.has-offline-banner #app{padding-top:44px}
 .chat-sidebar-footer{padding:6px 10px;border-top:1px solid var(--border-color);flex-shrink:0}
 .chat-sidebar-export-btn{padding:4px 10px;font-size:.72em;border:0.5px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;width:100%;justify-content:center}
 .chat-sidebar-export-btn:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+/* 侧边栏折叠按钮（header 内）*/
+.chat-sidebar-collapse-btn{padding:3px 6px;font-size:12px;border:0.5px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-muted);cursor:pointer;display:flex;align-items:center;height:24px;box-sizing:border-box}
+.chat-sidebar-collapse-btn:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+/* 侧边栏折叠后的展开按钮（浮在 chat-main 左上角）*/
+.chat-sidebar-expand-btn{display:none;position:absolute;top:6px;left:6px;z-index:20;padding:4px 6px;font-size:11px;border:0.5px solid var(--border-color);border-radius:5px;background:var(--bg-primary);color:var(--text-secondary);cursor:pointer;align-items:center;opacity:.7;transition:opacity .15s}
+.chat-sidebar-expand-btn:hover{opacity:1;color:var(--accent-color);border-color:var(--accent-color)}
 
 /* 主对话区 */
 .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
@@ -1267,8 +1322,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* ============================================================
    P6: 三段模式按钮组
    ============================================================ */
-.mode{display:flex;border-radius:8px;border:0.5px solid var(--border-color);overflow:hidden;background:var(--bg-primary)}
-.mode button{padding:5px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text-secondary);border-right:0.5px solid var(--border-color);transition:all .2s cubic-bezier(.4,0,.2,1);white-space:nowrap;position:relative;overflow:hidden}
+.mode{display:flex;border-radius:8px;border:0.5px solid var(--border-color);overflow:hidden;background:transparent}
+.mode button{padding:5px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text-secondary);border-right:0.5px solid var(--border-color);transition:all .2s cubic-bezier(.4,0,.2,1);white-space:nowrap;position:relative;overflow:hidden;box-shadow:none}
 .mode button:last-child{border-right:none}
 .mode button:hover{background:var(--primary-50);color:var(--primary-900)}
 /* P6 三模式主题色：离线=绿 在线=蓝 并行=紫 */
@@ -1300,7 +1355,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .tb-labels{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px}
 .tb-lbl-left{color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
 .tb-lbl-right{color:var(--text-muted);white-space:nowrap;flex-shrink:0}
-.tb-remain{color:var(--text-primary);font-weight:500}
+.tb-remain{color:var(--text-primary);font-weight:600}
 /* 统一 tag 风格（已用/本轮/状态 都是小圆角标签，各自配色）*/
 .tb-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:500;line-height:1.5}
 .tb-tag-used{background:var(--bg-tertiary);color:var(--text-muted)}  /* 已用：中性灰底 */
@@ -1312,9 +1367,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .tb-tag-status.status-warn{background:rgba(217,119,6,.12);color:var(--warning-color)}
 .tb-tag-status.status-over{background:rgba(185,28,28,.12);color:var(--error-color)}
 .tb-plus{color:var(--text-muted)}
-/* 右侧信息区（总计）*/
-.tb-info{display:flex;align-items:center;flex-shrink:0}
-.tb-limit{color:var(--text-muted);font-size:10px}
+/* 总计（内联在剩余后面）*/
+.tb-limit{color:var(--text-muted);font-size:11px}
 /* 状态色（状态 tag 现在在左侧）*/
 .token-bar .status-ok{color:var(--success-color);font-weight:500}
 .token-bar .status-warn{color:var(--warning-color);font-weight:500}
@@ -1742,6 +1796,13 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .gear-toggle-switch input:checked + .gear-toggle-slider::before {
   transform: translateX(14px);
 }
+
+/* 内联齿轮开关（并行模式，直接显示在 action 行，无齿轮无下拉）*/
+.gear-inline{display:flex;align-items:center;flex-shrink:0;margin-left:auto}
+.gear-toggle-inline{display:flex;align-items:center;gap:5px;padding:1px 8px;border-radius:9px;background:var(--bg-tertiary);font-size:10px;color:var(--text-secondary);cursor:pointer;white-space:nowrap;height:20px;box-sizing:border-box}
+.gear-toggle-inline .gear-toggle-switch{width:24px;height:14px}
+.gear-toggle-inline .gear-toggle-slider::before{height:10px;width:10px;left:1px;bottom:1px}
+.gear-toggle-inline .gear-toggle-switch input:checked + .gear-toggle-slider::before{transform:translateX(10px)}
 
 /* ============================================================
    P6 T04: 模式确认弹窗细化
