@@ -365,9 +365,19 @@ class AgentLoop:
         """构建 OpenAI 格式的 messages 数组"""
         messages = [{"role": "system", "content": system_prompt}]
 
-        # 添加上下文缓存
+        # 添加上下文缓存（兼容字符串和字典两种格式）
         if context_cache:
-            messages[0]["content"] += "\n\n[上下文摘要]\n" + context_cache
+            if isinstance(context_cache, dict):
+                # P6: 字典格式——提取预注入的 KB 文档内容
+                kb_ctx = context_cache.get('kb_context', '')
+                if kb_ctx:
+                    messages[0]["content"] += "\n\n[用户选定的参考文档]\n" + kb_ctx + "\n\n注意：以上文档内容已直接提供，无需再调用 search_kb 检索这些文档。"
+                # 其他上下文字段（摘要等）
+                summary = context_cache.get('summary', '')
+                if summary:
+                    messages[0]["content"] += "\n\n[上下文摘要]\n" + summary
+            elif isinstance(context_cache, str):
+                messages[0]["content"] += "\n\n[上下文摘要]\n" + context_cache
 
         # 添加历史（只保留 user/assistant 角色，过滤 tool 消息保持简洁）
         if history:

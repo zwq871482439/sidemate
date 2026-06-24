@@ -377,6 +377,30 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         _chat_id = chat_id_from_path(chat_file)
     agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id, history=model_history)
 
+    # P6: 如果用户选了 KB 文档，预先注入内容到 context_cache
+    # 这样 Agent 直接看到文档内容，不需要再调 search_kb 检索
+    _preloaded_kb = False
+    if hasattr(ctx, 'file_path') and ctx.file_path and kb:
+        try:
+            _doc_ids = [d.strip() for d in str(ctx.file_path).split(',') if d.strip()]
+            _doc_texts = []
+            for _did in _doc_ids:
+                _doc_ref = kb.get_document(_did)
+                if _doc_ref and _doc_ref.status == "ready":
+                    for chunk in kb.chunks.values():
+                        if chunk.doc_id == _did and chunk.text:
+                            _doc_texts.append(chunk.text)
+            if _doc_texts:
+                _kb_content = "\n\n".join(_doc_texts)
+                if not context_cache:
+                    context_cache = {}
+                context_cache['kb_context'] = _kb_content
+                _preloaded_kb = True
+                log.info("[CLOUD-AGENT] 预注入 KB 文档: %d 篇, %d 字",
+                         len(_doc_ids), len(_kb_content))
+        except Exception as e:
+            log.warning("[CLOUD-AGENT] KB 文档预注入失败: %s", str(e)[:80])
+
     # 决定模式
     agent_mode = "doc" if action_mode == "doc" else "chat"
 
