@@ -2989,24 +2989,30 @@ var CardRenderer = (function() {
     if (!parWrap) return;
     var localText = _parallelTexts.local || '';
     var cloudText = _parallelTexts.cloud || '';
-    if (!localText && !cloudText) return;
-    var html = '<div class="cb-par-summary">';
+
+    // P6: 把原文嵌入对应步骤下方（和 renderHistory 一致），而非独立摘要条
     if (localText) {
-      html += '<div class="cb-par-sum-item local" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
-        '<div class="cb-par-sum-head">本地AI生成回答</div>' +
-        '<div class="cb-par-sum-preview">' + _esc(localText.slice(0, 40)) + '...</div>' +
-        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(localText) + '</div>' +
-      '</div>';
+      var localStep = _container.querySelector('.cb-step[data-id="local_gen"]');
+      if (localStep) {
+        var card = document.createElement('div');
+        card.className = 'cb-par-card local';
+        card.style.cssText = 'margin-top:6px';
+        card.innerHTML = '<div class="cb-par-card-body">' + _esc(localText) + '</div>';
+        localStep.appendChild(card);
+      }
     }
     if (cloudText) {
-      html += '<div class="cb-par-sum-item cloud" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
-        '<div class="cb-par-sum-head">云端AI生成回答</div>' +
-        '<div class="cb-par-sum-preview">' + _esc(cloudText.slice(0, 40)) + '...</div>' +
-        '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(cloudText) + '</div>' +
-      '</div>';
+      var cloudStep = _container.querySelector('.cb-step[data-id="cloud_gen"]');
+      if (cloudStep) {
+        var card2 = document.createElement('div');
+        card2.className = 'cb-par-card cloud';
+        card2.style.cssText = 'margin-top:6px';
+        card2.innerHTML = '<div class="cb-par-card-body">' + _esc(cloudText) + '</div>';
+        cloudStep.appendChild(card2);
+      }
     }
-    html += '</div>';
-    parWrap.outerHTML = html;
+    // 移除并行列容器（原文已嵌入步骤）
+    parWrap.remove();
     // 清理并行列引用（已折叠）
     _parallelCols = {};
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
