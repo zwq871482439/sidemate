@@ -2987,14 +2987,14 @@ var CardRenderer = (function() {
     var html = '<div class="cb-par-summary">';
     if (localText) {
       html += '<div class="cb-par-sum-item local" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
-        '<div class="cb-par-sum-head">本地原文</div>' +
+        '<div class="cb-par-sum-head">本地AI生成回答</div>' +
         '<div class="cb-par-sum-preview">' + _esc(localText.slice(0, 40)) + '...</div>' +
         '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(localText) + '</div>' +
       '</div>';
     }
     if (cloudText) {
       html += '<div class="cb-par-sum-item cloud" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
-        '<div class="cb-par-sum-head">云端原文</div>' +
+        '<div class="cb-par-sum-head">云端AI生成回答</div>' +
         '<div class="cb-par-sum-preview">' + _esc(cloudText.slice(0, 40)) + '...</div>' +
         '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(cloudText) + '</div>' +
       '</div>';
@@ -3023,12 +3023,29 @@ var CardRenderer = (function() {
       // 并行子步骤（searching/generating 等）
       var col = _parallelCols[channel];
       if (col && col.el) {
-        var stepDiv = document.createElement('div');
-        stepDiv.className = 'cb-step';
-        stepDiv.setAttribute('data-status', evtType === 'step_done' ? 'done' : 'running');
-        stepDiv.innerHTML = '<span class="cb-dot ' + (evtType === 'step_done' ? 'ok' : 'run') + '"></span>' +
-          '<div class="cb-step-row"><span class="cb-label">' + _esc(d.step || '') + '</span></div>';
-        col.el.appendChild(stepDiv);
+        var _stepName = d.step || '';
+        // P6 修复：step 事件只创建一次（去重），step_done 只更新已有步骤
+        if (evtType === 'step') {
+          // 检查是否已有同名步骤（避免 generating 重复创建）
+          var _existing = col.el.querySelector('.cb-step[data-step-name="' + _stepName + '"]');
+          if (!_existing) {
+            var stepDiv = document.createElement('div');
+            stepDiv.className = 'cb-step';
+            stepDiv.setAttribute('data-status', 'running');
+            stepDiv.setAttribute('data-step-name', _stepName);
+            stepDiv.innerHTML = '<span class="cb-dot run"></span>' +
+              '<div class="cb-step-row"><span class="cb-label">' + _esc(_stepName) + '</span></div>';
+            col.el.appendChild(stepDiv);
+          }
+        } else if (evtType === 'step_done') {
+          // 找到对应步骤标记完成
+          var _doneStep = col.el.querySelector('.cb-step[data-step-name="' + _stepName + '"]');
+          if (_doneStep) {
+            _doneStep.setAttribute('data-status', 'done');
+            var _dot = _doneStep.querySelector('.cb-dot');
+            if (_dot) _dot.className = 'cb-dot ok';
+          }
+        }
       }
     } else if (evtType === 'status') {
       // 云端列状态（understanding/thinking/generating）
@@ -3302,18 +3319,18 @@ var CardRenderer = (function() {
         '<div class="full" style="margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.merge) + '</div>' +
       '</div>';
     }
-    // 本地原文（默认折叠，绿色）
+    // 本地AI生成回答（默认折叠，绿色）
     if (texts.local) {
       html += '<div class="cb-par-sum-item local" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
-        '<div class="cb-par-sum-head">本地原文</div>' +
+        '<div class="cb-par-sum-head">本地AI生成回答</div>' +
         '<div class="cb-par-sum-preview">' + _esc(texts.local.slice(0, 40)) + '...</div>' +
         '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.local) + '</div>' +
       '</div>';
     }
-    // 云端原文（默认折叠，蓝色）
+    // 云端AI生成回答（默认折叠，蓝色）
     if (texts.cloud) {
       html += '<div class="cb-par-sum-item cloud" onclick="var f=this.querySelector(\'.full\');f.style.display=f.style.display?\'\':\'none\'">' +
-        '<div class="cb-par-sum-head">云端原文</div>' +
+        '<div class="cb-par-sum-head">云端AI生成回答</div>' +
         '<div class="cb-par-sum-preview">' + _esc(texts.cloud.slice(0, 40)) + '...</div>' +
         '<div class="full" style="display:none;margin-top:6px;font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6">' + _esc(texts.cloud) + '</div>' +
       '</div>';

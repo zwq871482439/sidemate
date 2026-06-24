@@ -327,8 +327,16 @@ def _run_cloud_column(ctx, question: str, cloud_history: list, q: queue.Queue):
         # 状态1: 正在理解问题
         q.put(("status", "understanding"))
 
+        # P6: 并行模式云端列引导——告知模型角色定位，回答简洁
+        _cloud_guided_question = (
+            "【并行模式·云端补充】你的回答将与本地知识库的回答进行融合。\n"
+            "请简洁回答（建议300字以内），只补充本地知识库可能缺少的通用知识或不同视角，"
+            "不要重复显而易见的内容。如果问题简单，简短回答即可。\n\n"
+            "用户问题：" + question
+        )
+
         for phase, content in cloud_engine.run(
-            question,
+            _cloud_guided_question,
             history=cloud_history,
             context_cache=None,
             override_task_type="text",
