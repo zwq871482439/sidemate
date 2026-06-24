@@ -144,6 +144,9 @@ function _sidebarSelectChat(path) {
     currentChatFile = path;
     currentMessages = data.messages || [];
     _lastMsgCount = currentMessages.length;
+    // P6: 清除残留的流式消息元素（防止切换会话后消息叠加）
+    var _oldStream = document.getElementById('stream-msg');
+    if (_oldStream) _oldStream.remove();
     renderMessages();
     loadChatList();
     // P6 T04: 切换会话后保持模式状态，刷新 action bar 和 placeholder
