@@ -378,6 +378,79 @@ def api_kb_stats():
     return stats
 
 
+@router.get("/api/kb/diagnosis")
+def api_kb_diagnosis():
+    """检索健康度诊断（轻量版，用现有数据计算）"""
+    kb = get_kb()
+    result = {
+        "doc_count": 0,
+        "chunk_count": 0,
+        "ready_docs": 0,
+        "empty_docs": 0,
+        "short_chunks": 0,
+        "long_chunks": 0,
+        "avg_chunk_len": 0,
+        "tagged_docs": 0,
+        "vector_dim": 0,
+        "vector_count": 0,
+        "health_score": 0,
+        "issues": [],
+    }
+    try:
+        docs = list(kb.documents.values())
+        chunks = list(kb.chunks.values()) if hasattr(kb, 'chunks') else []
+        result["doc_count"] = len(docs)
+        result["chunk_count"] = len(chunks)
+        result["ready_docs"] = sum(1 for d in docs if getattr(d, 'status', '') == 'ready')
+        result["empty_docs"] = sum(1 for d in docs if not getattr(d, 'chunk_count', 0))
+        result["tagged_docs"] = sum(1 for d in docs if getattr(d, 'tags', None))
+
+        # chunk 长度分析
+        if chunks:
+            lengths = [getattr(c, 'char_count', 0) or len(getattr(c, 'text', '') or '') for c in chunks]
+            result["avg_chunk_len"] = round(sum(lengths) / len(lengths)) if lengths else 0
+            result["short_chunks"] = sum(1 for l in lengths if l < 50)
+            result["long_chunks"] = sum(1 for l in lengths if l > 1000)
+
+        # 向量状态
+        if hasattr(kb, 'vectors') and kb.vectors is not None:
+            try:
+                result["vector_dim"] = int(kb.vectors.shape[1])
+                result["vector_count"] = int(kb.vectors.shape[0])
+            except Exception:
+                pass
+
+        # 健康度评分（0-100）+ 问题检测
+        score = 100
+        issues = []
+        if result["empty_docs"] > 0:
+            score -= 10
+            issues.append({"level": "warn", "msg": "%d 篇文档没有内容片段，建议重新导入" % result["empty_docs"]})
+        if result["short_chunks"] > result["chunk_count"] * 0.3:
+            score -= 15
+            issues.append({"level": "warn", "msg": "%d 个片段过短（<50字），可能影响检索精度" % result["short_chunks"]})
+        if result["long_chunks"] > 0:
+            score -= 5
+            issues.append({"level": "info", "msg": "%d 个片段过长（>1000字），建议拆分" % result["long_chunks"]})
+        if result["ready_docs"] < result["doc_count"]:
+            score -= 20
+            issues.append({"level": "error", "msg": "%d 篇文档未就绪" % (result["doc_count"] - result["ready_docs"])})
+        if result["vector_count"] != result["chunk_count"]:
+            score -= 15
+            issues.append({"level": "warn", "msg": "向量数(%d)与片段数(%d)不一致" % (result["vector_count"], result["chunk_count"])})
+        if result["doc_count"] > 0 and result["tagged_docs"] == 0:
+            score -= 10
+            issues.append({"level": "info", "msg": "没有文档打标签，建议为文档添加分类标签"})
+        if not issues:
+            issues.append({"level": "ok", "msg": "知识库状态良好，无异常"})
+
+        result["health_score"] = max(0, score)
+        result["issues"] = issues
+    except Exception as e:
+        result["issues"] = [{"level": "error", "msg": "诊断失败: %s" % str(e)[:80]}]
+    return result
+
+
 @router.get("/api/kb/module-status")
 def api_kb_module_status():
     """KB 模块安装状态（简化二态：installed + ready）"""

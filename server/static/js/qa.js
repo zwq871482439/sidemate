@@ -1293,5 +1293,64 @@ function showKbInfo() {
 
 window.kbResolveConflict = kbResolveConflict;
 
+// ===== P6 检索健康度诊断 =====
+async function kbShowDiagnosis() {
+  var el = document.getElementById('kbDiagnosisContent');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">诊断中...</span>';
+  try {
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/diagnosis');
+    var d = await resp.json();
+
+    // 健康度评分（大圆环）
+    var score = d.health_score || 0;
+    var scoreColor = score >= 80 ? 'var(--success-color,#16a34a)' : (score >= 50 ? 'var(--warning-color,#d97706)' : 'var(--error-color,#b91c1c)');
+    var scoreLabel = score >= 80 ? '良好' : (score >= 50 ? '尚可' : '需关注');
+
+    var html = '';
+    // 健康度大字
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">';
+    html += '<div style="font-size:28px;font-weight:700;color:' + scoreColor + '">' + score + '</div>';
+    html += '<div><div style="font-size:13px;font-weight:600;color:' + scoreColor + '">' + scoreLabel + '</div>';
+    html += '<div style="font-size:10px;color:var(--text-muted)">健康度评分</div></div>';
+    html += '</div>';
+
+    // 核心指标
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">';
+    html += _diagMetric('文档总数', d.doc_count);
+    html += _diagMetric('内容片段', d.chunk_count);
+    html += _diagMetric('向量维度', d.vector_dim || '--');
+    html += _diagMetric('已就绪', d.ready_docs + '/' + d.doc_count);
+    html += _diagMetric('平均片段长度', d.avg_chunk_len + ' 字');
+    html += _diagMetric('已打标签', d.tagged_docs + '/' + d.doc_count);
+    html += '</div>';
+
+    // 问题列表
+    if (d.issues && d.issues.length) {
+      html += '<div style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:6px">诊断结果</div>';
+      d.issues.forEach(function(issue) {
+        var color = issue.level === 'error' ? 'var(--error-color)' :
+                    issue.level === 'warn' ? 'var(--warning-color)' :
+                    issue.level === 'ok' ? 'var(--success-color)' : 'var(--text-muted)';
+        var icon = issue.level === 'error' ? '✕' : issue.level === 'warn' ? '!' : issue.level === 'ok' ? '✓' : 'i';
+        html += '<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:11px;color:var(--text-secondary)">';
+        html += '<span style="color:' + color + ';font-weight:600;flex-shrink:0;width:14px;text-align:center">' + icon + '</span>';
+        html += '<span>' + esc(issue.msg) + '</span>';
+        html += '</div>';
+      });
+    }
+
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<span style="color:var(--error-color);font-size:12px">诊断失败: ' + esc(e.message) + '</span>';
+  }
+}
+function _diagMetric(label, value) {
+  return '<div style="padding:4px 8px;background:var(--bg-secondary);border-radius:6px">' +
+    '<div style="font-size:10px;color:var(--text-muted)">' + label + '</div>' +
+    '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">' + value + '</div></div>';
+}
+window.kbShowDiagnosis = kbShowDiagnosis;
+
 // _kbBusyProcessing getter
 try { Object.defineProperty(window, '_kbBusyProcessing', { get: function() { return _kbBusyProcessing; }, configurable: true }); } catch(e) { window._kbBusyProcessing = _kbBusyProcessing; }
