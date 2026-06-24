@@ -838,6 +838,19 @@ function renderMessages() {
   el.innerHTML = currentMessages.map(function(m) { return renderMsg(m); }).join('');
   applyCodeHighlight(el);
   if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
+
+  // 恢复未完成的文档提纲（页面刷新后重建确认栏）
+  if (currentMessages.length > 0) {
+    var _lastMsg = currentMessages[currentMessages.length - 1];
+    if (_lastMsg.role === 'assistant' && _lastMsg.action_mode === 'doc' && _lastMsg.doc_phase === 'outline' && _lastMsg.content) {
+      if (!document.getElementById('docConfirmBar')) {
+        var _bar = _createDocConfirmBar(_lastMsg.content);
+        el.appendChild(_bar);
+        window._docOutlineText = _lastMsg.content;
+        window._docOutlinePending = true;
+      }
+    }
+  }
 }
 
 // ===== 流式渲染（性能优化：50ms 节流）=====
@@ -1737,20 +1750,7 @@ async function sendMessage() {
             window._docOutlineText = d.outline || fullText;
             var streamEl = document.getElementById('stream-msg');
             if (streamEl) {
-              var confirmBar = document.createElement('div');
-              confirmBar.className = 'doc-confirm-bar';
-              confirmBar.id = 'docConfirmBar';
-              confirmBar.innerHTML =
-                '<details class="doc-outline-edit-wrap"><summary>' + iconSvg('doc','14') + ' 文档提纲已生成 — 点击查看，可编辑章节后确认</summary>' +
-                '<div class="doc-outline-hint">编辑下方 Markdown 提纲后点击「确认生成」，按钮旁可切换预览</div>' +
-                '<div class="doc-outline-toolbar"><button class="doc-outline-toggle-btn active" id="docOutlineEditBtn" onclick="toggleOutlinePreview(false)">编辑</button><button class="doc-outline-toggle-btn" id="docOutlinePreviewBtn" onclick="toggleOutlinePreview(true)">预览</button></div>' +
-                '<textarea class="doc-outline-editor" id="docOutlineEditor">' + esc(window._docOutlineText) + '</textarea>' +
-                '<div class="doc-outline-preview" id="docOutlinePreview"></div>' +
-                '</details>' +
-                '<div class="doc-confirm-actions">' +
-                '<button class="doc-confirm-ok" onclick="confirmDocOutline()">' + iconSvg('check','14') + ' 确认生成</button>' +
-                '<button class="doc-confirm-cancel" onclick="cancelDocOutline()">取消</button>' +
-                '</div>';
+              var confirmBar = _createDocConfirmBar(window._docOutlineText);
               streamEl.appendChild(confirmBar);
             }
           // 文档下载
@@ -2134,6 +2134,25 @@ function _esc(str) {
   return d.innerHTML;
 }
 
+// 创建文档提纲确认栏（共享于 SSE 事件 + 页面刷新恢复）
+function _createDocConfirmBar(outlineText) {
+  var bar = document.createElement('div');
+  bar.className = 'doc-confirm-bar';
+  bar.id = 'docConfirmBar';
+  bar.innerHTML =
+    '<details class="doc-outline-edit-wrap"><summary>' + iconSvg('doc','14') + ' 文档提纲已生成 — 点击查看，可编辑章节后确认</summary>' +
+    '<div class="doc-outline-hint">编辑下方 Markdown 提纲后点击「确认生成」，按钮旁可切换预览</div>' +
+    '<div class="doc-outline-toolbar"><button class="doc-outline-toggle-btn active" id="docOutlineEditBtn" onclick="toggleOutlinePreview(false)">编辑</button><button class="doc-outline-toggle-btn" id="docOutlinePreviewBtn" onclick="toggleOutlinePreview(true)">预览</button></div>' +
+    '<textarea class="doc-outline-editor" id="docOutlineEditor">' + esc(outlineText || '') + '</textarea>' +
+    '<div class="doc-outline-preview" id="docOutlinePreview"></div>' +
+    '</details>' +
+    '<div class="doc-confirm-actions">' +
+    '<button class="doc-confirm-ok" onclick="confirmDocOutline()">' + iconSvg('check','14') + ' 确认生成</button>' +
+    '<button class="doc-confirm-cancel" onclick="cancelDocOutline()">取消</button>' +
+    '</div>';
+  return bar;
+}
+
 // 确认文档提纲 → 发起新请求生成完整文档
 function confirmDocOutline() {
   var bar = document.getElementById('docConfirmBar');
@@ -2171,6 +2190,12 @@ function cancelDocOutline() {
   if (bar) bar.remove();
   window._docOutlineText = null;
   window._docOutlinePending = false;
+  // 移除提纲消息，避免下次 renderMessages 重建确认栏
+  for (var _ci = currentMessages.length - 1; _ci >= 0; _ci--) {
+    if (currentMessages[_ci].action_mode === 'doc' && currentMessages[_ci].doc_phase === 'outline') {
+      currentMessages.splice(_ci, 1); break;
+    }
+  }
   // 恢复正常渲染
   var oldStream = document.getElementById('stream-msg');
   if (oldStream) oldStream.removeAttribute('id');
