@@ -1914,7 +1914,8 @@ async function sendMessage() {
       // 计算要持久化的内容：正常输出 / 中止时已有内容 / 错误消息
       var _persistContent = fullText.trim();
       if (_hadError && _abortReason === 'user_stop' && _persistContent) {
-        // 用户手动中止，已有输出：保留原内容，加标记（不修改 fullText 本身）
+        // 用户手动中止，已有输出：保留原内容 + 追加终止标记
+        _persistContent = _persistContent + '\n\n> ⏹ 用户已手动终止响应';
       } else if (_hadError && _abortReason === 'user_stop' && !_persistContent) {
         // 用户手动中止，无输出：记录一条中止提示
         _persistContent = '[用户已手动终止响应]';
