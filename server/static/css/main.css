@@ -266,6 +266,13 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .msg h2{font-size:1.08em;font-weight:600;margin:.5em 0 .3em}
 .msg h3{font-size:1em;font-weight:600;margin:.4em 0 .25em}
 .msg h4,.msg h5,.msg h6{font-size:.95em;font-weight:600;margin:.4em 0 .25em}
+/* P6: 表格样式（.msg 内，和 .md 一致）*/
+.msg table{border-collapse:collapse;margin:8px 0;font-size:.85em;width:fit-content;max-width:100%}
+.msg td,.msg th{border:1px solid var(--border-color);padding:6px 10px;text-align:left;min-width:40px}
+.msg th{font-weight:600;background:var(--bg-secondary)}
+.msg th[align=center],.msg td[align=center]{text-align:center}
+.msg th[align=right],.msg td[align=right]{text-align:right}
+.msg tr:nth-child(even){background:var(--bg-secondary)}
 
 .msg ul{margin:4px 0;padding-left:0;list-style:none}
 .msg ul li{position:relative;margin:3px 0;line-height:1.65;padding-left:16px}
