@@ -2014,6 +2014,8 @@ async function sendMessage() {
         if (streamErrFix) streamErrFix.removeAttribute('id');  // 固化错误卡片
         _restoreChatUI();
         input.focus();
+        // P6: 延迟再恢复一次（防 SSE 异步回调覆盖按钮状态）
+        setTimeout(function() { if (!generating) _restoreChatUI(); }, 100);
         loadChatList();
         fetchContextUsage();
       } else {
