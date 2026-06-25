@@ -187,32 +187,8 @@ async function refreshActionBar() {
       bar.appendChild(btn);
     });
 
-    // "做总结"特殊按钮：点击填入提示词并引导上传文档（可再点取消还原）
-    var summaryBtn = document.createElement('button');
-    summaryBtn.className = 'action-btn';
-    summaryBtn.setAttribute('data-action', 'summary');
-    summaryBtn.title = '上传文档后自动生成总结';
-    summaryBtn.innerHTML = iconSvg('doc', '11') + ' 做总结';
-    summaryBtn.onclick = function() {
-      var wasActive = this.classList.contains('active');
-      togglePromptChip(this, '请帮我总结以下文档：');
-      // 首次选中时：提示上传 + 闪烁附件按钮引导
-      if (!wasActive && this.classList.contains('active')) {
-        var input = document.getElementById('msgInput');
-        if (input) input.placeholder = '请先点击左侧 + 上传文档，我来帮你总结...';
-        var attachBtn = document.getElementById('attachBtn');
-        if (attachBtn) {
-          attachBtn.style.transition = 'background .3s';
-          attachBtn.style.background = 'var(--accent-color)';
-          attachBtn.style.color = 'var(--text-on-accent)';
-          setTimeout(function() {
-            attachBtn.style.background = '';
-            attachBtn.style.color = '';
-          }, 1500);
-        }
-      }
-    };
-    bar.appendChild(summaryBtn);
+    // cacheKey 去掉 summary 后缀（不再追加做总结按钮）
+    _lastActionIds = ids + '|local';
 
   } catch(e) {
     console.error('[chat.refreshActionBar]', e);
