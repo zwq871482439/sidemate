@@ -136,6 +136,19 @@ function _executeModeSwitch(mode) {
   // 2. 更新 placeholder
   _updatePlaceholder(mode);
 
+  // P6: 显示骨架屏（actionBar + 模型tag 区域灰色块呼吸）
+  var _skeletonBars = [];
+  var _barEl = document.getElementById('actionBar');
+  var _tagEl = document.getElementById('modelTag');
+  if (_barEl) {
+    _barEl.style.opacity = '0.3';
+    _barEl.innerHTML = '<span class="skel-chip"></span><span class="skel-chip"></span><span class="skel-chip"></span>';
+  }
+  if (_tagEl) {
+    _tagEl.textContent = '';
+    _tagEl.classList.add('skel-tag');
+  }
+
   // 3. 调用后端 API（映射前端 mode 到后端值）
   var backendMode = mode === 'offline' ? 'local' : (mode === 'online' ? 'cloud' : mode);
   fetch((typeof API !== 'undefined' ? API : '') + '/api/mode/switch', {
@@ -164,6 +177,9 @@ function _executeModeSwitch(mode) {
           });
         if (typeof refreshStatus === 'function') refreshStatus();
         if (typeof refreshActionBar === 'function') refreshActionBar();
+        // P6: 移除骨架屏
+        if (_barEl) _barEl.style.opacity = '';
+        if (_tagEl) _tagEl.classList.remove('skel-tag');
         if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
         if (typeof fetchContextUsage === 'function') fetchContextUsage();
         if (typeof updateChatOverlay === 'function') updateChatOverlay();
