@@ -1870,7 +1870,8 @@ async function sendMessage() {
       appendStreamingMsg(fullText, thinkText, thinkLen);
     }
   } catch(e) {
-    if (e.name === 'AbortError') {
+    var _isAbort = e.name === 'AbortError' || (abortCtrl && abortCtrl.signal && abortCtrl.signal.aborted);
+    if (_isAbort) {
       _abortReason = 'user_stop';
       // UI：在气泡中显示终止提示（追加在已有内容后面）
       appendStreamingMsg('<span style="color:var(--text-muted);font-style:italic">' + iconSvg('stop','14') + ' 用户已手动终止响应</span>', '', 0);
