@@ -1106,6 +1106,7 @@ async function sendMessage() {
   // 文档 Phase2 确认时消息为空（由 doc_continue 驱动），允许通过
   if (!text && !(window._docContinueOutline) && (typeof pendingFile !== 'undefined') && !pendingFile) return;
   if (typeof generating !== 'undefined' && generating) return;
+  if (_stopping) { showToast('正在停止当前响应，请稍候...', 'warning'); return; }
 
   var modelTag = document.getElementById('modelTag');
   var isLocalMode = typeof _currentMode === 'undefined' || _currentMode !== 'cloud';
@@ -2056,14 +2057,19 @@ async function sendMessage() {
   }
 }
 
+var _stopping = false;  // P6: 正在停止中标志（防止停止后立即重发导致竞态）
+
 function stopGeneration() {
+  if (_stopping) return;  // 防重复点击
+  _stopping = true;
   if (typeof abortCtrl !== 'undefined' && abortCtrl) abortCtrl.abort();
   fetch((typeof API !== 'undefined' ? API : '') + '/api/stop', {method:'POST'}).catch(function() {});
-  // P6: 立即恢复 UI（不等 finally，避免 abort 延迟导致按钮卡住）
-  generating = false;
-  if (typeof _restoreChatUI === 'function') _restoreChatUI();
-  // 延迟再恢复一次（防 finally 里异步操作覆盖）
-  setTimeout(function() { if (typeof _restoreChatUI === 'function') _restoreChatUI(); }, 200);
+  // P6: 延迟恢复 UI（给旧请求的 catch/finally 一点时间执行，避免竞态）
+  setTimeout(function() {
+    generating = false;
+    _stopping = false;
+    if (typeof _restoreChatUI === 'function') _restoreChatUI();
+  }, 300);
 }
 
 async function stopGenerationAndWait() {
