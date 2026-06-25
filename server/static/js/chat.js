@@ -896,6 +896,7 @@ function renderMessages() {
     }
     applyCodeHighlight(el);
     if (typeof _renderMermaid === 'function') _renderMermaid(el);
+    if (typeof _renderHtmlPreview === 'function') _renderHtmlPreview(el);
     if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
     _bindCitationClicks(el);
     if (_lastScrollBottom) { el.scrollTop = el.scrollHeight; }

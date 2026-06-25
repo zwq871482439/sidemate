@@ -242,6 +242,38 @@ function _renderMermaid(el) {
 }
 window._renderMermaid = _renderMermaid;
 
+// P6: HTML 预览——iframe 沙箱渲染
+function _renderHtmlPreview(el) {
+  if (!el) return;
+  var containers = el.querySelectorAll('.html-preview-wrap:not([data-rendered])');
+  containers.forEach(function(container) {
+    var code = decodeURIComponent(container.getAttribute('data-html') || '');
+    if (!code) return;
+    container.setAttribute('data-rendered', '1');
+    // 创建 iframe 沙箱
+    var iframe = document.createElement('iframe');
+    iframe.sandbox = 'allow-same-origin';
+    iframe.style.cssText = 'width:100%;border:none;border-radius:6px;background:#fff';
+    container.innerHTML = '';
+    container.appendChild(iframe);
+    // 自适应高度
+    iframe.onload = function() {
+      try {
+        var h = iframe.contentWindow.document.body.scrollHeight;
+        iframe.style.height = Math.min(h + 20, 600) + 'px';
+      } catch(e) {
+        iframe.style.height = '300px';
+      }
+    };
+    // 写入 HTML（沙箱内无 JS 执行权限）
+    var doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif;padding:12px;color:#1F2937}*{box-sizing:border-box}</style></head><body>' + code + '</body></html>');
+    doc.close();
+  });
+}
+window._renderHtmlPreview = _renderHtmlPreview;
+
 function md(text, sanitize) {
   if (!text) return '';
   // sanitize 默认 true（完整内容净化）；流式渲染时传 false 避免吃掉半截 HTML
@@ -271,6 +303,11 @@ function md(text, sanitize) {
       if (!window._mermaidQueue) window._mermaidQueue = {};
       window._mermaidQueue[mermaidId] = code;
       return '<div class="mermaid-container" id="' + mermaidId + '" data-mermaid="' + encodeURIComponent(code) + '"><div class="mermaid-loading">渲染图表中...</div></div>';
+    }
+    // P6: HTML 代码块——渲染成 iframe 沙箱预览（可折叠查看源码）
+    if (lang === 'html') {
+      var htmlId = 'html-preview-' + Math.random().toString(36).slice(2, 10);
+      return '<div class="html-preview-wrap" id="' + htmlId + '" data-html="' + encodeURIComponent(code) + '"><div class="html-preview-loading">渲染中...</div></div>';
     }
     var cls = lang ? ' class="language-' + esc(lang) + '"' : '';
     // 先转义 HTML 特殊字符（防止 hljs 报 "unescaped HTML" 安全警告）
