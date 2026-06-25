@@ -2027,6 +2027,10 @@ async function sendMessage() {
         }
         CardRenderer.finalizeDOM(streamEl4);
         _bindCitationClicks(streamEl4);  // 流式完成后绑定引用上标点击
+        // P6 结构统一：固化后补 data-hash（和 renderMsg 输出一致）
+        if (newMsg.msg_hash) {
+          streamEl4.setAttribute('data-hash', newMsg.msg_hash);
+        }
         _restoreChatUI();
         input.focus();
         setTimeout(function() { if (!generating) _restoreChatUI(); }, 100);
@@ -2769,6 +2773,14 @@ var CardRenderer = (function() {
     // 2. 去掉 thinking-indicator（流式过程态，静态消息不需要）
     var indicator = streamMsgEl.querySelector('.thinking-indicator');
     if (indicator) indicator.remove();
+    // P6 结构统一：把流式时追加在正文后面的 ts/action-tag 移到正文前面（和 _renderSingleMsg 一致）
+    var streamContentFix = streamMsgEl.querySelector('#stream-content');
+    if (streamContentFix) {
+      var _tsDiv = streamContentFix.querySelector('.ts');
+      if (_tsDiv && streamContentFix.firstChild !== _tsDiv) {
+        streamContentFix.insertBefore(_tsDiv, streamContentFix.firstChild);
+      }
+    }
     // 3. 去掉打字光标（streaming class）
     var streamContent = streamMsgEl.querySelector('#stream-content');
     if (streamContent) streamContent.classList.remove('streaming');

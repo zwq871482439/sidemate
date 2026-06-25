@@ -2297,8 +2297,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 }
 
 /* 卡片容器（挂载在 #stream-msg 内 #stream-content 之前） */
-.card-area { margin-bottom:6px; }
-.card-area.card-history { margin-bottom:8px; }
+.card-area { margin-bottom:8px; }
 
 /* 步骤（统一对齐基准线：圆点绝对定位 + padding-left） */
 .cb-step { position:relative; padding:3px 0 3px 17px; font-size:12px; animation:cbStepIn .3s ease-out; }
