@@ -136,17 +136,15 @@ function _executeModeSwitch(mode) {
   // 2. 更新 placeholder
   _updatePlaceholder(mode);
 
-  // P6: 显示骨架屏（actionBar + 模型tag 区域灰色块呼吸）
-  var _skeletonBars = [];
+  // P6: 显示骨架屏（actionBar + 模型tag 区域半透明 + 加载态）
   var _barEl = document.getElementById('actionBar');
   var _tagEl = document.getElementById('modelTag');
   if (_barEl) {
-    _barEl.style.opacity = '0.3';
-    _barEl.innerHTML = '<span class="skel-chip"></span><span class="skel-chip"></span><span class="skel-chip"></span>';
+    _barEl.style.opacity = '0.4';
+    _barEl.style.pointerEvents = 'none';
   }
   if (_tagEl) {
-    _tagEl.textContent = '';
-    _tagEl.classList.add('skel-tag');
+    _tagEl.style.opacity = '0.4';
   }
 
   // 3. 调用后端 API（映射前端 mode 到后端值）
@@ -177,9 +175,9 @@ function _executeModeSwitch(mode) {
           });
         if (typeof refreshStatus === 'function') refreshStatus();
         if (typeof refreshActionBar === 'function') refreshActionBar();
-        // P6: 移除骨架屏
-        if (_barEl) _barEl.style.opacity = '';
-        if (_tagEl) _tagEl.classList.remove('skel-tag');
+        // P6: 移除骨架屏（恢复透明度和交互）
+        if (_barEl) { _barEl.style.opacity = ''; _barEl.style.pointerEvents = ''; }
+        if (_tagEl) { _tagEl.style.opacity = ''; }
         if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
         if (typeof fetchContextUsage === 'function') fetchContextUsage();
         if (typeof updateChatOverlay === 'function') updateChatOverlay();
