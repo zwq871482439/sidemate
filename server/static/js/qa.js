@@ -887,14 +887,26 @@ function _kbSortDocsByCategory(matchCat) {
 
 function _kbDashAsk(question) {
   try {
-    switchTab('chat', document.querySelector('.tabs-nav button'));
-    var inp = document.getElementById('chat-input');
+    // 切到聊天 Tab
+    var chatTab = document.querySelector('.tabs-nav button[onclick*="chat"]');
+    if (chatTab) switchTab('chat', chatTab);
+    // 离线模式自动切换到 KB action（追问是知识库相关问题）
+    if (typeof currentActionMode !== 'undefined' && currentActionMode !== 'kb_qa') {
+      var kbBtn = document.querySelector('#actionBar .action-btn[data-action="kb_qa"]');
+      if (kbBtn && typeof setActionMode === 'function') {
+        setActionMode('kb_qa', kbBtn);
+      }
+    }
+    // 填入输入框
+    var inp = document.getElementById('msgInput');
     if (inp) {
       inp.value = question;
-      var sendBtn = document.getElementById('chatSend');
-      if (sendBtn) sendBtn.click();
+      inp.focus();
+      // 触发 autoResize + token 估算
+      if (typeof autoResize === 'function') autoResize(inp);
+      inp.dispatchEvent(new Event('input'));
     }
-  } catch(e) { console.warn('[KB] 跳转 Chat 失败', e); }
+  } catch(e) { console.warn('[KB] 追问跳转失败', e); }
 }
 window._kbDashAsk = _kbDashAsk;
 
