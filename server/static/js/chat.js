@@ -172,11 +172,10 @@ function _renderSingleMsg(m, idx) {
   if (m.kb_sources && m.kb_sources.length) {
     bodyHtml = _renderCitationSuperscripts(bodyHtml, m.kb_sources);
   }
-  // 阶段3 Step2b：CardRenderer 历史回放（优先读 card_data，旧消息 fallback 到 agent_timeline）
+  // 阶段3 Step2b：CardRenderer 历史回放（读 card_data）
   var timelineHtml = '';
   if (m.card_data) {
     timelineHtml = CardRenderer.renderHistory(m);
-  } else if (m.agent_timeline) {
   }
   // 结构与流式 finalizeDOM 后同构：card-area(步骤) → stream-content(正文) → msg-footer(统计/复制)
   // actionTag 统一放最前面；KB 参考来源已在工具链卡片里展示，正文区不再重复
@@ -460,6 +459,13 @@ function updateContextRing(percentage, level, used, total) {
   }
   // 旧 contextRing DOM 已删除，不再更新
 }
+
+// P6: 并行模式状态重置（sendMessage 调用）
+function _resetParallelState() {
+  window._parallelChannelTexts = {};
+  _parallelChannelRendered = {};
+}
+window._resetParallelState = _resetParallelState;
 
 // ===== 发送消息 =====
 async function sendMessage() {
