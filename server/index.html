@@ -953,6 +953,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // ===== 初始化入口 =====
 async function init() {
   await initModeSelector();  // P6: 初始化三段模式按钮选择器
+  // P6: 初始化消息样式切换（确保按钮文案正确）
+  if (typeof initMsgStyleToggle === 'function') initMsgStyleToggle();
   // 并行阶段：无依赖的请求同时发起
   var results = await Promise.allSettled([
     refreshStatus()
