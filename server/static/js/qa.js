@@ -1366,5 +1366,11 @@ function _diagMetric(label, value) {
 }
 window.kbShowDiagnosis = kbShowDiagnosis;
 
+// P6: 诊断按钮事件绑定（不依赖 onclick HTML 属性）
+document.addEventListener('DOMContentLoaded', function() {
+  var _diagBtn = document.getElementById('kbDiagBtn');
+  if (_diagBtn) _diagBtn.addEventListener('click', kbShowDiagnosis);
+});
+
 // _kbBusyProcessing getter
 try { Object.defineProperty(window, '_kbBusyProcessing', { get: function() { return _kbBusyProcessing; }, configurable: true }); } catch(e) { window._kbBusyProcessing = _kbBusyProcessing; }
