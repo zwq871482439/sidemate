@@ -507,6 +507,70 @@ class AgentLoop:
                         "message": "压缩失败: %s" % str(e)[:100],
                     }
 
+            elif tool_name == "deep_read":
+                # P6: 深度阅读工具——读取文档并做结构化分析
+                filename = args.get("filename", "")
+                focus = args.get("focus", "")
+                if not filename:
+                    return {"success": False, "tool": "deep_read", "error": "缺少 filename"}
+
+                # 读取工作区文件
+                import os
+                from config import WORKSPACE_DIR
+                _ws_dir = os.path.join(WORKSPACE_DIR, "chats", self.chat_id, "workspace") if self.chat_id else os.path.join(WORKSPACE_DIR, "workspace")
+                _file_path = os.path.join(_ws_dir, filename)
+                if not os.path.exists(_file_path):
+                    return {"success": False, "tool": "deep_read", "error": "文件不存在: %s" % filename}
+
+                try:
+                    from pipelines.doc_action import read_document_text
+                    _raw_text = read_document_text(_file_path)
+                except Exception:
+                    try:
+                        with open(_file_path, 'r', encoding='utf-8', errors='ignore') as _f:
+                            _raw_text = _f.read()
+                    except Exception as e:
+                        return {"success": False, "tool": "deep_read", "error": str(e)[:100]}
+
+                if not _raw_text or len(_raw_text) < 50:
+                    return {"success": False, "tool": "deep_read", "error": "文档内容为空或过短"}
+
+                # 按章节/段落拆分
+                import re
+                _sections = re.split(r'\n#{1,3}\s|\n\n(?=[一二三四五六七八九十\d]+[、.．])', _raw_text)
+                _sections = [s.strip() for s in _sections if s.strip() and len(s.strip()) > 20]
+
+                # 构建结构化分析
+                _analysis_parts = []
+                _analysis_parts.append("【文档深度分析：%s】" % filename)
+                _analysis_parts.append("文档总长：%d 字符，拆分为 %d 个章节/段落" % (len(_raw_text), len(_sections)))
+                if focus:
+                    _analysis_parts.append("分析重点：%s" % focus)
+                _analysis_parts.append("")
+
+                for _i, _sec in enumerate(_sections[:30]):  # 最多30段
+                    _first_line = _sec.split('\n')[0][:60]
+                    _analysis_parts.append("【第%d段】%s" % (_i + 1, _first_line))
+                    _analysis_parts.append(_sec[:2000])  # 每段最多2000字
+                    _analysis_parts.append("")
+
+                _analysis = "\n".join(_analysis_parts)
+                # 截断到最大长度
+                if len(_analysis) > 15000:
+                    _analysis = _analysis[:15000] + "\n\n[分析结果已截断，文档较长建议分段处理]"
+
+                return {
+                    "success": True,
+                    "tool": "deep_read",
+                    "data": {
+                        "filename": filename,
+                        "total_chars": len(_raw_text),
+                        "sections": len(_sections),
+                        "analysis": _analysis,
+                    },
+                    "message": "已完成对《%s》的深度分析：%d字，%d个章节" % (filename, len(_raw_text), len(_sections)),
+                }
+
             elif tool_name == "set_doc_status":
                 # Patch4 v3：模型标记某个 .md 文档为 completed → 读 .md + 生成 docx + 标记完成
                 filename = args.get("filename", "")

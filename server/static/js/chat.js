@@ -895,6 +895,7 @@ function renderMessages() {
       el.appendChild(div);
     }
     applyCodeHighlight(el);
+    if (typeof _renderMermaid === 'function') _renderMermaid(el);
     if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
     _bindCitationClicks(el);
     if (_lastScrollBottom) { el.scrollTop = el.scrollHeight; }
@@ -3345,6 +3346,7 @@ var CardRenderer = (function() {
     // P6 补全：英文 status 中文化
     if (status === 'workspace_listing') return '列出工作区文件';
     if (status === 'workspace_reading') return '读取文档：' + _esc(d.name || '');
+    if (status === 'deep_reading') return '深度分析：' + _esc(d.query || d.name || '');
     if (status === 'workspace_deleting') return '删除文档：' + _esc(d.name || '');
     if (status === 'workspace_appending') return '追加内容：' + _esc(d.name || '');
     if (status === 'workspace_editing') return '编辑文档：' + _esc(d.name || '');

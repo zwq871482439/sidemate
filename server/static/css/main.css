@@ -396,7 +396,10 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 /* 模型 tag（内联在右侧）*/
 .model-tag-inline{font-size:10px;padding:1px 8px;border-radius:9px;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:auto;max-width:260px;overflow:hidden;text-overflow:ellipsis}
 .model-tag-inline.none{background:transparent;color:var(--text-muted)}
-/* P6: 骨架屏（模式切换加载占位）*/
+/* P6: Mermaid 图表容器 */
+.mermaid-container{margin:8px 0;text-align:center;overflow-x:auto}
+.mermaid-container svg{max-width:100%;height:auto}
+.mermaid-loading{color:var(--text-muted);font-size:12px;padding:20px;text-align:center}
 .skel-chip{display:inline-block;width:50px;height:17px;border-radius:9px;background:linear-gradient(90deg,var(--bg-tertiary) 25%,var(--border-color) 50%,var(--bg-tertiary) 75%);background-size:200% 100%;animation:skelShimmer 1.2s ease-in-out infinite;margin-right:4px}
 .skel-tag{display:inline-block;width:120px;height:17px;border-radius:9px;background:linear-gradient(90deg,var(--bg-tertiary) 25%,var(--border-color) 50%,var(--bg-tertiary) 75%);background-size:200% 100%;animation:skelShimmer 1.2s ease-in-out infinite}
 @keyframes skelShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}

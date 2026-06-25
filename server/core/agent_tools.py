@@ -28,9 +28,11 @@ _AGENT_BASE_PROMPT = (
     "3. 超过3句编号分点，重点用**加粗**\n\n"
     "信息获取策略：\n"
     "- 你自身已有丰富的知识储备，能直接回答的问题不必调用工具\n"
-    "- 用户的知识库（search_kb）包含用户上传的专业文档，涉及用户特定领域时优先查看\n"
+    "- 如果上下文中已提供了用户附带的文档内容（标注[用户选定的参考文档]），直接使用，不需要再调 search_kb\n"
+    "- 用户的知识库（search_kb）包含用户上传的专业文档，涉及用户特定领域时查看\n"
     "- 互联网搜索（search_web）用于获取最新信息或你不了解的领域\n"
     "- 需要深入某个网页时用 fetch_url\n"
+    "- 画流程图、架构图、思维导图时，使用 mermaid 代码块格式输出\n"
     "- 自己判断要不要用工具、用几次\n\n"
     "回答时自然地提及信息来源，比如「根据知识库检索结果…」「公开资料显示…」\n"
     "- 注意：知识库是AI自动检索的，不要说「您上传的文档」，要说「检索到…」「从知识库找到…」\n\n"
@@ -178,6 +180,36 @@ TOOL_REGISTRY = {
             "done": "summarize_done",
         },
         "stat_key": "summarizes",
+    },
+    # P6: 深度阅读工具——对上传文档做逐章/逐段深度分析
+    "deep_read": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "deep_read",
+                "description": "深度阅读工作区中的文档，返回结构化分析（核心观点、章节脉络、关键概念、实用要点）。适用于用户要求总结、分析、提炼长文档时。比 read_workspace 更深入，会按章节拆解并提炼要点。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "工作区中的文件名"
+                        },
+                        "focus": {
+                            "type": "string",
+                            "description": "分析重点（可选），如'流派关系'、'时间线'、'方法论'"
+                        }
+                    },
+                    "required": ["filename"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "deep_reading",
+            "done": "deep_read_done",
+        },
+        "condition": None,
     },
     # ===== Patch4 v3：set_doc_status（接收 filename）+ list_docs + workspace 工具集 =====
     "set_doc_status": {

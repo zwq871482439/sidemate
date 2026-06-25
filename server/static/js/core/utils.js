@@ -215,6 +215,33 @@ function _restoreLatex(text, placeholders) {
  * @param {string} text - Markdown 源码
  * @returns {string} HTML
  */
+
+// P6: Mermaid 初始化 + 异步渲染
+if (typeof mermaid !== 'undefined') {
+  mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose', fontFamily: 'inherit' });
+}
+
+function _renderMermaid(el) {
+  if (!el || typeof mermaid === 'undefined') return;
+  var containers = el.querySelectorAll('.mermaid-container:not([data-rendered])');
+  containers.forEach(function(container) {
+    var code = decodeURIComponent(container.getAttribute('data-mermaid') || '');
+    if (!code) return;
+    container.setAttribute('data-rendered', '1');
+    try {
+      var id = container.id || ('mermaid-' + Math.random().toString(36).slice(2, 10));
+      mermaid.render(id, code).then(function(result) {
+        container.innerHTML = result.svg;
+      }).catch(function(err) {
+        container.innerHTML = '<pre style="color:var(--error-color);font-size:11px">mermaid 渲染失败: ' + esc(String(err.message || err).slice(0, 100)) + '</pre>';
+      });
+    } catch(err) {
+      container.innerHTML = '<pre style="font-size:11px">' + esc(code) + '</pre>';
+    }
+  });
+}
+window._renderMermaid = _renderMermaid;
+
 function md(text, sanitize) {
   if (!text) return '';
   // sanitize 默认 true（完整内容净化）；流式渲染时传 false 避免吃掉半截 HTML
@@ -236,6 +263,15 @@ function md(text, sanitize) {
     // marked v15 传入对象 {text, lang, escaped}
     var code = (typeof obj === 'object' && obj.text !== undefined) ? obj.text : obj;
     var lang = (typeof obj === 'object' && obj.lang !== undefined) ? obj.lang : arguments[1];
+    // P6: mermaid 代码块——渲染成 mermaid 容器（异步渲染由 _renderMermaid 处理）
+    if (lang === 'mermaid') {
+      var mermaidId = 'mermaid-' + Math.random().toString(36).slice(2, 10);
+      var safeGraph = esc(code);
+      // 存储到全局，供 _renderMermaid 异步渲染
+      if (!window._mermaidQueue) window._mermaidQueue = {};
+      window._mermaidQueue[mermaidId] = code;
+      return '<div class="mermaid-container" id="' + mermaidId + '" data-mermaid="' + encodeURIComponent(code) + '"><div class="mermaid-loading">渲染图表中...</div></div>';
+    }
     var cls = lang ? ' class="language-' + esc(lang) + '"' : '';
     // 先转义 HTML 特殊字符（防止 hljs 报 "unescaped HTML" 安全警告）
     var safeCode = esc(code);
@@ -311,8 +347,8 @@ function md(text, sanitize) {
   // Step 6: DOMPurify 净化（仅非流式调用时，防 XSS）
   if (sanitize && typeof DOMPurify !== 'undefined') {
     html = DOMPurify.sanitize(html, {
-      ADD_TAGS: ['details', 'summary', 'sup', 'style'],
-      ADD_ATTR: ['target', 'class', 'id', 'onclick'],
+      ADD_TAGS: ['details', 'summary', 'sup', 'style', 'foreignObject', 'span', 'path', 'rect', 'circle', 'line', 'text', 'g', 'svg', 'polyline', 'polygon', 'ellipse', 'defs', 'marker', 'use', 'tspan'],
+      ADD_ATTR: ['target', 'class', 'id', 'onclick', 'data-mermaid', 'd', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'points', 'transform', 'viewBox', 'xmlns', 'xlink:href', 'href', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline', 'marker-end', 'marker-start', 'refX', 'refY', 'markerWidth', 'markerHeight', 'orient', 'overflow'],
       ALLOW_DATA_ATTR: true
     });
   }

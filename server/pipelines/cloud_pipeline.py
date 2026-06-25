@@ -377,57 +377,87 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         _chat_id = chat_id_from_path(chat_file)
     agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id, history=model_history)
 
-    # P6: 如果用户选了 KB 文档，预先注入内容到 context_cache
-    # 这样 Agent 直接看到文档内容，不需要再调 search_kb 检索
+    # P6: 如果用户附带了文件（上传文件或KB引用），预先注入内容到 context_cache
     _preloaded_kb = False
-    if hasattr(ctx, 'file_path') and ctx.file_path and kb:
-        try:
-            _doc_ids = [d.strip() for d in str(ctx.file_path).split(',') if d.strip()]
-            _doc_texts = []
-            for _did in _doc_ids:
+    if hasattr(ctx, 'file_path') and ctx.file_path:
+        import os
+        _doc_ids_raw = [d.strip() for d in str(ctx.file_path).split(',') if d.strip()]
+
+        # 分流：上传文件（绝对路径）vs KB doc_id
+        _uploaded_paths = [p for p in _doc_ids_raw if os.path.exists(p)]
+        _kb_doc_ids = [p for p in _doc_ids_raw if p not in _uploaded_paths]
+
+        _doc_texts = []
+        _doc_names = []
+
+        # 分支A：上传文件——直接读取文件内容
+        if _uploaded_paths:
+            try:
+                from pipelines.doc_action import read_document_text
+                for _path in _uploaded_paths:
+                    try:
+                        _content = read_document_text(_path)
+                        if _content:
+                            # 截断超长文档（最多 12000 字符 ≈ 8000 token）
+                            if len(_content) > 12000:
+                                _content = _content[:12000] + "\n\n[文档较长，已截断]"
+                            _doc_texts.append(_content)
+                            _doc_names.append(os.path.basename(_path))
+                            log.info("[CLOUD-AGENT] 预读取上传文件: %s, %d 字", os.path.basename(_path), len(_content))
+                    except Exception as _e:
+                        log.warning("[CLOUD-AGENT] 读取上传文件失败 %s: %s", _path, str(_e)[:60])
+            except ImportError:
+                # fallback: 直接用 python 读文本文件
+                for _path in _uploaded_paths:
+                    try:
+                        with open(_path, 'r', encoding='utf-8', errors='ignore') as _f:
+                            _content = _f.read()[:12000]
+                            _doc_texts.append(_content)
+                            _doc_names.append(os.path.basename(_path))
+                    except Exception:
+                        pass
+
+        # 分支B：KB 引用——从知识库读取 chunk 内容
+        if _kb_doc_ids and kb:
+            for _did in _kb_doc_ids:
                 _doc_ref = kb.get_document(_did)
                 if _doc_ref and _doc_ref.status == "ready":
                     for chunk in kb.chunks.values():
                         if chunk.doc_id == _did and chunk.text:
                             _doc_texts.append(chunk.text)
-            if _doc_texts:
-                _kb_content = "\n\n".join(_doc_texts)
-                if not context_cache:
-                    context_cache = {}
-                context_cache['kb_context'] = _kb_content
-                _preloaded_kb = True
-                log.info("[CLOUD-AGENT] 预注入 KB 文档: %d 篇, %d 字",
-                         len(_doc_ids), len(_kb_content))
-                # P6: 发 doc_loaded + agent_status 事件，让前端显示"已加载文档"推理单元
-                _doc_names = []
-                for _did in _doc_ids:
-                    _d = kb.get_document(_did)
-                    if _d:
-                        _doc_names.append(_d.filename or _did)
-                yield sse_event("doc_loaded", {
-                    "docs": [{"name": n, "doc_id": _doc_ids[i]} for i, n in enumerate(_doc_names)],
-                    "count": len(_doc_names),
-                    "source": "kb_preload",
-                })
-                # 发 thinking + kb_searching(start) + kb_done 事件，让 CardRenderer 显示推理轮次
-                yield sse_event("agent_status", {"status": "thinking", "phase": "start"})
-                yield sse_event("agent_status", {"status": "kb_searching", "phase": "start",
-                    "query": "读取引用文档"})
-                _preload_label = "、".join(_doc_names[:3])
-                if len(_doc_names) > 3:
-                    _preload_label += "等%d篇" % len(_doc_names)
-                yield sse_event("agent_status", {
-                    "status": "kb_done", "phase": "done",
-                    "count": len(_doc_names),
-                    "query": _preload_label,
-                    "elapsed_ms": 0,
-                    "detail": "\n".join(["· " + n for n in _doc_names]),
-                })
-                _agent_timeline_buf.append({"status": "kb_searching", "query": "读取引用文档"})
-                _agent_timeline_buf.append({"status": "kb_done", "count": len(_doc_names),
-                                            "query": _preload_label, "elapsed_ms": 0})
-        except Exception as e:
-            log.warning("[CLOUD-AGENT] KB 文档预注入失败: %s", str(e)[:80])
+                    _doc_names.append(_doc_ref.filename or _did)
+
+        # 注入内容到 context_cache
+        if _doc_texts:
+            _kb_content = "\n\n".join(_doc_texts)
+            if not context_cache:
+                context_cache = {}
+            context_cache['kb_context'] = _kb_content
+            _preloaded_kb = True
+            log.info("[CLOUD-AGENT] 预注入文档: %d 篇, %d 字 (上传%d+KB%d)",
+                     len(_doc_names), len(_kb_content), len(_uploaded_paths), len(_kb_doc_ids))
+            # 发 doc_loaded + agent_status 事件
+            yield sse_event("doc_loaded", {
+                "docs": [{"name": n} for n in _doc_names],
+                "count": len(_doc_names),
+                "source": "file_preload",
+            })
+            yield sse_event("agent_status", {"status": "thinking", "phase": "start"})
+            yield sse_event("agent_status", {"status": "kb_searching", "phase": "start",
+                "query": "读取附带文档"})
+            _preload_label = "、".join(_doc_names[:3])
+            if len(_doc_names) > 3:
+                _preload_label += "等%d篇" % len(_doc_names)
+            yield sse_event("agent_status", {
+                "status": "kb_done", "phase": "done",
+                "count": len(_doc_names),
+                "query": _preload_label,
+                "elapsed_ms": 0,
+                "detail": "\n".join(["· " + n for n in _doc_names]),
+            })
+            _agent_timeline_buf.append({"status": "kb_searching", "query": "读取附带文档"})
+            _agent_timeline_buf.append({"status": "kb_done", "count": len(_doc_names),
+                                        "query": _preload_label, "elapsed_ms": 0})
 
     # 决定模式
     agent_mode = "doc" if action_mode == "doc" else "chat"
