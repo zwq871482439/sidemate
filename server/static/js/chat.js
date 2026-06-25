@@ -1873,8 +1873,14 @@ async function sendMessage() {
     var _isAbort = e.name === 'AbortError' || (abortCtrl && abortCtrl.signal && abortCtrl.signal.aborted);
     if (_isAbort) {
       _abortReason = 'user_stop';
-      // UI：在气泡中显示终止提示（追加在已有内容后面）
-      appendStreamingMsg('<span style="color:var(--text-muted);font-style:italic">' + iconSvg('stop','14') + ' 用户已手动终止响应</span>', '', 0);
+      // P6: 追加终止提示到 stream-msg（不覆盖已有正文内容）
+      var _abortStreamEl = document.getElementById('stream-msg');
+      if (_abortStreamEl) {
+        var _abortNotice = document.createElement('div');
+        _abortNotice.style.cssText = 'color:var(--text-muted);font-style:italic;padding:4px 0';
+        _abortNotice.innerHTML = iconSvg('stop','14') + ' 用户已手动终止响应';
+        _abortStreamEl.appendChild(_abortNotice);
+      }
     } else {
       _abortReason = 'network_error';
       appendStreamingMsg(iconSvg('cross','14') + ' 连接错误: ' + esc(e.message), '', 0);
