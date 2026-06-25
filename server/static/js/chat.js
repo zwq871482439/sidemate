@@ -1874,13 +1874,15 @@ async function sendMessage() {
     if (_isAbort) {
       _abortReason = 'user_stop';
       // P6: 追加终止提示到 stream-msg（不覆盖已有正文内容）
-      var _abortStreamEl = document.getElementById('stream-msg');
-      if (_abortStreamEl) {
-        var _abortNotice = document.createElement('div');
-        _abortNotice.style.cssText = 'color:var(--text-muted);font-style:italic;padding:4px 0';
-        _abortNotice.innerHTML = iconSvg('stop','14') + ' 用户已手动终止响应';
-        _abortStreamEl.appendChild(_abortNotice);
-      }
+      try {
+        var _abortStreamEl = document.getElementById('stream-msg');
+        if (_abortStreamEl) {
+          var _abortNotice = document.createElement('div');
+          _abortNotice.style.cssText = 'color:var(--text-muted);font-style:italic;padding:4px 0';
+          _abortNotice.innerHTML = iconSvg('stop','14') + ' 用户已手动终止响应';
+          _abortStreamEl.appendChild(_abortNotice);
+        }
+      } catch(_e2) { console.warn('[chat.abort] UI更新失败:', _e2); }
     } else {
       _abortReason = 'network_error';
       appendStreamingMsg(iconSvg('cross','14') + ' 连接错误: ' + esc(e.message), '', 0);
@@ -2056,6 +2058,11 @@ async function sendMessage() {
 function stopGeneration() {
   if (typeof abortCtrl !== 'undefined' && abortCtrl) abortCtrl.abort();
   fetch((typeof API !== 'undefined' ? API : '') + '/api/stop', {method:'POST'}).catch(function() {});
+  // P6: 立即恢复 UI（不等 finally，避免 abort 延迟导致按钮卡住）
+  generating = false;
+  if (typeof _restoreChatUI === 'function') _restoreChatUI();
+  // 延迟再恢复一次（防 finally 里异步操作覆盖）
+  setTimeout(function() { if (typeof _restoreChatUI === 'function') _restoreChatUI(); }, 200);
 }
 
 async function stopGenerationAndWait() {
