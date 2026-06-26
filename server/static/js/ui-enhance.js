@@ -54,7 +54,7 @@ var MessageStyleManager = {
       msgs.classList.remove('msg-list-mode');
       msgs.classList.add('msg-bubble-mode');
     }
-    // 同步切换按钮的文案（卡片/列表）
+    // P6: 强制设置按钮文案（绝不显示"气泡"）
     var btn = document.getElementById('msgStyleToggle');
     if (btn) {
       btn.textContent = (this.getMode() === 'list') ? '卡片' : '列表';
@@ -375,6 +375,19 @@ window.toggleCodeCollapse = toggleCodeCollapse;
 window.initUiEnhance = initUiEnhance;
 window.initMsgStyleToggle = initMsgStyleToggle;
 window.toggleMode = function() { MessageStyleManager.toggleMode(); };
+
+// P6: DOMContentLoaded 时立即初始化按钮文案（不依赖 init() 异步链）
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof initMsgStyleToggle === 'function') initMsgStyleToggle();
+  // 双保险：100ms 后再设一次
+  setTimeout(function() {
+    var btn = document.getElementById('msgStyleToggle');
+    if (btn && btn.textContent === '气泡') {
+      btn.textContent = '列表';
+    }
+    if (typeof MessageStyleManager !== 'undefined') MessageStyleManager.applyMode();
+  }, 100);
+});
 window.showModeConfirmModal = showModeConfirmModal;
 window._renderGearMenu = _renderGearMenu;
 window._fetchParallelConfig = _fetchParallelConfig;
