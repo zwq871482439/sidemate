@@ -42,7 +42,6 @@ MIT License 组件
   - Rich
   - six
   - idna
-  - ebooklib (MIT License, 用于 EPUB 文档解析)
   - striprtf (MIT License, 用于 RTF 文档解析)
   - curl_cffi (lexiforest, MIT License, 捆绑 libcurl 实现浏览器 TLS 指纹伪装，用于搜索引擎反爬)
 
@@ -228,7 +227,35 @@ Python Software Foundation License 属于 permissive license，
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-本声明最后更新：2026年6月20日
+Copyleft 许可组件（GPL / AGPL / MPL）
+
+⚠️ 重要法律提示：以下组件使用强 Copyleft 许可，具有传染性。使用、修改或再分发
+   这些组件（或与之链接）时，必须遵守相应许可的开源要求。详见各许可原文。
+
+  - EbookLib (AGPLv3+, 用于 EPUB 文档解析)
+    许可协议：GNU Affero General Public License v3 or later
+    特别要求：AGPL 适用于网络服务场景——若通过网络提供服务，必须开源衍生代码。
+    来源：https://github.com/aerkalov/ebooklib
+
+  - zhconv (GPLv2+, 用于录音包繁简汉字转换)
+    许可协议：GNU General Public License v2 or later
+    来源：https://github.com/mozillazg/python-zhconv
+
+  - orjson (MPL-2.0 AND (Apache-2.0 OR MIT), JSON 高性能序列化)
+    许可协议：Mozilla Public License 2.0
+    特别要求：MPL 为文件级弱传染——修改 MPL 文件需开源修改部分。
+    来源：https://github.com/ijl/orjson
+
+  - tqdm (MPL-2.0 AND MIT, 进度条显示)
+    许可协议：Mozilla Public License 2.0 / MIT (双许可)
+    来源：https://github.com/tqdm/tqdm
+
+  - certifi (Mozilla Public License 2.0, Mozilla CA 证书包)
+    许可协议：MPL-2.0（仅证书数据部分，非代码）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+本声明最后更新：2026年6月26日
 
 如需获取任何第三方组件的完整许可协议文本或源代码，请联系：
 [待补充]
