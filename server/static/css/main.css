@@ -267,6 +267,8 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 
 /* 思考中动画 */
 .thinking-indicator{display:flex;align-items:center;gap:6px;color:var(--text-secondary);font-size:.85em;font-style:italic;padding:4px 0}
+/* 并行模式：thinking-indicator 位于 #card-area 顶部（卡片之上），与下方卡片留间距 */
+#card-area > .thinking-indicator{margin-bottom:6px}
 .thinking-indicator .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:pulse 1.4s infinite}
 .thinking-indicator .dots span:nth-child(2){animation-delay:.2s}
 .thinking-indicator .dots span:nth-child(3){animation-delay:.4s}
@@ -2383,6 +2385,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-tf-key { color:var(--text-muted); font-size:10px; min-width:42px; flex-shrink:0; }
 .cb-tf-val { color:var(--text-secondary); font-size:11px; flex:1; min-width:0; word-break:break-word; }
 .cb-tf-val.hl { color:var(--dot-run); font-weight:500; }
+/* cloud_keywords（云端辅助生成关键词） */
+.cb-cloud-kw { display:flex; flex-direction:column; gap:3px; }
+.cb-kw-tags { display:flex; flex-wrap:wrap; gap:4px; align-items:center; flex:1; min-width:0; }
+.cb-kw-tag { padding:1px 7px; border-radius:9px; font-size:10px; line-height:1.5; color:var(--primary-500); background:rgba(74,106,143,.08); border:0.5px solid rgba(74,106,143,.2); white-space:nowrap; }
 /* sources（检索来源列表） */
 .cb-sources { display:flex; flex-direction:column; gap:5px; }
 .cb-src { padding:5px 8px; background:var(--bg-secondary); border-radius:4px; }
@@ -2397,21 +2403,21 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* 并行双列 */
 /* P6 #14: 并行布局改竖排堆叠(本地在上、云端在下,两路同时流式) */
 .cb-par { display:flex; flex-direction:column; gap:8px; margin:4px 0; }
-.cb-par-col { padding:8px 10px; background:var(--bg-secondary); border-radius:5px; border-left:3px solid var(--border-color); }
+.cb-par-col { padding:10px 14px; background:var(--bg-secondary); border-radius:5px; border-left:3px solid var(--border-color); }
 /* P6 #11-a: 统一配色 — 本地暖(绿)、云端冷(蓝),同色系不同明度 */
 .cb-par-col#cb-par-local { border-left-color:var(--dot-ok); background:rgba(29,158,117,.04); }
 .cb-par-col#cb-par-cloud { border-left-color:var(--primary-500); background:rgba(74,106,143,.04); }
-.cb-par-col-title { font-size:10px; color:var(--text-muted); font-weight:500; margin-bottom:6px; display:flex; align-items:center; gap:4px; }
+.cb-par-col-title { font-size:11px; color:var(--text-primary); font-weight:600; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
 .cb-par-col .cb-step { padding:2px 0 2px 17px; font-size:11px; }
-.cb-par-stream { margin-top:6px; font-size:11px; line-height:1.6; color:var(--text-secondary); min-height:14px; white-space:pre-wrap; word-break:break-all; }
+.cb-par-stream { margin-top:6px; font-size:11px; line-height:1.6; color:var(--text-secondary); min-height:14px; white-space:pre-wrap; word-break:break-word; }
 
 /* 并行摘要条（阶段2折叠后） */
 /* P6: 并行双卡片布局（本地/云端各自独立卡片）*/
 .cb-par-dual{display:flex;flex-direction:column;gap:8px;margin:6px 0}
-.cb-par-card{padding:10px 14px;border-radius:5px;border-left:3px solid var(--border-color);background:var(--bg-secondary)}
-/* P6 #11-a: 与生成中的 col 配色统一(本地绿、云端蓝,同款浅底+左边框) */
-.cb-par-card.local{background:rgba(29,158,117,.04);border-left-color:var(--dot-ok)}
-.cb-par-card.cloud{background:rgba(74,106,143,.04);border-left-color:var(--primary-500)}
+.cb-par-card{padding:8px 10px;border-radius:4px;background:var(--bg-secondary)}
+/* P6 #11-a: 本地绿、云端蓝浅底区分（左边框交给外层 .cb-output 统一，避免双层） */
+.cb-par-card.local{background:rgba(29,158,117,.05)}
+.cb-par-card.cloud{background:rgba(74,106,143,.05)}
 .cb-par-card-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text-primary);margin-bottom:6px}
 .cb-par-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .cb-par-dot.local{background:var(--dot-ok)}
@@ -2459,6 +2465,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .stats-detail-body { display:flex; gap:14px; padding:5px 0 0 14px; flex-wrap:wrap; }
 .stats-detail-body .tk { display:inline-flex; align-items:baseline; gap:4px; }
 .stats-detail-body .tk-k { color:var(--text-muted); font-size:10px; }
+/* 并行模式：本地/云端统计分行显示 */
+.stats-par-row { display:flex; align-items:center; gap:6px; width:100%; flex-wrap:wrap; }
 .stats-detail-body .tk-v { color:var(--text-secondary); font-size:11px; font-weight:500; }
 /* 旧的纵向 detail-kv（兼容）*/
 .stats-detail-body .detail-kv { display:flex; gap:6px; padding:1px 0; }

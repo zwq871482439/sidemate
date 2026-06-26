@@ -143,6 +143,9 @@ def _drain_local_events(q, state, step_retrieve, step_local_gen):
         })
     elif evt_type == "mode_hint":
         yield _sse_channel_event("local", "mode_hint", {"message": evt_data})
+    elif evt_type == "token_stats":
+        # 捕获本地真实词元统计，供 done 事件透传给前端
+        state["token_stats"] = evt_data
     elif evt_type == "error":
         state["error"] = evt_data
     elif evt_type == "done":
@@ -178,6 +181,9 @@ def _drain_cloud_events(q, state, step_cloud_gen):
         yield _sse_channel_event("cloud", "stream", {"content": evt_data})
     elif evt_type == "status":
         yield _sse_channel_event("cloud", "status", {"status": evt_data})
+    elif evt_type == "token_stats":
+        # 捕获云端真实词元统计，供 done 事件透传给前端
+        state["token_stats"] = evt_data
     elif evt_type == "error":
         state["error"] = evt_data
     elif evt_type == "done":
@@ -292,6 +298,9 @@ def _run_local_column(ctx, query: str, q: queue.Queue, local_model: str = None, 
             ):
                 if phase in ("text", "raw") and content:
                     q.put(("token", content))
+                elif phase == "token_stats":
+                    # 透传本地真实词元统计（Ollama done 帧的 prompt_eval_count/eval_count）
+                    q.put(("token_stats", content))
                 elif phase == "error":
                     log.warning("[PARALLEL-LOCAL] stream error phase: %s", str(content)[:100])
         except Exception as stream_err:
@@ -359,6 +368,9 @@ def _run_cloud_column(ctx, question: str, cloud_history: list, q: queue.Queue):
                     _cloud_generating_sent = True
                     q.put(("status", "generating"))
                 q.put(("token", content))
+            elif phase == "token_stats":
+                # 透传云端真实词元统计（从 API usage 提取）
+                q.put(("token_stats", content))
             elif phase == "error":
                 if isinstance(content, dict):
                     q.put(("error", content.get("user_msg", "云端请求失败")))
@@ -508,9 +520,9 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         # state 用 dict 封装可变状态（drain 函数修改它）
         local_state = {"answer_parts": local_answer_parts, "error": None, "done": False,
                        "retrieve_done": _local_retrieve_done, "gen_started": _local_gen_started,
-                       "sources": None, "got_event": False}
+                       "sources": None, "got_event": False, "token_stats": None}
         cloud_state = {"answer_parts": cloud_answer_parts, "error": None, "done": False,
-                       "gen_started": _cloud_gen_started, "got_event": False}
+                       "gen_started": _cloud_gen_started, "got_event": False, "token_stats": None}
         while not (local_state["done"] and cloud_state["done"]):
             # 读取本地列事件（非阻塞，最多读 10 个）
             if not local_state["done"]:
@@ -691,9 +703,12 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         log.warning("[PARALLEL] 保存对话失败: %s", str(e)[:80])
 
     # done 事件
-    # P6 #13: 补本地/云端各自统计(chars + 耗时),前端分属各自卡片展示
+    # P6 #13: 补本地/云端各自统计(chars + 耗时 + 词元),前端分属各自卡片展示
+    # 词元：本地/云端引擎的真实 token_stats（drain 时捕获），无则 None（前端估算）
     _local_elapsed = getattr(step_local_gen, "elapsed_ms", 0) or 0
     _cloud_elapsed = getattr(step_cloud_gen, "elapsed_ms", 0) or 0
+    _local_ts = local_state.get("token_stats") if isinstance(local_state, dict) else None
+    _cloud_ts = cloud_state.get("token_stats") if isinstance(cloud_state, dict) else None
     yield sse_event("done", {
         "model": model_choice,
         "chars": len(final_response),
@@ -702,8 +717,10 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         "speed": len(final_response) / elapsed if elapsed > 0 else 0,
         "task_type": "parallel",
         "agent_timeline": agent_timeline,
-        "local_stats": {"chars": len(local_answer), "elapsed_ms": _local_elapsed},
-        "cloud_stats": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed},
+        "local_stats": {"chars": len(local_answer), "elapsed_ms": _local_elapsed,
+                        "token_stats": _local_ts},
+        "cloud_stats": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed,
+                        "token_stats": _cloud_ts},
     })
     log.info("[PARALLEL] === 完成 === model=%s chars=%d %.1fs local=%d cloud=%d merge=%d",
              model_choice, len(final_response), elapsed,

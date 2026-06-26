@@ -662,6 +662,88 @@ async function saveAutoWarmup(checked) {
   }
 }
 
+// ===== Reranker 常驻 / 空闲卸载设置（reranker_resident / reranker_idle_timeout_sec）=====
+async function loadRerankerResidentSetting() {
+  try {
+    var resp = await fetch(_apiBase + '/api/config');
+    var result = await resp.json();
+    var cfg = result.config || result;
+    var chk = document.getElementById('rerankerResidentChk');
+    var idleInput = document.getElementById('rerankerIdleInput');
+    if (chk) chk.checked = cfg.reranker_resident === true;
+    if (idleInput) {
+      // 后端以秒存储，UI 以分钟展示
+      var secs = cfg.reranker_idle_timeout_sec != null ? cfg.reranker_idle_timeout_sec : 300;
+      idleInput.value = Math.max(1, Math.round(secs / 60));
+    }
+    _toggleRerankerIdleVisibility();
+  } catch(e) { console.error('[settings.loadRerankerResidentSetting]', e); }
+}
+
+// 常驻开关切换时，控制"闲置 N 分钟后卸载"那一行的显隐
+function _toggleRerankerIdleVisibility() {
+  var chk = document.getElementById('rerankerResidentChk');
+  var wrap = document.getElementById('rerankerIdleWrap');
+  if (wrap && chk) wrap.style.display = chk.checked ? 'none' : 'flex';
+}
+
+async function saveRerankerResident(checked) {
+  try {
+    await fetch(_apiBase + '/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({reranker_resident: !!checked})
+    });
+    _toggleRerankerIdleVisibility();
+    if (checked) {
+      // 常驻 = 立即驻留：触发后台加载 Reranker（embedder 若已加载则跳过）
+      // 否则用户勾了常驻，引擎却要等下次用知识库才加载，与"常驻"语义不符。
+      if (typeof showToast === 'function') showToast('正在加载 Reranker 到内存...', 'info');
+      try {
+        var resp = await fetch(_apiBase + '/api/kb/load-models', {method: 'POST'});
+        var data = await resp.json();
+        if (data.ram_warning && typeof showToast === 'function') {
+          showToast(data.ram_warning, 'warning');
+        }
+        // 加载是后台异步的，稍后刷新诊断面板反映新状态
+        setTimeout(function() {
+          if (typeof refreshStatus === 'function') refreshStatus();
+          if (typeof refreshResourcePanel === 'function') refreshResourcePanel();
+        }, 2500);
+      } catch(le) {
+        console.warn('[settings.saveRerankerResident.load]', le);
+      }
+    } else {
+      if (typeof showToast === 'function') {
+        showToast('Reranker 将在闲置后自动卸载', 'success');
+      }
+    }
+  } catch(e) {
+    console.error('[settings.saveRerankerResident]', e);
+    if (typeof showToast === 'function') showToast('保存失败', 'error');
+  }
+}
+
+async function saveRerankerIdle(minutes) {
+  try {
+    var mins = parseInt(minutes, 10);
+    if (isNaN(mins) || mins < 1) mins = 1;
+    if (mins > 1440) mins = 1440;   // 上限 24 小时
+    // UI 分钟 → 后端秒
+    await fetch(_apiBase + '/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({reranker_idle_timeout_sec: mins * 60})
+    });
+    var input = document.getElementById('rerankerIdleInput');
+    if (input) input.value = mins;
+    if (typeof showToast === 'function') showToast('已更新：闲置 ' + mins + ' 分钟后卸载', 'success');
+  } catch(e) {
+    console.error('[settings.saveRerankerIdle]', e);
+    if (typeof showToast === 'function') showToast('保存失败', 'error');
+  }
+}
+
 // ===== 扩展中心 =====
 async function refreshExtensions() {
   var listEl = document.getElementById('extList');
@@ -978,14 +1060,16 @@ async function loadCloudConfig() {
 }
 
 // ===== 云端 AI 用量统计 =====
+// range 与 granularity 联动：今日→小时粒度（24格时间轴），本周→天粒度（7格时间轴）
+// 不允许交叉组合（如"本周+小时"无意义），故只暴露 range 一个切换维度。
 var _cloudUsageRange = 7;       // 1=今日, 7=本周
-var _cloudUsageGran = 'hour';   // hour / day
+function _cloudUsageGran() { return _cloudUsageRange === 1 ? 'hour' : 'day'; }
 
 async function loadCloudUsage() {
   var panel = document.getElementById('cloudUsagePanel');
   if (!panel) return;
   try {
-    var resp = await fetch(_apiBase + '/api/cloud/usage?range_days=' + _cloudUsageRange + '&granularity=' + _cloudUsageGran);
+    var resp = await fetch(_apiBase + '/api/cloud/usage?range_days=' + _cloudUsageRange + '&granularity=' + _cloudUsageGran());
     var data = await resp.json();
     renderCloudUsage(panel, data);
   } catch (e) {
@@ -998,18 +1082,12 @@ function renderCloudUsage(panel, data) {
   var total = data.total_tokens || 0;
   var calls = data.total_calls || 0;
   var rangeLabel = _cloudUsageRange === 1 ? '今日' : '本周';
-  var granLabel = _cloudUsageGran === 'hour' ? '小时' : '天';
+  var granLabel = _cloudUsageGran() === 'hour' ? '小时' : '天';
 
-  // 切换按钮组
-  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">';
-  html += '<div style="display:flex;gap:4px">';
-  html += '<button class="btn btn-sm ' + (_cloudUsageRange === 1 ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetRange(1)">今日</button>';
-  html += '<button class="btn btn-sm ' + (_cloudUsageRange === 7 ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetRange(7)">本周</button>';
-  html += '</div>';
-  html += '<div style="display:flex;gap:4px">';
-  html += '<button class="btn btn-sm ' + (_cloudUsageGran === 'hour' ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetGran(\'hour\')">小时</button>';
-  html += '<button class="btn btn-sm ' + (_cloudUsageGran === 'day' ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetGran(\'day\')">天</button>';
-  html += '</div>';
+  // 切换按钮组（range 与粒度联动，只暴露 range：今日=按小时、本周=按天）
+  var html = '<div style="display:flex;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:4px">';
+  html += '<button class="btn btn-sm ' + (_cloudUsageRange === 1 ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetRange(1)">今日（按小时）</button>';
+  html += '<button class="btn btn-sm ' + (_cloudUsageRange === 7 ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetRange(7)">本周（按天）</button>';
   html += '</div>';
 
   // 汇总数字
@@ -1062,37 +1140,88 @@ function renderCloudUsage(panel, data) {
   panel.innerHTML = html;
 }
 
+// 生成完整时间轴桶序列（补齐空桶，让单点数据不再撑满整图、时间线完整）
+// 与后端 strftime 格式对齐：hour → "YYYY-MM-DD HH:00"，day → "YYYY-MM-DD"
+function _buildBucketAxis() {
+  var axis = [];   // [{bucket, tokens, calls}]
+  var now = new Date();
+  if (_cloudUsageRange === 1) {
+    // 今日：00:00 ~ 当前小时，逐小时
+    var d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var curHour = now.getHours();
+    for (var h = 0; h <= curHour; h++) {
+      var d = new Date(d0.getTime() + h * 3600000);
+      var mm = String(d.getMonth() + 1).padStart(2, '0');
+      var dd = String(d.getDate()).padStart(2, '0');
+      var hh = String(d.getHours()).padStart(2, '0');
+      axis.push({bucket: d.getFullYear() + '-' + mm + '-' + dd + ' ' + hh + ':00', tokens: 0, calls: 0});
+    }
+  } else {
+    // 本周：最近 7 天，逐天
+    for (var i = 6; i >= 0; i--) {
+      var d2 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      var mm2 = String(d2.getMonth() + 1).padStart(2, '0');
+      var dd2 = String(d2.getDate()).padStart(2, '0');
+      axis.push({bucket: d2.getFullYear() + '-' + mm2 + '-' + dd2, tokens: 0, calls: 0});
+    }
+  }
+  return axis;
+}
+
 // SVG 柱状图（纯手画，无依赖）
 function _renderUsageChart(buckets, granLabel) {
-  if (!buckets || !buckets.length) {
+  // 用完整时间轴补齐空桶：避免数据稀疏时单根柱子撑满全宽（大横条 bug）
+  var axis = _buildBucketAxis();
+  var byKey = {};
+  if (buckets && buckets.length) {
+    for (var bi = 0; bi < buckets.length; bi++) byKey[buckets[bi].bucket] = buckets[bi];
+  }
+  var hasData = false;
+  for (var ai = 0; ai < axis.length; ai++) {
+    var hit = byKey[axis[ai].bucket];
+    if (hit) { axis[ai].tokens = hit.tokens || 0; axis[ai].calls = hit.calls || 0; if (hit.tokens) hasData = true; }
+  }
+  if (!hasData) {
     return '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;background:var(--bg-secondary);border-radius:6px">' + (_cloudUsageRange === 1 ? '今日' : '本周') + '暂无调用记录</div>';
   }
-  var maxTokens = Math.max.apply(null, buckets.map(function(b) { return b.tokens; }));
+  var maxTokens = Math.max.apply(null, axis.map(function(b) { return b.tokens; }));
   if (maxTokens === 0) maxTokens = 1;
-  var W = 420, H = 100, padL = 8, padB = 16;
-  var chartW = W - padL;
-  var barCount = buckets.length;
-  var barW = Math.max(4, Math.floor(chartW / barCount) - 2);
-  var gap = 2;
+  var W = 420, H = 100, padL = 8, padR = 4, padB = 16;
+  var chartW = W - padL - padR;
+  var barCount = axis.length;
+  // 每格宽度固定（按桶数均分），柱子占格内的 70%，避免单点撑满
+  var slot = chartW / barCount;
+  var barW = Math.max(3, Math.min(22, Math.floor(slot * 0.7)));
+  var gap = slot - barW;
 
   var svg = '<svg width="100%" viewBox="0 0 ' + W + ' ' + (H + padB) + '" style="display:block;max-width:100%">';
-  for (var i = 0; i < buckets.length; i++) {
-    var b = buckets[i];
+  for (var i = 0; i < axis.length; i++) {
+    var b = axis[i];
     var h = Math.max(1, Math.round((b.tokens / maxTokens) * H));
-    var x = padL + i * (barW + gap);
+    var x = padL + i * slot + gap / 2;
     var y = H - h;
-    svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" rx="1" fill="var(--accent-color)" opacity="0.85">';
-    svg += '<title>' + esc(b.bucket) + ': ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次</title>';
-    svg += '</rect>';
+    if (b.tokens > 0) {
+      svg += '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + barW + '" height="' + h + '" rx="1" fill="var(--accent-color)" opacity="0.85">';
+      svg += '<title>' + esc(b.bucket) + ': ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次</title>';
+      svg += '</rect>';
+    }
   }
   // 基线
-  svg += '<line x1="' + padL + '" y1="' + H + '" x2="' + W + '" y2="' + H + '" stroke="var(--border-color)" stroke-width="0.5"/>';
-  // 首尾时间标签
-  if (buckets.length) {
-    svg += '<text x="' + padL + '" y="' + (H + 12) + '" font-size="9" fill="var(--text-muted)">' + esc(buckets[0].bucket.slice(5)) + '</text>';
-    if (buckets.length > 1) {
-      var lastLabel = buckets[buckets.length - 1].bucket.slice(5);
-      svg += '<text x="' + (W - 2) + '" y="' + (H + 12) + '" font-size="9" fill="var(--text-muted)" text-anchor="end">' + esc(lastLabel) + '</text>';
+  svg += '<line x1="' + padL + '" y1="' + H + '" x2="' + (W - padR) + '" y2="' + H + '" stroke="var(--border-color)" stroke-width="0.5"/>';
+  // 时间刻度：首/中/尾三个标签，避免拥挤
+  var lblY = H + 12;
+  function _short(s) { return s.slice(5); }  // 去掉年份
+  function _hourShort(s) { return s.slice(11); }  // 只留 HH:00
+  if (axis.length > 0) {
+    var first = axis[0].bucket, last = axis[axis.length - 1].bucket;
+    if (_cloudUsageRange === 1) {
+      // 今日按小时：标首(00:00) 当前小时
+      svg += '<text x="' + padL + '" y="' + lblY + '" font-size="9" fill="var(--text-muted)">' + esc(_hourShort(first)) + '</text>';
+      svg += '<text x="' + (W - padR) + '" y="' + lblY + '" font-size="9" fill="var(--text-muted)" text-anchor="end">' + esc(_hourShort(last)) + '</text>';
+    } else {
+      // 本周按天：标首/尾日期
+      svg += '<text x="' + padL + '" y="' + lblY + '" font-size="9" fill="var(--text-muted)">' + esc(_short(first)) + '</text>';
+      svg += '<text x="' + (W - padR) + '" y="' + lblY + '" font-size="9" fill="var(--text-muted)" text-anchor="end">' + esc(_short(last)) + '</text>';
     }
   }
   svg += '</svg>';
@@ -1100,10 +1229,8 @@ function _renderUsageChart(buckets, granLabel) {
 }
 
 function _cloudUsageSetRange(r) { _cloudUsageRange = r; loadCloudUsage(); }
-function _cloudUsageSetGran(g) { _cloudUsageGran = g; loadCloudUsage(); }
 window.loadCloudUsage = loadCloudUsage;
 window._cloudUsageSetRange = _cloudUsageSetRange;
-window._cloudUsageSetGran = _cloudUsageSetGran;
 
 var _capsTimer = null;
 function _previewCloudCaps() {
@@ -1775,6 +1902,9 @@ window.loadRecorderResident = loadRecorderResident;
 window.saveRecorderResident = saveRecorderResident;
 window.loadAutoWarmupSetting = loadAutoWarmupSetting;
 window.saveAutoWarmup = saveAutoWarmup;
+window.loadRerankerResidentSetting = loadRerankerResidentSetting;
+window.saveRerankerResident = saveRerankerResident;
+window.saveRerankerIdle = saveRerankerIdle;
 window.loadCloudConfig = loadCloudConfig;
 window.toggleApiKeyVisibility = toggleApiKeyVisibility;
 window.testCloudConnection = testCloudConnection;

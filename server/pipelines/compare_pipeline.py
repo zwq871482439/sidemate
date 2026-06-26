@@ -275,6 +275,8 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
     cloud_done = False
     local_error = None
     cloud_error = None
+    _local_done_t = 0   # 本地列完成时刻（用于算各自耗时，供前端统计展示）
+    _cloud_done_t = 0   # 云端列完成时刻
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         local_future = executor.submit(_run_local_column, ctx, message, local_queue, local_model, kb_history)
@@ -316,6 +318,7 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
                         yield _sse_channel_event("local", "phase", {"phase": "started"})
                     elif evt_type == "done":
                         local_done = True
+                        _local_done_t = time.time()
                         break
 
             # 读取云端列事件（非阻塞，最多读 10 个）
@@ -336,6 +339,8 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
                     elif evt_type == "phase_started":
                         yield _sse_channel_event("cloud", "phase", {"phase": "started"})
                     elif evt_type == "done":
+                        cloud_done = True
+                        _cloud_done_t = time.time()
                         break
 
             # 如果两列都没数据且都没完成，短暂等待避免空转
@@ -506,6 +511,10 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
         log.warning("[COMPARE] 保存对话失败: %s", str(e)[:80])
 
     # done 事件
+    # 补本地/云端各自统计(chars + 耗时)，与 parallel_pipeline 对齐，
+    # 供前端 footer 显示双列统计（修 #知识对比footer无云端统计）。
+    _local_elapsed = int(((_local_done_t or time.time()) - t0) * 1000)
+    _cloud_elapsed = int(((_cloud_done_t or time.time()) - t0) * 1000)
     yield sse_event("done", {
         "model": model_choice,
         "chars": len(final_response),
@@ -513,6 +522,8 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
         "time": elapsed,
         "speed": len(final_response) / elapsed if elapsed > 0 else 0,
         "task_type": "kb_compare",
+        "local_stats": {"chars": len(local_answer), "elapsed_ms": _local_elapsed},
+        "cloud_stats": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed},
     })
     log.info("[COMPARE] === 完成 === model=%s chars=%d %.1fs",
              model_choice, len(final_response), elapsed)

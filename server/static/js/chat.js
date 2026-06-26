@@ -13,7 +13,11 @@ function _renderMsgBody(content, options) {
   options = options || {};
   // 正文（统一走 md()）— 默认 sanitize=true，流式期间传 {sanitize: false}
   var doSanitize = (options.sanitize !== false);
-  return md(content || '', doSanitize);
+  content = content || '';
+  // 清理模型自加的冗余答案标记（【答案】/最终答案：等），它们和正文重复且突兀。
+  // 只匹配段首的答案标记（不含"总结/结论"，那可能是合法分点标题）。
+  content = content.replace(/(^|\n)\s*【?\s*(答案|最终答案)\s*】?\s*[:：]?\s*/g, '$1');
+  return md(content, doSanitize);
 }
 
 // ===== 消息辅助元素生成 =====
@@ -124,6 +128,18 @@ function _actionModeLabel(mode) {
 
 function _buildStats(m) {
   if (!m.model || m.time == null) return '';
+  // 并行模式：显示本地+云端双列统计（修 #并行footer只显示离线）
+  if (m.parallel_stats) {
+    return _buildParallelStats(m);
+  }
+  // 兜底：旧版并行消息有 parallel_texts（本地/云端各自回答）但缺 parallel_stats 统计时，
+  // 用文本长度回填字数，让 footer 也能显示双列（耗时无数据则省略）。
+  if (m.parallel_texts && (m.parallel_texts.local || m.parallel_texts.cloud)) {
+    var _fallback = {local: null, cloud: null};
+    if (m.parallel_texts.local) _fallback.local = {chars: m.parallel_texts.local.length, elapsed_ms: null};
+    if (m.parallel_texts.cloud) _fallback.cloud = {chars: m.parallel_texts.cloud.length, elapsed_ms: null};
+    return _buildParallelStats({parallel_stats: _fallback, time: m.time});
+  }
   // 模型短名（去掉 :latest / :tag 后缀）+ 离线/在线前缀
   var _shortModel = (m.model || '').replace(/:.*$/, '');
   var _prefix = (m.action_mode === 'agent') ? '在线 AI' : '离线 AI';
@@ -156,6 +172,50 @@ function _buildStats(m) {
   return '<details class="stats-detail stats-fold">' +
     '<summary>' + modelTag + '<span class="stats-meta">' + _summaryMeta + '</span></summary>' +
     '<div class="stats-detail-body">' + detailRows + '</div>' +
+    '</details>';
+}
+
+// 并行模式统计：本地(离线) + 云端(在线)，维度为输入/输出词元
+// 云端用 API 返回的真实 token；本地优先用真实 token_stats，无则用 chars/1.5 估算（标"约"）
+// 单列格式化（footer 行 + 卡片行共用）：返回不含 label/prefix 的纯文本
+function _fmtParallelTokenStats(s) {
+  if (!s) return '';
+  var _chars = s.chars || 0;
+  var _ts = s.token_stats || null;
+  // 词元部分：有真实 token_stats 就用真实值，否则用 chars/1.5 估算输出（输入无法估算）
+  var _tokParts = [];
+  var _approx = '';  // 估算时加"约"前缀
+  if (_ts) {
+    if (_ts.input_tokens) _tokParts.push('输入 ' + _ts.input_tokens.toLocaleString());
+    if (_ts.output_tokens) _tokParts.push('输出 ' + _ts.output_tokens.toLocaleString());
+  } else if (_chars) {
+    _approx = '约 ';
+    _tokParts.push('输出 ' + Math.round(_chars / 1.5).toLocaleString());
+  }
+  var _tokStr = _tokParts.length ? _approx + _tokParts.join(' · ') + ' 词元' : '';
+  // 耗时部分（可选）
+  var _parts = [];
+  if (_tokStr) _parts.push(_tokStr);
+  if (s.elapsed_ms) _parts.push((s.elapsed_ms / 1000).toFixed(1) + 's');
+  return _parts.join(' · ');
+}
+
+function _buildParallelStats(m) {
+  function _fmt(s, label, prefix) {
+    var _txt = _fmtParallelTokenStats(s);
+    if (!_txt) return '';
+    return '<span class="action-tag">' + prefix + '</span><span class="stats-meta">' + label + ' ' + _txt + '</span>';
+  }
+  var localHtml = _fmt(m.parallel_stats.local, '本地', '离线 AI');
+  var cloudHtml = _fmt(m.parallel_stats.cloud, '云端', '在线 AI');
+  var mergeTime = m.time != null ? ' · 融合 ' + Number(m.time).toFixed(1) + 's' : '';
+  // 两列统计分行显示 + 融合耗时
+  var rows = '';
+  if (localHtml) rows += '<div class="stats-par-row">' + localHtml + '</div>';
+  if (cloudHtml) rows += '<div class="stats-par-row">' + cloudHtml + '</div>';
+  return '<details class="stats-detail stats-fold">' +
+    '<summary><span class="action-tag">并行模式</span><span class="stats-meta">本地 + 云端' + mergeTime + '</span></summary>' +
+    '<div class="stats-detail-body">' + rows + '</div>' +
     '</details>';
 }
 
@@ -192,6 +252,16 @@ function _renderSingleMsg(m, idx) {
   // 引用标注 [1][2] 渲染成上标（仅 KB 消息）
   if (m.kb_sources && m.kb_sources.length) {
     bodyHtml = _renderCitationSuperscripts(bodyHtml, m.kb_sources);
+  } else {
+    // 修 #悬空引用：并行模式融合结果可能残留本地列的 [n] 来源标记，但 merge 消息
+    // 不挂 kb_sources，这些标记无法转上标，会原样显示成文本 [1][2]。这里清掉。
+    // 用占位符保护 <code>/<pre> 内的合法 [n]（如数组下标）
+    var _cb = [];
+    bodyHtml = bodyHtml.replace(/<(code|pre)[^>]*>[\s\S]*?<\/\1>/gi, function(m) { _cb.push(m); return '\x00CB' + (_cb.length - 1) + '\x00'; });
+    bodyHtml = bodyHtml.replace(/\s*\[(\d+)\]/g, ' ');
+    for (var _ci = 0; _ci < _cb.length; _ci++) {
+      bodyHtml = bodyHtml.replace('\x00CB' + _ci + '\x00', _cb[_ci]);
+    }
   }
   // 阶段3 Step2b：CardRenderer 历史回放（读 card_data）
   var timelineHtml = '';
@@ -460,6 +530,24 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     }
   }
 
+  // 并行模式：把 thinking-indicator 搬到 #card-area 顶部（卡片之上）。
+  // 否则它停留在 #stream-content 内，会落在本地/云端卡片下方，位置错乱。
+  // （并行正文走 CardRenderer 写入 #card-area，不经过本函数的 token 分支，
+  //  但本函数仍会重写 #stream-content，每次需重新搬迁 indicator。）
+  var _isParallelMode = (typeof _currentMode !== 'undefined' && _currentMode === 'parallel');
+  if (_isParallelMode && isThinking) {
+    var _indicator = contentEl.querySelector('.thinking-indicator');
+    var _cardArea = streamEl.querySelector('#card-area');
+    if (_indicator && _cardArea) {
+      // 清掉卡片区残留的旧指示器（防重复），再插到最前
+      var _oldInCard = _cardArea.querySelector('.thinking-indicator');
+      if (_oldInCard && _oldInCard !== _indicator) _oldInCard.remove();
+      if (_cardArea.firstChild !== _indicator) {
+        _cardArea.insertBefore(_indicator, _cardArea.firstChild);
+      }
+    }
+  }
+
   if (!userScrolledUp) {
     el.scrollTop = el.scrollHeight;
   }
@@ -670,11 +758,13 @@ async function sendMessage() {
   _hasMorphedToAnswering = false;  // P6 打磨：重置思考→回答过渡
   window._parallelLastStatus = {};  // P6 打磨：重置云端状态去重
 
-  appendStreamingMsg('', '', 0, null, true);
   // 阶段3 Step2b：CardRenderer 重置 + 挂载到 #stream-msg
+  // 注意：先 mount #card-area，再 appendStreamingMsg —— 这样并行模式下
+  // thinking-indicator 能被搬到 #card-area 顶部（卡片之上），避免跑到卡片下方。
   CardRenderer.reset();
   var _streamMsgEl = document.getElementById('stream-msg');
   if (_streamMsgEl) CardRenderer.mount(_streamMsgEl);
+  appendStreamingMsg('', '', 0, null, true);
   var msgEl = document.getElementById('messages');
   msgEl.scrollTop = msgEl.scrollHeight;
 
@@ -871,8 +961,8 @@ async function sendMessage() {
             else if (status === 'failed') appendStreamingMsg(iconSvg('cross','14') + ' ' + stepName + ' 失败', '', 0, null, false);
             lastRender = now;
           } else if (d.type === 'cloud_keywords') {
-            // P6 #15: 展示云端辅助提取的关键词，让用户知道辅助生效了什么
-            appendStreamingMsg(iconSvg('search','14') + ' 云端辅助关键词：' + esc(d.keywords || ''), '', 0, null, false);
+            // P6 #15: 展示云端辅助提取的关键词，作为卡片内独立段落（让用户知道辅助生效了什么）
+            CardRenderer.handleEvent(d);
             lastRender = now;
           } else if (d.type === 'pipeline_progress' || d.type === 'step' || d.type === 'step_done' ||
                      d.type === 'phase' || d.type === 'status') {
@@ -887,7 +977,13 @@ async function sendMessage() {
             // 阶段3 Step2b：CardRenderer 渲染双列流式（替代 _renderParallelChannelContent）
             CardRenderer.handleStream(d);
             // 同步更新 fullText（最终 DONE 需要用到）—— 必须保留
-            if (ch === 'merge') fullText = window._parallelChannelTexts[ch];
+            if (ch === 'merge') {
+              fullText = window._parallelChannelTexts[ch];
+              // 修 #融合无打字机：merge 阶段开始时双列已被折叠移除（_collapseParallelCols），
+              // merge stream 失去渲染目标，只能在 done 时一次性输出。这里改为流式渲染到
+              // 主消息区（#stream-content），与普通回答的打字机效果一致。
+              appendStreamingMsg(fullText, '', 0, null, 'generating');
+            }
           } else if (d.type === 'sources') {
             // 阶段3 Step2b：检索结果 → CardRenderer（替代 _renderParallelSources）
             CardRenderer.handleEvent(d);
@@ -954,8 +1050,16 @@ async function sendMessage() {
           } else if (d.type === 'done') {
             // Patch5 C7: done 事件不再操作骨架屏（P6已移除）
             doneData = d;
-            // P6 #13: 并行模式 — 把本地/云端各自统计渲染到对应卡片
-            if (d.task_type === 'parallel' && (d.local_stats || d.cloud_stats)) {
+            // done 是"回答完成"的权威信号：立即停止思考态计时器。
+            // 不依赖 finally 里的 finalizeDOM（并行模式下 fullText 为空，newMsg 可能未定义，
+            // 会导致后续清理链路抛错跳过 finalizeDOM，计时器永驻狂飙）。
+            if (_thinkingTimerInterval) {
+              clearInterval(_thinkingTimerInterval);
+              _thinkingTimerInterval = null;
+            }
+            // P6 #13: 并行类模式（parallel / kb_compare 知识对比）— 把本地/云端各自统计渲染到对应卡片
+            var _isParallelTask = (d.task_type === 'parallel' || d.task_type === 'kb_compare');
+            if (_isParallelTask && (d.local_stats || d.cloud_stats)) {
               CardRenderer.fillParallelStats(d.local_stats, d.cloud_stats);
             }
             // P6 修复终止bug: 用户可能在 done 到达前已点终止(signal.aborted),
@@ -1432,6 +1536,15 @@ async function sendMessage() {
         if (doneData && doneData.token_stats) {
           newMsg.token_stats = doneData.token_stats;
         }
+        // 修 #并行统计不持久化：保存本地/云端各自统计，供刷新后 footer 显示双列
+        // 兼容知识对比模式（kb_compare），它与 parallel 同属本地+云端双列结构
+        if (doneData && (doneData.task_type === 'parallel' || doneData.task_type === 'kb_compare')
+            && (doneData.local_stats || doneData.cloud_stats)) {
+          newMsg.parallel_stats = {
+            local: doneData.local_stats || null,
+            cloud: doneData.cloud_stats || null
+          };
+        }
 
         currentMessages.push(newMsg);
 
@@ -1452,6 +1565,7 @@ async function sendMessage() {
               if (newMsg.card_data) _enrichFields.card_data = newMsg.card_data;
               if (newMsg.parallel_texts) _enrichFields.parallel_texts = newMsg.parallel_texts;
               if (newMsg.token_stats) _enrichFields.token_stats = newMsg.token_stats;
+              if (newMsg.parallel_stats) _enrichFields.parallel_stats = newMsg.parallel_stats;
               if (newMsg.kb_sources) _enrichFields.kb_sources = newMsg.kb_sources;
               if (newMsg.doc_url) _enrichFields.doc_url = newMsg.doc_url;
               if (newMsg.doc_filename) _enrichFields.doc_filename = newMsg.doc_filename;
@@ -1493,15 +1607,18 @@ async function sendMessage() {
         // C方案：原地固化流式气泡（替代 renderMessages 全量重建，消除闪烁）
         // 用户正在看的过程信息（步骤/产出）不会消失，只清理过程态痕迹（计时器/光标/动画）
         // KB 消息：流式正文补渲染引用上标 [1]→¹（流式时未做上标转换）
+        // 注意：并行模式正文走 channel（_parallelTexts），fullText 为空 → newMsg 可能未创建，
+        // 这里对 newMsg 的访问必须加保护，否则 TypeError 会让 finalizeDOM 被跳过，
+        // 导致 thinking-indicator 残留 + 计时器狂飙。
         var _streamContent = streamEl4.querySelector('#stream-content');
-        var _savedKbSources = (newMsg.kb_sources || (window._kbSources && window._kbSources.length ? window._kbSources : null));
+        var _savedKbSources = ((newMsg && newMsg.kb_sources) || (window._kbSources && window._kbSources.length ? window._kbSources : null));
         if (_streamContent && _savedKbSources && _savedKbSources.length) {
           _streamContent.innerHTML = _renderCitationSuperscripts(_streamContent.innerHTML, _savedKbSources);
         }
         CardRenderer.finalizeDOM(streamEl4);
         _bindCitationClicks(streamEl4);  // 流式完成后绑定引用上标点击
         // P6 结构统一：固化后补 data-hash（和 renderMsg 输出一致）
-        if (newMsg.msg_hash) {
+        if (newMsg && newMsg.msg_hash) {
           streamEl4.setAttribute('data-hash', newMsg.msg_hash);
         }
         _restoreChatUI();
@@ -2025,7 +2142,8 @@ var CardRenderer = (function() {
     merge: '自动融合优化',
     understanding: '理解问题',
     thinking: '思考中',
-    generating: '生成回答'
+    generating: '生成回答',
+    cloud_keywords: '云端辅助生成关键词'
   };
 
   // 步骤图标映射
@@ -2116,6 +2234,12 @@ var CardRenderer = (function() {
       return;
     }
 
+    // cloud_keywords 事件（云端辅助提取的检索关键词）
+    if (t === 'cloud_keywords') {
+      _setCloudKeywordsOutput(d.keywords, d.original);
+      return;
+    }
+
     // 并行模式事件（phase/step/step_done/status/sources 带 channel）
     if (t === 'phase' || t === 'step' || t === 'step_done' || t === 'status') {
       _handleParallelEvent(t, d);
@@ -2172,7 +2296,9 @@ var CardRenderer = (function() {
       _ensureParallelCol(ch);
       var col = _parallelCols[ch];
       if (col && col.streamEl) {
-        col.streamEl.textContent = _parallelTexts[ch];
+        // 与完成后（_collapseParallelCols 的 .cb-par-card-body）保持一致：
+        // 流式正文也走 markdown 渲染，避免生成中（纯文本）与完成后（带格式）风格不一致。
+        col.streamEl.innerHTML = md(_parallelTexts[ch], true);
         if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
       }
       // 首个 token 标记对应步骤开始
@@ -2407,13 +2533,14 @@ var CardRenderer = (function() {
         html += _renderOutputHtml(s.output);
       }
       // P6: 并行模式——本地/云端步骤嵌入对应原文卡片
+      // 统一用 .cb-output 包裹（与检索来源/transform 等产出区同构），避免三块风格不一致
       if (m.parallel_texts) {
         if (s.id === 'local_gen' && m.parallel_texts.local) {
-          html += '<div class="cb-par-card local" style="margin-top:6px">' +
-            '<div class="cb-par-card-body">' + _esc(m.parallel_texts.local) + '</div></div>';
+          html += '<div class="cb-output"><div class="cb-par-card local">' +
+            '<div class="cb-par-card-body">' + md(m.parallel_texts.local, true) + '</div></div></div>';
         } else if (s.id === 'cloud_gen' && m.parallel_texts.cloud) {
-          html += '<div class="cb-par-card cloud" style="margin-top:6px">' +
-            '<div class="cb-par-card-body">' + _esc(m.parallel_texts.cloud) + '</div></div>';
+          html += '<div class="cb-output"><div class="cb-par-card cloud">' +
+            '<div class="cb-par-card-body">' + md(m.parallel_texts.cloud, true) + '</div></div></div>';
         }
       }
       html += '</div>';
@@ -2513,6 +2640,17 @@ var CardRenderer = (function() {
       }
       return '<div class="cb-output"><div class="cb-sources">' + items + '</div></div>';
     }
+    if (output.type === 'cloud_keywords') {
+      var kw = output.keywords || '';
+      var kwList = kw.split(/[、,，;；\s]+/).filter(function(k){ return k; });
+      var kwHtml = kwList.length > 1
+        ? '<div class="cb-kw-tags">' + kwList.map(function(k){ return '<span class="cb-kw-tag">' + _esc(k) + '</span>'; }).join('') + '</div>'
+        : '<span class="cb-tf-val hl">' + _esc(kw) + '</span>';
+      return '<div class="cb-output"><div class="cb-cloud-kw">' +
+        (output.original ? '<div class="cb-tf-row"><span class="cb-tf-key">原问题</span><span class="cb-tf-val">' + _esc(output.original) + '</span></div>' : '') +
+        '<div class="cb-tf-row"><span class="cb-tf-key">关键词</span>' + kwHtml + '</div>' +
+        '</div></div>';
+    }
     return '';
   }
 
@@ -2561,6 +2699,47 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
+  // cloud_keywords 产出（云端辅助提取的检索关键词）
+  // 作为独立卡片段落展示：让用户看到云端 LLM 把问题提炼成了哪些关键词
+  function _setCloudKeywordsOutput(keywords, original) {
+    if (!_container) return;
+    keywords = keywords || '';
+    // 复用 step 容器：创建/取回一个 cloud_keywords 步骤，插到所有并行 gen 步骤之前
+    var stepId = 'cloud_keywords';
+    var s = _steps[stepId];
+    if (!s) {
+      _createStep(stepId, '云端辅助生成关键词');
+      s = _steps[stepId];
+    }
+    if (!s || !s.el) return;
+    // 存储产出数据（供 finalize 序列化 + renderHistory 重建）
+    s.outputData = {type: 'cloud_keywords', keywords: keywords, original: original || ''};
+    // 写入产出区
+    var out = s.el.querySelector('.cb-output');
+    if (!out) {
+      out = document.createElement('div');
+      out.className = 'cb-output';
+      s.el.appendChild(out);
+    }
+    // 把关键词按分隔符拆成标签展示（更直观）
+    var kwList = keywords.split(/[、,，;；\s]+/).filter(function(k){ return k; });
+    var kwHtml = '';
+    if (kwList.length > 1) {
+      kwHtml = '<div class="cb-kw-tags">' +
+        kwList.map(function(k){ return '<span class="cb-kw-tag">' + _esc(k) + '</span>'; }).join('') +
+        '</div>';
+    } else {
+      kwHtml = '<span class="cb-tf-val hl">' + _esc(keywords) + '</span>';
+    }
+    out.innerHTML = '<div class="cb-cloud-kw">' +
+      (original ? '<div class="cb-tf-row"><span class="cb-tf-key">原问题</span><span class="cb-tf-val">' + _esc(original) + '</span></div>' : '') +
+      '<div class="cb-tf-row"><span class="cb-tf-key">关键词</span>' + kwHtml + '</div>' +
+      '</div>';
+    // 标记完成（关键词是一次性产出，立即完成）
+    _completeStep(stepId, null, kwList.length);
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
+  }
+
   // 模块2a：双列折叠成摘要条（阶段1→阶段2过渡，方案Z）
   function _collapseParallelCols() {
     var parWrap = _container.querySelector('.cb-par');
@@ -2569,24 +2748,31 @@ var CardRenderer = (function() {
     var cloudText = _parallelTexts.cloud || '';
 
     // P6: 把原文嵌入对应步骤下方（和 renderHistory 一致），而非独立摘要条
+    // 统一用 .cb-output 包裹（与检索来源等产出区同构）
     if (localText) {
       var localStep = _container.querySelector('.cb-step[data-id="local_gen"]');
       if (localStep) {
+        var out1 = document.createElement('div');
+        out1.className = 'cb-output';
         var card = document.createElement('div');
         card.className = 'cb-par-card local';
-        card.style.cssText = 'margin-top:6px';
-        card.innerHTML = '<div class="cb-par-card-body">' + _esc(localText) + '</div>';
-        localStep.appendChild(card);
+        // 修 #双列卡片md不渲染：原文含 **加粗**、列表等 markdown，旧代码用 _esc 纯转义
+        // 导致显示成字面量。改用 md() 渲染（与主消息正文一致）。
+        card.innerHTML = '<div class="cb-par-card-body">' + md(localText, true) + '</div>';
+        out1.appendChild(card);
+        localStep.appendChild(out1);
       }
     }
     if (cloudText) {
       var cloudStep = _container.querySelector('.cb-step[data-id="cloud_gen"]');
       if (cloudStep) {
+        var out2 = document.createElement('div');
+        out2.className = 'cb-output';
         var card2 = document.createElement('div');
         card2.className = 'cb-par-card cloud';
-        card2.style.cssText = 'margin-top:6px';
-        card2.innerHTML = '<div class="cb-par-card-body">' + _esc(cloudText) + '</div>';
-        cloudStep.appendChild(card2);
+        card2.innerHTML = '<div class="cb-par-card-body">' + md(cloudText, true) + '</div>';
+        out2.appendChild(card2);
+        cloudStep.appendChild(out2);
       }
     }
     // 移除并行列容器（原文已嵌入步骤）
@@ -2598,15 +2784,9 @@ var CardRenderer = (function() {
 
   // P6 #13: 把本地/云端统计渲染到各自卡片(分属各自卡片展示)
   function fillParallelStats(localStats, cloudStats) {
-    function _fmtStats(s) {
-      if (!s) return '';
-      var _chars = s.chars || 0;
-      var _sec = s.elapsed_ms ? (s.elapsed_ms / 1000).toFixed(1) : '?';
-      var _speed = (s.chars && s.elapsed_ms) ? Math.round(s.chars / (s.elapsed_ms / 1000)) : 0;
-      return _chars + '字 · ' + _sec + 's' + (_speed ? ' · ' + _speed + '字/s' : '');
-    }
-    var _localTxt = _fmtStats(localStats);
-    var _cloudTxt = _fmtStats(cloudStats);
+    // 卡片内统计：与 footer 同维度（输入/输出词元，云端真实、本地估算）
+    var _localTxt = _fmtParallelTokenStats(localStats);
+    var _cloudTxt = _fmtParallelTokenStats(cloudStats);
     if (_localTxt) {
       var _lc = _container.querySelector('.cb-par-card.local');
       if (_lc && !_lc.querySelector('.cb-par-card-stats')) {
@@ -2703,7 +2883,8 @@ var CardRenderer = (function() {
     var col = document.createElement('div');
     col.className = 'cb-par-col';
     col.id = 'cb-par-' + channel;
-    var title = channel === 'local' ? '本地（知识库）' : (channel === 'cloud' ? '云端（通用知识）' : '融合');
+    // 统一文案：与 step label（local_gen/cloud_gen）一致，生成中→折叠→刷新三阶段连贯
+    var title = channel === 'local' ? '本地AI生成回答' : (channel === 'cloud' ? '云端AI补充' : '本地自动融合');
     var titleIcon = channel === 'local' ? 'book' : (channel === 'cloud' ? 'cloud' : 'check');
     col.innerHTML = '<div class="cb-par-col-title">' + (typeof iconSvg === 'function' ? iconSvg(titleIcon, '12') : '') + ' ' + title + '</div>' +
       '<div class="cb-par-stream-area"></div>';
@@ -3008,14 +3189,14 @@ var CardRenderer = (function() {
     if (texts.local) {
       html += '<div class="cb-par-card local">' +
         '<div class="cb-par-card-head"><span class="cb-par-dot local"></span>本地AI生成回答</div>' +
-        '<div class="cb-par-card-body">' + _esc(texts.local) + '</div>' +
+        '<div class="cb-par-card-body">' + md(texts.local, true) + '</div>' +
       '</div>';
     }
     // 云端卡片
     if (texts.cloud) {
       html += '<div class="cb-par-card cloud">' +
         '<div class="cb-par-card-head"><span class="cb-par-dot cloud"></span>云端AI生成回答</div>' +
-        '<div class="cb-par-card-body">' + _esc(texts.cloud) + '</div>' +
+        '<div class="cb-par-card-body">' + md(texts.cloud, true) + '</div>' +
       '</div>';
     }
     html += '</div>';
