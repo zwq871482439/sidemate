@@ -1018,7 +1018,13 @@ async function testCloudConnection() {
     };
     var keyEl = document.getElementById('cloudApiKey');
     if (keyEl && keyEl.value) {
-      body.api_key = keyEl.value;
+      var _val = keyEl.value;
+      // P6 #28 修复: 输入框若是脱敏占位符(sk-***...***xxx),不要当真key发给后端测试,
+      // 否则后端拿脱敏假值请求云端必然401。只有用户输入了新值才带上。
+      var _isMasked = _val.indexOf('***...***') !== -1;
+      if (!_isMasked) {
+        body.api_key = _val;
+      }
     }
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/cloud/test', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
