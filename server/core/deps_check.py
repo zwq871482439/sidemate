@@ -46,6 +46,12 @@ REQUIRED_DEPS: List[Tuple[str, str, str]] = [
     ("faster_whisper", "faster_whisper", "recorder"),
 ]
 
+# 可选依赖：缺失不阻断启动，仅提示（功能降级而非不可用）
+# F10: curl_cffi 缺失时搜索引擎 fallback 到 httpx（无 TLS 指纹伪装）
+OPTIONAL_DEPS: Dict[str, str] = {
+    "curl_cffi": "搜索引擎 TLS 指纹伪装（缺失则用 httpx，部分网站可能拦截）",
+}
+
 
 def _import_check(import_name: str) -> bool:
     """检查单个依赖是否可 import"""
@@ -71,6 +77,19 @@ def check_all() -> Dict[str, List[Tuple[str, str]]]:
     return missing
 
 
+def check_optional() -> List[str]:
+    """检查可选依赖，返回缺失的 import_name 列表（仅提示，不阻断启动）。
+
+    可选依赖缺失时对应功能会降级而非完全不可用。
+    """
+    missing: List[str] = []
+    for import_name, note in OPTIONAL_DEPS.items():
+        if not _import_check(import_name):
+            missing.append(import_name)
+            log.info("[DEPS] 可选依赖缺失: %s — %s", import_name, note)
+    return missing
+
+
 def check_deps(server_dir: str = "") -> Dict:
     """
     主入口：检查依赖完整性，返回结果。
@@ -78,27 +97,30 @@ def check_deps(server_dir: str = "") -> Dict:
 
     Returns:
         {
-            "all_ok": bool,
-            "missing": {...},  # {category: [import_name, ...]}
+            "all_ok": bool,            # 必需依赖是否齐全（可选依赖不影响）
+            "missing": {...},          # {category: [import_name, ...]} 必需依赖缺失
+            "optional_missing": [...], # 可选依赖缺失（仅提示，功能降级非不可用）
         }
     """
     log.info("[DEPS] 开始依赖健康检查...")
 
     missing = check_all()
-    if not missing:
-        log.info("[DEPS] 全部依赖就绪 ✅")
-        return {"all_ok": True, "missing": {}}
+    optional_missing = check_optional()
 
-    all_missing_names = []
-    for cat, items in missing.items():
-        names = [i[0] for i in items]
-        all_missing_names.extend(names)
-        log.warning("[DEPS] %s 类别缺失: %s", cat, names)
+    if missing:
+        all_missing_names = []
+        for cat, items in missing.items():
+            names = [i[0] for i in items]
+            all_missing_names.extend(names)
+            log.warning("[DEPS] %s 类别缺失: %s", cat, names)
+        log.warning("[DEPS] 共 %d 个缺失依赖（部分功能可能不可用）", len(all_missing_names))
+    else:
+        log.info("[DEPS] 全部必需依赖就绪 ✅")
 
-    log.warning("[DEPS] 共 %d 个缺失依赖（部分功能可能不可用）", len(all_missing_names))
     return {
-        "all_ok": False,
+        "all_ok": not missing,
         "missing": {k: [i[0] for i in v] for k, v in missing.items()},
+        "optional_missing": optional_missing,
     }
 
 

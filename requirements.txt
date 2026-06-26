@@ -16,6 +16,10 @@ pydantic_core==2.46.4
 # ===== Ollama HTTP 客户端 =====
 httpx>=0.28.0
 
+# ===== 搜索引擎（TLS 指纹伪装，可选）=====
+# F10: curl_cffi 装了自动启用，绕过部分网站反爬；不装则用 httpx fallback（无伪装）
+curl_cffi>=0.15.0
+
 # ===== NLP / 嵌入 =====
 sentence-transformers==5.5.1
 transformers==5.9.0

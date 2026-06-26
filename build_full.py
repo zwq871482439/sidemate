@@ -50,6 +50,10 @@ REQUIRED_DEPS = {
     "recorder": [
         "faster_whisper",
     ],
+    # F10: 搜索引擎 TLS 指纹伪装（curl_cffi，可选，缺失则 search_engine fallback httpx）
+    "search": [
+        "curl_cffi",
+    ],
 }
 
 
