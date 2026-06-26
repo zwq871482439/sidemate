@@ -232,14 +232,11 @@ Copyleft 许可组件（GPL / AGPL / MPL）
 ⚠️ 重要法律提示：以下组件使用强 Copyleft 许可，具有传染性。使用、修改或再分发
    这些组件（或与之链接）时，必须遵守相应许可的开源要求。详见各许可原文。
 
-  - EbookLib (AGPLv3+, 用于 EPUB 文档解析)
+  - EbookLib (AGPLv3+, 历史 EPUB 文档解析)
     许可协议：GNU Affero General Public License v3 or later
-    特别要求：AGPL 适用于网络服务场景——若通过网络提供服务，必须开源衍生代码。
     来源：https://github.com/aerkalov/ebooklib
-
-  - zhconv (GPLv2+, 用于录音包繁简汉字转换)
-    许可协议：GNU General Public License v2 or later
-    来源：https://github.com/mozillazg/python-zhconv
+    ✅ P6 已替换：改用 zipfile(标准库) + BeautifulSoup(MIT) 解析 EPUB，
+       不再依赖 EbookLib，彻底消除 AGPL 传染风险。
 
   - orjson (MPL-2.0 AND (Apache-2.0 OR MIT), JSON 高性能序列化)
     许可协议：Mozilla Public License 2.0

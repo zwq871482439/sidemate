@@ -592,6 +592,8 @@ class RecorderManager:
             rough_draft = "\n".join(text_parts)
 
             # 繁体→简体转换（某些 Whisper 模型对 "zh" 输出繁体）
+            # P6 讨论4: zhconv(GPLv2+)已移除以消除Copyleft传染风险。
+            # 如需繁简转换,用户可自行安装 zhconv 或改用 OpenCC(BSD-3)。
             try:
                 import zhconv
                 rough_draft = zhconv.convert(rough_draft, 'zh-cn')
@@ -599,7 +601,7 @@ class RecorderManager:
                     seg_item['text'] = zhconv.convert(seg_item['text'], 'zh-cn')
                 log.info("[WHISPER-FW] 已执行繁体→简体转换")
             except ImportError:
-                pass
+                pass  # zhconv 未安装,跳过繁简转换(不影响核心功能)
 
             session.segments = segments_data if segments_data else None
 

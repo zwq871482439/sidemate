@@ -112,33 +112,39 @@ def extract_text(file_path: str) -> str:
             return ""
 
     elif ext == '.epub':
-        # B2: EPUB 电子书解析（ebooklib + beautifulsoup4）
+        # P6 讨论4: 用 zipfile + BeautifulSoup 替代 ebooklib(AGPLv3+),
+        # 消除 Copyleft 传染风险。EPUB 本质是 ZIP+xhtml,标准库即可解析。
         try:
-            import ebooklib
-            from ebooklib import epub
+            import zipfile
             from bs4 import BeautifulSoup
-            book = epub.read_epub(file_path, options={"ignore_ncx": True})
             texts = []
-            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-                html_content = item.get_content().decode("utf-8", errors="replace")
-                soup = BeautifulSoup(html_content, "html.parser")
-                # 提取章节标题作为 heading
-                for tag in soup.find_all(["h1", "h2", "h3"]):
-                    title_text = tag.get_text(strip=True)
-                    if title_text:
-                        texts.append(title_text)
-                # 提取段落文本
-                for tag in soup.find_all(["p", "div"]):
-                    para_text = tag.get_text(strip=True)
-                    if para_text:
-                        texts.append(para_text)
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                # EPUB 的正文都是 .xhtml/.html/.htm 文件
+                html_names = [n for n in zf.namelist()
+                              if n.endswith(('.xhtml', '.html', '.htm'))
+                              and not n.startswith('META-INF')]
+                for name in html_names:
+                    try:
+                        html_content = zf.read(name).decode("utf-8", errors="replace")
+                    except Exception:
+                        continue
+                    soup = BeautifulSoup(html_content, "html.parser")
+                    # 提取章节标题作为 heading
+                    for tag in soup.find_all(["h1", "h2", "h3"]):
+                        title_text = tag.get_text(strip=True)
+                        if title_text:
+                            texts.append(title_text)
+                    # 提取段落文本
+                    for tag in soup.find_all(["p", "div"]):
+                        para_text = tag.get_text(strip=True)
+                        if para_text:
+                            texts.append(para_text)
             result = "\n\n".join(texts)
             if not result.strip():
                 return "[此 EPUB 文件无法提取到文本内容，可能为纯图片电子书或 DRM 保护文件]"
             return result
-        except ImportError:
-            log.warning("ebooklib / beautifulsoup4 未安装，无法提取 .epub 文件")
-            return ""
+        except zipfile.BadZipFile:
+            return "[此文件不是有效的 EPUB（ZIP 结构损坏）]"
         except Exception as e:
             err_msg = str(e)[:200]
             log.error(f"提取 EPUB 失败: {err_msg}")
