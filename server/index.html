@@ -778,7 +778,10 @@ window.addEventListener('load', function() {
   _loadVersionDisplay();
   _loadSystemEnv();
   if (!localStorage.getItem('sidemate_welcomed')) {
-    try { showWelcome(); } catch(e) { console.warn('[welcome] failed:', e); }
+    // 延迟 500ms 确保本地服务端就绪（reload 后 API 可能尚未响应）
+    setTimeout(function() {
+      try { showWelcome(); } catch(e) { console.warn('[welcome] failed:', e); }
+    }, 500);
   }
 });
 </script>
@@ -791,7 +794,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/core/errors.js?v=2.40"></script>
 <script src="/static/js/stream_renderer.js?v=2.40"></script>
 <script src="/static/js/settings.js?v=2.40"></script>
-<script src="/static/js/qa.js?v=2.40"></script>
+<script src="/static/js/qa.js?v=2.41"></script>
 <script src="/static/js/kb-batch.js?v=2.40"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
