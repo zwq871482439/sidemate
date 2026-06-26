@@ -112,17 +112,36 @@ var _tourSteps = [
   { id: 'online',   tab: 'chat', targetSel: '#chatMode',           title: '在线模式',             desc: '切换到在线模式后，支持：<br>• 联网搜索<br>• Agent 多步推理<br>• 调用 82 种云端大模型<br><br>需先在 <b>设置 → 云端 AI</b> 配置 API Key。', pos: 'bottom' },
   { id: 'parallel', tab: 'chat', targetSel: '#chatMode',           title: '并行模式',             desc: '本地检索知识库 + 云端补充通用知识<br>各自独立回答，本地自动融合。<br><br><b>知识库原文永不离开本机</b><br>云端只看到本地生成的摘要。', pos: 'bottom' },
   { id: 'kb',       tab: 'qa',   targetSel: '#kbAIOverview',       title: '知识库',               desc: '上传文档 → AI 自动打标分类<br>点击 <b>「整理」</b> 触发 AI 洞察分析<br><br>左侧侧栏可筛选分类<br>选中文档后可设为私密或批量操作', pos: 'bottom' },
-  { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[data-tab="settings"]', title: '设置入口',   desc: '需要配置云端 API Key？<br>需要安装扩展包或管理模型？<br><br>在 <b>设置 Tab</b> 中搞定一切。<br><br>这就是桌伴的全部功能，开始使用吧！', pos: 'bottom' }
+  { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '需要配置云端 API Key？<br>需要安装扩展包或管理模型？<br><br>在 <b>设置 Tab</b> 中搞定一切。<br><br>这就是桌伴的全部功能，开始使用吧！', pos: 'bottom' }
 ];
+
+// 修复：tab 按钮实际用 onclick="switchTab('chat',this)"，没有 data-tab 属性。
+// 旧的 [data-tab="chat"] 选择器永远匹配不到 → switchTab 不触发 → 无法切 tab。
+// 这里用 onclick 内容匹配，兼容所有 tab。
+function _tourFindTabBtn(tabName) {
+  // 优先匹配 onclick 里的 switchTab('xxx',...)
+  var btn = document.querySelector('.tabs-nav button[onclick*="switchTab(\'' + tabName + '\'"]');
+  if (btn) return btn;
+  // 兜底：按文本匹配
+  var btns = document.querySelectorAll('.tabs-nav button');
+  var labelMap = { chat: '对话', qa: '知识库', settings: '设置' };
+  var label = labelMap[tabName];
+  if (label) {
+    for (var i = 0; i < btns.length; i++) {
+      if (btns[i].textContent.trim() === label) return btns[i];
+    }
+  }
+  return null;
+}
 
 function startTour() {
   _tourStep = 0;
-  _tourLastTab = '';
   // 强制切到 Chat Tab（兼容从设置页"重新查看"触发）
   if (typeof switchTab === 'function') {
-    var btn = document.querySelector('.tabs-nav button[data-tab="chat"], .tabs-nav-inline button[data-tab="chat"]');
-    if (btn) { switchTab('chat', btn); _tourLastTab = 'chat'; }
+    var btn = _tourFindTabBtn('chat');
+    if (btn) { switchTab('chat', btn); }
   }
+  _tourLastTab = 'chat';  // 标记已切到 chat，避免 renderTourStep 重复切
   // 先显示遮罩，再等 Chat Tab 渲染完成
   document.getElementById('tourOverlay').style.display = 'block';
   document.getElementById('tourCard').style.display = 'block';
@@ -144,9 +163,9 @@ function renderTourStep() {
   if (!step) return;
   var isLast = _tourStep >= _tourSteps.length - 1;
 
-  // 自动切换 Tab
+  // 自动切换 Tab（修复：用 _tourFindTabBtn 替代失效的 [data-tab] 选择器）
   if (step.tab && step.tab !== _tourLastTab && typeof switchTab === 'function') {
-    var btn = document.querySelector('.tabs-nav button[data-tab="' + step.tab + '"], .tabs-nav-inline button[data-tab="' + step.tab + '"]');
+    var btn = _tourFindTabBtn(step.tab);
     if (btn) { switchTab(step.tab, btn); _tourLastTab = step.tab; }
   }
 
@@ -192,7 +211,7 @@ function positionTourElements(target, pos) {
 
   var tx, ty, tw, th, tRadius = '6px';
 
-  if (target && target.getBoundingClientRect) {
+  if (target && target.getBoundingClientRect && isVisible(target)) {
     var rect = target.getBoundingClientRect();
     var pad = 4;
     tx = Math.round(rect.left - pad);
@@ -203,9 +222,16 @@ function positionTourElements(target, pos) {
     var br = cs.borderRadius;
     if (br && br !== '0px') tRadius = br;
   } else {
-    // 兜底：目标元素不可见时，居中显示卡片不显示高亮
-    tx = viewW / 2 - 80; ty = viewH / 3;
-    tw = 160; th = 40;
+    // 兜底：目标不可见 → 不画镂空高亮，卡片居中显示
+    // （旧代码会在随机位置画一个镂空框，导致"覆层对不上"）
+    spotlight.style.clipPath = 'none';
+    spotlight.style.background = 'rgba(0,0,0,0.45)';
+    var cardW = 280, cardH = 140;
+    card.style.left = Math.round(Math.max(16, viewW / 2 - cardW / 2)) + 'px';
+    card.style.top = Math.round(Math.max(16, viewH / 2 - cardH / 2)) + 'px';
+    card.style.setProperty('--tour-arrow-top', 'auto');
+    card.style.setProperty('--tour-arrow-bottom', 'auto');
+    return;
   }
 
   // 用 clip-path 替代 box-shadow 做镂空遮罩，避免 overflow:hidden 裁剪
