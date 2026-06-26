@@ -111,7 +111,7 @@ var _tourSteps = [
   { id: 'offline',  tab: 'chat', targetSel: '#chatMode',           title: '离线模式',             desc: '位于离线模式时，你可以：<br>• 自由聊天提问<br>• 编写代码和文档<br>• 在对话中引用知识库文档<br><br><b>所有数据不出本机</b>，无需网络。', pos: 'bottom' },
   { id: 'online',   tab: 'chat', targetSel: '#chatMode',           title: '在线模式',             desc: '切换到在线模式后，支持：<br>• 联网搜索<br>• Agent 多步推理<br>• 调用多种云端大模型<br><br>需先在 <b>设置 → 云端 AI</b> 配置 API Key。', pos: 'bottom' },
   { id: 'parallel', tab: 'chat', targetSel: '#chatMode',           title: '并行模式',             desc: '本地检索知识库 + 云端补充通用知识<br>各自独立回答，本地自动融合。<br><br><b>知识库原文永不离开本机</b><br>云端只回答通用知识，不接触你的文档。', pos: 'bottom' },
-  { id: 'kb',       tab: 'qa',   targetSel: '#kbAIOverview',       title: '知识库',               desc: '上传文档 → AI 自动打标分类<br>点击 <b>「整理」</b> 触发 AI 洞察分析<br><br>左侧侧栏可筛选分类<br>选中文档后可设为私密或批量操作', pos: 'bottom' },
+  { id: 'kb',       tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: '知识库',               desc: '上传文档 → AI 自动打标分类<br>点击 <b>「整理」</b> 触发 AI 洞察分析<br><br>左侧侧栏可筛选分类<br>选中文档后可设为私密或批量操作', pos: 'bottom' },
   { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '需要配置云端 API Key？<br>需要安装扩展包或管理模型？<br><br>在 <b>设置 Tab</b> 中搞定一切。<br><br>这就是桌伴的全部功能，开始使用吧！', pos: 'bottom' }
 ];
 
@@ -291,6 +291,11 @@ function positionTourElements(target, pos) {
     cy = ty;
     if (cx + cardW > viewW - 8) cx = tx - cardW - 12;
   }
+
+  // 最终兜底：卡片必须落在视口内（无论目标多大/在哪），否则会"掉出页面"。
+  // 卡片高度可能因文案长短变化，用实际测量值更准。
+  cx = Math.max(8, Math.min(viewW - cardW - 8, cx));
+  cy = Math.max(8, Math.min(viewH - cardH - 8, cy));
 
   card.style.left = Math.round(cx) + 'px';
   card.style.top = Math.round(cy) + 'px';
