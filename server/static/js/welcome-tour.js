@@ -104,6 +104,7 @@ window.dismissWelcome = dismissWelcome;
 
 // ── 阶段2: 交互式步骤引导 ─────────────────────────────────
 var _tourStep = 0;
+var _tourLastTab = '';
 var _tourSteps = [
   { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 纯本地模型，无需联网<br><b>在线</b> — 云端大模型，需配 API Key<br><b>并行</b> — 本地 KB + 云端融合<br><br>在线/并行需在设置 → 云端 AI 中填写 API Key', pos: 'bottom' },
   { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '在这里输入问题，按 <b>Enter</b> 发送。<br>支持上传文件和引用知识库文档。<br>上方 <b>Token 用量条</b> 显示剩余可用长度。', pos: 'top' },
@@ -116,16 +117,17 @@ var _tourSteps = [
 
 function startTour() {
   _tourStep = 0;
+  _tourLastTab = '';
   // 强制切到 Chat Tab（兼容从设置页"重新查看"触发）
   if (typeof switchTab === 'function') {
-    var btn = document.querySelector('.tabs-nav button[data-tab="chat"]');
-    if (btn) switchTab('chat', btn);
+    var btn = document.querySelector('.tabs-nav button[data-tab="chat"], .tabs-nav-inline button[data-tab="chat"]');
+    if (btn && btn.offsetParent) { switchTab('chat', btn); _tourLastTab = 'chat'; }
   }
   setTimeout(function() {
     document.getElementById('tourOverlay').style.display = 'block';
     document.getElementById('tourCard').style.display = 'block';
     renderTourStep();
-  }, 200);
+  }, 300);
 }
 
 function renderTourStep() {
@@ -134,9 +136,9 @@ function renderTourStep() {
   var isLast = _tourStep >= _tourSteps.length - 1;
 
   // 自动切换 Tab
-  if (step.tab && typeof switchTab === 'function') {
+  if (step.tab && step.tab !== _tourLastTab && typeof switchTab === 'function') {
     var btn = document.querySelector('.tabs-nav button[data-tab="' + step.tab + '"], .tabs-nav-inline button[data-tab="' + step.tab + '"]');
-    if (btn) switchTab(step.tab, btn);
+    if (btn && btn.offsetParent) { switchTab(step.tab, btn); _tourLastTab = step.tab; }
   }
 
   // 等 Tab 切换完成后再定位
