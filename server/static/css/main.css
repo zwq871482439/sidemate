@@ -352,6 +352,9 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .card .perm-item:last-child{border-bottom:none}
 .card .perm-item .perm-name{font-size:12px;font-weight:500;color:var(--text-primary)}
 .card .perm-item .perm-desc{font-size:10px;color:var(--text-muted)}
+/* 工具权限分组标题（按大类聚合） */
+.card .perm-group-title{font-size:11px;font-weight:600;color:var(--text-secondary);margin:8px 0 4px;padding-bottom:3px;border-bottom:1px solid var(--border-color);letter-spacing:.3px}
+.card .perm-group-title:first-child{margin-top:0}
 /* 运行状态：组件状态点 */
 .card .comp-row{display:flex;align-items:center;gap:8px;padding:4px 0}
 .card .comp-dot-ok,.card .comp-dot-off{width:8px;height:8px;border-radius:50%;flex-shrink:0}
@@ -2387,7 +2390,15 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* P6: 可展开步骤（点击查看详情）*/
 .cb-step-expandable::after { content:'▸'; position:absolute; right:0; top:3px; font-size:9px; color:var(--text-muted); transition:transform .15s }
 .cb-step-expanded::after { transform:rotate(90deg) }
-.cb-step-detail { margin-top:4px; padding:6px 8px; background:var(--bg-secondary); border-radius:4px; font-size:10px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap; word-break:break-all; max-height:120px; overflow-y:auto }
+.cb-step-detail { margin-top:4px; padding:6px 8px; background:var(--bg-secondary); border-radius:4px; font-size:10px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap; word-break:break-all; max-height:160px; overflow-y:auto }
+/* P6 #4-a: 搜索结果列表项 */
+.cb-src-item { display:flex; align-items:flex-start; gap:5px; padding:3px 0; border-bottom:0.5px solid var(--border-color); }
+.cb-src-item:last-child { border-bottom:none; }
+.cb-src-item .cb-src-num { width:15px; height:15px; border-radius:3px; background:var(--bg-tertiary); color:var(--text-secondary); font-size:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+.cb-src-item .cb-src-title { color:var(--text-primary); font-size:11px; font-weight:500; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cb-src-item .cb-src-snippet { color:var(--text-muted); font-size:10px; line-height:1.4; word-break:break-word; display:block; margin-top:1px; }
+/* P6 #4-b: 阅读正文摘要 */
+.cb-fetch-summary { color:var(--text-muted); font-size:10px; line-height:1.5; word-break:break-word; }
 .cb-time { color:var(--text-muted); font-size:11px; margin-left:auto; padding-left:8px; }
 .cb-count { color:var(--text-muted); font-size:11px; }
 

@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.37">
+<link rel="stylesheet" href="/static/css/main.css?v=2.38">
 </head>
 <body>
 
@@ -252,14 +252,14 @@
             <div class="kb-tag all sel" data-tag="__all__"><span class="dot"></span>全部文档<span class="cnt">0</span></div>
           </div>
         </details>
-        <!-- P6: 令牌管理面板 -->
-        <details class="kb-sidebar-tokens-wrap" id="kbSidebarTokensWrap">
+        <!-- P6: 私密文档清单（无私密文档时隐藏，由 JS 控制显隐） -->
+        <details class="kb-sidebar-tokens-wrap" id="kbSidebarPrivateWrap" style="display:none">
           <summary class="kb-sidebar-tokens-hdr">
             <svg width="11" height="11" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:3px"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>
-            令牌管理
+            <span id="kbSidebarPrivateHdr">私密文档</span>
           </summary>
-          <div class="kb-sidebar-tokens" id="kbSidebarTokens">
-            <div class="kb-token-empty">暂无活跃令牌</div>
+          <div class="kb-sidebar-tokens" id="kbSidebarPrivate">
+            <div class="kb-token-empty">暂无私密文档</div>
           </div>
         </details>
         <div class="kb-sidebar-ft" id="kbSidebarFt">0篇 · 0标签</div>
@@ -907,25 +907,25 @@ window.addEventListener('DOMContentLoaded', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.37"></script>
-<script src="/static/js/core/utils.js?v=2.37"></script>
-<script src="/static/js/core/errors.js?v=2.37"></script>
-<script src="/static/js/stream_renderer.js?v=2.37"></script>
-<script src="/static/js/settings.js?v=2.37"></script>
-<script src="/static/js/qa.js?v=2.37"></script>
-<script src="/static/js/kb-batch.js?v=2.37"></script>
+<script src="/static/js/core/api.js?v=2.38"></script>
+<script src="/static/js/core/utils.js?v=2.38"></script>
+<script src="/static/js/core/errors.js?v=2.38"></script>
+<script src="/static/js/stream_renderer.js?v=2.38"></script>
+<script src="/static/js/settings.js?v=2.38"></script>
+<script src="/static/js/qa.js?v=2.38"></script>
+<script src="/static/js/kb-batch.js?v=2.38"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
-<script src="/static/js/chat-session.js?v=2.37"></script>
-<script src="/static/js/chat-actions.js?v=2.37"></script>
-<script src="/static/js/chat-files.js?v=2.37"></script>
-<script src="/static/js/chat-export.js?v=2.37"></script>
-<script src="/static/js/chat-ui.js?v=2.37"></script>
-<script src="/static/js/chat.js?v=2.37"></script>
+<script src="/static/js/chat-session.js?v=2.38"></script>
+<script src="/static/js/chat-actions.js?v=2.38"></script>
+<script src="/static/js/chat-files.js?v=2.38"></script>
+<script src="/static/js/chat-export.js?v=2.38"></script>
+<script src="/static/js/chat-ui.js?v=2.38"></script>
+<script src="/static/js/chat.js?v=2.38"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.37"></script>
+<script src="/static/js/token-estimator.js?v=2.38"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->
-<script src="/static/js/ui-enhance.js?v=2.37"></script>
+<script src="/static/js/ui-enhance.js?v=2.38"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====

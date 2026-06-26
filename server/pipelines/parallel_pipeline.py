@@ -458,6 +458,13 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     if allow_cloud_keywords:
         log.info("[PARALLEL] 云端关键词提取已启用")
         local_query = _extract_cloud_keywords(ctx, message)
+        # P6 #15: 把提取的关键词回传前端展示，让用户知道辅助生效了什么
+        if local_query and local_query != message:
+            yield 'data: %s\n\n' % json.dumps({
+                "type": "cloud_keywords",
+                "keywords": local_query,
+                "original": message,
+            }, ensure_ascii=False)
 
     # ====== Step1: 并行实时流式 — 本地+云端 ======
     local_queue = queue.Queue()

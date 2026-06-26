@@ -143,6 +143,8 @@ class AgentLoop:
         rounds = 0
         # Patch4 修复 3：累计每种工具的调用次数（用于子类硬限制）
         tool_counts = {}
+        # P6 #7: 记录已发过"达上限"友好提示的工具，避免每轮重复报 limit_exceeded
+        _limit_notified = set()
 
         if not has_tools:
             # 无工具可用（不应该发生，在线模式有网），直接纯对话
@@ -270,12 +272,18 @@ class AgentLoop:
                 _current_count = tool_counts.get(tool_name, 0)
                 if _limit is not None and _current_count >= _limit:
                     log.warning("[AGENT] 工具 %s 已达上限 %d/%d，拒绝执行", tool_name, _current_count, _limit)
-                    # 发送一个错误状态给前端
-                    yield ("agent_status", {
-                        "status": "error",
-                        "tool": tool_name,
-                        "reason": "limit_exceeded",
-                    })
+                    # P6 #7/#4-c: 首次达上限发友好提示(中文)，之后静默拒绝，不再每轮报 limit_exceeded
+                    if tool_name not in _limit_notified:
+                        _limit_notified.add(tool_name)
+                        _tool_label = {"search_web": "联网搜索", "search_kb": "知识库搜索",
+                                       "fetch_url": "网页阅读"}.get(tool_name, tool_name)
+                        yield ("agent_status", {
+                            "status": "tool_limit_reached",
+                            "tool": tool_name,
+                            "label": _tool_label,
+                            "limit": _limit,
+                            "message": "已%s%d次，基于已获取信息继续回答" % (_tool_label, _limit),
+                        })
                     # 给模型返回一个明确的错误，让它自己收手
                     messages.append({
                         "role": "tool",
@@ -903,11 +911,22 @@ class AgentLoop:
 
         data = result.get("data", {})
         if tool_name == "search_web":
+            # P6 #4-a: 补传完整搜索结果列表(标题+url+摘要截断),供前端展开查看
+            _raw_results = data.get("results", [])
+            _results_for_ui = [{"title": r.get("title", "")[:80],
+                                "url": r.get("url", ""),
+                                "snippet": (r.get("snippet", "") or "")[:120]}
+                               for r in _raw_results[:8]]  # 最多8条,每条摘要120字
             return get_status_event(tool_name, "done", count=data.get("count", 0),
-                                    detail=data.get("results_preview", ""))
+                                    results=_results_for_ui)
         elif tool_name == "fetch_url":
+            # P6 #4-b: 补传正文摘要(前200字),供前端展开查看(而非只显示标题)
+            _text = data.get("text", "")
+            _summary = _text[:200].replace("\n", " ").strip() if _text else ""
             return get_status_event(tool_name, "done", length=data.get("length", 0),
-                                    detail=data.get("title", ""))
+                                    title=data.get("title", ""),
+                                    detail=data.get("title", ""),
+                                    summary=_summary)
         elif tool_name == "search_kb":
             # P6: 带检索结果摘要（来源标题列表）
             _sources = data.get("sources", [])

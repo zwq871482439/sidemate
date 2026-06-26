@@ -819,6 +819,10 @@ async function sendMessage() {
             else if (status === 'done') appendStreamingMsg(iconSvg('check','14') + ' ' + stepName + ' 完成', '', 0, null, false);
             else if (status === 'failed') appendStreamingMsg(iconSvg('cross','14') + ' ' + stepName + ' 失败', '', 0, null, false);
             lastRender = now;
+          } else if (d.type === 'cloud_keywords') {
+            // P6 #15: 展示云端辅助提取的关键词，让用户知道辅助生效了什么
+            appendStreamingMsg(iconSvg('search','14') + ' 云端辅助关键词：' + esc(d.keywords || ''), '', 0, null, false);
+            lastRender = now;
           } else if (d.type === 'pipeline_progress' || d.type === 'step' || d.type === 'step_done' ||
                      d.type === 'phase' || d.type === 'status') {
             // 阶段3 Step2b：切换到 CardRenderer（旧 _handleParallelSSE 保留备用，Step2c 删除）
@@ -2647,14 +2651,31 @@ var CardRenderer = (function() {
                   (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
                   (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : ''));
               }
-              // P6: 如果有详情(detail)，添加可展开内容 + 存储到 tool 对象供 finalize
-              if (d.detail) {
-                tool.detail = d.detail;  // 存储供序列化
+              // P6 #4-a/#4-b: 详情展示优先级: results列表(搜索) > summary(阅读) > detail(兜底)
+              var _detailHtml = '';
+              if (d.results && d.results.length) {
+                // 搜索结果列表: 编号 + 标题 + 摘要
+                _detailHtml = d.results.map(function(r, i) {
+                  return '<div class="cb-src-item"><span class="cb-src-num">' + (i+1) + '</span>' +
+                    '<span class="cb-src-title">' + _esc(r.title || r.url || '') + '</span>' +
+                    (r.snippet ? '<span class="cb-src-snippet">' + _esc(r.snippet) + '</span>' : '') +
+                    '</div>';
+                }).join('');
+                tool.detail = _detailHtml;  // 存储供序列化(历史回放用)
+              } else if (d.summary) {
+                // 阅读正文摘要
+                _detailHtml = '<div class="cb-fetch-summary">' + _esc(d.summary) + '</div>';
+                tool.detail = d.summary;
+              } else if (d.detail) {
+                _detailHtml = _esc(d.detail);
+                tool.detail = d.detail;
+              }
+              if (_detailHtml) {
                 tool.el.classList.add('cb-step-expandable');
                 var detailDiv = document.createElement('div');
                 detailDiv.className = 'cb-step-detail';
                 detailDiv.style.display = 'none';
-                detailDiv.textContent = d.detail;
+                detailDiv.innerHTML = _detailHtml;
                 tool.el.appendChild(detailDiv);
                 // 点击切换展开
                 tool.el.style.cursor = 'pointer';
@@ -2759,6 +2780,10 @@ var CardRenderer = (function() {
       // error 显示原因而非裸 "error"
       var reason = d.reason || d.message || '';
       return reason ? '操作受限：' + _esc(reason) : '操作异常';
+    }
+    // P6 #7/#4-c: 工具达上限的友好提示(替代每轮报 limit_exceeded)
+    if (status === 'tool_limit_reached') {
+      return _esc(d.message || '工具调用已达上限，基于已获取信息继续回答');
     }
     if (status === 'tool_limited') return '工具调用已达上限，转入回答';
     // _done 后缀的状态：提取前缀映射
