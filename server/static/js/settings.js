@@ -977,6 +977,134 @@ async function loadCloudConfig() {
   }
 }
 
+// ===== 云端 AI 用量统计 =====
+var _cloudUsageRange = 7;       // 1=今日, 7=本周
+var _cloudUsageGran = 'hour';   // hour / day
+
+async function loadCloudUsage() {
+  var panel = document.getElementById('cloudUsagePanel');
+  if (!panel) return;
+  try {
+    var resp = await fetch(_apiBase + '/api/cloud/usage?range_days=' + _cloudUsageRange + '&granularity=' + _cloudUsageGran);
+    var data = await resp.json();
+    renderCloudUsage(panel, data);
+  } catch (e) {
+    panel.innerHTML = '<span style="color:var(--text-muted)">用量统计暂不可用</span>';
+  }
+}
+
+function renderCloudUsage(panel, data) {
+  if (!data) { panel.innerHTML = '<span style="color:var(--text-muted)">暂无数据</span>'; return; }
+  var total = data.total_tokens || 0;
+  var calls = data.total_calls || 0;
+  var rangeLabel = _cloudUsageRange === 1 ? '今日' : '本周';
+  var granLabel = _cloudUsageGran === 'hour' ? '小时' : '天';
+
+  // 切换按钮组
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">';
+  html += '<div style="display:flex;gap:4px">';
+  html += '<button class="btn btn-sm ' + (_cloudUsageRange === 1 ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetRange(1)">今日</button>';
+  html += '<button class="btn btn-sm ' + (_cloudUsageRange === 7 ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetRange(7)">本周</button>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:4px">';
+  html += '<button class="btn btn-sm ' + (_cloudUsageGran === 'hour' ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetGran(\'hour\')">小时</button>';
+  html += '<button class="btn btn-sm ' + (_cloudUsageGran === 'day' ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetGran(\'day\')">天</button>';
+  html += '</div>';
+  html += '</div>';
+
+  // 汇总数字
+  html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">';
+  html += rangeLabel + '累计 <b style="color:var(--text-primary)">' + total.toLocaleString() + '</b> token · <b style="color:var(--text-primary)">' + calls + '</b> 次调用';
+  if (!data.all_accurate) {
+    html += ' <span style="font-size:11px;color:var(--warning-color,#d97706)">（部分调用未返回用量数据）</span>';
+  }
+  html += '</div>';
+
+  // 柱状图
+  html += _renderUsageChart(data.by_bucket || [], granLabel);
+
+  // 按模型
+  if (data.by_model && data.by_model.length) {
+    html += '<div style="margin-top:12px;font-size:12px;color:var(--text-muted);margin-bottom:4px">按模型</div>';
+    var maxModel = Math.max.apply(null, data.by_model.map(function(m) { return m.tokens; }));
+    for (var i = 0; i < data.by_model.length; i++) {
+      var m = data.by_model[i];
+      var pct = maxModel > 0 ? Math.round(m.tokens / maxModel * 100) : 0;
+      var sharePct = total > 0 ? Math.round(m.tokens / total * 100) : 0;
+      html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px">';
+      html += '<span style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' + esc(m.model) + '</span>';
+      html += '<div style="flex:1;height:10px;background:var(--bg-secondary);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--accent-color);border-radius:3px"></div></div>';
+      html += '<span style="width:90px;text-align:right;flex-shrink:0;color:var(--text-muted)">' + m.tokens.toLocaleString() + ' (' + sharePct + '%)</span>';
+      html += '</div>';
+    }
+  }
+
+  // 记录表
+  if (data.records && data.records.length) {
+    html += '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12px;color:var(--text-muted)">最近调用 (' + data.records.length + ')</summary>';
+    html += '<div style="margin-top:8px;max-height:240px;overflow-y:auto;font-size:11px">';
+    html += '<div style="display:grid;grid-template-columns:1fr 1.4fr 0.7fr 0.7fr 0.6fr;gap:4px;padding:4px 0;border-bottom:0.5px solid var(--border-color);color:var(--text-muted);font-weight:500"><span>时间</span><span>模型</span><span>输入</span><span>输出</span><span>耗时</span></div>';
+    for (var j = 0; j < data.records.length; j++) {
+      var r = data.records[j];
+      var dt = new Date(r.ts * 1000);
+      var timeStr = (dt.getMonth()+1) + '-' + dt.getDate() + ' ' + String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+      var inStr = r.accurate ? (r.input != null ? r.input.toLocaleString() : '-') : '?';
+      var outStr = r.accurate ? (r.output != null ? r.output.toLocaleString() : '-') : '?';
+      var elapsedStr = r.elapsed_ms != null ? (r.elapsed_ms / 1000).toFixed(1) + 's' : '-';
+      html += '<div style="display:grid;grid-template-columns:1fr 1.4fr 0.7fr 0.7fr 0.6fr;gap:4px;padding:3px 0;border-bottom:0.5px solid var(--border-color);color:var(--text-secondary)">';
+      html += '<span>' + timeStr + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.model) + '</span>';
+      html += '<span>' + inStr + '</span><span>' + outStr + '</span><span>' + elapsedStr + '</span>';
+      html += '</div>';
+    }
+    html += '</div></details>';
+  }
+
+  panel.innerHTML = html;
+}
+
+// SVG 柱状图（纯手画，无依赖）
+function _renderUsageChart(buckets, granLabel) {
+  if (!buckets || !buckets.length) {
+    return '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;background:var(--bg-secondary);border-radius:6px">' + (_cloudUsageRange === 1 ? '今日' : '本周') + '暂无调用记录</div>';
+  }
+  var maxTokens = Math.max.apply(null, buckets.map(function(b) { return b.tokens; }));
+  if (maxTokens === 0) maxTokens = 1;
+  var W = 420, H = 100, padL = 8, padB = 16;
+  var chartW = W - padL;
+  var barCount = buckets.length;
+  var barW = Math.max(4, Math.floor(chartW / barCount) - 2);
+  var gap = 2;
+
+  var svg = '<svg width="100%" viewBox="0 0 ' + W + ' ' + (H + padB) + '" style="display:block;max-width:100%">';
+  for (var i = 0; i < buckets.length; i++) {
+    var b = buckets[i];
+    var h = Math.max(1, Math.round((b.tokens / maxTokens) * H));
+    var x = padL + i * (barW + gap);
+    var y = H - h;
+    svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" rx="1" fill="var(--accent-color)" opacity="0.85">';
+    svg += '<title>' + esc(b.bucket) + ': ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次</title>';
+    svg += '</rect>';
+  }
+  // 基线
+  svg += '<line x1="' + padL + '" y1="' + H + '" x2="' + W + '" y2="' + H + '" stroke="var(--border-color)" stroke-width="0.5"/>';
+  // 首尾时间标签
+  if (buckets.length) {
+    svg += '<text x="' + padL + '" y="' + (H + 12) + '" font-size="9" fill="var(--text-muted)">' + esc(buckets[0].bucket.slice(5)) + '</text>';
+    if (buckets.length > 1) {
+      var lastLabel = buckets[buckets.length - 1].bucket.slice(5);
+      svg += '<text x="' + (W - 2) + '" y="' + (H + 12) + '" font-size="9" fill="var(--text-muted)" text-anchor="end">' + esc(lastLabel) + '</text>';
+    }
+  }
+  svg += '</svg>';
+  return '<div style="margin-bottom:4px">' + svg + '</div>';
+}
+
+function _cloudUsageSetRange(r) { _cloudUsageRange = r; loadCloudUsage(); }
+function _cloudUsageSetGran(g) { _cloudUsageGran = g; loadCloudUsage(); }
+window.loadCloudUsage = loadCloudUsage;
+window._cloudUsageSetRange = _cloudUsageSetRange;
+window._cloudUsageSetGran = _cloudUsageSetGran;
+
 var _capsTimer = null;
 function _previewCloudCaps() {
   clearTimeout(_capsTimer);
@@ -1522,6 +1650,7 @@ function switchSettingsTab(tabId, navEl) {
     refreshPrivacyInfo();
   } else if (tabId === 'cloud') {
     if (typeof loadCloudConfig === 'function') loadCloudConfig();
+    if (typeof loadCloudUsage === 'function') loadCloudUsage();
   }
 }
 

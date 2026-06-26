@@ -519,6 +519,7 @@ class CloudEngine:
             # 约束：只要已经开始向下游 yield token/think_token，就不再重试（避免重复输出）
             _last_usage = None  # 最后一个 chunk 的 usage 字段
             _stream_done = False
+            _cloud_call_start = time.time()  # 用量统计：记录调用起始时间
             for _attempt in range(MAX_RETRIES + 1):
                 _reasoning_started = False  # 是否已发送 think_start
                 _yielded_any = False  # 本轮是否已向下游 yield 任何 token
@@ -528,6 +529,7 @@ class CloudEngine:
                         messages=messages,
                         max_tokens=max_tokens,
                         stream=True,
+                        stream_options={"include_usage": True},  # 用量统计：要求 API 返回真实 usage
                         temperature=0.7,
                     )
 
@@ -609,6 +611,24 @@ class CloudEngine:
             if _reasoning_started:
                 yield ("think_end", "")
                 _reasoning_started = False
+
+            # 用量统计埋点（4 道防线之 1+3：正常完成记真实 usage，缺失也记请求次数）
+            # 放在 token_stats 之前，确保不管有没有 usage 都记录这次调用
+            try:
+                from core.cloud_usage import record_usage
+                _elapsed_ms = int((time.time() - _cloud_call_start) * 1000)
+                if _last_usage:
+                    _in_tok = getattr(_last_usage, 'prompt_tokens', 0) or 0
+                    _out_tok = getattr(_last_usage, 'completion_tokens', 0) or 0
+                    _reason_tok = (getattr(_last_usage, 'completion_tokens_details', None)
+                                   and getattr(_last_usage.completion_tokens_details, 'reasoning_tokens', 0)) or 0
+                    record_usage(cloud_model, input_tokens=_in_tok, output_tokens=_out_tok,
+                                 reasoning_tokens=_reason_tok, elapsed_ms=_elapsed_ms, token_accurate=True)
+                else:
+                    # 诚实：API 未返回 usage，只记请求次数，不编造 token
+                    record_usage(cloud_model, elapsed_ms=_elapsed_ms, token_accurate=False)
+            except Exception as _ue:
+                log.debug("[CLOUD] 用量记录失败(不影响主流程): %s", _ue)
 
             # 发送 token_stats（从 usage 提取）
             if _last_usage:
@@ -700,6 +720,7 @@ class CloudEngine:
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "stream": True,
+                "stream_options": {"include_usage": True},  # 用量统计：要求 API 返回真实 usage
                 "temperature": temperature,
             }
             if tools:
@@ -709,6 +730,7 @@ class CloudEngine:
             # 约束：已向下游 yield 任何 token/think_token/tool_calls 后不再重试
             _tc_buffers = {}  # index → {id, name, arguments}
             _last_usage_wt = None  # 最后一个 chunk 的 usage 字段
+            _cloud_call_start_wt = time.time()  # 用量统计：记录调用起始时间
             finish_reason = None
             for _attempt_wt in range(MAX_RETRIES + 1):
                 _reasoning_started = False
@@ -830,6 +852,22 @@ class CloudEngine:
                 for idx_key in sorted(_tc_buffers.keys()):
                     tc_list.append(_tc_buffers[idx_key])
                 yield ("tool_calls", tc_list)
+
+            # 用量统计埋点（agent 工具调用路径）
+            try:
+                from core.cloud_usage import record_usage
+                _elapsed_ms_wt = int((time.time() - _cloud_call_start_wt) * 1000)
+                if _last_usage_wt:
+                    _in_w = getattr(_last_usage_wt, 'prompt_tokens', 0) or 0
+                    _out_w = getattr(_last_usage_wt, 'completion_tokens', 0) or 0
+                    _reason_w = (getattr(_last_usage_wt, 'completion_tokens_details', None)
+                                 and getattr(_last_usage_wt.completion_tokens_details, 'reasoning_tokens', 0)) or 0
+                    record_usage(cloud_model, input_tokens=_in_w, output_tokens=_out_w,
+                                 reasoning_tokens=_reason_w, elapsed_ms=_elapsed_ms_wt, token_accurate=True)
+                else:
+                    record_usage(cloud_model, elapsed_ms=_elapsed_ms_wt, token_accurate=False)
+            except Exception as _ue:
+                log.debug("[CLOUD-WT] 用量记录失败(不影响主流程): %s", _ue)
 
             # 发送 token_stats
             if _last_usage_wt:

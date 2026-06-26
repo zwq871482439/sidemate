@@ -986,3 +986,34 @@ async def api_permissions_tool_set(tool_id: str, request: Request):
     set_value(tool["config_key"], enabled)
     log.info("[PERMISSION] 工具权限设置: %s → enabled=%s", tool_id, enabled)
     return {"ok": True, "tool_id": tool_id, "enabled": enabled}
+
+
+# ============================================================
+#  云端 AI 用量统计
+# ============================================================
+
+@router.get("/api/cloud/usage")
+def api_cloud_usage(range_days: int = 7, granularity: str = "hour"):
+    """查询云端 AI 用量统计。
+
+    Query Params:
+        range_days: 查询范围（1=今日, 7=本周），默认 7
+        granularity: 聚合粒度 "hour" 或 "day"，默认 hour
+
+    Response: 见 core/cloud_usage.py query_usage() 返回结构
+    """
+    # 参数校验
+    range_days = max(1, min(7, int(range_days)))
+    if granularity not in ("hour", "day"):
+        granularity = "hour"
+    try:
+        from core.cloud_usage import query_usage
+        return query_usage(range_days=range_days, granularity=granularity)
+    except Exception as e:
+        log.error("[CLOUD_USAGE] 接口异常: %s", e)
+        return JSONResponse(
+            {"error": "用量统计查询失败: %s" % str(e)[:100],
+             "total_tokens": 0, "total_calls": 0, "all_accurate": True,
+             "by_model": [], "by_bucket": [], "records": []},
+            status_code=500,
+        )
