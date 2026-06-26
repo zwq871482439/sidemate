@@ -744,11 +744,11 @@ function _loadSystemEnv() {
 window._loadVersionDisplay = _loadVersionDisplay;
 window._loadSystemEnv = _loadSystemEnv;
 
-window.addEventListener('DOMContentLoaded', function() {
+window.addEventListener('load', function() {
   _loadVersionDisplay();
   _loadSystemEnv();
   if (!localStorage.getItem('sidemate_welcomed')) {
-    showWelcome();
+    try { showWelcome(); } catch(e) { console.warn('[welcome] failed:', e); }
   }
 });
 </script>

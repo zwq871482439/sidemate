@@ -2,6 +2,8 @@
 
 // ── 阶段1: 欢迎弹窗 ─────────────────────────────────────
 async function showWelcome() {
+  // 确保关键函数已加载
+  if (typeof iconSvg !== 'function') { return; }
   try {
     var resp = await fetch('/api/onboard/status');
     var status = await resp.json();
@@ -141,6 +143,7 @@ function startTour() {
 
 function renderTourStep() {
   var step = _tourSteps[_tourStep];
+  if (!step) return;
   var isLast = _tourStep >= _tourSteps.length - 1;
 
   // 更新卡片内容
@@ -176,17 +179,19 @@ function isVisible(el) {
 function positionTourElements(target, pos) {
   var spotlight = document.getElementById('tourSpotlight');
   var card = document.getElementById('tourCard');
-  var viewW = window.innerWidth, viewH = window.innerHeight;
+  if (!spotlight || !card) return;
+  var viewW = window.innerWidth || 800, viewH = window.innerHeight || 600;
 
   var tx, ty, tw, th;
 
-  if (target) {
+  if (target && target.getBoundingClientRect) {
     var rect = target.getBoundingClientRect();
     tx = rect.left - 4; ty = rect.top - 4;
     tw = rect.width + 8; th = rect.height + 8;
   } else {
     // fallback: 使用步骤中的固定锚点
-    var fb = _tourSteps[_tourStep].fallbackAnchor;
+    var fb = _tourSteps[_tourStep] && _tourSteps[_tourStep].fallbackAnchor;
+    if (!fb) return;
     tw = 160; th = 40;
     tx = fb.left === '50%' ? viewW / 2 + fb.offsetX : fb.left;
     ty = fb.top;
