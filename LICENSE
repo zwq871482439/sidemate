@@ -1,8 +1,8 @@
 ﻿                     桌伴 Sidemate 最终用户许可协议
                      End User License Agreement (EULA)
 
-版本：1.0
-生效日期：2026年6月11日
+版本：1.1
+生效日期：2026年6月26日
 
 版权所有 (C) 2026 Sidemate Team。保留所有权利。
 Copyright (C) 2026 Sidemate Team. All rights reserved.
@@ -73,7 +73,6 @@ Copyright (C) 2026 Sidemate Team. All rights reserved.
     - PyTorch（BSD-3-Clause）— Meta Platforms, Inc.
     - FastAPI（MIT License）— Sebastián Ramírez
     - sentence-transformers（Apache-2.0）— UKPLab
-    - faster-whisper（MIT License）— Guillaume Klein
     - ONNX Runtime（MIT License）— Microsoft Corporation
     - NumPy / scipy / pandas（BSD-3-Clause）
 
@@ -152,6 +151,6 @@ Copyright (C) 2026 Sidemate Team. All rights reserved.
 联系信息
 
 许可方：Sidemate Team
-电子邮件：[待补充]
+电子邮件：sidemate@deskware.cn
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
