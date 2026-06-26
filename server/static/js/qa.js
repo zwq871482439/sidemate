@@ -324,6 +324,7 @@ async function kbRefreshDocs() {
     var svgLock = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>';
     var svgDup = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3" y="1.5" width="8" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.5" y="3.5" width="8" height="9" rx="1" fill="var(--bg-secondary)" stroke="currentColor" stroke-width="1.2"/></svg>';
     var svgImg = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="5.5" r="1.5" stroke="currentColor" stroke-width="0.8"/><path d="M3 10.5l2.5-2.5L8 10l2-2 2 2" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var svgEmpty = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M3.5 1.5h5L11.5 4.5v8a.5.5 0 01-.5.5h-7.5a.5.5 0 01-.5-.5V2a.5.5 0 01.5-.5z" stroke="currentColor" stroke-width="1.1"/><path d="M8.5 1.5V4.5h3" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M4 10L10 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>';
 
     var html = '';
     for (var di = 0; di < docs.length; di++) {
@@ -353,6 +354,9 @@ async function kbRefreshDocs() {
       if (d.is_private) iconsHtml += '<span class="ic-lock" title="私密文档">' + svgLock + '</span>';
       if (d.metadata && d.metadata.duplicate_of) iconsHtml += '<span class="ic-dup" title="检测到重复">' + svgDup + '</span>';
       if (d.metadata && d.metadata.has_images) iconsHtml += '<span class="ic-img" title="含图片">' + svgImg + '</span>';
+      // P6 诊断：空文档标记（has_no_text 优先，旧数据 fallback 到 chunk_count==0）
+      var _isEmptyDoc = (d.metadata && d.metadata.has_no_text) || (!d.chunk_count && d.status === 'ready');
+      if (_isEmptyDoc) iconsHtml += '<span class="ic-empty" title="无文本内容（可能是扫描件/纯图），建议重新上传">' + svgEmpty + '</span>';
 
       // 热力图圆点
       var hmDotClass = hitCount >= 10 ? 'hot' : (hitCount >= 1 ? 'warm' : 'cold');
@@ -1319,69 +1323,251 @@ function showKbInfo() {
 
 window.kbResolveConflict = kbResolveConflict;
 
-// ===== P6 检索健康度诊断 =====
+// ===== P6 检索健康度诊断（模态弹窗）=====
+var _kbDiagModal = null;
+
+function toggleKbDiagPopover() {
+  // 已打开则关闭，否则打开
+  if (_kbDiagModal) { _closeKbDiagModal(); return; }
+  _openKbDiagModal();
+}
+
+function _openKbDiagModal() {
+  if (_kbDiagModal) return;
+  // overlay 半透明遮罩 + 居中
+  var overlay = document.createElement('div');
+  overlay.className = 'kb-diag-overlay';
+  // 点遮罩空白处关闭
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) _closeKbDiagModal();
+  });
+  // 居中卡片
+  var card = document.createElement('div');
+  card.className = 'kb-diag-card';
+  // 标题栏 + 关闭按钮
+  var header = document.createElement('div');
+  header.className = 'kb-diag-header';
+  header.innerHTML = '<span class="kb-diag-title">检索健康度诊断</span>';
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'kb-diag-close';
+  closeBtn.innerHTML = '&times;';
+  closeBtn.title = '关闭';
+  closeBtn.addEventListener('click', _closeKbDiagModal);
+  header.appendChild(closeBtn);
+  card.appendChild(header);
+  // 内容区（id 保留，给 kbShowDiagnosis 填充）
+  var body = document.createElement('div');
+  body.id = 'kbDiagPopover';
+  body.className = 'kb-diag-body';
+  card.appendChild(body);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  _kbDiagModal = overlay;
+  // Esc 关闭
+  _kbDiagEscHandler = function(e) { if (e.key === 'Escape') _closeKbDiagModal(); };
+  document.addEventListener('keydown', _kbDiagEscHandler);
+  kbShowDiagnosis();   // 打开即刷新
+}
+
+var _kbDiagEscHandler = null;
+function _closeKbDiagModal() {
+  if (!_kbDiagModal) return;
+  _kbDiagModal.remove();
+  _kbDiagModal = null;
+  if (_kbDiagEscHandler) {
+    document.removeEventListener('keydown', _kbDiagEscHandler);
+    _kbDiagEscHandler = null;
+  }
+}
+
 async function kbShowDiagnosis() {
-  var el = document.getElementById('kbDiagnosisContent');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">诊断中...</span>';
+  var body = document.getElementById('kbDiagPopover');
+  if (!body) return;
+  body.innerHTML = '<div class="kb-diag-loading">诊断中...</div>';
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/diagnosis');
     var d = await resp.json();
-
-    // 健康度评分（大圆环）
-    var score = d.health_score || 0;
-    var scoreColor = score >= 80 ? 'var(--success-color,#16a34a)' : (score >= 50 ? 'var(--warning-color,#d97706)' : 'var(--error-color,#b91c1c)');
-    var scoreLabel = score >= 80 ? '良好' : (score >= 50 ? '尚可' : '需关注');
-
-    var html = '';
-    // 健康度大字
-    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">';
-    html += '<div style="font-size:28px;font-weight:700;color:' + scoreColor + '">' + score + '</div>';
-    html += '<div><div style="font-size:13px;font-weight:600;color:' + scoreColor + '">' + scoreLabel + '</div>';
-    html += '<div style="font-size:10px;color:var(--text-muted)">健康度评分</div></div>';
-    html += '</div>';
-
-    // 核心指标
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">';
-    html += _diagMetric('文档总数', d.doc_count);
-    html += _diagMetric('内容片段', d.chunk_count);
-    html += _diagMetric('向量维度', d.vector_dim || '--');
-    html += _diagMetric('已就绪', d.ready_docs + '/' + d.doc_count);
-    html += _diagMetric('平均片段长度', d.avg_chunk_len + ' 字');
-    html += _diagMetric('已打标签', d.tagged_docs + '/' + d.doc_count);
-    html += '</div>';
-
-    // 问题列表
-    if (d.issues && d.issues.length) {
-      html += '<div style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:6px">诊断结果</div>';
-      d.issues.forEach(function(issue) {
-        var color = issue.level === 'error' ? 'var(--error-color)' :
-                    issue.level === 'warn' ? 'var(--warning-color)' :
-                    issue.level === 'ok' ? 'var(--success-color)' : 'var(--text-muted)';
-        var icon = issue.level === 'error' ? '✕' : issue.level === 'warn' ? '!' : issue.level === 'ok' ? '✓' : 'i';
-        html += '<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:11px;color:var(--text-secondary)">';
-        html += '<span style="color:' + color + ';font-weight:600;flex-shrink:0;width:14px;text-align:center">' + icon + '</span>';
-        html += '<span>' + (issue.msg || '') + '</span>';
-        html += '</div>';
-      });
-    }
-
-    el.innerHTML = html;
+    body.innerHTML = _renderKbDiagnosis(d);
   } catch(e) {
-    el.innerHTML = '<span style="color:var(--error-color);font-size:12px">诊断失败: ' + (e.message || '') + '</span>';
+    body.innerHTML = '<div class="kb-diag-error">诊断失败: ' + (e.message || '') + '</div>';
   }
 }
+
+function _renderKbDiagnosis(d) {
+  // 健康度评分
+  var score = d.health_score || 0;
+  var scoreColor = score >= 80 ? 'var(--success-color,#16a34a)' : (score >= 50 ? 'var(--warning-color,#d97706)' : 'var(--error-color,#b91c1c)');
+  var scoreLabel = score >= 80 ? '良好' : (score >= 50 ? '尚可' : '需关注');
+
+  var html = '';
+  // 健康度大字
+  html += '<div class="kb-diag-score">';
+  html += '<div class="kb-diag-score-num" style="color:' + scoreColor + '">' + score + '</div>';
+  html += '<div><div class="kb-diag-score-label" style="color:' + scoreColor + '">' + scoreLabel + '</div>';
+  html += '<div class="kb-diag-score-sub">健康度评分</div></div>';
+  html += '</div>';
+
+  // 核心指标
+  html += '<div class="kb-diag-metrics">';
+  html += _diagMetric('文档总数', d.doc_count);
+  html += _diagMetric('内容片段', d.chunk_count);
+  html += _diagMetric('向量维度', d.vector_dim || '--');
+  html += _diagMetric('已就绪', d.ready_docs + '/' + d.doc_count);
+  html += _diagMetric('已打标签', d.tagged_docs + '/' + d.doc_count);
+  html += '</div>';
+
+  // 问题列表
+  if (d.issues && d.issues.length) {
+    _kbDiagIssueCache = d.issues;   // 缓存供按钮 onclick 取 doc_ids
+    html += '<div class="kb-diag-issues-title">诊断结果</div>';
+    d.issues.forEach(function(issue, idx) {
+      html += _renderKbDiagIssue(issue, idx);
+    });
+  }
+
+  // 维护操作（危险操作区）
+  html += '<div class="kb-diag-actions">';
+  html += '<div class="kb-diag-actions-title">维护操作</div>';
+  html += '<div class="kb-diag-action-row">';
+  html += '<span class="kb-diag-action-msg">清除所有文档的检索命中计数</span>';
+  html += '<button class="kb-diag-btn-danger" onclick="kbDiagResetHeatmap()">重置热力图</button>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function _renderKbDiagIssue(issue, idx) {
+  var color = issue.level === 'error' ? 'var(--error-color)' :
+              issue.level === 'ok' ? 'var(--success-color)' :
+              'var(--text-muted)';   // info / 其它都灰
+  // 图标：error/warn 用 !、ok 用 ✓、info 用 i（保留字符图标）
+  var icon = issue.level === 'error' ? '!' : issue.level === 'ok' ? '✓' : 'i';
+  var html = '<div class="kb-diag-issue">';
+  html += '<div class="kb-diag-issue-row">';
+  html += '<span class="kb-diag-issue-icon" style="color:' + color + '">' + icon + '</span>';
+  html += '<span class="kb-diag-issue-msg">' + (issue.msg || '') + '</span>';
+  html += '</div>';
+  // 可操作 issue 渲染按钮
+  if (issue.action && issue.doc_ids && issue.doc_ids.length) {
+    if (issue.action === 'resume_all') {
+      html += '<button class="kb-diag-btn" onclick="kbDiagResumeAll(' + idx + ')">全部继续</button>';
+    } else if (issue.action === 'batch_retag') {
+      html += '<button class="kb-diag-btn" onclick="kbDiagBatchRetag(' + idx + ')">一键打标签</button>';
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+// 动作：全部继续（逐个 resume 未就绪文档）
+var _kbDiagIssueCache = [];
+async function kbDiagResumeAll(issueIdx) {
+  var issue = _kbDiagIssueCache[issueIdx];
+  if (!issue || !issue.doc_ids || !issue.doc_ids.length) return;
+  var btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = '继续处理中...'; }
+  var ok = 0, fail = 0;
+  var apiBase = typeof API !== 'undefined' ? API : '';
+  for (var i = 0; i < issue.doc_ids.length; i++) {
+    try {
+      var r = await fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(issue.doc_ids[i]) + '/resume', {method: 'POST'});
+      if (r.ok) ok++; else fail++;
+    } catch(e) { fail++; }
+  }
+  if (btn) btn.disabled = false;
+  if (typeof showToast === 'function') {
+    showToast(ok > 0 ? ('已恢复 ' + ok + ' 篇文档处理' + (fail ? '，' + fail + ' 篇失败' : '')) : '恢复失败，请重试', ok > 0 ? 'success' : 'error');
+  }
+  kbShowDiagnosis();   // 刷新诊断
+}
+
+// 动作：一键打标签
+async function kbDiagBatchRetag(issueIdx) {
+  var issue = _kbDiagIssueCache[issueIdx];
+  if (!issue || !issue.doc_ids || !issue.doc_ids.length) return;
+  var btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = '打标签中...'; }
+  var apiBase = typeof API !== 'undefined' ? API : '';
+  try {
+    var r = await fetch(apiBase + '/api/kb/documents/batch_retag', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({doc_ids: issue.doc_ids}),
+    });
+    var data = await r.json();
+    if (btn) btn.disabled = false;
+    if (typeof showToast === 'function') {
+      showToast(data.affected > 0 ? ('已提交 ' + data.affected + ' 篇文档打标签') : '提交失败', data.affected > 0 ? 'success' : 'error');
+    }
+  } catch(e) {
+    if (btn) btn.disabled = false;
+    if (typeof showToast === 'function') showToast('打标签请求失败', 'error');
+  }
+  kbShowDiagnosis();
+}
+
+// 动作：重置热力图（复用 kbResetHeatmap，成功后关闭诊断弹窗）
+async function kbDiagResetHeatmap() {
+  if (typeof showDialog !== 'function' || typeof kbResetHeatmap !== 'function') return;
+  // 先二次确认（kbResetHeatmap 内部也有确认，这里跳过它的确认直接复用逻辑更清晰，
+  // 但为避免改动 kbResetHeatmap，采用：调用它，它取消时不会发请求，无需处理）
+  // 简化：直接调用 kbResetHeatmap，它自带确认+请求+toast+刷新热力图；
+  // 重置后诊断数据本身不变，无需刷新诊断，只需关闭弹窗让用户看到热力图已重置。
+  await kbResetHeatmap();
+  _closeKbDiagModal();
+}
+
+// 重置知识库（清空所有导入数据，设置页危险操作）
+async function kbResetKnowledgeBase() {
+  if (typeof showDialog !== 'function') return;
+  var confirmed = await showDialog(
+    '重置知识库',
+    '此操作将删除所有已导入的文档、文本片段和向量索引，且不可撤销。\n\n知识库功能本身不受影响，重置后可重新导入文档。',
+    {type: 'danger', confirm: true, confirmLabel: '确认重置', cancelLabel: '取消'}
+  );
+  if (!confirmed) return;
+  var apiBase = typeof API !== 'undefined' ? API : '';
+  try {
+    var resp = await fetch(apiBase + '/api/kb/reset', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true}),
+    });
+    var data = await resp.json();
+    if (data.ok) {
+      if (typeof showToast === 'function') {
+        showToast('已清空知识库（删除 ' + (data.deleted_docs || 0) + ' 篇文档）', 'success');
+      }
+      // 刷新文档列表 + 统计（kbRefreshDocs 同时刷新主页网格和设置页统计）
+      // P6 #16: await + 延迟重试,确保后端删除完成后再拉统计,避免时序导致统计停留在旧值
+      if (typeof kbRefreshDocs === 'function') {
+        await kbRefreshDocs();
+        setTimeout(function() { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); }, 600);
+      }
+    } else {
+      if (typeof showToast === 'function') showToast('重置失败: ' + (data.error || '未知错误'), 'error');
+    }
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('重置失败: ' + (e.message || ''), 'error');
+  }
+}
+
 function _diagMetric(label, value) {
-  return '<div style="padding:4px 8px;background:var(--bg-secondary);border-radius:6px">' +
-    '<div style="font-size:10px;color:var(--text-muted)">' + label + '</div>' +
-    '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">' + value + '</div></div>';
+  return '<div class="kb-diag-metric">' +
+    '<div class="kb-diag-metric-label">' + label + '</div>' +
+    '<div class="kb-diag-metric-value">' + value + '</div></div>';
 }
 window.kbShowDiagnosis = kbShowDiagnosis;
+window.toggleKbDiagPopover = toggleKbDiagPopover;
+window.kbDiagResumeAll = kbDiagResumeAll;
+window.kbDiagBatchRetag = kbDiagBatchRetag;
+window.kbDiagResetHeatmap = kbDiagResetHeatmap;
+window.kbResetKnowledgeBase = kbResetKnowledgeBase;
 
-// P6: 诊断按钮事件绑定（不依赖 onclick HTML 属性）
+// P6: 诊断按钮事件绑定（点击切换浮层，不依赖 onclick HTML 属性）
 document.addEventListener('DOMContentLoaded', function() {
   var _diagBtn = document.getElementById('kbDiagBtn');
-  if (_diagBtn) _diagBtn.addEventListener('click', kbShowDiagnosis);
+  if (_diagBtn) _diagBtn.addEventListener('click', toggleKbDiagPopover);
 });
 
 // _kbBusyProcessing getter

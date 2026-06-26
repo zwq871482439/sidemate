@@ -127,6 +127,8 @@ async function kbBatchDelete() {
       _resetSelectedDocs();
       kbUpdateBatchToolbar();
       await kbRefreshDocs();
+      // P6 #16: 延迟再刷一次统计,确保后端删除完成(避免时序导致统计停留旧值)
+      setTimeout(function() { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); }, 600);
       // P6: 批量删除后自动刷新洞察
       setTimeout(function() { if (typeof kbRefreshOverviewLLM === 'function') kbRefreshOverviewLLM(); }, 500);
     } else {
