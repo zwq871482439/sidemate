@@ -258,9 +258,17 @@ function endTour() {
   localStorage.setItem('sidemate_toured', '1');
 }
 
+function resetOnboarding() {
+  localStorage.removeItem('sidemate_welcomed');
+  localStorage.removeItem('sidemate_toured');
+  endTour();
+  showWelcome();
+}
+
 window.startTour = startTour;
 window.nextTourStep = nextTourStep;
 window.endTour = endTour;
+window.resetOnboarding = resetOnboarding;
 
 
 // ── Debug 快捷键 ─────────────────────────────────────────
