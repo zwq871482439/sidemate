@@ -121,7 +121,7 @@ function startTour() {
   // 强制切到 Chat Tab（兼容从设置页"重新查看"触发）
   if (typeof switchTab === 'function') {
     var btn = document.querySelector('.tabs-nav button[data-tab="chat"], .tabs-nav-inline button[data-tab="chat"]');
-    if (btn && btn.offsetParent) { switchTab('chat', btn); _tourLastTab = 'chat'; }
+    if (btn) { switchTab('chat', btn); _tourLastTab = 'chat'; }
   }
   // 先显示遮罩，再等 Chat Tab 渲染完成
   document.getElementById('tourOverlay').style.display = 'block';
@@ -147,7 +147,7 @@ function renderTourStep() {
   // 自动切换 Tab
   if (step.tab && step.tab !== _tourLastTab && typeof switchTab === 'function') {
     var btn = document.querySelector('.tabs-nav button[data-tab="' + step.tab + '"], .tabs-nav-inline button[data-tab="' + step.tab + '"]');
-    if (btn && btn.offsetParent) { switchTab(step.tab, btn); _tourLastTab = step.tab; }
+    if (btn) { switchTab(step.tab, btn); _tourLastTab = step.tab; }
   }
 
   // 等 Tab 切换完成后再定位
