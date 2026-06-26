@@ -114,6 +114,14 @@ function _renderCitationSuperscripts(html, kbSources) {
   return html;
 }
 
+// 统一的 action mode 标签映射（修 #模式tag缺失：流式 _labels 缺 'agent' 键）
+// 流式渲染和持久化渲染都用这份映射，避免不一致
+var _ACTION_MODE_LABELS = { chat: '聊天', doc: '文档', kb_qa: '知识库', agent: '智能对话' };
+function _actionModeLabel(mode) {
+  if (!mode) return '';
+  return _ACTION_MODE_LABELS[mode] || mode;
+}
+
 function _buildStats(m) {
   if (!m.model || m.time == null) return '';
   // 模型短名（去掉 :latest / :tag 后缀）+ 离线/在线前缀
@@ -158,14 +166,16 @@ var _parallelChannelRendered = {};  // 记录每个 channel 的 rendered 行数�
 
 // ===== 最终渲染（消息列表）=====
 function _renderSingleMsg(m, idx) {
-  var ts = m.ts ? '<div class="ts">' + esc(m.ts) + '</div>' : '';
-  // P6: action mode 标签（聊天/文档/知识库问答），放在时间旁边
-  var actionTag = '';
-  if (m.action_mode) {
-    var labels = { chat: '聊天', doc: '文档', kb_qa: '知识库', agent: '智能对话' };
-    var label = labels[m.action_mode] || m.action_mode;
-    actionTag = '<span class="action-tag">' + esc(label) + '</span>';
+  // P6: action mode 标签 + 时间戳统一放进同一个 .ts 块，同一排显示（先 tag 后时间）
+  var _modeLabel = _actionModeLabel(m.action_mode);
+  var ts = '';
+  if (_modeLabel || m.ts) {
+    var _inner = '';
+    if (_modeLabel) _inner += '<span class="action-tag">' + esc(_modeLabel) + '</span>';
+    if (m.ts) _inner += esc(m.ts);
+    ts = '<div class="ts">' + _inner + '</div>';
   }
+  var actionTag = '';  // 已并入 ts 块，保留空串以兼容下方 bodyExtras 拼接
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
   // P6 修复: 统一终止提示样式。识别 _aborted 标记，剔除旧 content 里残留的
@@ -335,6 +345,26 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     if (!_curBody && content) {
       contentEl.innerHTML = _renderMsgBody(content, {sanitize: false});
     }
+    // 修 #模式tag缺失 + #tag时间同排：done 终态确保正文最前是一个 .ts 块，
+    // 且块内同时含 action-tag + 时间（先 tag 后时间，同一排）。
+    var _modeLabel = _actionModeLabel(currentActionMode);
+    var _existingTs = contentEl.querySelector('.ts');
+    if (_existingTs) {
+      if (_modeLabel && !_existingTs.querySelector('.action-tag')) {
+        var _tagSpan = document.createElement('span');
+        _tagSpan.className = 'action-tag';
+        _tagSpan.textContent = _modeLabel;
+        _existingTs.insertBefore(_tagSpan, _existingTs.firstChild);
+      }
+      if (contentEl.firstChild !== _existingTs) {
+        contentEl.insertBefore(_existingTs, contentEl.firstChild);
+      }
+    } else if (_modeLabel) {
+      var _tsDiv = document.createElement('div');
+      _tsDiv.className = 'ts';
+      _tsDiv.innerHTML = '<span class="action-tag">' + esc(_modeLabel) + '</span>';
+      contentEl.insertBefore(_tsDiv, contentEl.firstChild);
+    }
     // 先清掉旧的 footer（重复 done / error 兜底时安全）
     var _oldFooter = streamEl.querySelector('.msg-footer');
     if (_oldFooter) _oldFooter.remove();
@@ -386,8 +416,7 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   }
   // P6 打磨：生成阶段提前显示 action tag + 时间戳
   if (_isGenerating && !stats) {
-    var _labels = { chat: '聊天', doc: '文档', kb_qa: '知识库' };
-    var _action_label = _labels[currentActionMode] || '聊天';
+    var _action_label = _actionModeLabel(currentActionMode) || '聊天';
     html += '<div class="ts" style="margin-top:4px"><span class="action-tag">' + esc(_action_label) + '</span> ' + new Date().toTimeString().slice(0,8) + '</div>';
   }
   // 注：stats 分支已在上方提前 return（追加为独立 footer，不重写正文）

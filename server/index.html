@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.40">
+<link rel="stylesheet" href="/static/css/main.css?v=2.44">
 </head>
 <body>
 
@@ -678,6 +678,7 @@
     <div id="tourDots" style="display:flex;gap:4px"></div>
     <div style="display:flex;gap:8px">
       <button id="tourSkipBtn" style="padding:4px 10px;border:none;background:transparent;color:var(--text-muted);font-size:.78em;cursor:pointer" onclick="endTour()">跳过</button>
+      <button id="tourPrevBtn" style="padding:4px 10px;border:none;background:transparent;color:var(--text-muted);font-size:.78em;cursor:pointer;visibility:hidden" onclick="prevTourStep()">上一步</button>
       <button id="tourNextBtn" style="padding:4px 14px;border:none;background:var(--accent-color);color:#fff;font-size:.78em;border-radius:6px;cursor:pointer;font-weight:500" onclick="nextTourStep()">下一步</button>
     </div>
   </div>
@@ -705,7 +706,7 @@ const API = '';
 </script>
 
 <!-- ===== 阶段1: 欢迎弹窗 + 阶段2: 交互式引导 ===== -->
-<script src="static/js/welcome-tour.js?v=2.41"></script>
+<script src="static/js/welcome-tour.js?v=2.44"></script>
 
 <script>
 // ===== Toast 覆盖层 =====
@@ -800,7 +801,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/chat-files.js?v=2.40"></script>
 <script src="/static/js/chat-export.js?v=2.40"></script>
 <script src="/static/js/chat-ui.js?v=2.40"></script>
-<script src="/static/js/chat.js?v=2.40"></script>
+<script src="/static/js/chat.js?v=2.42"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
 <script src="/static/js/token-estimator.js?v=2.40"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->

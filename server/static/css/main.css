@@ -645,7 +645,7 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 #tourOverlay{pointer-events:none}
 #tourSpotlight{pointer-events:none}
 #tourCard{pointer-events:auto}
-#tourCard::before{content:'';position:absolute;width:10px;height:10px;background:var(--bg-primary);transform:rotate(45deg);top:var(--tour-arrow-top,-6px);bottom:var(--tour-arrow-bottom,auto);left:50%;margin-left:-5px}
+#tourCard::before{content:'';position:absolute;width:10px;height:10px;background:var(--bg-primary);transform:rotate(45deg);top:var(--tour-arrow-top,-6px);bottom:var(--tour-arrow-bottom,auto);left:var(--tour-arrow-x,50%);margin-left:-5px}
 /* 保留旧兼容 */
 .chat-overlay-icon,.chat-overlay-msg{display:none}
 .chat-overlay-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;max-width:420px;padding:20px}
@@ -2254,10 +2254,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-card{background:var(--card-bg);border:0.5px solid var(--card-border);border-radius:var(--border-radius-md, 8px);padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;position:relative;transition:all .2s cubic-bezier(.4,0,.2,1);box-shadow:0 1px 2px rgba(0,0,0,.03)}
 .kb-card:hover{border-color:var(--primary-500);box-shadow:0 4px 12px rgba(30,58,95,.08);transform:translateY(-1px)}
 .kb-card:active{transform:translateY(0);box-shadow:0 1px 2px rgba(0,0,0,.05)}
-.kb-card .cbar{display:flex;align-items:center;justify-content:space-between}
-.kb-card .ctitle{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-.kb-card .cicons{display:flex;gap:3px;flex-shrink:0}
-.kb-card .cpreview{font-size:10px;color:var(--text-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.kb-card .cbar{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
+.kb-card .ctitle{font-size:12px;font-weight:500;flex:1;min-width:0;word-break:break-word;overflow-wrap:anywhere;line-height:1.4}
+.kb-card .cicons{display:flex;gap:3px;flex-shrink:0;align-items:center}
+.kb-card .cpreview{font-size:10px;color:var(--text-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;overflow-wrap:anywhere}
 /* Fix B: 摘要状态样式 */
 .kb-card .cpreview.generating{color:var(--color-accent)}
 .kb-card .cpreview.failed{color:#D85A30}

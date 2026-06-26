@@ -109,8 +109,8 @@ var _tourSteps = [
   { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 纯本地模型，无需联网<br><b>在线</b> — 云端大模型，需配 API Key<br><b>并行</b> — 本地 KB + 云端融合<br><br>在线/并行需在设置 → 云端 AI 中填写 API Key', pos: 'bottom' },
   { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '在这里输入问题，按 <b>Enter</b> 发送。<br>支持上传文件和引用知识库文档。<br>上方 <b>Token 用量条</b> 显示剩余可用长度。', pos: 'top' },
   { id: 'offline',  tab: 'chat', targetSel: '#chatMode',           title: '离线模式',             desc: '位于离线模式时，你可以：<br>• 自由聊天提问<br>• 编写代码和文档<br>• 在对话中引用知识库文档<br><br><b>所有数据不出本机</b>，无需网络。', pos: 'bottom' },
-  { id: 'online',   tab: 'chat', targetSel: '#chatMode',           title: '在线模式',             desc: '切换到在线模式后，支持：<br>• 联网搜索<br>• Agent 多步推理<br>• 调用 82 种云端大模型<br><br>需先在 <b>设置 → 云端 AI</b> 配置 API Key。', pos: 'bottom' },
-  { id: 'parallel', tab: 'chat', targetSel: '#chatMode',           title: '并行模式',             desc: '本地检索知识库 + 云端补充通用知识<br>各自独立回答，本地自动融合。<br><br><b>知识库原文永不离开本机</b><br>云端只看到本地生成的摘要。', pos: 'bottom' },
+  { id: 'online',   tab: 'chat', targetSel: '#chatMode',           title: '在线模式',             desc: '切换到在线模式后，支持：<br>• 联网搜索<br>• Agent 多步推理<br>• 调用多种云端大模型<br><br>需先在 <b>设置 → 云端 AI</b> 配置 API Key。', pos: 'bottom' },
+  { id: 'parallel', tab: 'chat', targetSel: '#chatMode',           title: '并行模式',             desc: '本地检索知识库 + 云端补充通用知识<br>各自独立回答，本地自动融合。<br><br><b>知识库原文永不离开本机</b><br>云端只回答通用知识，不接触你的文档。', pos: 'bottom' },
   { id: 'kb',       tab: 'qa',   targetSel: '#kbAIOverview',       title: '知识库',               desc: '上传文档 → AI 自动打标分类<br>点击 <b>「整理」</b> 触发 AI 洞察分析<br><br>左侧侧栏可筛选分类<br>选中文档后可设为私密或批量操作', pos: 'bottom' },
   { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '需要配置云端 API Key？<br>需要安装扩展包或管理模型？<br><br>在 <b>设置 Tab</b> 中搞定一切。<br><br>这就是桌伴的全部功能，开始使用吧！', pos: 'bottom' }
 ];
@@ -175,6 +175,9 @@ function renderTourStep() {
     document.getElementById('tourCardTitle').innerHTML = s.title;
     document.getElementById('tourCardDesc').innerHTML = s.desc;
     document.getElementById('tourNextBtn').textContent = isLast ? '完成' : '下一步';
+    // 上一步按钮：第一步隐藏
+    var prevBtn = document.getElementById('tourPrevBtn');
+    if (prevBtn) prevBtn.style.visibility = (_tourStep === 0) ? 'hidden' : 'visible';
 
     var dotsHtml = '';
     for (var i = 0; i < _tourSteps.length; i++) {
@@ -183,6 +186,20 @@ function renderTourStep() {
     document.getElementById('tourDots').innerHTML = dotsHtml;
 
     var target = findTourTarget(s);
+    // KB 等可滚动 tab：目标可能在滚动容器视口外（getBoundingClientRect 的 top 很大或为负），
+    // 先 scrollIntoView 让它进入视口，再定位（否则卡片会落到视口外/错误位置）。
+    if (target) {
+      var _r = target.getBoundingClientRect();
+      var _inViewport = (_r.top >= 0 && _r.bottom <= (window.innerHeight || 600));
+      if (!_inViewport) {
+        target.scrollIntoView({ block: 'center', behavior: 'instant' });
+        // scrollIntoView 是同步的，但布局重算放下一帧更稳
+        requestAnimationFrame(function() {
+          positionTourElements(findTourTarget(s), s.pos);
+        });
+        return;
+      }
+    }
     positionTourElements(target, s.pos);
   };
 
@@ -209,7 +226,7 @@ function positionTourElements(target, pos) {
   if (!spotlight || !card) return;
   var viewW = window.innerWidth || 800, viewH = window.innerHeight || 600;
 
-  var tx, ty, tw, th, tRadius = '6px';
+  var tx, ty, tw, th, tRadius = 6;
 
   if (target && target.getBoundingClientRect && isVisible(target)) {
     var rect = target.getBoundingClientRect();
@@ -220,11 +237,17 @@ function positionTourElements(target, pos) {
     th = Math.round(rect.height + pad * 2);
     var cs = window.getComputedStyle(target);
     var br = cs.borderRadius;
-    if (br && br !== '0px') tRadius = br;
+    if (br && br !== '0px') {
+      // 解析圆角数值（如 "6px" → 6），忽略百分比（用默认）
+      var _brNum = parseInt(br, 10);
+      if (!isNaN(_brNum)) tRadius = _brNum;
+    }
   } else {
-    // 兜底：目标不可见 → 不画镂空高亮，卡片居中显示
-    // （旧代码会在随机位置画一个镂空框，导致"覆层对不上"）
+    // 兜底：目标不可见 → 不画镂空高亮，整屏纯遮罩 + 卡片居中
     spotlight.style.clipPath = 'none';
+    spotlight.style.inset = '0';  // 整屏覆盖
+    spotlight.style.boxShadow = 'none';
+    spotlight.style.borderRadius = '0';
     spotlight.style.background = 'rgba(0,0,0,0.45)';
     var cardW = 280, cardH = 140;
     card.style.left = Math.round(Math.max(16, viewW / 2 - cardW / 2)) + 'px';
@@ -234,28 +257,20 @@ function positionTourElements(target, pos) {
     return;
   }
 
-  // 用 clip-path 替代 box-shadow 做镂空遮罩，避免 overflow:hidden 裁剪
-  var cpx = tx + tw / 2, cpy = ty + th / 2;
-  var hw = tw / 2 + 4, hh = th / 2 + 4;
-  var r = Math.max(6, parseInt(tRadius) || 6);
-  // 圆角矩形镂空路径
-  spotlight.style.clipPath =
-    'path(evenodd, M0 0 H' + viewW + ' V' + viewH + ' H0 Z ' +
-    'M' + (cpx - hw + r) + ' ' + (cpy - hh) + ' ' +
-    'H' + (cpx + hw - r) + ' ' +
-    'Q' + (cpx + hw) + ' ' + (cpy - hh) + ' ' + (cpx + hw) + ' ' + (cpy - hh + r) + ' ' +
-    'V' + (cpy + hh - r) + ' ' +
-    'Q' + (cpx + hw) + ' ' + (cpy + hh) + ' ' + (cpx + hw - r) + ' ' + (cpy + hh) + ' ' +
-    'H' + (cpx - hw + r) + ' ' +
-    'Q' + (cpx - hw) + ' ' + (cpy + hh) + ' ' + (cpx - hw) + ' ' + (cpy + hh - r) + ' ' +
-    'V' + (cpy - hh + r) + ' ' +
-    'Q' + (cpx - hw) + ' ' + (cpy - hh) + ' ' + (cpx - hw + r) + ' ' + (cpy - hh) + ' Z)';
-  spotlight.style.borderRadius = '0';
-  spotlight.style.left = '0';
-  spotlight.style.top = '0';
-  spotlight.style.width = viewW + 'px';
-  spotlight.style.height = viewH + 'px';
-  spotlight.style.background = 'rgba(0,0,0,0.45)';
+  // 镂空遮罩：spotlight 是盖在目标上的小方块，box-shadow 向四周扩散 9999px 形成半透明遮罩，
+  // 中间天然镂空（露出目标）。比 clip-path: path() 更可靠——后者不支持 evenodd 填充规则参数，
+  // path(evenodd, ...) 是无效语法，导致整屏纯暗色无镂空。
+  // spotlight 在独立的 #tourOverlay 层（position:fixed/absolute，不在 overflow:hidden 容器内），
+  // 不受 tabs-nav 等 overflow:hidden 裁剪影响。
+  spotlight.style.clipPath = 'none';
+  spotlight.style.inset = 'auto';  // 清除原 inset:0（否则会覆盖 left/top）
+  spotlight.style.left = tx + 'px';
+  spotlight.style.top = ty + 'px';
+  spotlight.style.width = tw + 'px';
+  spotlight.style.height = th + 'px';
+  spotlight.style.borderRadius = tRadius + 'px';
+  spotlight.style.background = 'transparent';
+  spotlight.style.boxShadow = '0 0 0 9999px rgba(0,0,0,0.45)';
 
   // 定位说明卡片
   var cardW = 280, cardH = 140;
@@ -263,6 +278,10 @@ function positionTourElements(target, pos) {
   if (pos === 'bottom') {
     cx = Math.max(16, Math.min(viewW - cardW - 16, tx + tw / 2 - cardW / 2));
     cy = ty + th + 12;
+    // 卡片底部超出视口 → 改放到目标上方
+    if (cy + cardH > viewH - 8 && ty - cardH - 12 >= 8) {
+      cy = ty - cardH - 12; pos = 'top';
+    }
   } else if (pos === 'top') {
     cx = Math.max(16, Math.min(viewW - cardW - 16, tx + tw / 2 - cardW / 2));
     cy = ty - cardH - 12;
@@ -275,6 +294,14 @@ function positionTourElements(target, pos) {
 
   card.style.left = Math.round(cx) + 'px';
   card.style.top = Math.round(cy) + 'px';
+
+  // 箭头水平位置：指向目标中心，而非固定卡片中心（修复"指针位置偏差"）。
+  // 旧代码箭头恒在 left:50%（卡片中心），当卡片被屏幕边缘推开时，箭头就指偏了。
+  var targetCenterX = tx + tw / 2;
+  var arrowX = targetCenterX - cx;  // 相对卡片左边的偏移
+  // clamp 到卡片内 [8, cardW-8]，避免箭头跑到卡片外
+  arrowX = Math.max(8, Math.min(cardW - 8, arrowX));
+  card.style.setProperty('--tour-arrow-x', arrowX + 'px');
 
   if (pos === 'top') {
     card.style.setProperty('--tour-arrow-top', 'auto');
@@ -294,6 +321,13 @@ function nextTourStep() {
   renderTourStep();
 }
 
+function prevTourStep() {
+  if (_tourStep > 0) {
+    _tourStep--;
+    renderTourStep();
+  }
+}
+
 function endTour() {
   document.getElementById('tourOverlay').style.display = 'none';
   document.getElementById('tourCard').style.display = 'none';
@@ -309,6 +343,7 @@ function resetOnboarding() {
 
 window.startTour = startTour;
 window.nextTourStep = nextTourStep;
+window.prevTourStep = prevTourStep;
 window.endTour = endTour;
 window.resetOnboarding = resetOnboarding;
 
