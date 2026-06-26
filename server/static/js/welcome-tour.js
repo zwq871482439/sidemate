@@ -106,13 +106,11 @@ window.dismissWelcome = dismissWelcome;
 var _tourStep = 0;
 var _tourLastTab = '';
 var _tourSteps = [
-  { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 纯本地模型，无需联网<br><b>在线</b> — 云端大模型，需配 API Key<br><b>并行</b> — 本地 KB + 云端融合<br><br>在线/并行需在设置 → 云端 AI 中填写 API Key', pos: 'bottom' },
-  { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '在这里输入问题，按 <b>Enter</b> 发送。<br>支持上传文件和引用知识库文档。<br>上方 <b>Token 用量条</b> 显示剩余可用长度。', pos: 'top' },
-  { id: 'offline',  tab: 'chat', targetSel: '#chatMode',           title: '离线模式',             desc: '位于离线模式时，你可以：<br>• 自由聊天提问<br>• 编写代码和文档<br>• 在对话中引用知识库文档<br><br><b>所有数据不出本机</b>，无需网络。', pos: 'bottom' },
-  { id: 'online',   tab: 'chat', targetSel: '#chatMode',           title: '在线模式',             desc: '切换到在线模式后，支持：<br>• 联网搜索<br>• Agent 多步推理<br>• 调用多种云端大模型<br><br>需先在 <b>设置 → 云端 AI</b> 配置 API Key。', pos: 'bottom' },
-  { id: 'parallel', tab: 'chat', targetSel: '#chatMode',           title: '并行模式',             desc: '本地检索知识库 + 云端补充通用知识<br>各自独立回答，本地自动融合。<br><br><b>知识库原文永不离开本机</b><br>云端只回答通用知识，不接触你的文档。', pos: 'bottom' },
-  { id: 'kb',       tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: '知识库',               desc: '上传文档 → AI 自动打标分类<br>点击 <b>「整理」</b> 触发 AI 洞察分析<br><br>左侧侧栏可筛选分类<br>选中文档后可设为私密或批量操作', pos: 'bottom' },
-  { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '需要配置云端 API Key？<br>需要安装扩展包或管理模型？<br><br>在 <b>设置 Tab</b> 中搞定一切。<br><br>这就是桌伴的全部功能，开始使用吧！', pos: 'bottom' }
+  { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 本地模型，数据不出本机，无需联网<br><b>在线</b> — 云端大模型，联网搜索 + Agent 推理<br><b>并行</b> — 本地知识库 + 云端融合回答<br><br>在线 / 并行需先在设置配置 API Key', pos: 'bottom' },
+  { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '输入问题，按 <b>Enter</b> 发送。<br><br>不仅能聊天，还能让 AI 直接生成 Word 文档、引用知识库回答、上传文件辅助提问。<br>顶部 Token 条显示剩余可用长度。', pos: 'top' },
+  { id: 'kb1',      tab: 'qa',   targetSel: '#kbToolbar button',   title: '上传你的文档',         desc: '上传文档后，<b>本地 AI</b> 会自动通读全文，<br>生成摘要、打上标签并归类——<br>全程在本机完成，<b>文档内容绝不外传</b>。', pos: 'bottom' },
+  { id: 'kb2',      tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: 'AI 洞察',             desc: '点击 <b>「整理」</b>，<b>本地 AI</b> 会通读你的整个文库，<br>给出主题归类、适用场景和建议追问。<br><br>同样全部在本机运行，<b>数据不出本机</b>。', pos: 'bottom' },
+  { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '配置云端 API Key、安装扩展包、管理本地模型……<br>都在设置 Tab 里完成。<br><br>这就是桌伴的全部，开始使用吧！', pos: 'bottom' }
 ];
 
 // 修复：tab 按钮实际用 onclick="switchTab('chat',this)"，没有 data-tab 属性。
