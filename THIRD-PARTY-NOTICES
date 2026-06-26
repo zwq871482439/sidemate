@@ -22,7 +22,6 @@ MIT License 组件
   - sniffio
   - anyio
   - h11
-  - faster-whisper (Guillaume Klein)
   - jieba
   - openpyxl
   - python-docx
@@ -202,9 +201,6 @@ Python Software Foundation License 属于 permissive license，
     许可协议：Apache License 2.0
     来源：https://huggingface.co/Qwen
 
-  - faster-whisper 模型权重 (OpenAI Whisper 系列衍生)
-    许可协议：MIT License
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 非 Python 组件
@@ -218,12 +214,6 @@ Python Software Foundation License 属于 permissive license，
     版权所有：Sidemate Team
     许可协议：本 EULA 管辖
     说明：自研组件，非第三方。
-
-  - Inter Font
-    版权所有：Rasmus Andersson
-    许可协议：SIL Open Font License 1.1
-    来源：https://github.com/rsms/inter
-    说明：用于 UI 拉丁文字显示（Patch5 C3 品牌视觉，字体文件待 Patch6 补充）。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
