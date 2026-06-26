@@ -168,6 +168,17 @@ function _renderSingleMsg(m, idx) {
   }
   // think 数据保留在 m.think 中（模型上下文），但不再渲染展示
   var bodyHtml = _renderMsgBody(m.content || '');
+  // P6 修复: 统一终止提示样式。识别 _aborted 标记，剔除旧 content 里残留的
+  // "> ⏹ 用户已手动终止响应" blockquote（兼容历史数据），改用统一的 SVG 图标提示
+  if (m._aborted) {
+    var _abortTmp = document.createElement('div');
+    _abortTmp.innerHTML = bodyHtml;
+    var _oldBq = _abortTmp.querySelectorAll('blockquote');
+    _oldBq.forEach(function(bq) {
+      if (bq.textContent.indexOf('用户已手动终止响应') >= 0) bq.remove();
+    });
+    bodyHtml = _abortTmp.innerHTML;
+  }
   // 引用标注 [1][2] 渲染成上标（仅 KB 消息）
   if (m.kb_sources && m.kb_sources.length) {
     bodyHtml = _renderCitationSuperscripts(bodyHtml, m.kb_sources);
@@ -188,17 +199,21 @@ function _renderSingleMsg(m, idx) {
     docBarHtml = '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
   }
   var footerHtml = _buildStats(m);
+  // P6 修复: 终止提示统一渲染（与流式 catch 块的 _abortNotice 同款 SVG 样式）
+  var _abortedHtml = m._aborted
+    ? '<div class="msg-aborted">' + iconSvg('stop','14') + ' 用户已手动终止响应</div>'
+    : '';
   if (footerHtml) {
     // 有统计：正文区 + 独立 footer（与流式 done 路径一致）
     return timelineHtml
-      + '<div class="stream-content">' + bodyExtras + _buildFileTag(m) + '</div>'
+      + '<div class="stream-content">' + bodyExtras + _buildFileTag(m) + _abortedHtml + '</div>'
       + docBarHtml
       + '<div class="msg-footer msg-copy-wrap">' + footerHtml + _buildCopyBtn() + '</div>';
   }
   // 无统计（用户消息/纯文本）：正文区 + 复制按钮包裹
   return '<div class="msg-copy-wrap">'
     + timelineHtml
-    + '<div class="stream-content">' + bodyExtras + _buildFileTag(m) + '</div>'
+    + '<div class="stream-content">' + bodyExtras + _buildFileTag(m) + _abortedHtml + '</div>'
     + docBarHtml
     + _buildCopyBtn()
     + '</div>';
@@ -1242,7 +1257,7 @@ async function sendMessage() {
         var _abortStreamEl = document.getElementById('stream-msg');
         if (_abortStreamEl) {
           var _abortNotice = document.createElement('div');
-          _abortNotice.style.cssText = 'color:var(--text-muted);font-style:italic;padding:4px 0';
+          _abortNotice.className = 'msg-aborted';
           _abortNotice.innerHTML = iconSvg('stop','14') + ' 用户已手动终止响应';
           _abortStreamEl.appendChild(_abortNotice);
         }
@@ -1277,10 +1292,10 @@ async function sendMessage() {
       // 计算要持久化的内容：正常输出 / 中止时已有内容 / 错误消息
       var _persistContent = fullText.trim();
       if (_hadError && _abortReason === 'user_stop' && _persistContent) {
-        // 用户手动中止，已有输出：保留原内容 + 追加终止标记
-        _persistContent = _persistContent + '\n\n> ⏹ 用户已手动终止响应';
+        // 用户手动中止，已有输出：保留原正文（终止提示由 _aborted 标记驱动渲染，
+        // 不再拼进 content，避免 emoji/blockquote 与流式 SVG 样式不一致）
       } else if (_hadError && _abortReason === 'user_stop' && !_persistContent) {
-        // 用户手动中止，无输出：记录一条中止提示
+        // 用户手动中止，无输出：记录一条中止提示（_aborted 也会渲染 SVG 提示）
         _persistContent = '[用户已手动终止响应]';
       } else if (_hadError && _abortReason === 'network_error') {
         // 网络错误：保留已输出内容（如果有）
@@ -1379,7 +1394,11 @@ async function sendMessage() {
       // error/abort 时保留错误卡片（不重建），只恢复 UI 按钮 + 刷新列表
       if (_hadError) {
         var streamErrFix = document.getElementById('stream-msg');
-        if (streamErrFix) streamErrFix.removeAttribute('id');  // 固化错误卡片
+        if (streamErrFix) {
+          // P6 修复终止bug: 终止时同样走 finalizeDOM，清掉 thinking-indicator 计时器
+          // （否则计时器 interval 永驻狂飙，且 indicator 残留 + 双卡片）
+          CardRenderer.finalizeDOM(streamErrFix);
+        }
         _restoreChatUI();
         input.focus();
         // P6: 延迟再恢复一次（防 SSE 异步回调覆盖按钮状态）
