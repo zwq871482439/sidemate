@@ -672,6 +672,7 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .welcome-btn:hover{opacity:.88}
 /* 交互式引导高亮 */
 #tourOverlay{pointer-events:none}
+#tourSpotlight{pointer-events:none}
 #tourCard{pointer-events:auto}
 #tourCard::before{content:'';position:absolute;width:10px;height:10px;background:var(--bg-primary);transform:rotate(45deg);top:var(--tour-arrow-top,-6px);bottom:var(--tour-arrow-bottom,auto);left:50%;margin-left:-5px}
 /* 保留旧兼容 */

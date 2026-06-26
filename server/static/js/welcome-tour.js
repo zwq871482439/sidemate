@@ -182,22 +182,19 @@ function positionTourElements(target, pos) {
   if (!spotlight || !card) return;
   var viewW = window.innerWidth || 800, viewH = window.innerHeight || 600;
 
-  var tx, ty, tw, th, tRadius = '10px';
+  var tx, ty, tw, th, tRadius = '6px';
 
   if (target && target.getBoundingClientRect) {
     var rect = target.getBoundingClientRect();
-    // 小 halo（4px）让高亮框略大于目标元素
     var pad = 4;
     tx = Math.round(rect.left - pad);
     ty = Math.round(rect.top - pad);
     tw = Math.round(rect.width + pad * 2);
     th = Math.round(rect.height + pad * 2);
-    // 继承目标元素的圆角
     var cs = window.getComputedStyle(target);
     var br = cs.borderRadius;
     if (br && br !== '0px') tRadius = br;
   } else {
-    // fallback: 固定锚点
     var fb = _tourSteps[_tourStep] && _tourSteps[_tourStep].fallbackAnchor;
     if (!fb) return;
     tw = 160; th = 40;
@@ -205,11 +202,28 @@ function positionTourElements(target, pos) {
     ty = fb.top;
   }
 
-  spotlight.style.left = tx + 'px';
-  spotlight.style.top = ty + 'px';
-  spotlight.style.width = tw + 'px';
-  spotlight.style.height = th + 'px';
-  spotlight.style.borderRadius = tRadius;
+  // 用 clip-path 替代 box-shadow 做镂空遮罩，避免 overflow:hidden 裁剪
+  var cpx = tx + tw / 2, cpy = ty + th / 2;
+  var hw = tw / 2 + 4, hh = th / 2 + 4;
+  var r = Math.max(6, parseInt(tRadius) || 6);
+  // 圆角矩形镂空路径
+  spotlight.style.clipPath =
+    'path(evenodd, M0 0 H' + viewW + ' V' + viewH + ' H0 Z ' +
+    'M' + (cpx - hw + r) + ' ' + (cpy - hh) + ' ' +
+    'H' + (cpx + hw - r) + ' ' +
+    'Q' + (cpx + hw) + ' ' + (cpy - hh) + ' ' + (cpx + hw) + ' ' + (cpy - hh + r) + ' ' +
+    'V' + (cpy + hh - r) + ' ' +
+    'Q' + (cpx + hw) + ' ' + (cpy + hh) + ' ' + (cpx + hw - r) + ' ' + (cpy + hh) + ' ' +
+    'H' + (cpx - hw + r) + ' ' +
+    'Q' + (cpx - hw) + ' ' + (cpy + hh) + ' ' + (cpx - hw) + ' ' + (cpy + hh - r) + ' ' +
+    'V' + (cpy - hh + r) + ' ' +
+    'Q' + (cpx - hw) + ' ' + (cpy - hh) + ' ' + (cpx - hw + r) + ' ' + (cpy - hh) + ' Z)';
+  spotlight.style.borderRadius = '0';
+  spotlight.style.left = '0';
+  spotlight.style.top = '0';
+  spotlight.style.width = viewW + 'px';
+  spotlight.style.height = viewH + 'px';
+  spotlight.style.background = 'rgba(0,0,0,0.45)';
 
   // 定位说明卡片
   var cardW = 280, cardH = 140;
@@ -230,16 +244,12 @@ function positionTourElements(target, pos) {
   card.style.left = Math.round(cx) + 'px';
   card.style.top = Math.round(cy) + 'px';
 
-  // 卡片箭头方向
-  var arrow = card.querySelector(':scope::before') || card;
   if (pos === 'top') {
     card.style.setProperty('--tour-arrow-top', 'auto');
     card.style.setProperty('--tour-arrow-bottom', '-6px');
-    card.style.setProperty('--tour-arrow-rotate', '225deg');
   } else {
     card.style.setProperty('--tour-arrow-top', '-6px');
     card.style.setProperty('--tour-arrow-bottom', 'auto');
-    card.style.setProperty('--tour-arrow-rotate', '45deg');
   }
 }
 

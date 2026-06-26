@@ -671,7 +671,7 @@
 
 <!-- ===== 交互式引导高亮组件 ===== -->
 <div id="tourOverlay" style="display:none;position:fixed;inset:0;z-index:9998;pointer-events:none">
-  <div id="tourSpotlight" style="position:absolute;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45);transition:all .35s cubic-bezier(.4,0,.2,1)"></div>
+  <div id="tourSpotlight" style="position:absolute;inset:0;transition:clip-path .35s cubic-bezier(.4,0,.2,1);pointer-events:none"></div>
 </div>
 <div id="tourCard" style="display:none;position:fixed;z-index:9999;background:var(--bg-primary);border-radius:12px;padding:18px 20px;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.22);transition:all .35s cubic-bezier(.4,0,.2,1)">
   <div id="tourCardTitle" style="font-weight:600;font-size:.92em;color:var(--text-primary);margin-bottom:6px"></div>
