@@ -256,11 +256,13 @@ async function kbRefreshDocs() {
         }
       }
     };
+    // 重建处理队列：只纳入真正"处理中"的文档 + 冲突文档。
+    // 修 #18-c：ready + tag_pending/generating 的文档不再入队——它们已处理完，
+    // 只是在等 AI 摘要，卡片自身会显示"AI 生成摘要中"提示（见下方 previewText 渲染），
+    // 不该挤进浮动"处理中"队列（批量上传时会几十个一起涌入）。
     for (var _ri = 0; _ri < docs.length; _ri++) {
       var _rd = docs[_ri];
       if (_rd.status === 'processing' || _rd.status === 'indexing' || _rd.status === 'summarizing') {
-        _rebuildOne(_rd);
-      } else if (_rd.status === 'ready' && (_rd.tag_status === 'generating' || _rd.tag_status === 'pending')) {
         _rebuildOne(_rd);
       } else if (_rd.status === 'conflict') {
         // 重建冲突文档的队列条目

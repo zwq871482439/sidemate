@@ -296,6 +296,16 @@ def _bg_init_worker():
         # ---- 步骤4：Schedulers + BatchQueue ----
         _set_bg_phase("schedulers")
 
+        # 修 #18-b：清理 KB 僵尸文档（进程重启时卡在 processing/indexing 的中断态）
+        # 这些文档的向量化进程已随主进程死亡，progress 会永久停在 0.3 等中间态。
+        if _kb_installed:
+            try:
+                _zombie_count = kb.cleanup_zombie_docs()
+                if _zombie_count > 0:
+                    log.warning("[BG-INIT] 清理 %d 个僵尸文档（processing/indexing→error）", _zombie_count)
+            except Exception as e:
+                log.warning("[BG-INIT] 僵尸文档清理失败（不阻断启动）: %s", str(e)[:100])
+
         # LLMScheduler
         try:
             global _llm_scheduler

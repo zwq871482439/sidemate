@@ -55,6 +55,25 @@
 - 前端 localStorage 洞察缓存（全部统一走服务端）
 
 
+## [0.9.8] - 2026-06-26 — 遗漏 bug 补丁（#5-b/#5-d + #18-b/#18-c）
+
+P6 打磨后发现的几个遗漏缺陷的集中修复，覆盖文档生成与知识库批量上传两条链路。新增回归测试 31 项，全部通过。
+
+### Fixed（修复）
+
+- **#5-b/#5-d 文档生成第二轮崩溃 + 无下载按钮**：根因是 `generate_docx` 里 `import pypandoc` 写在 `try` 块之外，环境缺 pypandoc 时 `ModuleNotFoundError` 直接冒泡，既走不到 manual 回退，又让 `set_doc_status` 返回失败 → 前端拿不到 docx 路径 → 不生成下载按钮。改为三层兜底：pypandoc（import 移入 try）→ subprocess 直调 pandoc CLI（pandoc 二进制通常存在）→ `_generate_docx_manual` 纯 python-docx 回退。不再依赖重装环境
+- **#18-b KB 进度永久卡 30%**：进程崩溃/重启后，`batch_queue.recover_pending()` 会把队列任务重置重跑，但 KB 文档状态没有对应恢复——卡在 `indexing` + `progress=0.3` 的文档变成僵尸（重跑会建新 doc_id，旧的永久停滞）。新增 `KnowledgeBase.cleanup_zombie_docs()`，lifespan startup 时把 `processing/chunking/indexing` 状态的文档重置为 `error`，让用户可见可重试
+- **#18-c 摘要阶段文档混进处理队列**：`kbRefreshDocs` 的队列重建逻辑把所有 `ready` + `tag_status=pending/generating`（等 AI 摘要）的文档都塞进浮动"处理中"队列，批量上传后几十个文件一起涌入。已删除该入队分支——ready 文档不算"处理中"，它们的卡片自身已显示"AI 生成摘要中"提示
+
+### Changed（改进）
+
+- **僵尸清理逻辑下沉为 KB 方法**：`cleanup_zombie_docs()` 从 `server.py` 内联代码抽到 `knowledge/ops.py`，server 与测试共用同一实现，避免逻辑漂移
+
+### Tests（测试）
+
+- 新增 `tests/test_fix_5b_18bc.py`（31 项）：generate_docx 三层兜底（pypandoc 缺失/最小内容/特殊字符/import 位置静态校验）、僵尸文档清理（processing/indexing/chunking/多僵尸/空库/无僵尸不误伤）、#18-c 前端逻辑静态校验
+
+
 ## [0.9.6] - 2026-06-21 — P6「前端统一化 + 三模式」
 
 本次发布聚焦于**前端全面重构、模式系统统一化（离线/在线/并行）、知识库去对话化、ClearBox 明盒透明度**，并完成 P5 遗留的技术债清理。

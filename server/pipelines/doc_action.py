@@ -233,11 +233,16 @@ def _parse_markdown_to_sections(md_text: str):
 
 
 def generate_docx(content: str, output_path: str, title: str = "文档"):
-    """使用 pandoc 将 Markdown 转为 .docx，再统一字体为等线"""
+    """使用 pandoc 将 Markdown 转为 .docx，再统一字体为等线
+
+    三层兜底（修 #5-b/#5-d：pypandoc 未安装时整个函数崩溃）：
+      1. pypandoc（若已安装）—— 首选
+      2. subprocess 直调 pandoc CLI —— pypandoc 缺失时用，pandoc 二进制通常存在
+      3. _generate_docx_manual —— pandoc 也不可用时的纯 python-docx 回退
+    """
     from docx import Document
     from docx.shared import Pt
     from docx.oxml.ns import qn
-    import pypandoc
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -247,7 +252,10 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
     # 用 pandoc 转换 markdown → docx
     # 注意：不传 --metadata title，因为模型正文里的 # 一级标题就是文档标题，
     # 传 metadata title 会导致标题区出现两层（pandoc 元数据标题 + 正文 H1）
+    _pandoc_ok = False
+    # 兜底1：pypandoc（import 移进 try，避免 ModuleNotFoundError 冒泡导致无法回退）
     try:
+        import pypandoc
         pypandoc.convert_text(
             content, 'docx', format='markdown',
             outputfile=output_path,
@@ -255,8 +263,34 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
                 '--from=markdown+autolink_bare_uris+task_lists',
             ]
         )
+        _pandoc_ok = True
+    except ImportError:
+        log.info("[DOC] pypandoc 未安装，尝试 subprocess 直调 pandoc CLI")
     except Exception as e:
-        log.warning("[DOC] pandoc 转换失败，回退手动生成: %s", e)
+        log.warning("[DOC] pypandoc 转换失败，尝试 CLI: %s", e)
+
+    # 兜底2：subprocess 直调 pandoc CLI（pypandoc 缺失或失败时）
+    if not _pandoc_ok:
+        try:
+            import subprocess
+            proc = subprocess.run(
+                ["pandoc", "--from=markdown+autolink_bare_uris+task_lists",
+                 "--to=docx", "-o", output_path],
+                input=content, encoding="utf-8",
+                capture_output=True, timeout=60,
+            )
+            if proc.returncode == 0 and os.path.exists(output_path):
+                _pandoc_ok = True
+            else:
+                log.warning("[DOC] pandoc CLI 失败 rc=%s: %s",
+                            proc.returncode, (proc.stderr or "")[:200])
+        except FileNotFoundError:
+            log.warning("[DOC] pandoc 二进制未找到，回退手动生成")
+        except Exception as e:
+            log.warning("[DOC] pandoc CLI 异常，回退手动生成: %s", e)
+
+    # 兜底3：pandoc 全失败 → 纯 python-docx 手动生成
+    if not _pandoc_ok:
         return _generate_docx_manual(content, output_path, title)
 
     # 打开生成的 docx，统一字体

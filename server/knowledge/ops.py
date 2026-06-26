@@ -203,6 +203,30 @@ class _KBOpsMixin:
         return sum(1 for d in self.documents.values()
                    if d.status in ('processing', 'indexing'))
 
+    def cleanup_zombie_docs(self) -> int:
+        """清理僵尸文档（修 #18-b：KB 进度卡 30%）
+
+        进程崩溃/重启时，向量化中途的文档会永久卡在 processing/indexing 状态
+        （其进度停在 0.3 等中间态，向量化进程已随主进程死亡）。
+        lifespan startup 调用本方法把这些文档重置为 error，让用户可见可重试，
+        而不是无限显示"处理中 30%"。
+
+        Returns:
+            重置为 error 的僵尸文档数量
+        """
+        zombie_statuses = ('processing', 'chunking', 'indexing')
+        count = 0
+        for doc in self.documents.values():
+            if doc.status in zombie_statuses:
+                doc.status = 'error'
+                doc.error_msg = '进程重启中断（请重新上传或删除）'
+                doc.progress = 0.0
+                count += 1
+        if count > 0:
+            self._save_meta()
+            log.warning("[KB] 清理 %d 个僵尸文档（processing/indexing→error）", count)
+        return count
+
     def _ensure_reranker(self) -> bool:
         """检索前调用：确保 Reranker 可用（如未加载则加载）
 
