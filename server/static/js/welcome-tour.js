@@ -117,10 +117,26 @@ var _tourSteps = [
 
 function startTour() {
   _tourStep = 0;
-  _tourLastTab = 'chat';  // 通过 reload 进入，已在 Chat Tab
+  _tourLastTab = '';
+  // 强制切到 Chat Tab（兼容从设置页"重新查看"触发）
+  if (typeof switchTab === 'function') {
+    var btn = document.querySelector('.tabs-nav button[data-tab="chat"], .tabs-nav-inline button[data-tab="chat"]');
+    if (btn && btn.offsetParent) { switchTab('chat', btn); _tourLastTab = 'chat'; }
+  }
+  // 先显示遮罩，再等 Chat Tab 渲染完成
   document.getElementById('tourOverlay').style.display = 'block';
   document.getElementById('tourCard').style.display = 'block';
-  renderTourStep();
+  var tries = 0;
+  var waitForChat = function() {
+    var target = document.querySelector('#chatMode');
+    if (target && target.offsetWidth > 0) {
+      renderTourStep();
+      return;
+    }
+    if (++tries > 20) { renderTourStep(); return; }  // 1s 超时兜底
+    setTimeout(waitForChat, 50);
+  };
+  waitForChat();
 }
 
 function renderTourStep() {
@@ -259,9 +275,24 @@ function endTour() {
 }
 
 function resetOnboarding() {
+  // 先切到 Chat Tab，再弹欢迎窗
+  if (typeof switchTab === 'function') {
+    var btn = document.querySelector('.tabs-nav button[data-tab="chat"], .tabs-nav-inline button[data-tab="chat"]');
+    if (btn) {
+      // 强制激活（绕过 offsetParent 检查 — 可能在设置页中按钮不可见）
+      document.querySelectorAll('.tabs-nav button').forEach(function(b) { b.classList.remove('active'); });
+      document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+      btn.classList.add('active');
+      var tc = document.getElementById('tab-chat');
+      if (tc) tc.classList.add('active');
+      if (typeof updateChatOverlay === 'function') updateChatOverlay();
+      _tourLastTab = 'chat';
+    }
+  }
   localStorage.removeItem('sidemate_welcomed');
   localStorage.removeItem('sidemate_toured');
-  location.reload();
+  endTour();
+  showWelcome();
 }
 
 window.startTour = startTour;
