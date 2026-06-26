@@ -729,6 +729,7 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 if (actual.strip() or _clean_think_text) and not actual.strip().startswith("[ERROR]"):
                     _elapsed = time.time() - t0
                     _ts = time.strftime("%H:%M:%S")
+                    _speed = int(len(actual) / _elapsed) if _elapsed > 0 else 0
                     save_msgs = history_raw + [
                         {"role": "user", "content": message, "ts": _ts},
                         {"role": "assistant",
@@ -738,7 +739,12 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                          "model": model_choice,
                          "chars": len(actual),
                          "time": _elapsed,
-                         "task_type": saved_task_type or "text"},
+                         "speed": _speed,
+                         "task_type": saved_task_type or "text",
+                         "action_mode": ctx.action_mode or "chat",
+                         # P6 修复: 服务端终止保存必须带 _aborted 标记,否则前端重渲染丢失终止提示
+                         "_aborted": True,
+                         "_abort_reason": "user_stop"},
                     ]
                     _save_chat_final(chat_file, save_msgs)
                     log.info("[SAVE] 中途停止，已保存 %d 字 + think %d 字",

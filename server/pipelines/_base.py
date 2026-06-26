@@ -518,12 +518,17 @@ def save_on_stop(ctx: StreamContext, result: EngineResult, t0: float):
     if (actual.strip() or _clean_think) and not actual.strip().startswith("[ERROR]"):
         _elapsed = time.time() - t0
         _ts = time.strftime("%H:%M:%S")
+        _speed = int(len(actual) / _elapsed) if _elapsed > 0 else 0
         save_msgs = history_raw + [
             {"role": "user", "content": message, "ts": _ts},
             {"role": "assistant", "content": actual or "[思考已中断]", "ts": time.strftime("%H:%M:%S"),
              "think": _clean_think,
              "model": model_choice, "chars": len(actual),
-             "time": _elapsed, "task_type": saved_task_type or "text"}
+             "time": _elapsed, "speed": _speed,
+             "task_type": saved_task_type or "text",
+             "action_mode": ctx.action_mode or "chat",
+             # P6 修复: 服务端终止保存必须带 _aborted 标记
+             "_aborted": True, "_abort_reason": "user_stop"}
         ]
         save_chat(chat_file, save_msgs)
         log.info("[SAVE] 中途停止，已保存 %d 字 + think %d 字" % (len(actual), len(_clean_think)))
