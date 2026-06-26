@@ -724,6 +724,35 @@ function showToast(msg, type) {
 window._activeToast = null;
 window.showToast = showToast;
 
+async function showLicenseFile(filename) {
+  try {
+    var resp = await fetch('/api/license?file=' + encodeURIComponent(filename));
+    var data = await resp.json();
+    if (data.content) {
+      _showTextModal(filename === 'LICENSE' ? '最终用户许可协议' : '第三方许可声明', data.content);
+    } else {
+      _showTextModal('提示', data.error || '无法加载文件');
+    }
+  } catch (e) {
+    _showTextModal('提示', '加载失败: ' + e.message);
+  }
+}
+
+function _showTextModal(title, content) {
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000';
+  overlay.innerHTML = '<div style="background:var(--bg-primary);border-radius:12px;padding:24px;max-width:640px;width:90%;max-height:80vh;display:flex;flex-direction:column">' +
+    '<div style="font-weight:600;font-size:14px;margin-bottom:12px;color:var(--text-primary)">' + title + '</div>' +
+    '<pre style="flex:1;overflow:auto;font-size:12px;line-height:1.5;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;margin:0;padding:12px;background:var(--bg-secondary);border-radius:8px">' +
+    content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>' +
+    '<button onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:12px;padding:8px 20px;border:none;border-radius:8px;background:var(--accent-color);color:#fff;font-size:13px;cursor:pointer;align-self:flex-end">关闭</button>' +
+    '</div>';
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+window.showLicenseFile = showLicenseFile;
+
 function _loadVersionDisplay() {
   var el = document.getElementById('versionDisplay');
   if (el) { el.textContent = 'v0.9.7'; }
