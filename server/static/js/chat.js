@@ -202,11 +202,22 @@ function _renderSingleMsg(m, idx) {
   // actionTag 统一放最前面；KB 参考来源已在工具链卡片里展示，正文区不再重复
   var bodyExtras = actionTag + ts + bodyHtml;
   // Patch4 v3.1 BUG#13+17：如果消息有 doc_url，追加独立下载栏（刷新页面也能看到）
+  // P6: 支持 m.artifacts 数组（多产物），向后兼容 m.doc_url（单产物）
   var docBarHtml = '';
-  if (m.doc_url) {
-    var _dlUrl = m.doc_url;
-    if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
-    docBarHtml = '<div class="doc-download-bar" data-doc-complete="1"><a href="' + esc(_dlUrl) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
+  var _artList = (m.artifacts && m.artifacts.length) ? m.artifacts : [];
+  if (!_artList.length && m.doc_url) {
+    _artList = [{"url": m.doc_url, "filename": m.doc_filename || "document.docx"}];
+  }
+  if (_artList.length) {
+    var _tags = [];
+    for (var ai = 0; ai < _artList.length; ai++) {
+      var _a = _artList[ai];
+      var _dlUrl = _a.url || _a.doc_url || '';
+      if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
+      var _fn = _a.filename || _a.doc_filename || 'document.docx';
+      _tags.push('<a href="' + esc(_dlUrl) + '" download="' + esc(_fn) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(_fn) + '</a>');
+    }
+    docBarHtml = '<div class="doc-download-bar" data-doc-complete="1">' + _tags.join('') + '</div>';
   }
   var footerHtml = _buildStats(m);
   // P6 修复: 终止提示统一渲染（与流式 catch 块的 _abortNotice 同款 SVG 样式）
@@ -340,16 +351,26 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   // done 终态：stats 作为独立 footer 追加到 stream-msg（不重写 #stream-content，消除完成闪烁）
   // 这样正文 DOM 原封不动，只新增一条统计/复制栏，视觉上无重排。
   if (stats) {
-    // 空回复兜底：若正文区尚未渲染（空回复/友好提示场景），先补渲染正文
+    // 修复流式截断：节流可能导致最后一批 token 未渲染。
+    // 若 fullText 比当前 DOM 显示的更长，强制刷新正文（否则会停留在节流时的截断内容）。
     var _curBody = contentEl.querySelector('p, div:not(.thinking-indicator)');
-    if (!_curBody && content) {
+    var _needRender = !_curBody;  // 无正文（空回复兜底）
+    if (!_needRender && content) {
+      // 有正文但可能不完整：比较纯文本长度
+      var _curTextLen = (contentEl.textContent || '').length;
+      if (content.length > _curTextLen + 5) _needRender = true;  // +5 容差（DOM 可能含时间戳等额外文本）
+    }
+    if (_needRender && content) {
       contentEl.innerHTML = _renderMsgBody(content, {sanitize: false});
     }
     // 修 #模式tag缺失 + #tag时间同排：done 终态确保正文最前是一个 .ts 块，
     // 且块内同时含 action-tag + 时间（先 tag 后时间，同一排）。
+    // 流式过程中可能产生：正文后面的 .ts(仅时间)、或完全没有 .ts。
+    // 这里统一规整：取已有的 .ts（若有）补上 tag 并移到最前；没有则按需新建。
     var _modeLabel = _actionModeLabel(currentActionMode);
     var _existingTs = contentEl.querySelector('.ts');
     if (_existingTs) {
+      // 已有 .ts 块：确保里面有 action-tag（没有则前置插入），再移到正文最前
       if (_modeLabel && !_existingTs.querySelector('.action-tag')) {
         var _tagSpan = document.createElement('span');
         _tagSpan.className = 'action-tag';
@@ -360,6 +381,7 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
         contentEl.insertBefore(_existingTs, contentEl.firstChild);
       }
     } else if (_modeLabel) {
+      // 无 .ts 块但有模式标签：新建一个含 tag 的 .ts 块
       var _tsDiv = document.createElement('div');
       _tsDiv.className = 'ts';
       _tsDiv.innerHTML = '<span class="action-tag">' + esc(_modeLabel) + '</span>';
@@ -873,6 +895,8 @@ async function sendMessage() {
             // 模块1修复：并行模式 mode_hint 不再静默丢弃（fallback 分支的提示文案）
             CardRenderer.handleEvent(d);
           } else if (d.type === 'token') {
+            // P6 修复空状态：文字到来前，先把 pending 推理单元渲染出来（否则 card-area 空白）
+            if (typeof CardRenderer !== 'undefined') CardRenderer.materializePending();
             fullText += d.content;
             // P6 打磨：思考→回答无缝过渡，只改文案不变DOM结构
             if (fullText.length > 0 && _thinkingTimerInterval && !thinkingPhase && !_hasMorphedToAnswering) {
@@ -1944,6 +1968,9 @@ DocProgressTracker.prototype._renderDownloads = function(docUrl, docxPath) {
 
 // 全局调度入口（从 SSE 事件分发处调用）
 function _handleDocProgressEvent(eventType, data) {
+  // P6: 文档进度面板已废弃（下载改用底部 tag）。此处直接返回，不创建面板 DOM、不启动计时器。
+  // 下载 tag 由 SSE 的 doc_complete 事件在 chat.js 主循环里独立渲染，不依赖此函数。
+  return;
   var streamEl = document.getElementById('stream-msg');
   if (!streamEl) return;
   var tracker = _getDocProgressTracker(streamEl);
@@ -2341,6 +2368,20 @@ var CardRenderer = (function() {
         if (s.data.fetches > 0) parts.push('阅读 ' + s.data.fetches + ' 篇');
         if (s.data.kb_hits > 0) parts.push('检索知识库 ' + s.data.kb_hits + ' 次');
         if (s.data.docs > 0) parts.push('生成文档 ' + s.data.docs + ' 篇');
+        if (s.data.time_queries > 0) parts.push('查询时间 ' + s.data.time_queries + ' 次');
+        if (s.data.calculations > 0) parts.push('计算 ' + s.data.calculations + ' 次');
+        if (s.data.conversions > 0) parts.push('格式转换 ' + s.data.conversions + ' 次');
+        if (s.data.table_ops > 0) parts.push('表格操作 ' + s.data.table_ops + ' 次');
+        // 兜底：旧消息 summary 无新工具字段，但实际调用了工具（从 reason_unit.tools 推断），
+        // 避免误显示"未使用工具"
+        if (parts.length === 0) {
+          var _toolCnt = 0;
+          for (var _ri = 0; _ri < m.card_data.length; _ri++) {
+            var _ru = m.card_data[_ri];
+            if (_ru.type === 'reason_unit' && _ru.tools) _toolCnt += _ru.tools.length;
+          }
+          if (_toolCnt > 0) parts.push('工具调用 ' + _toolCnt + ' 次');
+        }
         var sumText = parts.length > 0 ? '共 ' + parts.join(' · ') : '直接回答（未使用工具）';
         html += '<div class="cb-summary"><span class="cb-summary-text">' + sumText + '</span></div>';
         continue;
@@ -2721,10 +2762,12 @@ var CardRenderer = (function() {
               if (dot) dot.className = 'cb-dot ok';
               var elapsedTxt = d.elapsed_ms != null ? _formatElapsed(d.elapsed_ms) : '';
               var countTxt = d.count != null ? ' (' + d.count + ')' : '';
-              if (elapsedTxt || countTxt) {
+              var linesTxt = d.lines != null ? ' (' + d.lines + '行)' : '';  // write_workspace 行数
+              if (elapsedTxt || countTxt || linesTxt) {
                 var row = tool.el.querySelector('.cb-step-row');
                 if (row) row.insertAdjacentHTML('beforeend',
                   (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
+                  (linesTxt ? '<span class="cb-count">' + linesTxt + '</span>' : '') +
                   (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : ''));
               }
               // P6 #4-a/#4-b: 详情展示优先级: results列表(搜索) > summary(阅读) > detail(兜底)
@@ -2858,16 +2901,20 @@ var CardRenderer = (function() {
     if (status === 'searching') return '搜索：' + _esc(d.query || '');
     if (status === 'fetching') return '阅读：' + _esc(d.url || '');
     if (status === 'kb_searching') return '检索知识库：' + _esc(d.query || '');
-    if (status === 'workspace_writing') return '写入文档：' + _esc(d.name || '');
+    if (status === 'workspace_writing') return '写入文档：' + _esc(d.path || d.name || '');
     // P6 补全：英文 status 中文化
     if (status === 'workspace_listing') return '列出工作区文件';
-    if (status === 'workspace_reading') return '读取文档：' + _esc(d.name || '');
+    if (status === 'workspace_reading') return '读取文档：' + _esc(d.path || d.name || '');
     if (status === 'deep_reading') return '深度分析：' + _esc(d.query || d.name || '');
-    if (status === 'workspace_deleting') return '删除文档：' + _esc(d.name || '');
-    if (status === 'workspace_appending') return '追加内容：' + _esc(d.name || '');
-    if (status === 'workspace_editing') return '编辑文档：' + _esc(d.name || '');
+    if (status === 'workspace_deleting') return '删除文档：' + _esc(d.path || d.name || '');
+    if (status === 'workspace_appending') return '追加内容：' + _esc(d.path || d.name || '');
+    if (status === 'workspace_editing') return '编辑文档：' + _esc(d.path || d.name || '');
     if (status === 'doc_status') return '标记文档完成：' + _esc(d.name || d.filename || '');
     if (status === 'docs_listing') return '列出文档列表';
+    if (status === 'time_querying') return '获取当前时间';
+    if (status === 'calculating') return '计算：' + _esc(d.expression || '');
+    if (status === 'format_converting') return '转换格式：' + _esc(d.source || '') + ' → ' + _esc(d.target || '');
+    if (status === 'table_operating') return (d.action === 'write' ? '生成表格：' : '读取表格：') + _esc(d.filename || '');
     if (status === 'error') {
       // error 显示原因而非裸 "error"
       var reason = d.reason || d.message || '';
@@ -2890,19 +2937,29 @@ var CardRenderer = (function() {
   function _addSummary(d) {
     if (!_container) return;
     // P6: 存储数据供 finalize 序列化
-    _summaryData = {searches: d.searches||0, fetches: d.fetches||0, kb_hits: d.kb_hits||0, docs: d.docs||0};
+    _summaryData = {searches: d.searches||0, fetches: d.fetches||0, kb_hits: d.kb_hits||0, docs: d.docs||0,
+                    time_queries: d.time_queries||0, calculations: d.calculations||0,
+                    conversions: d.conversions||0, table_ops: d.table_ops||0};
     var sumDiv = document.createElement('div');
     sumDiv.className = 'cb-summary';
-    // P6 统计修正：纳入知识库检索和文档生成
+    // P6 统计修正：纳入知识库检索、文档生成、时间查询、计算、格式转换、表格
     var parts = [];
     var searches = d.searches || 0;
     var fetches = d.fetches || 0;
     var kbHits = d.kb_hits || 0;
     var docs = d.docs || 0;
+    var timeQ = d.time_queries || 0;
+    var calcs = d.calculations || 0;
+    var convs = d.conversions || 0;
+    var tblOps = d.table_ops || 0;
     if (searches > 0) parts.push('搜索 ' + searches + ' 次');
     if (fetches > 0) parts.push('阅读 ' + fetches + ' 篇');
     if (kbHits > 0) parts.push('检索知识库 ' + kbHits + ' 次');
     if (docs > 0) parts.push('生成文档 ' + docs + ' 篇');
+    if (timeQ > 0) parts.push('查询时间 ' + timeQ + ' 次');
+    if (calcs > 0) parts.push('计算 ' + calcs + ' 次');
+    if (convs > 0) parts.push('格式转换 ' + convs + ' 次');
+    if (tblOps > 0) parts.push('表格操作 ' + tblOps + ' 次');
     var text = parts.length > 0 ? '共 ' + parts.join(' · ') : '直接回答（未使用工具）';
     sumDiv.innerHTML = '<span class="cb-summary-text">' + text + '</span>';
     _container.appendChild(sumDiv);
@@ -2976,7 +3033,8 @@ var CardRenderer = (function() {
     finalizeDOM: finalizeDOM,
     renderHistory: renderHistory,
     fillParallelStats: fillParallelStats,
-    getState: getState
+    getState: getState,
+    materializePending: function() { if (_currentUnit && _currentUnit.pending) _materializeCurrentUnit(); }
   };
 })();
 

@@ -380,19 +380,14 @@ def api_kb_stats():
 
 @router.get("/api/kb/diagnosis")
 def api_kb_diagnosis():
-    """检索健康度诊断（轻量版，用现有数据计算）"""
+    """检索健康度诊断（精简版：只保留用户可操作的 issue）"""
     kb = get_kb()
     result = {
         "doc_count": 0,
         "chunk_count": 0,
         "ready_docs": 0,
-        "empty_docs": 0,
-        "short_chunks": 0,
-        "long_chunks": 0,
-        "avg_chunk_len": 0,
         "tagged_docs": 0,
         "vector_dim": 0,
-        "vector_count": 0,
         "health_score": 0,
         "issues": [],
     }
@@ -402,45 +397,36 @@ def api_kb_diagnosis():
         result["doc_count"] = len(docs)
         result["chunk_count"] = len(chunks)
         result["ready_docs"] = sum(1 for d in docs if getattr(d, 'status', '') == 'ready')
-        result["empty_docs"] = sum(1 for d in docs if not getattr(d, 'chunk_count', 0))
         result["tagged_docs"] = sum(1 for d in docs if getattr(d, 'tags', None))
 
-        # chunk 长度分析
-        if chunks:
-            lengths = [getattr(c, 'char_count', 0) or len(getattr(c, 'text', '') or '') for c in chunks]
-            result["avg_chunk_len"] = round(sum(lengths) / len(lengths)) if lengths else 0
-            result["short_chunks"] = sum(1 for l in lengths if l < 50)
-            result["long_chunks"] = sum(1 for l in lengths if l > 1000)
-
-        # 向量状态
+        # 向量维度（仅用于展示）
         if hasattr(kb, 'vectors') and kb.vectors is not None:
             try:
                 result["vector_dim"] = int(kb.vectors.shape[1])
-                result["vector_count"] = int(kb.vectors.shape[0])
             except Exception:
                 pass
 
-        # 健康度评分（0-100）+ 问题检测
+        # 健康度评分（0-100）+ 问题检测（只保留可操作的 issue）
         score = 100
         issues = []
-        if result["empty_docs"] > 0:
-            score -= 10
-            issues.append({"level": "warn", "msg": "%d 篇文档没有内容片段，建议重新导入" % result["empty_docs"]})
-        if result["short_chunks"] > result["chunk_count"] * 0.3:
-            score -= 15
-            issues.append({"level": "warn", "msg": "%d 个片段过短（<50字），可能影响检索精度" % result["short_chunks"]})
-        if result["long_chunks"] > 0:
-            score -= 5
-            issues.append({"level": "info", "msg": "%d 个片段过长（>1000字），建议拆分" % result["long_chunks"]})
         if result["ready_docs"] < result["doc_count"]:
             score -= 20
-            issues.append({"level": "error", "msg": "%d 篇文档未就绪" % (result["doc_count"] - result["ready_docs"])})
-        if result["vector_count"] != result["chunk_count"]:
-            score -= 15
-            issues.append({"level": "warn", "msg": "向量数(%d)与片段数(%d)不一致" % (result["vector_count"], result["chunk_count"])})
+            pending_ids = [d.doc_id for d in docs if getattr(d, 'status', '') != 'ready']
+            issues.append({
+                "level": "error",
+                "msg": "%d 篇文档未就绪，无法参与检索" % (result["doc_count"] - result["ready_docs"]),
+                "action": "resume_all",
+                "doc_ids": pending_ids,
+            })
         if result["doc_count"] > 0 and result["tagged_docs"] == 0:
             score -= 10
-            issues.append({"level": "info", "msg": "没有文档打标签，建议为文档添加分类标签"})
+            untagged_ids = [d.doc_id for d in docs if not getattr(d, 'tags', None)]
+            issues.append({
+                "level": "info",
+                "msg": "没有文档打标签，添加标签可提升分类检索",
+                "action": "batch_retag",
+                "doc_ids": untagged_ids,
+            })
         if not issues:
             issues.append({"level": "ok", "msg": "知识库状态良好，无异常"})
 
@@ -1868,6 +1854,25 @@ def api_kb_search_heatmap_reset():
     return {"ok": True, "reset_count": reset_count}
 
 
+@router.post("/api/kb/reset")
+async def api_kb_reset(request: Request):
+    """重置知识库（清空所有导入数据，不删功能）
+
+    Body: {"confirm": true}   ← 必须显式确认，防误触
+    Response: {"ok": true, "deleted_docs": N, "deleted_chunks": N}
+    """
+    kb = get_kb()
+    body = await request.json()
+    if not body.get("confirm"):
+        return JSONResponse({"error": "请确认操作（confirm: true）"}, status_code=400)
+    result = kb.reset_all()
+    if not result.get("ok"):
+        return JSONResponse({"error": result.get("error", "重置失败")}, status_code=500)
+    log.info("[KB] 知识库重置完成: 删除 %d 篇文档, %d 个片段",
+             result.get("deleted_docs", 0), result.get("deleted_chunks", 0))
+    return result
+
+
 # ============================================================
 #  Patch5 B4: 去重检测 API
 # ============================================================
@@ -2517,9 +2522,8 @@ def api_kb_overview_get():
     kb = get_kb()
     try:
         import os as _os_g
-        _insight_file = kb.data_dir.replace("/", _os_g.sep) + _os_g.sep + "kb_insight.json"
-        if _os_g.path.exists(_insight_file):
-            with open(_insight_file, "r", encoding="utf-8") as _f:
+        if _os_g.path.exists(kb.insight_path):
+            with open(kb.insight_path, "r", encoding="utf-8") as _f:
                 cached = json.load(_f)
             cached["ok"] = True
             return cached
@@ -2756,9 +2760,8 @@ async def api_kb_overview_refresh(request: Request):
     # ==== 持久化洞察到文件（刷新页面不丢失）====
     try:
         import os as _os_ov
-        _insight_file = kb.data_dir.replace("/", _os_ov.sep) + _os_ov.sep + "kb_insight.json"
-        _os_ov.makedirs(_os_ov.path.dirname(_insight_file), exist_ok=True)
-        with open(_insight_file, "w", encoding="utf-8") as _f:
+        _os_ov.makedirs(_os_ov.path.dirname(kb.insight_path), exist_ok=True)
+        with open(kb.insight_path, "w", encoding="utf-8") as _f:
             json.dump({
                 "insight": insight,
                 "doc_count": doc_count,

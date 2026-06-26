@@ -869,33 +869,32 @@ _PERMISSION_PRESETS = [
 ]
 
 # 工具级权限列表定义（映射到 config.py 配置项）
+# 按大类分组（category），前端渲染成分类卡片。用户只关心职能大类，不暴露细粒度工具。
 _PERMISSION_TOOLS = [
+    # ===== 信息检索类 =====
+    {
+        "tool_id": "kb_search",
+        "category": "信息检索",
+        "name": "知识库检索",
+        "description": "允许 Agent 检索知识库中的文档（search_kb）",
+        "config_key": "tool_enabled_kb_search",
+        "default_enabled": True,
+    },
     {
         "tool_id": "web_search",
+        "category": "信息检索",
         "name": "联网搜索",
-        "description": "允许 Agent 使用互联网搜索引擎查找信息",
+        "description": "允许 Agent 使用搜索引擎查找信息、抓取网页（search_web + fetch_url）",
         "config_key": "tool_enabled_web_search",
         "default_enabled": True,
     },
+    # ===== 工作区文件类 =====
     {
         "tool_id": "file_read_write",
+        "category": "工作区文件",
         "name": "文件读写",
-        "description": "允许 Agent 读取和写入沙盒中的文件",
+        "description": "允许 Agent 读取、创建、修改、删除工作区文件（含文档生成、深度阅读）",
         "config_key": "tool_enabled_file_rw",
-        "default_enabled": True,
-    },
-    {
-        "tool_id": "code_exec",
-        "name": "代码执行",
-        "description": "允许 Agent 执行 Python 代码",
-        "config_key": "tool_enabled_code_exec",
-        "default_enabled": True,
-    },
-    {
-        "tool_id": "kb_search",
-        "name": "文库检索",
-        "description": "允许 Agent 从知识库中检索文档",
-        "config_key": "tool_enabled_kb_search",
         "default_enabled": True,
     },
 ]
@@ -947,7 +946,7 @@ async def api_permissions_preset_apply(request: Request):
 def api_permissions_tools():
     """获取工具级权限列表（B3）
 
-    Response: {"tools": [{tool_id, name, description, enabled}, ...]}
+    Response: {"tools": [{tool_id, category, name, description, enabled}, ...]}
     """
     from config import get as _cfg
     tools = []
@@ -955,6 +954,7 @@ def api_permissions_tools():
         enabled = _cfg(tool["config_key"], tool["default_enabled"])
         tools.append({
             "tool_id": tool["tool_id"],
+            "category": tool.get("category", ""),
             "name": tool["name"],
             "description": tool["description"],
             "enabled": enabled,

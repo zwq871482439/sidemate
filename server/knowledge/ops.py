@@ -10,6 +10,7 @@ import re
 import uuid
 import time
 import json
+import shutil
 import threading
 import logging
 import numpy as np
@@ -39,9 +40,13 @@ class _KBOpsMixin:
         self.texts_dir = os.path.join(self.data_dir, "kb_texts")
         self.meta_path = os.path.join(self.data_dir, "kb_meta.json")
         self.vectors_path = os.path.join(self.data_dir, "kb_vectors.npz")
+        # 派生缓存（基于文档内容生成的产物，与原始数据分层）
+        self.cache_dir = os.path.join(self.data_dir, "cache")
+        self.insight_path = os.path.join(self.cache_dir, "kb_insight.json")
 
         os.makedirs(self.data_dir, exist_ok=True)
         os.makedirs(self.texts_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
 
         # 数据
         self.documents: Dict[str, KBDocument] = {}
@@ -141,16 +146,16 @@ class _KBOpsMixin:
             from config import get as _cfg
             self.max_documents = _cfg("kb_max_documents", 50)
             self.max_total_chunks = _cfg("kb_max_total_chunks", 1000)
-            self.chunk_max_chars = _cfg("kb_chunk_max_chars", 2500)
-            self.chunk_overlap_chars = _cfg("kb_chunk_overlap_chars", 200)
+            self.chunk_max_chars = _cfg("kb_chunk_max_chars", 500)
+            self.chunk_overlap_chars = _cfg("kb_chunk_overlap_chars", 50)
             self.search_top_k = _cfg("kb_search_top_k", 5)
             self.embed_batch_size = _cfg("kb_embed_batch_size", 50)
         except Exception as e:
             log.warning("[KB] 配置加载失败，使用默认值: %s", str(e)[:80])
             self.max_documents = 50
             self.max_total_chunks = 1000
-            self.chunk_max_chars = 2500
-            self.chunk_overlap_chars = 200
+            self.chunk_max_chars = 500
+            self.chunk_overlap_chars = 50
             self.search_top_k = 5
             self.embed_batch_size = 50
 
@@ -477,6 +482,16 @@ class _KBOpsMixin:
         except Exception:
             pass
 
+        # 迁移旧版缓存：data_dir 根下的 kb_insight.json → cache/kb_insight.json
+        _legacy_insight = os.path.join(self.data_dir, "kb_insight.json")
+        if os.path.exists(_legacy_insight) and not os.path.exists(self.insight_path):
+            try:
+                os.makedirs(self.cache_dir, exist_ok=True)
+                os.replace(_legacy_insight, self.insight_path)
+                log.info("[KB] 迁移洞察缓存: %s → cache/", "kb_insight.json")
+            except OSError as e:
+                log.warning("[KB] 洞察缓存迁移失败（忽略）: %s", str(e)[:80])
+
         if not os.path.exists(self.meta_path):
             return
         try:
@@ -719,7 +734,7 @@ class _KBOpsMixin:
                 pass
 
     def _save_chunk_text(self, chunk: KBChunk):
-        """保存 chunk 原文到文件"""
+        """保存 chunk 文本到文件"""
         os.makedirs(self.texts_dir, exist_ok=True)
         text_path = os.path.join(self.texts_dir, chunk.chunk_id + ".txt")
         try:
@@ -727,6 +742,58 @@ class _KBOpsMixin:
                 f.write(chunk.text)
         except Exception as e:
             log.error("[KB] 保存 chunk 文本失败: %s", str(e))
+
+    def reset_all(self) -> dict:
+        """清空知识库所有数据（仅删数据，不删功能）。
+
+        删除范围：
+          - 原始数据：kb_texts/、kb_meta.json、kb_vectors.npz
+          - 派生缓存：cache/（含 kb_insight.json）
+          - 临时文件：*_writing.*（写入中断残留）
+          - 旧版缓存：data_dir 根下的 kb_insight.json（兼容老安装）
+        并清空内存数据结构。功能代码（server/）、设置（settings.json）等不受影响。
+        Returns: {"ok": bool, "deleted_docs": N, "deleted_chunks": N, "error": str}
+        """
+        import glob
+        deleted_docs = len(self.documents)
+        deleted_chunks = len(self.chunks)
+        try:
+            # 1. 删除原始数据
+            if os.path.exists(self.texts_dir):
+                shutil.rmtree(self.texts_dir, ignore_errors=True)
+            if os.path.exists(self.meta_path):
+                os.remove(self.meta_path)
+            if os.path.exists(self.vectors_path):
+                os.remove(self.vectors_path)
+            # 2. 删除派生缓存目录（含 insight）
+            if os.path.exists(self.cache_dir):
+                shutil.rmtree(self.cache_dir, ignore_errors=True)
+            # 3. 删除旧版缓存的残留位置（兼容 data_dir 根下的 kb_insight.json）
+            _legacy_insight = os.path.join(self.data_dir, "kb_insight.json")
+            if os.path.exists(_legacy_insight):
+                try: os.remove(_legacy_insight)
+                except OSError: pass
+            # 4. 清理写入中断的临时文件（兜底）
+            for _tmp in glob.glob(os.path.join(self.data_dir, "*_writing.*")):
+                try: os.remove(_tmp)
+                except OSError: pass
+            # 5. 清空内存数据
+            self.documents.clear()
+            self.chunks.clear()
+            self.chunk_order = []
+            self.vectors = None
+            if hasattr(self, '_sparse_index'):
+                self._sparse_index = {}
+            # 6. 重建空目录
+            os.makedirs(self.texts_dir, exist_ok=True)
+            os.makedirs(self.cache_dir, exist_ok=True)
+            log.info("[KB] 知识库已重置: 删除 %d 篇文档, %d 个片段", deleted_docs, deleted_chunks)
+            return {"ok": True, "deleted_docs": deleted_docs, "deleted_chunks": deleted_chunks}
+        except Exception as e:
+            log.error("[KB] 重置知识库失败: %s", str(e))
+            return {"ok": False, "deleted_docs": deleted_docs, "deleted_chunks": deleted_chunks,
+                    "error": str(e)[:200]}
+
 
     # ===== Patch5 G：进度回调机制（供前端 SSE 订阅）=====
 
@@ -998,6 +1065,9 @@ class _KBOpsMixin:
             # LLM 摘要功能已移除：Qwen3 think 模式导致空输出 + GPU 占用 + 几乎零检索提升
             full_text = "\n".join(c.text for c in new_chunks if hasattr(c, 'text'))
             doc.summary = (full_text[:200] + "...") if len(full_text) > 200 else full_text
+
+            # P6 诊断：标记空文档（无文本内容，如纯扫描件/纯图），供文档卡片显示角标
+            doc.metadata["has_no_text"] = (doc.chunk_count == 0)
 
             self._transition(doc_id, "ready")
             doc.progress = 1.0

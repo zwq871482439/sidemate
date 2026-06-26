@@ -32,6 +32,10 @@ _AGENT_BASE_PROMPT = (
     "- 用户的知识库（search_kb）包含用户上传的专业文档，涉及用户特定领域时查看\n"
     "- 互联网搜索（search_web）用于获取最新信息或你不了解的领域\n"
     "- 需要深入某个网页时用 fetch_url\n"
+    "- 用户提到今天/昨天/上周/下个月等相对时间时，用 get_current_time 获取真实日期，不要凭空猜\n"
+    "- 需要精确计算数字（折扣、汇率、求和、百分比）时用 calculator，避免心算出错\n"
+    "- 需要转换文件格式（md/docx/txt 互转、pdf 提取文本）时用 format_convert\n"
+    "- 需要读写 Excel 表格时用 table_ops（数据分析先 read 读出，再 calculator 计算）\n"
     "- 画流程图、架构图、思维导图时，使用 mermaid 代码块格式输出\n"
     "- 自己判断要不要用工具、用几次\n\n"
     "可视化输出指南（自动判断，无需用户要求）：\n"
@@ -42,7 +46,10 @@ _AGENT_BASE_PROMPT = (
     "- 数据图表（柱状/饼图等）→ 用 html 代码块（可用 CSS 或内联 SVG）\n"
     "- 普通问答 → 直接文字回答\n"
     "原则：如果能用图让信息更清晰，就用图。不确定时默认用结构化文字。\n\n"
-    "回答时自然地提及信息来源，比如「根据知识库检索结果…」「公开资料显示…」\n"
+    "回答时必须标注信息来源编号，格式「事实陈述 [1]」。\n"
+    "- 编号对应工具返回的 sources 列表顺序：第1个来源=[1]，第2个=[2]，以此类推\n"
+    "- 只有引用了知识库/搜索结果的具体事实才标编号，模型自身常识不需要\n"
+    "- 这样用户点击编号可以跳转到对应来源\n"
     "- 注意：知识库是AI自动检索的，不要说「您上传的文档」，要说「检索到…」「从知识库找到…」\n\n"
     "## Patch4 v3：文档生成能力（chat 模式同样可用）\n"
     "你具备完整的文档生成能力。当用户需要一份可下载的文档产物时：\n"
@@ -188,6 +195,122 @@ TOOL_REGISTRY = {
             "done": "summarize_done",
         },
         "stat_key": "summarizes",
+    },
+    # 时间感知工具：返回当前日期时间，解决模型不知道"今天"的盲区
+    "get_current_time": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "获取当前的真实日期和时间。当用户提到「今天/昨天/上周/下个月」等相对时间，或需要知道当前日期时调用。返回：完整日期时间 + 星期 + 农历（如可解析）。基于此推算相对日期，不要凭空猜测当前日期。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "time_querying",
+            "done": "time_querying_done",
+        },
+        "stat_key": "time_queries",
+        "condition": None,
+    },
+    # 计算器工具：安全算术，替代有风险的代码执行
+    "calculator": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "calculator",
+                "description": "精确计算数学表达式。用于加减乘除、百分比、括号运算等，避免心算出错。支持运算符：+ - * / % 和括号 ()，以及 min/max/round/abs。例如：计算折扣价、换算汇率、统计求和。注意：只能算数学表达式，不能执行任何代码或函数调用。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "expression": {
+                            "type": "string",
+                            "description": "数学表达式，如 '2345 * 1.13 + 678' 或 '(100-30)/2'"
+                        }
+                    },
+                    "required": ["expression"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "calculating",
+            "done": "calculating_done",
+        },
+        "stat_key": "calculations",
+        "condition": None,
+    },
+    # 格式转换：工作区内文件互转（md/docx/txt + pdf提取），绝不碰知识库
+    "format_convert": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "format_convert",
+                "description": "转换工作区文件的格式。支持：md↔docx、md↔txt、docx→txt、pdf→txt（提取文本）。用于把文档转成用户需要的格式。注意：只在工作区内操作，不能转成 pdf。docx→pdf 不支持。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "源文件名（工作区内相对路径，如 '报告.docx'）"
+                        },
+                        "target": {
+                            "type": "string",
+                            "description": "目标文件名（工作区内相对路径，如 '报告.md'）。扩展名决定输出格式"
+                        }
+                    },
+                    "required": ["source", "target"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "format_converting",
+            "done": "format_converting_done",
+        },
+        "stat_key": "conversions",
+        "condition": None,
+    },
+    # 表格处理：读写 xlsx + markdown 表格互转
+    "table_ops": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "table_ops",
+                "description": "读写工作区内的 Excel 表格。read：读取 .xlsx 返回 markdown 表格（用于理解数据）。write：把 markdown 表格或 CSV 写成 .xlsx。数据分析（求和/统计）请用 calculator 配合：先 read 读数据，再 calculator 算结果。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["read", "write"],
+                            "description": "read=读取表格，write=生成表格"
+                        },
+                        "filename": {
+                            "type": "string",
+                            "description": "工作区内文件名（如 'data.xlsx'）"
+                        },
+                        "data": {
+                            "type": "string",
+                            "description": "write 模式必填：markdown 表格或 CSV 文本"
+                        }
+                    },
+                    "required": ["action", "filename"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "table_operating",
+            "done": "table_operating_done",
+        },
+        "stat_key": "table_ops_count",
+        "condition": None,
     },
     # P6: 深度阅读工具——对上传文档做逐章/逐段深度分析
     "deep_read": {

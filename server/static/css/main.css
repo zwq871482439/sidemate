@@ -385,9 +385,9 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 /* 气泡/列表切换：浮动在消息区右上角 */
 .float-style-toggle{position:absolute;top:6px;right:8px;z-index:20;font-size:10px;padding:2px 8px;border:0.5px solid var(--border-color);border-radius:9px;cursor:pointer;background:var(--bg-primary);color:var(--text-secondary);opacity:.6;transition:opacity .15s;font-family:inherit}
 .float-style-toggle:hover{opacity:1;color:var(--accent-color);border-color:var(--accent-color)}
-/* 胶囊内文本框：去边框去背景，融入容器；单行严格 38px 与按钮等高 */
-.input-capsule textarea{border:none;background:transparent;border-radius:0;padding:0 4px;flex:1;height:38px;min-height:38px;max-height:120px;box-sizing:border-box;line-height:38px;font-size:14px;overflow:hidden}
-.input-capsule textarea::placeholder{color:var(--text-muted);line-height:38px}
+/* 胶囊内文本框：去边框去背景，融入容器；行距 1.6 保证多行可读 */
+.input-capsule textarea{border:none;background:transparent;border-radius:0;padding:9px 4px;flex:1;height:38px;min-height:38px;max-height:120px;box-sizing:border-box;line-height:1.6;font-size:14px;overflow:hidden}
+.input-capsule textarea::placeholder{color:var(--text-muted)}
 .input-capsule textarea:focus{border:none;box-shadow:none}
 .input-capsule textarea:disabled{opacity:.5;background:transparent}
 /* 胶囊内附件按钮：透明背景，hover 时浅底 + 轻微放大 */
@@ -813,11 +813,11 @@ body.has-offline-banner #app{padding-top:44px}
 .doc-confirm-cancel:hover{background:var(--bg-tertiary);color:var(--text-primary)}
 
 /* ===== 文档下载按钮 ===== */
-.doc-download-bar{margin:10px 0 4px;display:flex;justify-content:flex-start}
-.doc-download-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;
-  background:var(--accent-color);color:var(--text-on-accent);text-decoration:none;font-size:.9em;font-weight:500;
-  transition:opacity .15s,transform .1s;cursor:pointer}
-.doc-download-btn:hover{opacity:.85;transform:translateY(-1px)}
+.doc-download-bar{margin:8px 0 2px;display:flex;flex-wrap:wrap;gap:6px}
+.doc-download-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;
+  background:var(--bg-secondary);border:1px solid var(--accent-color);color:var(--accent-color);
+  text-decoration:none;font-size:.78em;font-weight:500;transition:background .12s;cursor:pointer}
+.doc-download-btn:hover{background:var(--accent-color);color:var(--text-on-accent)}
 
 /* ===== KB 参考来源 ===== */
 .kb-sources-bar{margin:10px 0 4px;padding:10px 14px;border-radius:8px;background:var(--bg-secondary);border:1px solid var(--border-color)}
@@ -949,10 +949,8 @@ body.has-offline-banner #app{padding-top:44px}
 .chat-toolbar-merged{display:flex;align-items:center;gap:8px;padding:4px 10px;border-bottom:1px solid var(--border-color);background:var(--bg-secondary);flex-shrink:0}
 .chat-toolbar-merged #actionBar{padding:0;border:none;background:none}
 
-/* 侧边栏折叠按钮（窄屏） */
-.chat-sidebar-toggle{display:none;padding:4px 8px;font-size:.75em;border:0.5px solid var(--border-color);border-radius:4px;background:var(--bg-primary);cursor:pointer;margin-right:auto}
+/* 会话侧边栏折叠状态（桌面/窄屏统一用 .collapsed） */
 .chat-sidebar.collapsed{display:none}
-.chat-sidebar.collapsed+.chat-main .chat-sidebar-toggle{display:block}
 
 /* ===== Patch2 G1: 响应式优化 ===== */
 @media (max-width: 768px) {
@@ -967,9 +965,8 @@ body.has-offline-banner #app{padding-top:44px}
   .kb-left-panel[data-collapsed="false"]{width:0;min-width:0;overflow:hidden}
 }
 @media (max-width: 520px) {
+  /* 窄屏侧边栏浮层化（不挤占主区），显隐统一用 .collapsed（与桌面一致） */
   .chat-sidebar{position:absolute;left:0;top:0;bottom:0;z-index:20;box-shadow:2px 0 12px var(--shadow-light)}
-  .chat-sidebar:not(.open){display:none}
-  .chat-sidebar-toggle{display:block}
 }
 
 /* ===== P6: 模式切换（三段按钮）— 见文末新样式 ===== */
@@ -1089,13 +1086,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* ===== Patch4 修复 5: 文档进度面板（DocProgressTracker） ===== */
 /* 未激活时完全不占位 */
 .doc-progress-panel{
-  max-height:0;
-  overflow:hidden;
-  opacity:0;
-  margin:0;
-  padding:0;
-  border:0;
-  transition:max-height .3s ease, opacity .25s ease, margin .25s ease;
+  display:none !important; /* P6: 文档进度面板已废弃，下载改用底部 tag（.doc-download-bar）。保留事件逻辑避免回归，仅视觉隐藏 */
 }
 /* 激活：展开 */
 .doc-progress-panel.active{

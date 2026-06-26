@@ -488,6 +488,9 @@ async function kbRefreshDocs() {
     // 通知 kb-batch.js
     if (typeof kbOnDocsRendered === 'function') kbOnDocsRendered(docs);
 
+    // P6: 私密文档清单（无私密则隐藏整个区块）
+    kbRenderPrivateList(docs);
+
     // 轮询管理
     var hasProcessing = docs.some(function(d) { return ['processing', 'indexing', 'summarizing'].indexOf(d.status) >= 0; });
     var hasPendingTags = docs.some(function(d) {
@@ -558,6 +561,42 @@ var _kbNameFilter = '';
 var _kbExpandedGroups = new Set();  // 展开的分组名集合
 
 // P6 重构：按文档 category 字段分组渲染侧栏（一个文档一个分类）
+// P6: 私密文档清单（侧栏，无私密文档则隐藏整个区块）
+function kbRenderPrivateList(docs) {
+  var wrap = document.getElementById('kbSidebarPrivateWrap');
+  if (!wrap) return;
+  docs = docs || _kbLastDocs || [];
+  var privateDocs = [];
+  for (var i = 0; i < docs.length; i++) {
+    if (docs[i].is_private) privateDocs.push(docs[i]);
+  }
+  // 无私密文档 → 隐藏整个区块
+  if (!privateDocs.length) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  // 标题带计数
+  var hdr = document.getElementById('kbSidebarPrivateHdr');
+  if (hdr) hdr.textContent = '私密文档 (' + privateDocs.length + ')';
+  // 渲染清单
+  var container = document.getElementById('kbSidebarPrivate');
+  if (!container) return;
+  var html = '';
+  for (var j = 0; j < privateDocs.length; j++) {
+    var d = privateDocs[j];
+    var name = d.filename || '未命名';
+    var summary = (d.summary || '').slice(0, 40);
+    html += '<div class="kb-token-item" title="' + esc(name) + '">';
+    html += '<span class="kb-token-icon">' + '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>' + '</span>';
+    html += '<span class="kb-token-info"><span class="kb-token-doc">' + esc(name) + '</span>';
+    if (summary) html += '<span class="kb-token-meta">' + esc(summary) + '…</span>';
+    html += '</span>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
 function _kbRenderCategoryTree(docs) {
   var listEl = document.getElementById('kbSidebarList');
   if (!listEl) return;

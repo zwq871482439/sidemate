@@ -216,9 +216,35 @@ def read_workspace(chat_id: str, path: str):
         return JSONResponse({"error": str(e)[:120]}, status_code=400)
     except FileNotFoundError as e:
         return JSONResponse({"error": str(e)[:120]}, status_code=404)
-    except Exception as e:
-        log.warning("[WORKSPACE] read 失败 chat=%s path=%s: %s", chat_id, path, str(e)[:100])
-        return JSONResponse({"error": str(e)[:120]}, status_code=500)
+
+
+@router.get("/api/chat/{chat_id}/workspace/download")
+def download_workspace_file(chat_id: str, path: str):
+    """下载 workspace 内的任意文件（xlsx/docx/txt/md 等，产物下载用）。
+
+    Query: path=相对 workspace 的文件路径（如 "成绩单.xlsx"）
+    """
+    from core.doc_session import safe_workspace_path
+    if _chat_folder_path(chat_id) is None:
+        return JSONResponse({"error": "非法或不存在会话"}, status_code=404)
+    try:
+        abs_path = safe_workspace_path(chat_id, path)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)[:120]}, status_code=400)
+    if not os.path.isfile(abs_path):
+        return JSONResponse({"error": "文件不存在"}, status_code=404)
+
+    # MIME 类型按扩展名映射
+    import mimetypes
+    _ext_mime = {
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".pdf": "application/pdf",
+    }
+    ext = os.path.splitext(path)[1].lower()
+    media_type = _ext_mime.get(ext, mimetypes.guess_type(path)[0] or "application/octet-stream")
+    filename = os.path.basename(path)
+    return FileResponse(abs_path, media_type=media_type, filename=filename)
 
 
 @router.post("/api/chat/{chat_id}/workspace/write")

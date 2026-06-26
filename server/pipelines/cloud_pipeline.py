@@ -503,9 +503,10 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     # 关键状态串（来自 agent_tools.TOOL_REGISTRY 的 status_map）：
     #   set_doc_status:  doc_status_updating → doc_status_done（completed → 派生 doc_complete）
     #   list_docs:       docs_listing → docs_listed
-    _doc_complete_sent = False
-    _doc_complete_url = None        # Patch4 v3.1 BUG#18：保存 doc_url 供消息持久化
-    _doc_complete_filename = None   # Patch4 v3.1 BUG#18：保存 docx 文件名
+    _artifacts = []                # P6: 收集所有产物（docx/xlsx/txt 等），支持多产物下载 tag
+    _doc_complete_sent = False     # 兼容旧逻辑（首次产物标记）
+    _doc_complete_url = None        # Patch4 v3.1 BUG#18：保存首个产物 url 供消息持久化
+    _doc_complete_filename = None   # Patch4 v3.1 BUG#18：保存首个产物文件名
     _pipeline_start_ts = t0  # 用于 elapsed_ms 计算
     _STATUS_DONE_SUFFIXES = ("_done", "_listed", "_deleted", "_read_done", "_write_done")
     _user_stopped = False  # P6 #6: 标记用户终止,避免空回复兜底覆盖成"Agent未能生成回复"
@@ -577,22 +578,20 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                     _filename = content.get("filename", "")
                     _docx_path = content.get("docx_path", "")
                     if (status_val in ("doc_status_done", "completed")
-                            and not _doc_complete_sent
                             and _filename
                             and _docx_path):
-                        _doc_complete_sent = True
                         # 拼 doc_url（与 routers/files.py 的下载路由对齐）
                         _docx_basename = _docx_path
-                        # 去掉路径前缀和 .docx 扩展名，作为 download 路由的 key
                         if "/" in _docx_basename:
                             _docx_basename = _docx_basename.rsplit("/", 1)[-1]
                         _doc_key = _docx_basename[:-5] if _docx_basename.endswith(".docx") else _docx_basename
-                        # Patch4 v3.1 BUG#21：URL 编码 doc_key（中文/全角字符必须编码）
                         from urllib.parse import quote as _url_quote
                         _doc_url = "/api/chat/%s/doc/%s/download" % (_chat_id, _url_quote(_doc_key, safe=''))
-                        # Patch4 v3.1 BUG#18：保存到模块作用域变量，供消息持久化使用
-                        _doc_complete_url = _doc_url
-                        _doc_complete_filename = _docx_path
+                        if not _doc_complete_sent:
+                            _doc_complete_sent = True
+                            _doc_complete_url = _doc_url
+                            _doc_complete_filename = _docx_path
+                        _artifacts.append({"url": _doc_url, "filename": _docx_path})
                         yield sse_event("doc_complete", {
                             "filename": _docx_path,
                             "doc_url": _doc_url,
@@ -600,6 +599,27 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             "total_time": max(0.0, time.time() - _pipeline_start_ts),
                             "ts": now_ts,
                         })
+
+                    # P6: 统一产物下载——table_ops write / format_convert 成功后也派发产物事件
+                    # 复用 doc_complete 事件类型（前端已有下载 tag 渲染），用 workspace 下载接口（支持 xlsx/txt/md 等）
+                    if status_val in ("table_operating_done", "format_converting_done"):
+                        _artifact_name = content.get("name") or content.get("target") or ""
+                        if _artifact_name:
+                            from urllib.parse import quote as _url_quote
+                            _artifact_url = "/api/chat/%s/workspace/download?path=%s" % (
+                                _chat_id, _url_quote(_artifact_name, safe=''))
+                            if not _doc_complete_sent:
+                                _doc_complete_sent = True
+                                _doc_complete_url = _artifact_url
+                                _doc_complete_filename = _artifact_name
+                            _artifacts.append({"url": _artifact_url, "filename": _artifact_name})
+                            yield sse_event("doc_complete", {
+                                "filename": _artifact_name,
+                                "doc_url": _artifact_url,
+                                "md_filename": "",
+                                "total_time": max(0.0, time.time() - _pipeline_start_ts),
+                                "ts": now_ts,
+                            })
 
                     # 给转发出去的 agent_status 追加 phase / ts / elapsed_ms
                     enriched = dict(content)
@@ -757,6 +777,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             assistant_msg["doc_url"] = _doc_complete_url
             assistant_msg["doc_filename"] = _doc_complete_filename or "document.docx"
             log.info("[SAVE] BUG#18 回填 doc_url=%s", _doc_complete_url)
+        # P6: 持久化全部产物（支持多产物，刷新后下载 tag 不丢失）
+        if _artifacts:
+            assistant_msg["artifacts"] = _artifacts
 
         messages = history_raw + [
             {"role": "user", "content": message, "ts": ts},

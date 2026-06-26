@@ -158,8 +158,8 @@ DEFAULTS = {
     # ----- 文库（Patch 6）-----
     "kb_max_documents": 200,             # D3: 最大文档数（Patch4 v3.1：50→200，用户需求）
     "kb_max_total_chunks": 4000,         # 最大 chunk 总数（按文档数比例放大 1000→4000）
-    "kb_chunk_max_chars": 3000,          # 每块最大字符（Patch4 v3.1：2500→3000，适配 bge-m3）
-    "kb_chunk_overlap_chars": 300,       # 重叠字符（保持 10% overlap 比例）
+    "kb_chunk_max_chars": 500,          # 每块最大字符（Patch5 A4：2500→500，隐私边界 + 检索精度）
+    "kb_chunk_overlap_chars": 50,       # 重叠字符（保持 10% overlap 比例）
     "kb_search_top_k": 5,               # 检索返回 top-k（云端默认，本地模式动态降为 3）
     "kb_embedding_model": "BAAI/bge-m3",  # Patch4 v3.1：bge-base-zh-v1.5 → bge-m3（多语言+8192长序列）
     "kb_vector_dim": 1024,              # 向量维度（bge-m3 = 1024）

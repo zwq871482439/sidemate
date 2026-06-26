@@ -396,7 +396,8 @@ async function refreshStatus() {
     var _msBtn = document.getElementById('msgStyleToggle');
     if (_msBtn && typeof MessageStyleManager !== 'undefined') {
       var _curMode = MessageStyleManager.getMode();
-      _msBtn.textContent = (_curMode === 'list') ? '列表' : '气泡';
+      // P6: 文案统一为 卡片/列表（绝不显示"气泡"），与 ui-enhance.js:applyMode 一致
+      _msBtn.textContent = (_curMode === 'list') ? '卡片' : '列表';
     }
     // P6: initModeTag 已移除，模式状态由 initModeSelector 管理
   } catch(e) {
@@ -1141,19 +1142,36 @@ async function loadPermissionTools() {
       return;
     }
 
-    var html = '';
+    // 按 category 分组（保持后端返回顺序）
+    var groups = {};
+    var groupOrder = [];
     for (var i = 0; i < data.tools.length; i++) {
       var tool = data.tools[i];
-      var checked = tool.enabled ? 'checked' : '';
-      html += '<div class="perm-item">';
-      html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">';
-      html += '<input type="checkbox" data-tool-id="'+esc(tool.tool_id)+'" '+checked+' onchange="toggleToolPermission(\''+esc(tool.tool_id)+'\', this.checked)" style="width:15px;height:15px;flex-shrink:0">';
-      html += '<div>';
-      html += '<div class="perm-name">'+esc(tool.name)+'</div>';
-      html += '<div class="perm-desc">'+esc(tool.description)+'</div>';
-      html += '</div>';
-      html += '</label>';
-      html += '</div>';
+      var cat = tool.category || '其它';
+      if (!groups[cat]) { groups[cat] = []; groupOrder.push(cat); }
+      groups[cat].push(tool);
+    }
+
+    var html = '';
+    for (var g = 0; g < groupOrder.length; g++) {
+      var catName = groupOrder[g];
+      var tools = groups[catName];
+      // 分组标题
+      html += '<div class="perm-group-title">' + esc(catName) + '</div>';
+      // 该组下的工具
+      for (var j = 0; j < tools.length; j++) {
+        var t = tools[j];
+        var checked = t.enabled ? 'checked' : '';
+        html += '<div class="perm-item">';
+        html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">';
+        html += '<input type="checkbox" data-tool-id="'+esc(t.tool_id)+'" '+checked+' onchange="toggleToolPermission(\''+esc(t.tool_id)+'\', this.checked, \''+esc(t.name).replace(/'/g,"\\'")+'\')" style="width:15px;height:15px;flex-shrink:0">';
+        html += '<div>';
+        html += '<div class="perm-name">'+esc(t.name)+'</div>';
+        html += '<div class="perm-desc">'+esc(t.description)+'</div>';
+        html += '</div>';
+        html += '</label>';
+        html += '</div>';
+      }
     }
     container.innerHTML = html;
   } catch(e) {
@@ -1161,7 +1179,7 @@ async function loadPermissionTools() {
   }
 }
 
-async function toggleToolPermission(toolId, enabled) {
+async function toggleToolPermission(toolId, enabled, toolName) {
   try {
     var resp = await fetch(_apiBase + '/api/permissions/tool/' + encodeURIComponent(toolId), {
       method: 'POST',
@@ -1170,7 +1188,7 @@ async function toggleToolPermission(toolId, enabled) {
     });
     var data = await resp.json();
     if (data.ok) {
-      showToast('已' + (enabled ? '启用' : '禁用') + '「' + toolId + '」', 'success');
+      showToast('已' + (enabled ? '启用' : '禁用') + '「' + (toolName || toolId) + '」', 'success');
       // 知识库检索开关同步 kb_permission（开=full，关=disabled）
       if (toolId === 'kb_search') {
         try {

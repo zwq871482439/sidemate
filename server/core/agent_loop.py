@@ -27,9 +27,92 @@ Yield 格式（与 cloud_pipeline 消费者对齐）：
 import os
 import json
 import time
+import ast
 import logging
 
 log = logging.getLogger(__name__)
+
+# ===== 安全计算器（calculator 工具用）=====
+# 白名单：允许的 AST 节点 + 允许的函数名。其余一律拒绝（防止任意代码执行）。
+_SAFE_MATH_NODES = tuple(
+    n for n in (
+        ast.Expression,          # 顶层
+        ast.BinOp,               # 二元运算 a + b
+        ast.UnaryOp,             # 一元运算 -a
+        getattr(ast, "Num", None),       # 数字（Python <3.8，3.12+ 已移除）
+        getattr(ast, "Str", None),       # 字符串（同上，仅用于兼容旧版）
+        ast.Constant,            # 数字/常量（Python >=3.8）
+        ast.Call,                # 函数调用（仅白名单函数）
+        ast.Name,                # 标识符（仅白名单）
+        ast.Load,                # Name 的 ctx 节点
+    ) if n is not None
+)
+_SAFE_MATH_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow, ast.USub, ast.UAdd)
+_SAFE_MATH_FUNCS = {
+    "min": min, "max": max, "round": round, "abs": abs,
+    "sum": sum, "pow": pow,
+}
+
+
+def _safe_math_eval(expression: str):
+    """安全计算数学表达式。仅允许数字 + 四则运算 + 白名单函数，拒绝任何代码/属性访问。
+
+    Returns: 计算结果（int/float）
+    Raises: ValueError 表达式非法或包含禁止内容
+    """
+    # 1. 字符级白名单：先过滤掉明显危险的字符（双下划线、引号、赋值、分号等）
+    import re
+    if re.search(r'__|["\']|;|=|import|exec|eval|open|os\.|sys\.', expression):
+        raise ValueError("表达式包含禁止字符")
+
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError:
+        raise ValueError("表达式语法错误")
+
+    def _check(node):
+        if isinstance(node, ast.Expression):
+            _check(node.body)
+            return
+        if isinstance(node, ast.BinOp):
+            if not isinstance(node.op, _SAFE_MATH_BINOPS):
+                raise ValueError("不允许的运算符: %s" % type(node.op).__name__)
+            _check(node.left)
+            _check(node.right)
+            return
+        if isinstance(node, ast.UnaryOp):
+            if not isinstance(node.op, _SAFE_MATH_BINOPS):  # USub/UAdd 也在白名单
+                raise ValueError("不允许的一元运算符: %s" % type(node.op).__name__)
+            _check(node.operand)
+            return
+        if isinstance(node, ast.Constant):
+            if not isinstance(node.value, (int, float)):
+                raise ValueError("不允许的常量类型")
+            return
+        # Python <3.8 的 ast.Num（3.12+ 已并入 ast.Constant，跳过此分支）
+        _NumType = getattr(ast, "Num", None)
+        if _NumType and isinstance(node, _NumType):
+            return
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name) or node.func.id not in _SAFE_MATH_FUNCS:
+                raise ValueError("不允许的函数调用")
+            for a in node.args:
+                _check(a)
+            return
+        if isinstance(node, ast.Name):
+            if node.id not in _SAFE_MATH_FUNCS:
+                raise ValueError("不允许的标识符: %s" % node.id)
+            return
+        if isinstance(node, ast.Load):
+            return
+        raise ValueError("不允许的语法: %s" % type(node).__name__)
+
+    _check(tree)
+    # 编译执行（已通过白名单校验，安全）
+    code = compile(tree, "<calculator>", "eval")
+    result = eval(code, {"__builtins__": {}}, _SAFE_MATH_FUNCS)  # noqa: S307 - 已白名单校验
+    return result
+
 
 # ===== 常量 =====
 # Patch4 修复 3：MAX_ROUNDS 从 10 提到 20，支持长文档（>10 章）
@@ -373,12 +456,18 @@ class AgentLoop:
             "fetches": stats["fetches"],
             "kb_hits": stats["kb_hits"],
             "docs": stats["docs"],
+            "time_queries": stats.get("time_queries", 0),
+            "calculations": stats.get("calculations", 0),
+            "conversions": stats.get("conversions", 0),
+            "table_ops": stats.get("table_ops_count", 0),
             "elapsed": elapsed,
         })
 
-        log.info("[AGENT] 完成: %d轮, searches=%d, fetches=%d, kb=%d, docs=%d, %.1fs",
+        log.info("[AGENT] 完成: %d轮, searches=%d, fetches=%d, kb=%d, docs=%d, time=%d, calc=%d, conv=%d, tbl=%d, %.1fs",
                  rounds, stats["searches"], stats["fetches"],
-                 stats["kb_hits"], stats["docs"], elapsed)
+                 stats["kb_hits"], stats["docs"],
+                 stats.get("time_queries", 0), stats.get("calculations", 0),
+                 stats.get("conversions", 0), stats.get("table_ops_count", 0), elapsed)
 
     def _build_messages(self, message, system_prompt, history, context_cache):
         """构建 OpenAI 格式的 messages 数组"""
@@ -526,6 +615,172 @@ class AgentLoop:
                         "message": "压缩失败: %s" % str(e)[:100],
                     }
 
+            elif tool_name == "get_current_time":
+                # 时间感知：返回当前日期时间 + 星期 + 农历（如有）
+                stats["time_queries"] = stats.get("time_queries", 0) + 1
+                try:
+                    from datetime import datetime
+                    now = datetime.now()
+                    weekday_cn = "星期" + "一二三四五六日"[now.weekday()]
+                    # 农历：优先用 lunardate/borax，不可用则跳过（不阻断）
+                    lunar_str = ""
+                    try:
+                        import lunardate
+                        ld = lunardate.LunarDate.fromSolarDate(
+                            now.year, now.month, now.day)
+                        lunar_str = " 农历%d年%s月%s" % (
+                            ld.year, ["正","二","三","四","五","六","七","八","九","十","冬","腊"][ld.month-1] if 1 <= ld.month <= 12 else str(ld.month),
+                            {1:"初一",2:"初二",3:"初三",4:"初四",5:"初五",6:"初六",7:"初七",8:"初八",9:"初九",10:"初十"}.get(ld.day, "%d日" % ld.day))
+                    except ImportError:
+                        pass  # 无农历库，跳过（不阻断主功能）
+                    time_str = now.strftime("%Y年%m月%d日 %H:%M") + " " + weekday_cn + lunar_str
+                    return {
+                        "success": True,
+                        "tool": "get_current_time",
+                        "data": {
+                            "datetime": time_str,
+                            "iso": now.strftime("%Y-%m-%d %H:%M:%S"),
+                            "weekday": weekday_cn,
+                            "timestamp": int(now.timestamp()),
+                        },
+                    }
+                except Exception as e:
+                    log.warning("[AGENT] get_current_time 失败: %s", str(e)[:100])
+                    return {
+                        "success": False,
+                        "tool": "get_current_time",
+                        "error": "time_failed",
+                        "message": "获取时间失败: %s" % str(e)[:100],
+                    }
+
+            elif tool_name == "calculator":
+                # 安全计算器：仅允许数学表达式，禁任意代码（替代 code_exec）
+                stats["calculations"] = stats.get("calculations", 0) + 1
+                expression = (args.get("expression") or "").strip()
+                if not expression:
+                    return {"success": False, "tool": "calculator", "error": "缺少 expression",
+                            "message": "请提供数学表达式"}
+                try:
+                    result = _safe_math_eval(expression)
+                    return {
+                        "success": True,
+                        "tool": "calculator",
+                        "data": {
+                            "expression": expression,
+                            "result": result,
+                        },
+                    }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "tool": "calculator",
+                        "error": "calc_failed",
+                        "message": "计算失败（%s）。仅支持 + - * / % 和括号，以及 min/max/round/abs。" % str(e)[:60],
+                    }
+
+            elif tool_name == "format_convert":
+                # 格式转换：工作区内文件互转（md/docx/txt + pdf提取）
+                stats["conversions"] = stats.get("conversions", 0) + 1
+                src_name = args.get("source", "")
+                dst_name = args.get("target", "")
+                if not src_name or not dst_name:
+                    return {"success": False, "tool": "format_convert", "error": "缺少参数",
+                            "message": "需要 source 和 target 两个文件名"}
+                try:
+                    from config import WORKSPACE_DIR
+                    from core.doc_session import safe_workspace_path
+                    from core.file_converter import convert
+                    src_path = safe_workspace_path(self.chat_id, src_name)
+                    dst_path = safe_workspace_path(self.chat_id, dst_name)
+                    result = convert(src_path, dst_path)
+                    if result.get("ok"):
+                        return {
+                            "success": True,
+                            "tool": "format_convert",
+                            "data": {
+                                "source": src_name,
+                                "target": result.get("dst_name", dst_name),
+                                "src_format": result.get("src_format"),
+                                "dst_format": result.get("dst_format"),
+                                "chars": result.get("chars", 0),
+                                "hint": "已将 %s 转为 %s（%s→%s）" % (
+                                    src_name, result.get("dst_name"), result.get("src_format"), result.get("dst_format")),
+                            },
+                        }
+                    else:
+                        return {"success": False, "tool": "format_convert", "error": "convert_failed",
+                                "message": result.get("error", "转换失败")}
+                except ValueError as e:
+                    return {"success": False, "tool": "format_convert", "error": "path_violation",
+                            "message": str(e)[:120]}
+                except Exception as e:
+                    return {"success": False, "tool": "format_convert", "error": "convert_failed",
+                            "message": "转换失败: %s" % str(e)[:120]}
+
+            elif tool_name == "table_ops":
+                # 表格处理：读写 xlsx
+                stats["table_ops_count"] = stats.get("table_ops_count", 0) + 1
+                action = args.get("action", "")
+                filename = args.get("filename", "")
+                if not action or not filename:
+                    return {"success": False, "tool": "table_ops", "error": "缺少参数",
+                            "message": "需要 action（read/write）和 filename"}
+                try:
+                    from config import WORKSPACE_DIR
+                    from core.doc_session import safe_workspace_path
+                    from core import table_ops as table_mod
+                    file_path = safe_workspace_path(self.chat_id, filename)
+                    if action == "read":
+                        result = table_mod.read_xlsx(file_path)
+                        if result.get("ok"):
+                            _hint = "读取 %s（%d行×%d列）" % (filename, result.get("rows", 0), result.get("cols", 0))
+                            if result.get("truncated"):
+                                _hint += "，已截断（仅显示前50行）"
+                            return {
+                                "success": True,
+                                "tool": "table_ops",
+                                "data": {
+                                    "markdown": result.get("markdown", ""),
+                                    "rows": result.get("rows", 0),
+                                    "cols": result.get("cols", 0),
+                                    "sheets": result.get("sheets", []),
+                                    "truncated": result.get("truncated", False),
+                                    "hint": _hint,
+                                },
+                            }
+                        else:
+                            return {"success": False, "tool": "table_ops", "error": "read_failed",
+                                    "message": result.get("error", "读取失败")}
+                    elif action == "write":
+                        data = args.get("data", "")
+                        if not data:
+                            return {"success": False, "tool": "table_ops", "error": "缺少 data",
+                                    "message": "write 模式需要 data（markdown 表格或 CSV）"}
+                        result = table_mod.write_xlsx(file_path, data)
+                        if result.get("ok"):
+                            return {
+                                "success": True,
+                                "tool": "table_ops",
+                                "data": {
+                                    "name": result.get("name", filename),
+                                    "rows": result.get("rows", 0),
+                                    "cols": result.get("cols", 0),
+                                    "hint": "已生成 %s（%d行×%d列）" % (result.get("name", filename), result.get("rows", 0), result.get("cols", 0)),
+                                },
+                            }
+                        else:
+                            return {"success": False, "tool": "table_ops", "error": "write_failed",
+                                    "message": result.get("error", "写入失败")}
+                    else:
+                        return {"success": False, "tool": "table_ops", "error": "invalid_action",
+                                "message": "action 只能是 read 或 write"}
+                except ValueError as e:
+                    return {"success": False, "tool": "table_ops", "error": "path_violation",
+                            "message": str(e)[:120]}
+                except Exception as e:
+                    return {"success": False, "tool": "table_ops", "error": "table_failed",
+                            "message": "操作失败: %s" % str(e)[:120]}
+
             elif tool_name == "deep_read":
                 # P6: 深度阅读工具——读取文档并做结构化分析
                 filename = args.get("filename", "")
@@ -534,7 +789,6 @@ class AgentLoop:
                     return {"success": False, "tool": "deep_read", "error": "缺少 filename"}
 
                 # 读取工作区文件
-                import os
                 from config import WORKSPACE_DIR
                 _ws_dir = os.path.join(WORKSPACE_DIR, "chats", self.chat_id, "workspace") if self.chat_id else os.path.join(WORKSPACE_DIR, "workspace")
                 _file_path = os.path.join(_ws_dir, filename)
@@ -660,6 +914,10 @@ class AgentLoop:
                         },
                     }
                 except Exception as e:
+                    import logging as _log_mod
+                    _log_mod.getLogger("agent_loop").error(
+                        "[AGENT] set_doc_status 执行异常: %s (filename=%s, chat_id=%s)",
+                        str(e)[:200], filename, self.chat_id, exc_info=True)
                     return {
                         "success": False,
                         "tool": "set_doc_status",
@@ -910,6 +1168,18 @@ class AgentLoop:
                            "append_workspace", "edit_workspace"):
             path = args.get("path", "")
             return get_status_event(tool_name, "start", path=path[:50] if path else "")
+        elif tool_name == "get_current_time":
+            return get_status_event(tool_name, "start")
+        elif tool_name == "calculator":
+            return get_status_event(tool_name, "start", expression=(args.get("expression", "") or "")[:60])
+        elif tool_name == "format_convert":
+            return get_status_event(tool_name, "start",
+                                    source=(args.get("source", "") or "")[:50],
+                                    target=(args.get("target", "") or "")[:50])
+        elif tool_name == "table_ops":
+            return get_status_event(tool_name, "start",
+                                    action=args.get("action", ""),
+                                    filename=(args.get("filename", "") or "")[:50])
         else:
             return {"status": "thinking"}
 
@@ -959,14 +1229,17 @@ class AgentLoop:
         elif tool_name in ("read_workspace", "delete_workspace"):
             return get_status_event(tool_name, "done", name=data.get("name", ""))
         elif tool_name == "write_workspace":
-            # Patch4 v3：write_workspace done 带 size（字节）和 words（字数，供进度面板展示）
+            # Patch4 v3：write_workspace done 带 size（字节）、words（字数）、lines（行数）
+            _content = args.get("content", "") or ""
             _size = data.get("size", 0)
-            _words = len(args.get("content", "")) if args.get("content") else 0
-            _preview = (args.get("content", "") or "")[:200]
+            _words = len(_content)
+            _lines = _content.count("\n") + 1 if _content else 0
+            _preview = _content[:200]
             return get_status_event(tool_name, "done",
                                     name=data.get("name", ""),
                                     size=_size,
                                     words=_words,
+                                    lines=_lines,
                                     detail=_preview)
         elif tool_name == "append_workspace":
             # Patch4 v3.1：append done 带总 size + 本次追加字节数
@@ -982,6 +1255,21 @@ class AgentLoop:
                                     name=data.get("name", ""),
                                     replaced=data.get("replaced", 0),
                                     size=data.get("size", 0))
+        elif tool_name == "get_current_time":
+            return get_status_event(tool_name, "done", datetime=data.get("datetime", ""))
+        elif tool_name == "calculator":
+            return get_status_event(tool_name, "done", expression=data.get("expression", ""),
+                                    result=data.get("result", ""))
+        elif tool_name == "format_convert":
+            return get_status_event(tool_name, "done",
+                                    source=data.get("source", ""),
+                                    target=data.get("target", ""),
+                                    chars=data.get("chars", 0))
+        elif tool_name == "table_ops":
+            return get_status_event(tool_name, "done",
+                                    name=data.get("name", ""),
+                                    rows=data.get("rows", 0),
+                                    cols=data.get("cols", 0))
         else:
             return {"status": "done"}
 
