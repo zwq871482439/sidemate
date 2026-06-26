@@ -121,6 +121,47 @@
 - 热力图圆点（P6 P1-04）保留，作为「冷热程度」的快速概览
 - 审计日志是「点进去看明细」，与热力图是「概览 vs 详情」关系，互补不替代
 
+---
+
+## P7 技术债：代码整洁项（F11 / F12）
+
+> **来源**：P6 打磨阶段审计（AUDIT-ponytail.md D1/D2），逐行对比后判定 P6 不改（发版前不承担回归风险），移入 P7。
+> **共同特征**：纯代码整洁，无功能/性能收益，需写测试覆盖行为差异才能安全合并。
+
+### F11: 合并 cache_cleanup + log_cleanup
+
+**现状**：`core/cache_cleanup.py` 与 `core/log_cleanup.py` 各实现一份 walk-mtime-remove，核心逻辑重复。
+
+**逐行对比的 3 个行为差异**（合并必须处理）：
+
+| 维度 | cache_cleanup | log_cleanup |
+|------|--------------|-------------|
+| 遍历方式 | `os.walk()` 递归子目录 | `os.listdir()` 只扫平铺 |
+| 默认天数 | 7 天 | 30 天 |
+| 日志粒度 | 只汇总一条 | 每删一个记一条 + 汇总 |
+| 错误处理 | `except OSError: pass`（静默） | `except OSError: log.warning`（记录） |
+
+**调用方**：`server.py:584-605`，启动时各调一次。
+**风险点**：⚠️ 递归 vs 平铺——cache 目录有子目录（递归合理），但 log 目录若意外有子目录，递归删可能误删。改不好会误删用户数据。
+**合并方案**：抽 `_cleanup_old_files(path, max_age_days, recursive=True, log_each=False)`，两个原函数退化为薄包装。
+**前置条件**：合并前必须写测试覆盖 ① 递归 ② 平铺 ③ 子目录不被误删 三种场景。
+
+### F12: 合并两份 atomic_write_json
+
+**现状**：`core/session_migrator.py:152` 的 `_atomic_write_json` 与 `core/doc_session.py:318` 的 `_save_completed` 各实现一份 tmp-write + `os.replace`。
+
+**逐行对比**（高度相似但有细节差异）：
+
+| 维度 | session_migrator._atomic_write_json | doc_session._save_completed |
+|------|-------------------------------------|----------------------------|
+| 写法 | dump + flush + fsync + replace | 完全一样 |
+| fsync 异常 | 无 try 保护（失败即抛） | `try/except OSError: pass`（容错） |
+| 目录创建 | 无（假设目录已存在） | 有 `os.makedirs(exist_ok=True)` |
+
+**调用方**：session_migrator 仅被 `chat_store.py:56` 一次性迁移调用（极低频）；`_save_completed` 被 agent_loop/doc_session 调用，有 `tests/test_regression_v31.py:76` 存在性检查。
+**合并方案**：抽到 `common/utils.py` 的 `atomic_write_json(path, data, makedirs=True, fsync_safe=True)`，采用 doc_session 版的健壮性（makedirs + fsync 容错）作为公共实现。
+**前置条件**：合并后 session_migrator 会意外获得 makedirs + fsync 容错行为（通常是增强），需验证其调用场景不冲突。
+
 
 
 ## 主线二：品牌视觉精修（来自 PATCH7-BRAINSTORM）
