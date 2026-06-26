@@ -156,6 +156,17 @@ class AgentLoop:
             rounds += 1
             log.info("[AGENT] === 第 %d 轮 === tools=%d", rounds, len(messages))
 
+            # P6 #6: 检测用户终止。cloud/agent 路径原来不响应 /api/stop，
+            # 用户点终止后后端继续跑完，空回复触发"Agent未能生成回复"兜底。
+            # 这里主动检测 mgr._stop_generation，终止时立即跳出循环。
+            try:
+                if getattr(self.cloud_engine._mm, '_stop_generation', False):
+                    log.info("[AGENT] 检测到用户终止，停止迭代 (已完成 %d 轮)", rounds - 1)
+                    yield ("agent_status", {"status": "user_stopped"})
+                    break
+            except Exception:
+                pass
+
             # Patch4 修复 3：子类硬限制——每轮调用前移除已达上限的工具
             # （硬移除：不是 prompt 建议，模型这一轮直接看不到该工具）
             if tool_counts:

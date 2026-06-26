@@ -334,13 +334,16 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                     save_msgs = history_raw + [
                         {"role": "user", "content": message, "ts": _ts},
                         {"role": "assistant",
-                         "content": actual or "[思考已中断]",
+                         "content": actual or "[用户已手动终止响应]",
                          "ts": time.strftime("%H:%M:%S"),
                          "think": _clean_think_text,
                          "model": model_choice,
                          "chars": len(actual),
                          "time": _elapsed,
-                         "task_type": saved_task_type or "text"},
+                         "task_type": saved_task_type or "text",
+                         "action_mode": action_mode,
+                         # P6 #6: 终止标记,前端识别后渲染统一终止提示
+                         "_aborted": True, "_abort_reason": "user_stop"},
                     ]
                     _save_chat_final(chat_file, save_msgs)
                     log.info("[SAVE] 中途停止，已保存 %d 字 + think %d 字",
@@ -505,6 +508,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     _doc_complete_filename = None   # Patch4 v3.1 BUG#18：保存 docx 文件名
     _pipeline_start_ts = t0  # 用于 elapsed_ms 计算
     _STATUS_DONE_SUFFIXES = ("_done", "_listed", "_deleted", "_read_done", "_write_done")
+    _user_stopped = False  # P6 #6: 标记用户终止,避免空回复兜底覆盖成"Agent未能生成回复"
 
     def _status_phase(s):
         """从 status 字符串推断 phase（start/done）"""
@@ -559,6 +563,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 # Patch4 v3：在 status=="doc_status_done" 时派生 doc_complete 事件
                 # （set_doc_status 工具执行后触发，docx 已由 agent_loop 生成）
                 status_val = content.get("status", "") if isinstance(content, dict) else ""
+                # P6 #6: 检测用户终止标记
+                if status_val == "user_stopped":
+                    _user_stopped = True
                 now_ts = int(time.time() * 1000)
                 elapsed_ms = now_ts - int(_pipeline_start_ts * 1000)
 
@@ -690,10 +697,16 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
 
     # 空回复保护
     if not full_text.strip():
-        full_text = "抱歉，Agent 未能生成有效回复，请重试。"
+        # P6 #6: 用户主动终止导致的空回复,显示终止提示而非"Agent未能生成回复"
+        if _user_stopped:
+            full_text = "[用户已手动终止响应]"
+        else:
+            full_text = "抱歉，Agent 未能生成有效回复，请重试。"
         response_chars = len(full_text)
 
     saved_task_type = _collect.get("saved_task_type", "agent")
+    # P6 #6: 用户终止时标记 _aborted,前端识别后渲染统一终止提示
+    _aborted_flag = _user_stopped
 
     from session.context_cache import (
         clean_think_content_wrapped as _clean_think,
@@ -724,6 +737,10 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             "task_type": saved_task_type,
             "action_mode": action_mode,
         }
+        # P6 #6: 用户终止时标记 _aborted,前端识别后渲染统一终止提示
+        if _aborted_flag:
+            assistant_msg["_aborted"] = True
+            assistant_msg["_abort_reason"] = "user_stop"
         if agent_summary:
             assistant_msg["agent_summary"] = agent_summary
         # Patch4 v3.1 BUG#7：保存工具调用时间线到 messages.json（刷新页面后历史可见）
