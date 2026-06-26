@@ -2,16 +2,11 @@
 
 // ── 阶段1: 欢迎弹窗 ─────────────────────────────────────
 async function showWelcome() {
+  // 确保关键函数已加载
   if (typeof iconSvg !== 'function') { return; }
-
-  var status = {};
   try {
     var resp = await fetch('/api/onboard/status');
-    status = await resp.json();
-  } catch(e) {
-    // API 不可用（如 reload 后服务端未就绪）→ 兜底：假设全功能就绪
-    status = { llm_installed: true, cloud_configured: false, kb_installed: true };
-  }
+    var status = await resp.json();
     var hasAI = status.llm_installed || status.cloud_configured;
     var hasKB = status.kb_installed;
     var hasCloud = status.cloud_configured;
