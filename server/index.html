@@ -662,9 +662,23 @@
 </div>
 
 <!-- ===== 首次使用引导遮罩 ===== -->
-<div id="onboardOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center">
-  <div id="onboardCard" style="background:var(--bg-primary);border-radius:16px;padding:32px;max-width:480px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,0.2);text-align:center">
-    <!--内容由 JS 动态填充 -->
+<div id="welcomeOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center">
+  <div id="welcomeCard" style="background:var(--bg-primary);border-radius:16px;padding:36px 32px 24px;max-width:460px;width:92%;box-shadow:0 12px 48px rgba(0,0,0,0.25);text-align:center;position:relative"></div>
+</div>
+
+<!-- ===== 交互式引导高亮组件 ===== -->
+<div id="tourOverlay" style="display:none;position:fixed;inset:0;z-index:9998;pointer-events:none">
+  <div id="tourSpotlight" style="position:absolute;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45);transition:all .35s cubic-bezier(.4,0,.2,1)"></div>
+</div>
+<div id="tourCard" style="display:none;position:fixed;z-index:9999;background:var(--bg-primary);border-radius:12px;padding:18px 20px;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.22);transition:all .35s cubic-bezier(.4,0,.2,1)">
+  <div id="tourCardTitle" style="font-weight:600;font-size:.92em;color:var(--text-primary);margin-bottom:6px"></div>
+  <div id="tourCardDesc" style="font-size:.82em;color:var(--text-secondary);line-height:1.6;margin-bottom:12px"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div id="tourDots" style="display:flex;gap:4px"></div>
+    <div style="display:flex;gap:8px">
+      <button id="tourSkipBtn" style="padding:4px 10px;border:none;background:transparent;color:var(--text-muted);font-size:.78em;cursor:pointer" onclick="endTour()">跳过</button>
+      <button id="tourNextBtn" style="padding:4px 14px;border:none;background:var(--accent-color);color:#fff;font-size:.78em;border-radius:6px;cursor:pointer;font-weight:500" onclick="nextTourStep()">下一步</button>
+    </div>
   </div>
 </div>
 
@@ -689,217 +703,52 @@ const __HTML_VERSION__ = 'v2.7';
 const API = '';
 </script>
 
-<!-- ===== 首次使用引导 ===== -->
+<!-- ===== 阶段1: 欢迎弹窗 + 阶段2: 交互式引导 ===== -->
+<script src="static/js/welcome-tour.js"></script>
+
 <script>
-async function showOnboarding() {
+// ===== Toast 覆盖层 =====
+function showToast(msg, type) {
+  var existing = document.getElementById('htmlToast');
+  if (existing) existing.remove();
+  var el = document.createElement('div');
+  el.id = 'htmlToast';
+  el.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);padding:8px 20px;border-radius:20px;color:#fff;font-size:.82em;z-index:5000;white-space:nowrap;animation:fadeIn .2s ease';
+  if (type === 'error') el.style.background = '#EF4444';
+  else if (type === 'warning') el.style.background = '#F59E0B';
+  else el.style.background = '#1E3A5F';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function() { if (el.parentNode) el.remove(); }, 3000);
+}
+window._activeToast = null;
+window.showToast = showToast;
+
+function _loadVersionDisplay() {
+  var el = document.getElementById('versionDisplay');
+  if (el) { el.textContent = 'v0.9.7'; }
+}
+function _loadSystemEnv() {
   try {
-    var resp = await fetch('/api/onboard/status');
-    var status = await resp.json();
-    var hasAI = status.llm_installed || status.cloud_configured;
-    var hasKB = status.kb_installed;
-    var hasCloud = status.cloud_configured;
-    var hasLLM = status.llm_installed;
-
-    if (!hasAI) {
-      renderOnboardRoute1();
-    } else if (!hasKB) {
-      renderOnboardRoute2({hasCloud: hasCloud});
-    } else {
-      renderOnboardRoute3({hasCloud: hasCloud});
-    }
-
-    var overlay = document.getElementById('onboardOverlay');
-    if (overlay) {
-      overlay.style.display = 'flex';
-    }
-  } catch(e) {
-    console.error('[onboarding]', e);
-  }
+    var envEl = document.getElementById('systemEnvInfo');
+    if (!envEl) return;
+    fetch('/api/env/check').then(function(r) { return r.json(); }).then(function(data) {
+      var parts = [];
+      if (data.os) parts.push(data.os);
+      if (data.os_version) parts.push(data.os_version);
+      if (data.python) parts.push('Python ' + data.python);
+      envEl.textContent = parts.join(' · ');
+    }).catch(function() { envEl.textContent = ''; });
+  } catch(e) {}
 }
+window._loadVersionDisplay = _loadVersionDisplay;
+window._loadSystemEnv = _loadSystemEnv;
 
-function renderOnboardRoute1() {
-  var card = document.getElementById('onboardCard');
-  if (!card) return;
-  card.innerHTML = 
-    '<div style="text-align:center;margin-bottom:20px">' +
-    '<img src="/static/img/logo.jpg" alt="桌伴" style="width:48px;height:48px;border-radius:12px;margin-bottom:8px">' +
-    '<h2 style="font-size:1.1em;font-weight:600;margin:0 0 6px 0;color:var(--text-primary)">欢迎使用桌伴 Sidemate</h2>' +
-    '<p style="font-size:.85em;color:var(--text-secondary);margin:0;line-height:1.5">Sidemate 需要一个 AI 引擎才能工作</p>' +
-    '</div>' +
-    '<div style="text-align:left;margin-bottom:20px">' +
-    '<p style="font-size:.82em;color:var(--text-secondary);margin:0 0 12px 0;line-height:1.5">两种方式任选其一（或都配）：</p>' +
-    '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:16px">' + iconSvg('home','16') + '</span>' +
-    '<div><div style="font-size:.85em;font-weight:600;color:var(--text-primary)">本地 AI</div><div style="font-size:.75em;color:var(--text-secondary)">安装 LLM 模型包，数据不出本机，无需联网</div></div>' +
-    '</div>' +
-    '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:16px">' + iconSvg('cloud','16') + '</span>' +
-    '<div><div style="font-size:.85em;font-weight:600;color:var(--text-primary)">云端 AI</div><div style="font-size:.75em;color:var(--text-secondary)">填入 API Key 即可使用，无需本地模型</div></div>' +
-    '</div>' +
-    '</div>' +
-    '<div style="display:flex;gap:10px;justify-content:center">' +
-    '<button onclick="dismissOnboarding();switchTab(\'settings\',this)" style="padding:8px 20px;border:1px solid var(--accent-color);border-radius:8px;background:var(--accent-color);color:#fff;font-size:.85em;cursor:pointer;font-weight:600">前往设置</button>' +
-    '</div>';
-}
-
-function renderOnboardRoute2(opts) {
-  var cloudSection = '';
-  if (opts.hasCloud) {
-    cloudSection = 
-    '<div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary)">' +
-    '<div style="font-size:.82em;color:var(--text-secondary);line-height:1.5">' +
-    '<span style="font-size:14px">' + iconSvg('cloud','14') + '</span> <strong style="color:var(--text-primary)">在线模式</strong>：已切换到云端模型。模型会自动检索本地知识库辅助回答。<br>' +
-    '<span style="color:var(--text-muted)">本地数据不会上传，但你的问题会发送给云端服务</span>' +
-    '</div></div>';
-  }
-  var card = document.getElementById('onboardCard');
-  if (!card) return;
-  card.innerHTML = 
-    '<div style="text-align:center;margin-bottom:20px">' +
-    '<img src="/static/img/logo.jpg" alt="桌伴" style="width:48px;height:48px;border-radius:12px;margin-bottom:8px">' +
-    '<h2 style="font-size:1.1em;font-weight:600;margin:0 0 6px 0;color:var(--accent-color)">AI 已就绪！</h2>' +
-    '</div>' +
-    '<div style="text-align:left;margin-bottom:16px">' +
-    '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">' + iconSvg('chat','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">Chat 对话：和 AI 自由聊天，支持上传文件</div></div>' +
-    '</div>' +
-    '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">' + iconSvg('lock','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">隐私：所有数据存放在本机</div></div>' +
-    '</div>' +
-    cloudSection +
-    '</div>' +
-    '<div style="padding:8px 12px;border-radius:8px;background:var(--bg-secondary);margin-bottom:16px">' +
-    '<div style="font-size:.78em;color:var(--text-muted)">' + iconSvg('light','12') + ' 安装知识库扩展包可解锁更多能力</div>' +
-    '</div>' +
-    '<div style="display:flex;gap:10px;justify-content:center">' +
-    '<button onclick="dismissOnboarding()" style="padding:8px 24px;border:1px solid var(--accent-color);border-radius:8px;background:var(--accent-color);color:#fff;font-size:.85em;cursor:pointer;font-weight:600">开始使用</button>' +
-    '</div>';
-}
-
-function renderOnboardRoute3(opts) {
-  var compareSection = '';
-  if (opts.hasCloud) {
-    compareSection = 
-    '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">' + iconSvg('refresh','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">对比模式：本地 + 云端同时回答，综合分析</div></div>' +
-    '</div>';
-  }
-  var card = document.getElementById('onboardCard');
-  if (!card) return;
-  card.innerHTML = 
-    '<div style="text-align:center;margin-bottom:20px">' +
-    '<img src="/static/img/logo.jpg" alt="桌伴" style="width:48px;height:48px;border-radius:12px;margin-bottom:8px">' +
-    '<h2 style="font-size:1.1em;font-weight:600;margin:0 0 6px 0;color:var(--accent-color)">全功能就绪！</h2>' +
-    '</div>' +
-    '<div style="text-align:left;margin-bottom:16px">' +
-    '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">' + iconSvg('chat','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">Chat 对话：和 AI 自由聊天，支持上传文件</div></div>' +
-    '</div>' +
-    '<div style="padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-    '<span style="font-size:14px">' + iconSvg('books2','14') + '</span><div><div style="font-size:.85em;font-weight:500;color:var(--text-primary)">知识库 Tab：上传文档，AI 基于你的文档回答</div></div>' +
-    '</div>' +
-    compareSection +
-    '</div>' +
-    '<div style="text-align:left;padding:12px;border-radius:8px;background:var(--bg-secondary);margin-bottom:16px">' +
-    '<div style="font-size:.82em;font-weight:600;color:var(--text-primary);margin-bottom:6px">' + iconSvg('lock','12') + ' 隐私设计</div>' +
-    '<div style="font-size:.75em;color:var(--text-secondary);line-height:1.6">' +
-    '<div>• 所有数据存放在本机，不上传</div>' +
-    (opts.hasCloud ? '<div>• 在线模式 Chat 会搜索本地知识库辅助回答</div>' : '') +
-    '<div>• 知识库 Tab 不会将本地数据发送给云端</div>' +
-    (opts.hasCloud ? '<div>• 对比模式中云端只看到你的问题和自己的历史</div>' : '') +
-    '</div></div>' +
-    '<div style="display:flex;gap:10px;justify-content:center">' +
-    '<button onclick="dismissOnboarding()" style="padding:8px 24px;border:1px solid var(--accent-color);border-radius:8px;background:var(--accent-color);color:#fff;font-size:.85em;cursor:pointer;font-weight:600">开始使用</button>' +
-    '</div>';
-}
-
-function dismissOnboarding() {
-  var overlay = document.getElementById('onboardOverlay');
-  if (overlay) overlay.style.display = 'none';
-  localStorage.setItem('sidemate_onboarded', '1');
-  // 同时标记后端
-  fetch('/api/onboard/complete', {method: 'POST'}).catch(function(){});
-}
-</script>
-
-<!-- ===== 版本号 + 系统信息动态加载 ===== -->
-<script>
-// 动态加载版本号
-async function _loadVersionDisplay() {
-  try {
-    var resp = await fetch('/api/system/info');
-    var data = await resp.json();
-    var el = document.getElementById('versionDisplay');
-    if (el) {
-      // 优先使用统一版本号，其次使用 version_display，最后读全局 APP_VERSION（不再硬编码）
-      el.textContent = data.version ? ('v' + data.version) : (data.version_display || (window.APP_VERSION ? ('v' + window.APP_VERSION) : ''));
-    }
-    var titleEl = document.getElementById('settingsTitleVersion');
-    if (titleEl && data.version_display) {
-      titleEl.textContent = data.version_display;
-    }
-  } catch (e) {
-    var el = document.getElementById('versionDisplay');
-    if (el) el.textContent = window.APP_VERSION ? ('v' + window.APP_VERSION) : '';
-  }
-}
-
-// 动态加载系统环境信息
-async function _loadSystemEnv() {
-  try {
-    var resp = await fetch('/api/system/info');
-    var data = await resp.json();
-    var el = document.getElementById('systemEnvInfo');
-    if (el) {
-      var modeLabel = data.mode === 'cloud' ? '云端 AI' : '本地 AI';
-      var ollamaLabel = data.ollama_status === 'running' ? '运行中' : '未运行';
-      el.innerHTML = '<div>Python ' + (data.python || '-') + '</div>' +
-                     '<div>Ollama ' + ollamaLabel + '（' + (data.ollama_version || '-') + '）</div>' +
-                     '<div>当前模式：' + modeLabel + '</div>' +
-                     '<div>' + (data.gpu_info || '无 GPU 信息') + '</div>';
-    }
-  } catch (e) {
-    var el = document.getElementById('systemEnvInfo');
-    if (el) el.textContent = '信息加载失败';
-  }
-}
-
-// 显示 LICENSE 或 THIRD-PARTY-NOTICES 文件内容
-async function showLicenseFile(filename) {
-  try {
-    var resp = await fetch('/api/license?file=' + encodeURIComponent(filename));
-    var data = await resp.json();
-    if (data.content) {
-      _showTextModal(filename === 'LICENSE' ? '最终用户许可协议' : '第三方许可声明', data.content);
-    } else {
-      _showTextModal('提示', data.error || '无法加载文件');
-    }
-  } catch (e) {
-    _showTextModal('提示', '加载失败: ' + e.message);
-  }
-}
-
-function _showTextModal(title, content) {
-  var overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000';
-  overlay.innerHTML = '<div style="background:var(--bg-primary);border-radius:12px;padding:24px;max-width:640px;width:90%;max-height:80vh;display:flex;flex-direction:column">' +
-    '<div style="font-weight:600;font-size:14px;margin-bottom:12px;color:var(--text-primary)">' + title + '</div>' +
-    '<pre style="flex:1;overflow:auto;font-size:12px;line-height:1.5;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;margin:0;padding:12px;background:var(--bg-secondary);border-radius:8px">' + 
-    content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>' +
-    '<button onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:12px;padding:8px 20px;border:none;border-radius:8px;background:var(--accent-color);color:#fff;font-size:13px;cursor:pointer;align-self:flex-end">关闭</button>' +
-    '</div>';
-  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
-  document.body.appendChild(overlay);
-}
-
-// 页面加载后执行
 window.addEventListener('DOMContentLoaded', function() {
   _loadVersionDisplay();
   _loadSystemEnv();
-  // 首次使用引导检查
-  if (!localStorage.getItem('sidemate_onboarded')) {
-    showOnboarding();
+  if (!localStorage.getItem('sidemate_welcomed')) {
+    showWelcome();
   }
 });
 </script>
