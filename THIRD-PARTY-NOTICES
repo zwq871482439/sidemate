@@ -44,6 +44,7 @@ MIT License 组件
   - idna
   - ebooklib (MIT License, 用于 EPUB 文档解析)
   - striprtf (MIT License, 用于 RTF 文档解析)
+  - curl_cffi (lexiforest, MIT License, 捆绑 libcurl 实现浏览器 TLS 指纹伪装，用于搜索引擎反爬)
 
 MIT License 原文：
 
@@ -84,6 +85,7 @@ Apache License 2.0 组件
   - requests
   - tzdata
   - FlagEmbedding (BAAI, Apache License 2.0, 用于 BGE-M3 向量模型推理)
+  - aiofiles (Apache License 2.0, 用于知识库上传的流式文件写入)
 
 Apache License 2.0 通知要求：
 
