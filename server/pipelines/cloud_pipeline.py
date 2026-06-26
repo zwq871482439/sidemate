@@ -249,6 +249,16 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                             })
                         else:
                             yield sse_event("error", {"content": str(content)})
+                        # P6 #29: error 后必须发 done + [DONE]，否则前端永远卡在 loading
+                        # (与下方 cloud_pipeline_agent 的 error 处理保持一致)
+                        yield sse_event("done", {
+                            "model": model_choice,
+                            "chars": 0, "think_chars": 0,
+                            "time": time.time() - t0, "speed": 0,
+                            "task_type": saved_task_type,
+                        })
+                        yield 'data: [DONE]\n\n'
+                        return
                     elif phase == "raw":
                         # 兼容旧的 raw 格式
                         raw_text += content
