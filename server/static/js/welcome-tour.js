@@ -123,11 +123,20 @@ function startTour() {
     var btn = document.querySelector('.tabs-nav button[data-tab="chat"], .tabs-nav-inline button[data-tab="chat"]');
     if (btn && btn.offsetParent) { switchTab('chat', btn); _tourLastTab = 'chat'; }
   }
-  setTimeout(function() {
-    document.getElementById('tourOverlay').style.display = 'block';
-    document.getElementById('tourCard').style.display = 'block';
-    renderTourStep();
-  }, 300);
+  // 先显示遮罩，再等 Chat Tab 渲染完成
+  document.getElementById('tourOverlay').style.display = 'block';
+  document.getElementById('tourCard').style.display = 'block';
+  var tries = 0;
+  var waitForChat = function() {
+    var target = document.querySelector('#chatMode');
+    if (target && target.offsetWidth > 0) {
+      renderTourStep();
+      return;
+    }
+    if (++tries > 20) { renderTourStep(); return; }  // 1s 超时兜底
+    setTimeout(waitForChat, 50);
+  };
+  waitForChat();
 }
 
 function renderTourStep() {
