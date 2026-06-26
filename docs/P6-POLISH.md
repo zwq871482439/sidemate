@@ -2,6 +2,30 @@
 
 ---
 
+> ## ✅ 状态总览（2026-06-26 回写）
+>
+> **13 项全部已完成或演进**，详见下表。本清单保留作历史记录，不再有待办项。
+>
+> | 编号 | 状态 | 落地位置 |
+> |------|------|---------|
+> | #1 模式切换预检 | ✅ 已实现 | `settings.js:_executeModeSwitch` 104-131 |
+> | #2 离线 Chat 界面 | ✅ 已实现 | 标签前缀「离线 AI」+ `kb_qa` action |
+> | #3 在线 Chat token 条 | ✅ 已实现 | `chat.py` `cloud_context_window` 动态取 |
+> | #4 并行 Chat 界面 | ✅ 已实现 | `settings.js:340` 双模型 + 硬编码 action |
+> | #5 并行齿轮 | ✅ 演进为内联开关 | `ui-enhance.js` 已重构（优于齿轮） |
+> | #6 设置 Tab 齿轮 | ✅ 已实现 | `index.html:362` |
+> | #7 KB 底部统计 | ✅ 已实现 | `index.html #kbStats` + `qa.js:470` |
+> | #8 KB 分类聚散 | ✅ 已实现 | `prompts.py:225` prompt 约束 |
+> | #9 KB 卡片信息 | ✅ 已实现 | `qa.js:347-349` 词元+搜索次数 |
+> | #10 KB 概览刷新 | ✅ 已实现 | `kb.py:2514/2530` GET+POST |
+> | #11 上传浮动条展开 | ✅ 已是现状 | `kbFloatList` 默认全展开 |
+> | #12 摘要队列串行 | ✅ 已是现状 | tagging 单 worker + FIFO + batch gating |
+> | #13 KB 概览计数 | ✅ 已实现 | 用聚类分布精确计数 |
+>
+> 附：审计 B9 死代码 `cancel_doc_action`（`doc_action.py:186`）已删除（2026-06-26）。
+
+---
+
 ## P0 — 阻断性问题
 
 ### #1 模式切换缺提示
