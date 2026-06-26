@@ -326,6 +326,7 @@ def _run_cloud_column(ctx, question: str, cloud_history: list, q: queue.Queue):
 
         # 状态1: 正在理解问题
         q.put(("status", "understanding"))
+        _cloud_generating_sent = False  # P6 #10: 标记 generating 状态是否已发,避免每token重复
 
         # P6: 并行模式云端列引导——告知模型角色定位，回答简洁
         _cloud_guided_question = (
@@ -352,7 +353,11 @@ def _run_cloud_column(ctx, question: str, cloud_history: list, q: queue.Queue):
             elif phase == "think_end":
                 q.put(("status", "generating"))
             elif phase == "text" and content:
-                q.put(("status", "generating"))
+                # P6 #10 修复: 只在首次进入 text 时发一次 generating,
+                # 不再每个 token 都发(原来每 token 发一次导致前端堆积上百个generating步骤)
+                if not _cloud_generating_sent:
+                    _cloud_generating_sent = True
+                    q.put(("status", "generating"))
                 q.put(("token", content))
             elif phase == "error":
                 if isinstance(content, dict):
@@ -686,6 +691,9 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         log.warning("[PARALLEL] 保存对话失败: %s", str(e)[:80])
 
     # done 事件
+    # P6 #13: 补本地/云端各自统计(chars + 耗时),前端分属各自卡片展示
+    _local_elapsed = getattr(step_local_gen, "elapsed_ms", 0) or 0
+    _cloud_elapsed = getattr(step_cloud_gen, "elapsed_ms", 0) or 0
     yield sse_event("done", {
         "model": model_choice,
         "chars": len(final_response),
@@ -694,6 +702,8 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         "speed": len(final_response) / elapsed if elapsed > 0 else 0,
         "task_type": "parallel",
         "agent_timeline": agent_timeline,
+        "local_stats": {"chars": len(local_answer), "elapsed_ms": _local_elapsed},
+        "cloud_stats": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed},
     })
     log.info("[PARALLEL] === 完成 === model=%s chars=%d %.1fs local=%d cloud=%d merge=%d",
              model_choice, len(final_response), elapsed,

@@ -901,6 +901,10 @@ async function sendMessage() {
           } else if (d.type === 'done') {
             // Patch5 C7: done 事件不再操作骨架屏（P6已移除）
             doneData = d;
+            // P6 #13: 并行模式 — 把本地/云端各自统计渲染到对应卡片
+            if (d.task_type === 'parallel' && (d.local_stats || d.cloud_stats)) {
+              CardRenderer.fillParallelStats(d.local_stats, d.cloud_stats);
+            }
             // P6 修复终止bug: 用户可能在 done 到达前已点终止(signal.aborted),
             // 此时 _hadError 可能仍为 false,需用 signal 兜底,避免 done 正常渲染覆盖终止态
             var _doneAfterAbort = (abortCtrl && abortCtrl.signal && abortCtrl.signal.aborted);
@@ -2223,15 +2227,18 @@ var CardRenderer = (function() {
       runDots.forEach(function(d) { d.className = 'cb-dot ok'; });
       var runSteps = cardArea.querySelectorAll('.cb-step[data-status="running"]');
       runSteps.forEach(function(s) { s.setAttribute('data-status', 'done'); });
-      // 模块3b：关闭最后一个推理单元（折叠 + 算耗时）
-      if (_currentUnit && _currentUnit.el) {
-        // P6: 最后一个单元如果没有工具调用，也删除（空轮次不渲染）
-        if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
+      // 模块3b：关闭最后一个推理单元（保持展开 + 算耗时）
+      if (_currentUnit) {
+        if (!_currentUnit.el) {
+          // pending 单元（从未渲染，即空轮次）：直接丢弃
+          _reasonUnits.pop();
+        } else if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
+          // 已渲染但无工具调用：删除（空轮次不渲染）
           _currentUnit.el.remove();
           _reasonUnits.pop();
         } else {
+          // 有内容：保留展开，移除 current 标记 + 算耗时
           _currentUnit.el.classList.remove('current');
-          _currentUnit.el.removeAttribute('open');
           if (_currentUnit.startTime) {
             var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
             var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
@@ -2258,7 +2265,7 @@ var CardRenderer = (function() {
       var s = m.card_data[i];
       // P6: 推理轮次（在线 Agent）—重建 .cb-reason 结构（含思考内容+工具详情）
       if (s.type === 'reason_unit') {
-        html += '<details class="cb-reason">';
+        html += '<details class="cb-reason" open>';
         html += '<summary><span class="cb-reason-round">推理第 ' + s.round + ' 轮</span>';
         html += '<span class="cb-reason-time">' + (s.elapsed_s || 0) + 's</span></summary>';
         html += '<div class="cb-reason-body">';
@@ -2519,6 +2526,37 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
+  // P6 #13: 把本地/云端统计渲染到各自卡片(分属各自卡片展示)
+  function fillParallelStats(localStats, cloudStats) {
+    function _fmtStats(s) {
+      if (!s) return '';
+      var _chars = s.chars || 0;
+      var _sec = s.elapsed_ms ? (s.elapsed_ms / 1000).toFixed(1) : '?';
+      var _speed = (s.chars && s.elapsed_ms) ? Math.round(s.chars / (s.elapsed_ms / 1000)) : 0;
+      return _chars + '字 · ' + _sec + 's' + (_speed ? ' · ' + _speed + '字/s' : '');
+    }
+    var _localTxt = _fmtStats(localStats);
+    var _cloudTxt = _fmtStats(cloudStats);
+    if (_localTxt) {
+      var _lc = _container.querySelector('.cb-par-card.local');
+      if (_lc && !_lc.querySelector('.cb-par-card-stats')) {
+        var _ls = document.createElement('div');
+        _ls.className = 'cb-par-card-stats';
+        _ls.textContent = _localTxt;
+        _lc.appendChild(_ls);
+      }
+    }
+    if (_cloudTxt) {
+      var _cc = _container.querySelector('.cb-par-card.cloud');
+      if (_cc && !_cc.querySelector('.cb-par-card-stats')) {
+        var _cs = document.createElement('div');
+        _cs.className = 'cb-par-card-stats';
+        _cs.textContent = _cloudTxt;
+        _cc.appendChild(_cs);
+      }
+    }
+  }
+
   // 并行事件处理
   function _handleParallelEvent(evtType, d) {
     if (!_container) return;
@@ -2564,12 +2602,18 @@ var CardRenderer = (function() {
       // 云端列状态（understanding/thinking/generating）
       var col2 = _parallelCols[channel];
       if (col2 && col2.el) {
-        var stDiv = document.createElement('div');
-        stDiv.className = 'cb-step';
-        stDiv.setAttribute('data-status', 'done');
-        stDiv.innerHTML = '<span class="cb-dot ok"></span>' +
-          '<div class="cb-step-row"><span class="cb-label">' + _esc(d.status || '') + '</span></div>';
-        col2.el.appendChild(stDiv);
+        var _statusKey = 'cb-step[data-status-key="' + channel + '_' + (d.status || '') + '"]';
+        var _existingStatus = col2.el.querySelector(_statusKey);
+        // P6 #10 修复: 同一状态只创建一个 cb-step,不再每事件 appendChild(防 generating 堆积)
+        if (!_existingStatus) {
+          var stDiv = document.createElement('div');
+          stDiv.className = 'cb-step';
+          stDiv.setAttribute('data-status', 'done');
+          stDiv.setAttribute('data-status-key', channel + '_' + (d.status || ''));
+          stDiv.innerHTML = '<span class="cb-dot ok"></span>' +
+            '<div class="cb-step-row"><span class="cb-label">' + _esc(d.status || '') + '</span></div>';
+          col2.el.appendChild(stDiv);
+        }
       }
     }
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
@@ -2622,8 +2666,11 @@ var CardRenderer = (function() {
     }
 
     // 非思考事件：归入当前推理单元
-    if (_currentUnit && _currentUnit.body) {
+    if (_currentUnit) {
       if (!isDone) {
+        // 延迟创建：第一个工具事件到来时才渲染单元 DOM
+        _materializeCurrentUnit();
+        if (!_currentUnit.body) return;
         // start 类工具：在单元内创建步骤
         var stepDiv = document.createElement('div');
         stepDiv.className = 'cb-step';
@@ -2702,51 +2749,67 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
-  // 模块3b：开新推理单元
+  // 模块3b：开新推理单元（延迟创建：先建待定单元，等有内容才渲染 DOM）
   function _startReasonUnit() {
-    // 关闭前一个单元（折叠）
-    if (_currentUnit && _currentUnit.el) {
-      // P6: 空轮次不渲染——如果上一轮没有工具调用，删除它
-      if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
-        _currentUnit.el.remove();
-        _reasonUnits.pop();
-      } else {
-        _currentUnit.el.classList.remove('current');
-        _currentUnit.el.removeAttribute('open');
-        // 算耗时
-        if (_currentUnit.startTime) {
-          var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
-          var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
-          if (timeSpan) timeSpan.textContent = elapsed + 's';
+    // 关闭前一个单元（保持展开，仅移除 current 标记 + 算耗时）
+    if (_currentUnit) {
+      if (_currentUnit.el) {
+        // 已渲染的单元：若空则删除，否则保留展开
+        if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
+          _currentUnit.el.remove();
+          _reasonUnits.pop();
+        } else {
+          _currentUnit.el.classList.remove('current');
+          if (_currentUnit.startTime) {
+            var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
+            var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
+            if (timeSpan) timeSpan.textContent = elapsed + 's';
+          }
         }
       }
+      // pending（未渲染）的空单元：什么都不用做，它从未入 DOM，也从 _reasonUnits 里移除
+      if (_currentUnit.pending) {
+        _reasonUnits.pop();
+      }
     }
-    // 创建新单元
+    // 创建新的「待定」单元（不建 DOM，等 think/工具事件到来才 materialize）
     var round = _reasonUnits.length + 1;
-    var det = document.createElement('details');
-    det.className = 'cb-reason current';
-    det.open = true;
-    det.innerHTML = '<summary><span class="cb-reason-round">推理第 ' + round + ' 轮</span>' +
-      '<span class="cb-reason-time"></span></summary>';
-    _container.appendChild(det);
-    var body = document.createElement('div');
-    body.className = 'cb-reason-body';
-    det.appendChild(body);
     _currentUnit = {
       round: round,
       thinkText: '',
       tools: [],
       startTime: Date.now(),
-      el: det,
-      body: body
+      el: null,        // null = 尚未渲染
+      body: null,
+      pending: true,   // 标记待定
     };
     _reasonUnits.push(_currentUnit);
+  }
+
+  // 把待定单元真正渲染成 DOM（think 或工具事件到来时调用）
+  function _materializeCurrentUnit() {
+    if (!_currentUnit || !_currentUnit.pending) return;
+    var det = document.createElement('details');
+    det.className = 'cb-reason current';
+    det.open = true;
+    det.innerHTML = '<summary><span class="cb-reason-round">推理第 ' + _currentUnit.round + ' 轮</span>' +
+      '<span class="cb-reason-time"></span></summary>';
+    _container.appendChild(det);
+    var body = document.createElement('div');
+    body.className = 'cb-reason-body';
+    det.appendChild(body);
+    _currentUnit.el = det;
+    _currentUnit.body = body;
+    _currentUnit.pending = false;
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
   // 模块3b：处理 think 内容（填入当前推理单元）
   function _handleAgentThink(d) {
-    if (!_currentUnit || !_currentUnit.body) return;
+    if (!_currentUnit) return;
+    // 延迟创建：第一个 think token 到来时才渲染单元 DOM
+    _materializeCurrentUnit();
+    if (!_currentUnit.body) return;
     var token = d.content || '';
     _currentUnit.thinkText += token;
     // 渲染思考内容到单元 body 顶部
@@ -2883,6 +2946,7 @@ var CardRenderer = (function() {
     finalize: finalize,
     finalizeDOM: finalizeDOM,
     renderHistory: renderHistory,
+    fillParallelStats: fillParallelStats,
     getState: getState
   };
 })();
