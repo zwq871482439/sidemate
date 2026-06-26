@@ -215,7 +215,7 @@ class SearchEngine:
         """从 HTML 中提取 title"""
         m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
         if m:
-            return re.sub(r'<[^>]+>', '', m.group(1)).strip()[:200]
+            return _strip_tags(m.group(1))[:200]
         return ""
 
     def _extract_with_readability(self, html: str) -> str:
@@ -224,11 +224,8 @@ class SearchEngine:
             from readability import Document
             doc = Document(html)
             summary = doc.summary()
-            # 去除 HTML 标签
-            text = re.sub(r'<[^>]+>', '', summary)
-            # 清理多余空白
-            text = re.sub(r'\s+', ' ', text).strip()
-            return text
+            # 去除 HTML 标签 + 清理空白（_strip_tags 含实体解码）
+            return _strip_tags(summary)
         except ImportError:
             return ""
         except Exception as e:
