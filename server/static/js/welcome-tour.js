@@ -182,18 +182,26 @@ function positionTourElements(target, pos) {
   if (!spotlight || !card) return;
   var viewW = window.innerWidth || 800, viewH = window.innerHeight || 600;
 
-  var tx, ty, tw, th;
+  var tx, ty, tw, th, tRadius = '10px';
 
   if (target && target.getBoundingClientRect) {
     var rect = target.getBoundingClientRect();
-    tx = rect.left - 4; ty = rect.top - 4;
-    tw = rect.width + 8; th = rect.height + 8;
+    // 小 halo（4px）让高亮框略大于目标元素
+    var pad = 4;
+    tx = Math.round(rect.left - pad);
+    ty = Math.round(rect.top - pad);
+    tw = Math.round(rect.width + pad * 2);
+    th = Math.round(rect.height + pad * 2);
+    // 继承目标元素的圆角
+    var cs = window.getComputedStyle(target);
+    var br = cs.borderRadius;
+    if (br && br !== '0px') tRadius = br;
   } else {
-    // fallback: 使用步骤中的固定锚点
+    // fallback: 固定锚点
     var fb = _tourSteps[_tourStep] && _tourSteps[_tourStep].fallbackAnchor;
     if (!fb) return;
     tw = 160; th = 40;
-    tx = fb.left === '50%' ? viewW / 2 + fb.offsetX : fb.left;
+    tx = fb.left === '50%' ? Math.round(viewW / 2 + fb.offsetX) : fb.left;
     ty = fb.top;
   }
 
@@ -201,6 +209,7 @@ function positionTourElements(target, pos) {
   spotlight.style.top = ty + 'px';
   spotlight.style.width = tw + 'px';
   spotlight.style.height = th + 'px';
+  spotlight.style.borderRadius = tRadius;
 
   // 定位说明卡片
   var cardW = 280, cardH = 140;
@@ -211,15 +220,27 @@ function positionTourElements(target, pos) {
   } else if (pos === 'top') {
     cx = Math.max(16, Math.min(viewW - cardW - 16, tx + tw / 2 - cardW / 2));
     cy = ty - cardH - 12;
-    if (cy < 8) cy = ty + th + 12;  // 空间不够就放下面
+    if (cy < 8) { cy = ty + th + 12; pos = 'bottom'; }
   } else {
     cx = tx + tw + 12;
     cy = ty;
     if (cx + cardW > viewW - 8) cx = tx - cardW - 12;
   }
 
-  card.style.left = cx + 'px';
-  card.style.top = cy + 'px';
+  card.style.left = Math.round(cx) + 'px';
+  card.style.top = Math.round(cy) + 'px';
+
+  // 卡片箭头方向
+  var arrow = card.querySelector(':scope::before') || card;
+  if (pos === 'top') {
+    card.style.setProperty('--tour-arrow-top', 'auto');
+    card.style.setProperty('--tour-arrow-bottom', '-6px');
+    card.style.setProperty('--tour-arrow-rotate', '225deg');
+  } else {
+    card.style.setProperty('--tour-arrow-top', '-6px');
+    card.style.setProperty('--tour-arrow-bottom', 'auto');
+    card.style.setProperty('--tour-arrow-rotate', '45deg');
+  }
 }
 
 function nextTourStep() {

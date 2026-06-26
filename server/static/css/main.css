@@ -673,7 +673,7 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 /* 交互式引导高亮 */
 #tourOverlay{pointer-events:none}
 #tourCard{pointer-events:auto}
-#tourCard::before{content:'';position:absolute;width:12px;height:12px;background:var(--bg-primary);transform:rotate(45deg);top:-6px;left:50%;margin-left:-6px;box-shadow:-1px -1px 2px rgba(0,0,0,.06)}
+#tourCard::before{content:'';position:absolute;width:10px;height:10px;background:var(--bg-primary);transform:rotate(45deg);top:var(--tour-arrow-top,-6px);bottom:var(--tour-arrow-bottom,auto);left:50%;margin-left:-5px}
 /* 保留旧兼容 */
 .chat-overlay-icon,.chat-overlay-msg{display:none}
 .chat-overlay-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;max-width:420px;padding:20px}
