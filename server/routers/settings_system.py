@@ -712,7 +712,12 @@ def api_system_info():
         _gpu_names = [line.strip() for line in _gpu_result.stdout.split('\n')
                       if line.strip() and line.strip().lower() != 'name']
         if _gpu_names:
-            gpu_info = ' · '.join(_gpu_names[:3])  # 最多显示3个
+            # P6 #26: 过滤虚拟显示设备(投屏/远程桌面等注册的虚拟显卡),只保留真实 GPU
+            _VIRTUAL_KW = ('virtual', 'display device', 'mirror', 'remote', 'rdp', 'spice', 'parsec')
+            _real_gpus = [n for n in _gpu_names
+                          if not any(kw in n.lower() for kw in _VIRTUAL_KW)]
+            # 若过滤后为空(全是虚拟设备),回退显示全部,避免空白
+            gpu_info = ' · '.join((_real_gpus or _gpu_names)[:3])  # 最多显示3个
     except Exception:
         # 回退到 LLM 框架设备检测
         try:

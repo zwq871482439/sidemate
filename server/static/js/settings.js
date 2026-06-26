@@ -1522,7 +1522,6 @@ async function refreshAboutDiagnostics() {
 
     // 拉取资源信息（内存占用 + 组件状态 + 显存）
     var compEl = document.getElementById('diagComponents');
-    var usedMemEl = document.getElementById('diagUsedMem');
     var vramEl = document.getElementById('diagVram');
     try {
       var resResp = await fetch(_apiBase + '/api/resource-info');
@@ -1533,7 +1532,9 @@ async function refreshAboutDiagnostics() {
         var comps = [
           {name:'本地 LLM', loaded: !!(resData.modules.llm && resData.modules.llm.loaded), detail: resData.modules.llm ? resData.modules.llm.name : ''},
           {name:'向量化引擎', loaded: !!(resData.modules.embedder && resData.modules.embedder.loaded), detail: ''},
-          {name:'Reranker', loaded: !!(resData.modules.reranker && resData.modules.reranker.loaded), detail: ''},
+          // P6 #23: Reranker 闲置时会自动卸载省内存(使用KB时重新加载),未加载时加说明避免误判为故障
+          {name:'Reranker', loaded: !!(resData.modules.reranker && resData.modules.reranker.loaded), detail: '',
+           unloadedHint: '闲置已卸载，使用知识库时自动加载'},
         ];
         try {
           var cfgResp = await fetch(_apiBase + '/api/cloud/config');
@@ -1548,15 +1549,13 @@ async function refreshAboutDiagnostics() {
           var dot = c.loaded ? 'comp-dot-ok' : 'comp-dot-off';
           var label = c.loaded ? '就绪' : '未加载';
           var detail = c.detail && c.loaded ? (' · ' + c.detail) : '';
+          // P6 #23: 未加载且有卸载说明时,显示提示而非干巴巴的"未加载"
+          if (!c.loaded && c.unloadedHint) {
+            detail = '（' + c.unloadedHint + '）';
+          }
           html += '<div class="comp-row"><span class="' + dot + '"></span><span class="comp-name">' + c.name + '</span><span class="comp-status">' + label + detail + '</span></div>';
         }
         compEl.innerHTML = html;
-      }
-
-      // 已用内存
-      if (usedMemEl && resData.mem) {
-        var usedMB = (resData.mem.process_mb || 0) + (resData.modules && resData.modules.llm ? (resData.modules.llm.mb || 0) : 0);
-        usedMemEl.textContent = usedMB >= 1024 ? (usedMB/1024).toFixed(1) + ' GB' : usedMB + ' MB';
       }
 
       // 显存
@@ -1574,7 +1573,7 @@ async function refreshAboutDiagnostics() {
     }
 
   } catch (e) {
-    var els = ['diagPython', 'diagOs', 'diagGpu', 'diagTotalMem', 'diagUsedMem', 'diagVram'];
+    var els = ['diagPython', 'diagOs', 'diagGpu', 'diagTotalMem', 'diagVram'];
     for (var i = 0; i < els.length; i++) {
       var el = document.getElementById(els[i]);
       if (el) el.textContent = '加载失败';
