@@ -162,7 +162,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 /* 合并后的 header：标题栏 + Tab 导航一行 */
 .header-merged{padding-bottom:6px;border-bottom:2px solid var(--border-color)}
 /* 内联 Tab 导航：连体胶囊 + 圆点选中（与模式按钮 .mode 统一风格）*/
-.tabs-nav-inline{display:flex;gap:0;border-radius:8px;border:0.5px solid var(--border-color);border-bottom:0.5px solid var(--border-color);overflow:hidden;background:transparent;margin-top:0;margin-left:8px}
+.tabs-nav.tabs-nav-inline{display:flex;gap:0;border-radius:8px;border:0.5px solid var(--border-color);overflow:hidden;background:transparent;margin-top:0;margin-left:8px}
 /* 内联 Tab 导航样式放在此处（必须在 .tabs-nav 全局规则之后，确保覆盖）*/
 .header .tabs-nav-inline button{height:28px;padding:0 14px;border:none;border-bottom:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text-secondary);border-right:0.5px solid var(--border-color);transition:all .2s cubic-bezier(.4,0,.2,1);white-space:nowrap;position:relative;overflow:hidden;box-sizing:border-box;display:flex;align-items:center;margin-bottom:0}
 .header .tabs-nav-inline button:last-child{border-right:none}
@@ -469,6 +469,49 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .file-indicator-popup-item .pip-remove svg{vertical-align:baseline !important}
 .file-indicator-popup-item .pip-remove:hover{color:var(--error-color)}
 
+/* ===== KB 检索健康度诊断（模态弹窗） ===== */
+.kb-diag-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;
+  display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease}
+.kb-diag-card{background:var(--bg-primary);border:0.5px solid var(--border-color);
+  border-radius:12px;width:380px;max-width:90%;max-height:80vh;display:flex;flex-direction:column;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);animation:msgSlideIn .25s ease-out}
+.kb-diag-header{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:0.5px solid var(--border-color);flex-shrink:0}
+.kb-diag-title{font-size:14px;font-weight:600;color:var(--text-primary)}
+.kb-diag-close{border:none;background:transparent;font-size:20px;line-height:1;
+  color:var(--text-muted);cursor:pointer;padding:0 4px;border-radius:4px;transition:color .12s}
+.kb-diag-close:hover{color:var(--error-color)}
+.kb-diag-body{padding:16px;overflow-y:auto}
+.kb-diag-loading,.kb-diag-error{font-size:12px;color:var(--text-muted);padding:8px 0}
+.kb-diag-error{color:var(--error-color)}
+.kb-diag-score{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.kb-diag-score-num{font-size:28px;font-weight:700;line-height:1}
+.kb-diag-score-label{font-size:13px;font-weight:600}
+.kb-diag-score-sub{font-size:10px;color:var(--text-muted)}
+.kb-diag-metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+.kb-diag-metric{padding:4px 8px;background:var(--bg-secondary);border-radius:6px}
+.kb-diag-metric-label{font-size:10px;color:var(--text-muted)}
+.kb-diag-metric-value{font-size:13px;font-weight:600;color:var(--text-primary)}
+.kb-diag-issues-title{font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:6px}
+.kb-diag-issue{padding:3px 0 6px;border-top:1px solid var(--border-color)}
+.kb-diag-issue-row{display:flex;align-items:flex-start;gap:6px}
+.kb-diag-issue-icon{font-weight:600;flex-shrink:0;width:14px;text-align:center;font-size:11px;line-height:1.5}
+.kb-diag-issue-msg{font-size:11px;color:var(--text-secondary);line-height:1.5;flex:1}
+.kb-diag-btn{margin-top:6px;margin-left:20px;padding:3px 10px;font-size:11px;
+  border:1px solid var(--accent-color);background:transparent;color:var(--accent-color);
+  border-radius:4px;cursor:pointer;transition:background .12s}
+.kb-diag-btn:hover:not(:disabled){background:var(--accent-color);color:#fff}
+.kb-diag-btn:disabled{opacity:.6;cursor:not-allowed}
+/* 维护操作区（危险操作） */
+.kb-diag-actions{margin-top:12px;border-top:1px solid var(--border-color);padding-top:10px}
+.kb-diag-actions-title{font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:6px}
+.kb-diag-action-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.kb-diag-action-msg{font-size:11px;color:var(--text-secondary);line-height:1.5}
+.kb-diag-btn-danger{padding:3px 10px;font-size:11px;
+  border:1px solid var(--error-color);background:transparent;color:var(--error-color);
+  border-radius:4px;cursor:pointer;flex-shrink:0;transition:background .12s}
+.kb-diag-btn-danger:hover{background:var(--error-color);color:#fff}
+
 /* ===== 用户消息气泡内的文件标签 ===== */
 .msg-file-tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;margin-top:8px;
   border-radius:10px;background:rgba(0,0,0,.08);font-size:.72em;color:var(--accent-color);
@@ -725,6 +768,9 @@ body.has-offline-banner #app{padding-top:44px}
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-danger { color: var(--error-color); border-color: var(--error-color); }
 .btn-danger:hover { background: var(--error-color); color: var(--text-on-accent); }
+/* 危险操作卡片（设置页：重置知识库等） */
+.kb-danger-card { border-color: rgba(185,28,28,.25); }
+[data-theme="dark"] .kb-danger-card { border-color: rgba(248,113,113,.25); }
 .btn-ghost { border-color: transparent; color: var(--text-secondary); }
 .btn-ghost:hover { background: var(--bg-secondary); color: var(--text-primary); border-color: var(--border-color); }
 .btn-sm { padding: 4px 12px; font-size: 12px; border-radius: 6px; }
@@ -1937,6 +1983,11 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* 左侧标签筛选侧栏 */
 .kb-sidebar{width:170px;flex-shrink:0;border-right:0.5px solid var(--border-color);background:var(--bg-secondary);display:flex;flex-direction:column;overflow:hidden}
 .kb-sidebar-hdr{padding:8px 10px;border-bottom:0.5px solid var(--border-color);font-size:11px;color:var(--text-muted);font-weight:500;letter-spacing:.5px;display:flex;align-items:center;gap:4px}
+/* AI 智能筛选折叠区（默认展开，占据剩余空间） */
+.kb-sidebar-filter-wrap{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.kb-sidebar-filter-hdr{cursor:pointer;user-select:none;list-style:none}
+.kb-sidebar-filter-hdr::-webkit-details-marker{display:none}
+.kb-sidebar-filter-hdr::marker{display:none;content:''}
 .kb-sidebar-list{flex:1;overflow-y:auto;padding:4px}
 .kb-sidebar-ft{padding:6px 10px;border-top:0.5px solid var(--border-color);font-size:10px;color:var(--text-muted);display:flex;gap:6px;flex-shrink:0}
 
@@ -2188,9 +2239,9 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-doc-list{display:flex;flex-direction:column;gap:4px}
 .kb-doc-list .kb-card{flex-direction:row;align-items:center;gap:12px;padding:8px 12px}
 .kb-doc-list .kb-card .cbar{flex:1;min-width:0}
-.kb-doc-list .kb-card .cpreview{flex:2;-webkit-line-clamp:1;min-width:0}
+.kb-doc-list .kb-card .cpreview{flex:2;-webkit-line-clamp:1;min-width:0;word-break:break-word;overflow-wrap:anywhere}
 .kb-doc-list .kb-card .ctags{flex:1;min-width:0;overflow:hidden}
-.kb-doc-list .kb-card .cstats{flex-shrink:0;gap:8px}
+.kb-doc-list .kb-card .cstats{flex-shrink:0;gap:4px;flex-direction:column;align-items:flex-end}
 .kb-doc-list .kb-card .cstats-bottom{border-top:none;padding-top:0;margin-top:0;gap:4px}
 .kb-doc-list .kb-card .cmtime{display:none}
 
@@ -2236,6 +2287,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .ic-lock{color:#D85A30}
 .ic-dup{color:#BA7517}
 .ic-img{color:var(--text-muted)}
+.ic-empty{color:var(--text-muted)}
 
 /* 热力图彩色圆点 */
 .hm-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
