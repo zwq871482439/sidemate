@@ -105,33 +105,13 @@ window.dismissWelcome = dismissWelcome;
 // ── 阶段2: 交互式步骤引导 ─────────────────────────────────
 var _tourStep = 0;
 var _tourSteps = [
-  {
-    targetSel: '#chatMode',
-    fallbackAnchor: {top: 8, left: '50%', offsetX: -60},
-    title: 'AI 模式切换',
-    desc: '顶栏可切换三种模式：<br><b>离线</b> — 纯本地，隐私安全<br><b>在线</b> — 云端大模型<br><b>并行</b> — 本地+云端融合回答',
-    pos: 'bottom'
-  },
-  {
-    targetSel: '#msgInput',
-    title: '开始对话',
-    desc: '在这里输入你的问题，按 <b>Enter</b> 发送。<br>支持上传文件和引用知识库文档。',
-    pos: 'top'
-  },
-  {
-    targetSel: '.tabs-nav button[data-tab="qa"]',
-    fallbackAnchor: {top: 45, left: 140, offsetX: 0},
-    title: '知识库',
-    desc: '上传你的文档资料，AI 自动打标分类并生成洞察分析。支持批量操作和私密管理。',
-    pos: 'bottom'
-  },
-  {
-    targetSel: '.tabs-nav button[data-tab="settings"]',
-    fallbackAnchor: {top: 45, left: 220, offsetX: 0},
-    title: '设置',
-    desc: '管理模型、配置云端 API、查看系统资源。需要在哪切换 AI 模式或安装扩展包？都在这里。',
-    pos: 'bottom'
-  }
+  { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 纯本地模型，无需联网<br><b>在线</b> — 云端大模型，需配 API Key<br><b>并行</b> — 本地 KB + 云端融合<br><br>在线/并行需在设置 → 云端 AI 中填写 API Key', pos: 'bottom' },
+  { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '在这里输入问题，按 <b>Enter</b> 发送。<br>支持上传文件和引用知识库文档。<br>上方 <b>Token 用量条</b> 显示剩余可用长度。', pos: 'top' },
+  { id: 'offline',  tab: 'chat', targetSel: '#chatMode',           title: '离线模式',             desc: '位于离线模式时，你可以：<br>• 自由聊天提问<br>• 编写代码和文档<br>• 在对话中引用知识库文档<br><br><b>所有数据不出本机</b>，无需网络。', pos: 'bottom' },
+  { id: 'online',   tab: 'chat', targetSel: '#chatMode',           title: '在线模式',             desc: '切换到在线模式后，支持：<br>• 联网搜索<br>• Agent 多步推理<br>• 调用 82 种云端大模型<br><br>需先在 <b>设置 → 云端 AI</b> 配置 API Key。', pos: 'bottom' },
+  { id: 'parallel', tab: 'chat', targetSel: '#chatMode',           title: '并行模式',             desc: '本地检索知识库 + 云端补充通用知识<br>各自独立回答，本地自动融合。<br><br><b>知识库原文永不离开本机</b><br>云端只看到本地生成的摘要。', pos: 'bottom' },
+  { id: 'kb',       tab: 'qa',   targetSel: '#kbAIOverview',       title: '知识库',               desc: '上传文档 → AI 自动打标分类<br>点击 <b>「整理」</b> 触发 AI 洞察分析<br><br>左侧侧栏可筛选分类<br>选中文档后可设为私密或批量操作', pos: 'bottom' },
+  { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[data-tab="settings"]', title: '设置入口',   desc: '需要配置云端 API Key？<br>需要安装扩展包或管理模型？<br><br>在 <b>设置 Tab</b> 中搞定一切。<br><br>这就是桌伴的全部功能，开始使用吧！', pos: 'bottom' }
 ];
 
 function startTour() {
@@ -146,29 +126,39 @@ function renderTourStep() {
   if (!step) return;
   var isLast = _tourStep >= _tourSteps.length - 1;
 
-  // 更新卡片内容
-  document.getElementById('tourCardTitle').innerHTML = step.title;
-  document.getElementById('tourCardDesc').innerHTML = step.desc;
-  document.getElementById('tourNextBtn').textContent = isLast ? '完成' : '下一步';
-
-  // 更新圆点
-  var dotsHtml = '';
-  for (var i = 0; i < _tourSteps.length; i++) {
-    dotsHtml += '<span style="width:6px;height:6px;border-radius:3px;background:' + (i === _tourStep ? 'var(--accent-color)' : 'var(--border-color)') + '"></span>';
+  // 自动切换 Tab
+  if (step.tab && typeof switchTab === 'function') {
+    var btn = document.querySelector('.tabs-nav button[data-tab="' + step.tab + '"], .tabs-nav-inline button[data-tab="' + step.tab + '"]');
+    if (btn) switchTab(step.tab, btn);
   }
-  document.getElementById('tourDots').innerHTML = dotsHtml;
 
-  // 定位高亮
-  var target = findTourTarget(step);
-  positionTourElements(target, step.pos);
+  // 等 Tab 切换完成后再定位
+  var doPosition = function() {
+    var s = _tourSteps[_tourStep];
+    document.getElementById('tourCardTitle').innerHTML = s.title;
+    document.getElementById('tourCardDesc').innerHTML = s.desc;
+    document.getElementById('tourNextBtn').textContent = isLast ? '完成' : '下一步';
+
+    var dotsHtml = '';
+    for (var i = 0; i < _tourSteps.length; i++) {
+      dotsHtml += '<span style="width:6px;height:6px;border-radius:3px;background:' + (i === _tourStep ? 'var(--accent-color)' : 'var(--border-color)') + '"></span>';
+    }
+    document.getElementById('tourDots').innerHTML = dotsHtml;
+
+    var target = findTourTarget(s);
+    positionTourElements(target, s.pos);
+  };
+
+  if (step.tab === 'qa') {
+    setTimeout(doPosition, 400);
+  } else {
+    setTimeout(doPosition, 150);
+  }
 }
 
 function findTourTarget(step) {
-  // 尝试找到目标元素
   var el = document.querySelector(step.targetSel);
   if (el && isVisible(el)) return el;
-  // fallback: 用固定坐标
-  if (step.fallbackAnchor) return null;
   return null;
 }
 
@@ -195,11 +185,9 @@ function positionTourElements(target, pos) {
     var br = cs.borderRadius;
     if (br && br !== '0px') tRadius = br;
   } else {
-    var fb = _tourSteps[_tourStep] && _tourSteps[_tourStep].fallbackAnchor;
-    if (!fb) return;
+    // 兜底：目标元素不可见时，居中显示卡片不显示高亮
+    tx = viewW / 2 - 80; ty = viewH / 3;
     tw = 160; th = 40;
-    tx = fb.left === '50%' ? Math.round(viewW / 2 + fb.offsetX) : fb.left;
-    ty = fb.top;
   }
 
   // 用 clip-path 替代 box-shadow 做镂空遮罩，避免 overflow:hidden 裁剪
