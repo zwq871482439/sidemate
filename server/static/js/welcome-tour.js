@@ -116,9 +116,16 @@ var _tourSteps = [
 
 function startTour() {
   _tourStep = 0;
-  document.getElementById('tourOverlay').style.display = 'block';
-  document.getElementById('tourCard').style.display = 'block';
-  renderTourStep();
+  // 强制切到 Chat Tab（兼容从设置页"重新查看"触发）
+  if (typeof switchTab === 'function') {
+    var btn = document.querySelector('.tabs-nav button[data-tab="chat"]');
+    if (btn) switchTab('chat', btn);
+  }
+  setTimeout(function() {
+    document.getElementById('tourOverlay').style.display = 'block';
+    document.getElementById('tourCard').style.display = 'block';
+    renderTourStep();
+  }, 200);
 }
 
 function renderTourStep() {
