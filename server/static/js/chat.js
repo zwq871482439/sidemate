@@ -639,6 +639,10 @@ async function sendMessage() {
   var thinkText = '';
   var thinkLen = 0;
   var _hadError = false;
+  // P6 修复终止bug: 显式声明,避免隐式全局变量跨调用污染(doneData/_abortReason 残留旧值导致后续判断错误)
+  var doneData = null;
+  var finalStats = '';
+  var _abortReason = '';
 
   var lastRender = 0;
   var RENDER_INTERVAL = (typeof STREAM_RENDER_INTERVAL !== 'undefined') ? STREAM_RENDER_INTERVAL : 100;
@@ -772,6 +776,14 @@ async function sendMessage() {
         }
         throw e;
       }
+      // P6 修复终止bug: 主动检测 abort 信号。某些浏览器/流实现下 abort 会让 reader.read()
+      // 直接 resolve {done:true} 而非 reject AbortError,导致 catch 不执行、_hadError 不设置。
+      // 这里主动检测,确保终止态被正确标记(根治计时器狂飙 + 终止标记丢失)。
+      if (abortCtrl && abortCtrl.signal && abortCtrl.signal.aborted) {
+        _hadError = true;
+        _abortReason = 'user_stop';
+        break;
+      }
       if (readResult.done) break;
       buffer += decoder.decode(readResult.value, {stream:true});
       var lines = buffer.split('\n');
@@ -885,8 +897,11 @@ async function sendMessage() {
           } else if (d.type === 'done') {
             // Patch5 C7: done 事件不再操作骨架屏（P6已移除）
             doneData = d;
-            // 如果前面已经显示了 error 卡片，不再覆盖渲染
-            if (_hadError) {
+            // P6 修复终止bug: 用户可能在 done 到达前已点终止(signal.aborted),
+            // 此时 _hadError 可能仍为 false,需用 signal 兜底,避免 done 正常渲染覆盖终止态
+            var _doneAfterAbort = (abortCtrl && abortCtrl.signal && abortCtrl.signal.aborted);
+            if (_hadError || _doneAfterAbort) {
+              if (_doneAfterAbort) { _hadError = true; if (!_abortReason) _abortReason = 'user_stop'; }
               thinkingPhase = false;
               _cloudThinking = false;
               // 直接进入结束流程
@@ -1289,12 +1304,20 @@ async function sendMessage() {
       // C方案：id 清理交给 finalizeDOM（在 finally 末尾调），这里先保留引用
       // 彻底清掉旧引用
   
+      // P6 修复终止bug: 统一终止判据。_hadError 可能因竞态未设置(signal.aborted 未必触发 reject),
+      // 故用 signal.aborted 兜底。_abortReason 同理,确保终止流程必走终止分支。
+      var _signalAborted = (abortCtrl && abortCtrl.signal && abortCtrl.signal.aborted);
+      var _isAborted = _hadError || _signalAborted;
+      if (_isAborted) {
+        _hadError = true;
+        if (!_abortReason) _abortReason = 'user_stop';
+      }
       // 计算要持久化的内容：正常输出 / 中止时已有内容 / 错误消息
       var _persistContent = fullText.trim();
-      if (_hadError && _abortReason === 'user_stop' && _persistContent) {
+      if (_isAborted && _abortReason === 'user_stop' && _persistContent) {
         // 用户手动中止，已有输出：保留原正文（终止提示由 _aborted 标记驱动渲染，
         // 不再拼进 content，避免 emoji/blockquote 与流式 SVG 样式不一致）
-      } else if (_hadError && _abortReason === 'user_stop' && !_persistContent) {
+      } else if (_isAborted && _abortReason === 'user_stop' && !_persistContent) {
         // 用户手动中止，无输出：记录一条中止提示（_aborted 也会渲染 SVG 提示）
         _persistContent = '[用户已手动终止响应]';
       } else if (_hadError && _abortReason === 'network_error') {
@@ -1325,10 +1348,10 @@ async function sendMessage() {
           msg_hash: msgHash,
           action_mode: currentActionMode || 'chat',
         };
-        // 异常终止标记
-        if (_hadError) {
+        // 异常终止标记（P6修复: 用 _isAborted 兜底 signal.aborted 竞态）
+        if (_isAborted) {
           newMsg._aborted = true;
-          newMsg._abort_reason = _abortReason;
+          newMsg._abort_reason = _abortReason || 'user_stop';
         }
         // 如果有文档下载信息，保存到消息里
         if (window._docDownloadInfo) {
@@ -1355,8 +1378,8 @@ async function sendMessage() {
         if (currentChatFile) {
           try {
             var _chatName = currentChatFile.split(/[\\/]/).pop().replace('.json','');
-            if (_hadError) {
-              // 异常终止：后端可能没存 assistant 消息，用 append 追加
+            if (_isAborted) {
+              // 异常终止：后端可能没存 assistant 消息，用 append 追加（带 _aborted 标记）
               await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(_chatName) + '/append', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1392,7 +1415,7 @@ async function sendMessage() {
     uploadedFilePath = null;
     if (!_isDocOutlineMode) {
       // error/abort 时保留错误卡片（不重建），只恢复 UI 按钮 + 刷新列表
-      if (_hadError) {
+      if (_isAborted) {
         var streamErrFix = document.getElementById('stream-msg');
         if (streamErrFix) {
           // P6 修复终止bug: 终止时同样走 finalizeDOM，清掉 thinking-indicator 计时器
@@ -1439,6 +1462,12 @@ function stopGeneration() {
   if (_stopping) return;  // 防重复点击
   _stopping = true;
   if (typeof abortCtrl !== 'undefined' && abortCtrl) abortCtrl.abort();
+  // P6 修复终止bug: 终止时立即清计时器(兜底,不依赖 finally/finalizeDOM)
+  // 同时删除页面残留的 thinking-indicator(避免自清条件因 DOM 残留而永不成立)
+  if (_thinkingTimerInterval) {
+    clearInterval(_thinkingTimerInterval);
+    _thinkingTimerInterval = null;
+  }
   fetch((typeof API !== 'undefined' ? API : '') + '/api/stop', {method:'POST'}).catch(function() {});
   // P6: 延迟恢复 UI（给旧请求的 catch/finally 一点时间执行，避免竞态）
   setTimeout(function() {

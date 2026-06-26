@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.36">
+<link rel="stylesheet" href="/static/css/main.css?v=2.37">
 </head>
 <body>
 
@@ -285,10 +285,6 @@
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.1"/><path d="M4 5h6M6 3v4" stroke="currentColor" stroke-width="0.8" stroke-linecap="round"/></svg>
             诊断
           </button>
-          <button class="btn danger" onclick="kbResetHeatmap()" title="重置热力图">
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/></svg>
-            重置热力图
-          </button>
           <input class="search-inp" id="kbSearchInput" placeholder="搜索文件名..." oninput="kbFilterByName(this.value)">
         </div>
         <input type="file" id="kbFileInput" accept=".txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx,.pdf,.pptx,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,.log,.rtf,.epub,.srt,.htm" multiple style="display:none" onchange="kbOnFilePicked(event)">
@@ -539,12 +535,6 @@
             <div style="margin-top:8px">
               <button class="btn btn-ghost" onclick="kbRefreshDocs()">刷新统计</button>
             </div>
-          </div>
-
-          <div class="card">
-            <h4>检索健康度</h4>
-            <div id="kbDiagnosisContent"><span style="color:var(--text-muted);font-size:12px">点击上方"诊断"按钮查看</span></div>
-            <button class="btn btn-ghost" onclick="kbResetHeatmap()" style="margin-top:8px">重置热力图</button>
           </div>
         </div>
 
@@ -909,25 +899,25 @@ window.addEventListener('DOMContentLoaded', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.36"></script>
-<script src="/static/js/core/utils.js?v=2.36"></script>
-<script src="/static/js/core/errors.js?v=2.36"></script>
-<script src="/static/js/stream_renderer.js?v=2.36"></script>
-<script src="/static/js/settings.js?v=2.36"></script>
-<script src="/static/js/qa.js?v=2.36"></script>
-<script src="/static/js/kb-batch.js?v=2.36"></script>
+<script src="/static/js/core/api.js?v=2.37"></script>
+<script src="/static/js/core/utils.js?v=2.37"></script>
+<script src="/static/js/core/errors.js?v=2.37"></script>
+<script src="/static/js/stream_renderer.js?v=2.37"></script>
+<script src="/static/js/settings.js?v=2.37"></script>
+<script src="/static/js/qa.js?v=2.37"></script>
+<script src="/static/js/kb-batch.js?v=2.37"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
-<script src="/static/js/chat-session.js?v=2.36"></script>
-<script src="/static/js/chat-actions.js?v=2.36"></script>
-<script src="/static/js/chat-files.js?v=2.36"></script>
-<script src="/static/js/chat-export.js?v=2.36"></script>
-<script src="/static/js/chat-ui.js?v=2.36"></script>
-<script src="/static/js/chat.js?v=2.36"></script>
+<script src="/static/js/chat-session.js?v=2.37"></script>
+<script src="/static/js/chat-actions.js?v=2.37"></script>
+<script src="/static/js/chat-files.js?v=2.37"></script>
+<script src="/static/js/chat-export.js?v=2.37"></script>
+<script src="/static/js/chat-ui.js?v=2.37"></script>
+<script src="/static/js/chat.js?v=2.37"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.36"></script>
+<script src="/static/js/token-estimator.js?v=2.37"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->
-<script src="/static/js/ui-enhance.js?v=2.36"></script>
+<script src="/static/js/ui-enhance.js?v=2.37"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====
