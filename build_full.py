@@ -54,6 +54,10 @@ REQUIRED_DEPS = {
     "search": [
         "curl_cffi",
     ],
+    # P6: 文件上传流式写入（aiofiles，缺失则 fallback 全量读入，内存占用高）
+    "upload": [
+        "aiofiles",
+    ],
 }
 
 

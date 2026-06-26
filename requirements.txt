@@ -20,6 +20,10 @@ httpx>=0.28.0
 # F10: curl_cffi 装了自动启用，绕过部分网站反爬；不装则用 httpx fallback（无伪装）
 curl_cffi>=0.15.0
 
+# ===== 文件上传（流式写入，避免大文件全量读入内存）=====
+# P6: aiofiles 支持知识库上传时边收边写，缺失则 fallback 到全量读入（内存占用高）
+aiofiles>=24.1.0
+
 # ===== NLP / 嵌入 =====
 sentence-transformers==5.5.1
 transformers==5.9.0
