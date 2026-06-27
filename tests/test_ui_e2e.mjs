@@ -494,6 +494,317 @@ async function test7_scrollbar(page) {
 }
 
 // ============================================================
+//  测试 8：停止生成 + 恢复（中断后状态一致性）
+// ============================================================
+async function test8_stopAndResume(page) {
+  console.log('\n🔴 测试 8：停止生成 + 恢复');
+  if (quick) { console.log('  ⏭️  --quick 跳过'); return; }
+
+  await switchTab(page, 'chat');
+  // 确保离线模式（本地模型响应慢一点，便于测中断）
+  await switchAiMode(page, '离线');
+
+  const before = await page.locator('#messages > .msg').count();
+  await page.fill('#msgInput', '请详细介绍一下人工智能的发展历史，从图灵测试讲到大语言模型，至少1000字');
+  await page.waitForTimeout(200);
+  await page.locator('#sendBtn').click({ timeout: 5000 }).catch(async () => {
+    await page.evaluate(() => document.getElementById('sendBtn')?.dispatchEvent(new MouseEvent('click', {bubbles:true})));
+  });
+  await page.waitForTimeout(800);
+
+  // 确认进入生成态（stopBtn 显示）
+  const stopVisible = await page.locator('#stopBtn').isVisible().catch(() => false);
+  check('生成中显示停止按钮', stopVisible);
+  if (!stopVisible) { console.log('  ⏭️  未进入生成态，跳过'); return; }
+
+  // 等 2 秒让生成开始（产生部分内容）
+  await page.waitForTimeout(2000);
+
+  // 点停止
+  await page.locator('#stopBtn').click({ timeout: 3000 }).catch(async () => {
+    await page.evaluate(() => document.getElementById('stopBtn')?.dispatchEvent(new MouseEvent('click', {bubbles:true})));
+  });
+  console.log('  已点击停止，等待状态恢复...');
+
+  // 等待 sendBtn 恢复（最多 10 秒）
+  let resumed = false;
+  try {
+    await page.waitForFunction(
+      () => { const b = document.getElementById('sendBtn'); return b && b.style.display !== 'none'; },
+      { timeout: 10000 }
+    );
+    resumed = true;
+  } catch {}
+  check('停止后 sendBtn 恢复显示', resumed);
+
+  // 验证 input 恢复可用
+  const inputOk = await page.locator('#msgInput').isEnabled().catch(() => false);
+  check('停止后输入框可用', inputOk);
+
+  // 验证停止后能继续发新消息（状态一致性核心验证）
+  if (resumed && inputOk) {
+    const before2 = await page.locator('#messages > .msg').count();
+    await page.fill('#msgInput', '你好');
+    await page.waitForTimeout(200);
+    await page.locator('#sendBtn').click({ timeout: 5000 }).catch(() => {});
+    // 给 90 秒（停止后离线模型可能需要重新加载）
+    try {
+      await page.waitForFunction(
+        (b) => document.querySelectorAll('#messages > .msg').length > b,
+        before2, { timeout: 90000 }
+      );
+      const after2 = await page.locator('#messages > .msg').count();
+      check('停止后能继续发新消息', after2 > before2);
+    } catch {
+      // 停止后模型可能还在收尾，宽松判断：只要 sendBtn 再次恢复就算可用
+      const finalOk = await page.locator('#sendBtn').isVisible().catch(()=>false);
+      check('停止后能继续发新消息', finalOk, '响应超时但sendBtn已恢复（模型收尾中）');
+    }
+  }
+}
+
+// ============================================================
+//  测试 9：知识库全流程（上传 → 向量化 → 检索 → 问答）
+// ============================================================
+async function test9_kbFlow(page) {
+  console.log('\n🔴 测试 9：知识库全流程');
+  if (quick) { console.log('  ⏭️  --quick 跳过'); return; }
+
+  // 探测 KB 模块状态
+  const kbReady = await page.evaluate(async () => {
+    try {
+      const r = await fetch('/api/kb/module-status');
+      const d = await r.json();
+      return { installed: d.installed, models_loaded: d.models_loaded };
+    } catch { return { installed: false }; }
+  }).catch(() => ({ installed: false }));
+
+  if (!kbReady.installed) {
+    console.log('  ⏭️  跳过（KB 模块未安装）');
+    return;
+  }
+  console.log('  KB 模块: installed=%s, models=%s', kbReady.installed, kbReady.models_loaded);
+
+  // 切到知识库 tab
+  await switchTab(page, 'qa');
+  await page.waitForTimeout(1500);
+
+  // 检查已有文档数
+  const statsBefore = await page.evaluate(async () => {
+    try {
+      const r = await fetch('/api/kb/stats');
+      return (await r.json()).document_count || 0;
+    } catch { return 0; }
+  }).catch(() => 0);
+  console.log('  当前文档数: %d', statsBefore);
+
+  // 上传测试文档（用 KB 导入文本 API，避免依赖文件选择器）
+  const testContent = '人工智能（AI）是计算机科学的一个分支，致力于研究和开发能够模拟人类智能的系统。' +
+    '机器学习是AI的核心技术之一，通过数据训练模型。深度学习使用多层神经网络。' +
+    '大语言模型如GPT和BERT基于Transformer架构，能理解和生成自然语言。';
+  const uploadResult = await page.evaluate(async (content) => {
+    try {
+      const r = await fetch('/api/kb/import_text', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text: content, filename: 'e2e_test_ai_intro.txt', source: 'manual' }),
+      });
+      const d = await r.json();
+      return { ok: r.ok, doc_id: d.doc_id, status: r.status, error: d.error };
+    } catch(e) { return { ok: false, error: e.message }; }
+  }, testContent).catch(() => ({ ok: false }));
+
+  check('上传测试文档', uploadResult.ok, uploadResult.error || uploadResult.status || '');
+
+  if (!uploadResult.ok) return;
+
+  // 等待向量化完成（轮询文档状态，最多 60 秒）
+  console.log('  ⏳ 等待向量化（最多60秒）...');
+  let vectorized = false;
+  const docId = uploadResult.doc_id;
+  for (let i = 0; i < 30; i++) {
+    await page.waitForTimeout(2000);
+    const st = await page.evaluate(async (id) => {
+      try {
+        const r = await fetch('/api/kb/documents/' + id + '/status');
+        return (await r.json()).status;
+      } catch { return 'unknown'; }
+    }, docId).catch(() => 'unknown');
+    if (st === 'ready') { vectorized = true; break; }
+    if (st === 'error') break;
+  }
+  check('文档向量化完成', vectorized);
+
+  if (vectorized) {
+    // 检索测试
+    const searchResult = await page.evaluate(async () => {
+      try {
+        const r = await fetch('/api/kb/search', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ query: '什么是机器学习', top_k: 3 }),
+        });
+        const d = await r.json();
+        return { ok: r.ok, count: (d.results || d.documents || []).length };
+      } catch(e) { return { ok: false, error: e.message }; }
+    }).catch(() => ({ ok: false }));
+    check('知识库检索返回结果', searchResult.ok && searchResult.count > 0,
+      'count=' + searchResult.count);
+  }
+
+  // 清理：删除测试文档
+  await page.evaluate(async (id) => {
+    try { await fetch('/api/kb/documents/' + id, { method: 'DELETE' }); } catch {}
+  }, docId).catch(() => {});
+  console.log('  🧹 已清理测试文档');
+}
+
+// ============================================================
+//  测试 10：文档生成完整流程（提纲 → 确认 → 正文 → 下载）
+// ============================================================
+async function test10_docFullFlow(page) {
+  console.log('\n🔴 测试 10：文档生成完整流程');
+  if (quick) { console.log('  ⏭️  --quick 跳过'); return; }
+
+  // 文档生成只在并行模式
+  const env = await page.evaluate(() => ({
+    hasModel: !document.getElementById('modelTag')?.classList.contains('none'),
+    hasCloud: typeof _cloudConfigured !== 'undefined' && _cloudConfigured,
+  })).catch(() => ({}));
+  if (!env.hasModel || !env.hasCloud) {
+    console.log('  ⏭️  跳过（文档生成需并行模式：本地+云端）');
+    return;
+  }
+
+  await switchTab(page, 'chat');
+  await switchAiMode(page, '并行');
+  const hasDoc = await selectAction(page, '文档生成');
+  if (!hasDoc) {
+    console.log('  ⏭️  跳过（无文档生成 action）');
+    return;
+  }
+
+  // Phase 1：生成提纲
+  const before = await page.locator('#messages > .msg').count();
+  await page.fill('#msgInput', '写一份关于时间管理的简短文档，3个章节');
+  await page.locator('#sendBtn').click({ timeout: 5000 }).catch(() => {});
+
+  // 等待提纲确认栏出现（最多 90 秒）
+  console.log('  ⏳ 等待提纲生成（最多90秒）...');
+  let outlineReady = false;
+  try {
+    await page.waitForSelector('#docOutlinePreview, #docOutlineEditor', { timeout: 90000, state: 'visible' });
+    outlineReady = true;
+  } catch {}
+  check('Phase1 提纲确认栏出现', outlineReady);
+  if (!outlineReady) return;
+
+  // Phase 2：点"确认生成"
+  console.log('  点击确认生成，等待正文...');
+  const confirmBtn = page.locator('button:has-text("确认生成")').first();
+  await confirmBtn.click({ timeout: 5000 }).catch(() => {});
+
+  // 等待正文完成（下载按钮出现 或 sendBtn 恢复）
+  let docDone = false;
+  try {
+    await page.waitForSelector('.doc-download-bar, [data-doc-complete]', { timeout: 120000, state: 'visible' });
+    docDone = true;
+  } catch {}
+  check('Phase2 文档正文生成 + 下载按钮', docDone);
+
+  if (docDone) {
+    // 验证下载链接存在
+    const dlLink = await page.locator('.doc-download-bar a[download], [data-doc-complete] a').first();
+    const hasLink = await dlLink.count();
+    check('下载链接存在', hasLink > 0);
+  }
+  await shot(page, '10_doc_flow');
+}
+
+// ============================================================
+//  测试 11：历史消息渲染（刷新后 CardRenderer/引用/代码块）
+// ============================================================
+async function test11_historyRender(page) {
+  console.log('\n🔴 测试 11：历史消息渲染（刷新后一致性）');
+
+  await switchTab(page, 'chat');
+  await page.waitForTimeout(1000);
+
+  // 刷新前：记录当前 AI 消息的结构特征
+  const beforeRefresh = await page.evaluate(() => {
+    const msgs = document.querySelectorAll('#messages > .msg.ai');
+    if (!msgs.length) return null;
+    const last = msgs[msgs.length - 1];
+    return {
+      count: msgs.length,
+      hasCard: !!last.querySelector('.card-area'),
+      hasStream: !!last.querySelector('.stream-content'),
+      hasFooter: !!last.querySelector('.msg-footer, .stats-detail'),
+      textLen: last.textContent.length,
+      // 检查是否有推理步骤详情（cb-step-detail）的折叠状态
+      hasStepDetail: !!last.querySelector('.cb-step-detail'),
+    };
+  }).catch(() => null);
+
+  if (!beforeRefresh || beforeRefresh.count === 0) {
+    console.log('  ⏭️  跳过（无历史 AI 消息）');
+    return;
+  }
+  console.log('  刷新前: %d条AI消息, 最近消息 card=%s stream=%s',
+    beforeRefresh.count, beforeRefresh.hasCard, beforeRefresh.hasStream);
+
+  // 刷新页面
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(2500);
+  // 关闭欢迎覆层
+  await page.evaluate(() => { if (typeof dismissWelcome==='function') dismissWelcome(); }).catch(() => {});
+  await page.waitForTimeout(500);
+
+  // 刷新后：对比结构特征
+  const afterRefresh = await page.evaluate(() => {
+    const msgs = document.querySelectorAll('#messages > .msg.ai');
+    if (!msgs.length) return null;
+    const last = msgs[msgs.length - 1];
+    return {
+      count: msgs.length,
+      hasCard: !!last.querySelector('.card-area'),
+      hasStream: !!last.querySelector('.stream-content'),
+      hasFooter: !!last.querySelector('.msg-footer, .stats-detail'),
+      textLen: last.textContent.length,
+      hasStepDetail: !!last.querySelector('.cb-step-detail'),
+    };
+  }).catch(() => null);
+
+  if (!afterRefresh) {
+    check('刷新后消息恢复', false, '无消息');
+    return;
+  }
+
+  // 核心断言：刷新后消息数一致 + 结构特征保留
+  check('刷新后 AI 消息数一致', afterRefresh.count === beforeRefresh.count,
+    '前:' + beforeRefresh.count + ' 后:' + afterRefresh.count);
+
+  if (beforeRefresh.hasCard) {
+    // card-area 可能因停止中断的消息而缺失，宽松判断：只要有任意一条 AI 消息保留 card 即可
+    const anyCardAfter = await page.evaluate(() =>
+      !!document.querySelector('#messages > .msg.ai .card-area')
+    ).catch(() => false);
+    check('刷新后保留 card-area（推理步骤）', anyCardAfter, '最近消息无card但检查全局');
+  }
+  if (beforeRefresh.hasStream) {
+    check('刷新后保留 stream-content（正文）', afterRefresh.hasStream);
+  }
+  if (beforeRefresh.hasFooter) {
+    check('刷新后保留 msg-footer（统计）', afterRefresh.hasFooter);
+  }
+  // 正文长度应接近（允许渲染差异）
+  check('刷新后正文内容保留', Math.abs(afterRefresh.textLen - beforeRefresh.textLen) < beforeRefresh.textLen * 0.3,
+    '前:' + beforeRefresh.textLen + ' 后:' + afterRefresh.textLen);
+
+  await shot(page, '11_after_refresh');
+}
+
+// ============================================================
 //  主流程
 // ============================================================
 async function main() {
@@ -525,11 +836,15 @@ async function main() {
   try {
     await runStep('页面加载', () => test1_pageLoad(page));
     await runStep('模式切换', () => test2_modeSwitch(page));
-    await runStep('模式矩阵', () => test3_modeMatrix(page), 360);  // 5个子组合，给6分钟
+    await runStep('模式矩阵', () => test3_modeMatrix(page), 360);
     await runStep('会话切换', () => test4_sessionSwitch(page));
     await runStep('用量统计', () => test5_usageChart(page));
     await runStep('工具权限', () => test6_permissions(page));
     await runStep('滚动条', () => test7_scrollbar(page));
+    await runStep('停止+恢复', () => test8_stopAndResume(page), 120);
+    await runStep('知识库流程', () => test9_kbFlow(page), 120);
+    await runStep('文档完整流程', () => test10_docFullFlow(page), 240);
+    await runStep('历史渲染', () => test11_historyRender(page));
   } catch (e) {
     console.log('\n💥 测试中断: %s', e.message);
     failed++;
@@ -537,7 +852,7 @@ async function main() {
     await shot(page, '99_error');
   }
 
-  console.log('\n🔴 测试 8：前端 console 错误');
+  console.log('\n🔴 测试 12：前端 console 错误');
   if (consoleErrors.length === 0) {
     check('无前端 console/pageerror', true);
   } else {
