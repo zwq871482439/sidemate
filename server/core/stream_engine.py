@@ -256,6 +256,7 @@ class StreamEngine:
                     write=30.0,
                     pool=30.0,
                 ),
+                trust_env=False,  # 直连本地 ollama，绕过系统代理（否则代理转发本地请求返回 503）
             ) as response:
                 self._active_response = response  # 保存引用，stop_generation 可强制关闭
                 if response.status_code != 200:

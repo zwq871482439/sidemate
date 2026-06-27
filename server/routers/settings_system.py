@@ -687,7 +687,7 @@ def api_system_info():
         # 检查 Ollama 进程是否在运行
         import httpx
         try:
-            resp = httpx.get("http://127.0.0.1:11434/api/version", timeout=3)
+            resp = httpx.get("http://127.0.0.1:11434/api/version", timeout=3, trust_env=False)
             if resp.status_code == 200:
                 ollama_status = "running"
                 ver_data = resp.json()

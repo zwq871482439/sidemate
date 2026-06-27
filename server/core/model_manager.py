@@ -222,6 +222,7 @@ class ModelManager:
             resp = httpx.get(
                 "%s/api/tags" % self._ollama_base_url,
                 timeout=5.0,
+                trust_env=False,  # 直连本地 ollama，绕过系统代理（否则代理转发本地请求返回 503）
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -762,7 +763,7 @@ class ModelManager:
         # 检查 Ollama 可用性
         try:
             import httpx
-            resp = httpx.get("%s/api/tags" % self._ollama_base_url, timeout=5.0)
+            resp = httpx.get("%s/api/tags" % self._ollama_base_url, timeout=5.0, trust_env=False)
             if resp.status_code == 200:
                 report["ollama_available"] = True
                 data = resp.json()

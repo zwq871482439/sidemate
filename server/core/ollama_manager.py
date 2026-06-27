@@ -59,9 +59,12 @@ class OllamaManager:
         # 检查端口是否被其他进程占用
         if self._is_port_in_use():
             log.info("[OLLAMA] 端口 %d 已被占用，尝试连接..." % self._port)
-            if self.is_healthy():
+            # 容错：占用端口的 Ollama 可能正繁忙（加载模型/处理请求），/api/tags 暂时超时。
+            # 重试几次再判失败，避免误报"无法连接"导致无法复用已有实例。
+            # （此前偶发报"端口被占用但无法连接"，正是撞上了 ollama 短暂繁忙）
+            if self._wait_healthy_with_retry(retries=3, interval=3):
                 return {"status": "already_running", "host": self._host, "port": self._port}
-            return {"status": "error", "error": "端口 %d 被占用但无法连接 Ollama API" % self._port}
+            return {"status": "error", "error": "端口 %d 被占用但无法连接 Ollama API（已重试 3 次）" % self._port}
 
         try:
             self._launch_process()
@@ -108,10 +111,26 @@ class OllamaManager:
             resp = httpx.get(
                 "%s/api/tags" % self.base_url,
                 timeout=5.0,
+                trust_env=False,  # 直连本地 ollama，绕过系统代理（否则代理转发本地请求返回 503）
             )
             return resp.status_code == 200
         except (httpx.ConnectError, httpx.TimeoutException, OSError):
             return False
+
+    def _wait_healthy_with_retry(self, retries: int = 3, interval: float = 3.0) -> bool:
+        """带重试的健康检查：占用端口的 Ollama 可能正繁忙（加载模型/处理请求），
+        单次 /api/tags 超时不足以判定它不可用。重试 retries 次，每次间隔 interval 秒。
+        任一次成功即返回 True。"""
+        for attempt in range(1, retries + 1):
+            if self.is_healthy():
+                if attempt > 1:
+                    log.info("[OLLAMA] 第 %d/%d 次重试连接成功" % (attempt, retries))
+                return True
+            if attempt < retries:
+                log.info("[OLLAMA] 端口被占用但暂未响应，%ds 后重试 (%d/%d)..." % (interval, attempt, retries))
+                time.sleep(interval)
+        log.warning("[OLLAMA] 重试 %d 次后仍无法连接 Ollama API" % retries)
+        return False
 
     def ensure_running(self) -> bool:
         """确保 Ollama 正在运行，否则自动启动。
@@ -138,6 +157,7 @@ class OllamaManager:
                 resp = httpx.get(
                     "%s/api/tags" % self.base_url,
                     timeout=5.0,
+                    trust_env=False,  # 直连本地 ollama，绕过系统代理
                 )
                 if resp.status_code == 200:
                     data = resp.json()

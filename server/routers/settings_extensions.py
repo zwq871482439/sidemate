@@ -610,7 +610,7 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
                 for _poll in range(10):
                     _time.sleep(1)
                     try:
-                        tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10)
+                        tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10, trust_env=False)
                         if tags_resp.status_code == 200:
                             existing = [m.get("name", "") for m in tags_resp.json().get("models", [])]
                             existing_base = [n.split(":")[0] for n in existing]
@@ -625,12 +625,12 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
                     log.warning("[EXT] Ollama 未立即识别 manifest，但文件已就位，重启后生效")
                     log.info("[EXT] 尝试重启 Ollama 刷新缓存...")
                     try:
-                        _httpx.get("%s/api/ps" % ollama_api, timeout=5)
+                        _httpx.get("%s/api/ps" % ollama_api, timeout=5, trust_env=False)
                     except Exception:
                         pass
                     _time.sleep(2)
                     try:
-                        tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10)
+                        tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10, trust_env=False)
                         if tags_resp.status_code == 200:
                             existing = [m.get("name", "") for m in tags_resp.json().get("models", [])]
                             existing_base = [n.split(":")[0] for n in existing]
