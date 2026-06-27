@@ -318,6 +318,9 @@ def handle_doc_action(ctx: StreamContext) -> Generator[str, None, None]:
     ):
         if phase == "mode_hint":
             yield 'data: {"type": "mode_hint", "message": %s}\n\n' % json.dumps(content, ensure_ascii=False)
+        elif phase == "kb_sources":
+            # doc 模式 KB 检索来源（与 chat 模式一致，前端渲染来源卡片）
+            yield 'data: {"type": "kb_sources", "sources": %s}\n\n' % json.dumps(content, ensure_ascii=False)
         elif phase == "doc_outline":
             _doc_outline_only = True
             yield 'data: {"type": "doc_outline", "outline": %s}\n\n' % json.dumps(content, ensure_ascii=False)

@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.64">
+<link rel="stylesheet" href="/static/css/main.css?v=2.67">
 </head>
 <body>
 
@@ -126,7 +126,8 @@
         <!-- 气泡/列表切换：浮动在消息区右上角 -->
         <button id="msgStyleToggle" onclick="toggleMode()" title="切换消息样式（卡片/列表）" class="float-style-toggle">列表</button>
         <div id="messages" style="position:relative"></div>
-    <button id="scrollBottomBtn" onclick="scrollToBottom()" title="跳到最新">↓</button>
+        <!-- 跳到最新按钮：钉在 chat-main 视口（不随内容滚动），浮在输入框上方 -->
+        <button id="scrollBottomBtn" onclick="scrollToBottom()" title="跳到最新">↓</button>
     <!-- P6: KB处理中锁定已移除 — 知识库 Tab 不再包含对话功能 -->
     <div class="input-area">
       <input type="file" id="unifiedInput" multiple accept=".txt,.md,.csv,.json,.docx,.doc,.xlsx,.xls,.pdf,.pptx,.ppt,.zip,.rar,.7z,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,.log,.rtf" style="display:none" onchange="onUnifiedPicked(event)">
@@ -821,7 +822,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/core/errors.js?v=2.40"></script>
 <script src="/static/js/stream_renderer.js?v=2.40"></script>
 <script src="/static/js/settings.js?v=2.65"></script>
-<script src="/static/js/qa.js?v=2.63"></script>
+<script src="/static/js/qa.js?v=2.65"></script>
 <script src="/static/js/kb-batch.js?v=2.63"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->

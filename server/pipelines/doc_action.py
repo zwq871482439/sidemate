@@ -79,7 +79,7 @@ def _run_phase1(
 ):
     """Phase 1: KB搜索 → 生成提纲 → yield doc_outline"""
 
-    # Step 1: KB 自动搜索
+    # Step 1: KB 自动搜索（修 #doc模式搜索永远失败：KnowledgeBase 无 query 方法，改用 get_context）
     kb_context = ""
     kb_refs = []
     if kb:
@@ -87,24 +87,23 @@ def _run_phase1(
             kb_loaded = getattr(kb, '_embedder_loaded', False)
             if kb_loaded:
                 yield ("mode_hint", " 正在搜索文库...")
-                kb_result = kb.query(message, top_k=3)
-                if kb_result and kb_result.get("results"):
-                    kb_refs = kb_result["results"]
-                    kb_context_parts = []
-                    for i, ref in enumerate(kb_refs[:3]):
-                        kb_context_parts.append("[参考资料%d] %s" % (i + 1, ref.get("content", "")[:500]))
-                    kb_context = "\n\n".join(kb_context_parts)
-                    # 告知用户检索结果（与 chat 模式 _base.py:250 对齐）
-                    # doc 模式走 fallback 渲染，不支持 kb_sources 事件，用 mode_hint 列出来源
+                kb_context, kb_refs = kb.get_context(message, max_chars=2000, ai_mode="local")
+                if kb_refs:
+                    # 列出检索到的来源（与 chat 模式 _base.py:250 对齐）
                     _src_labels = []
                     for ref in kb_refs[:3]:
                         _lbl = ref.get("source_label") or ref.get("filename") or ref.get("doc_id") or "?"
                         _src_labels.append(_lbl)
-                    yield ("mode_hint", " 已检索文库（%d条相关文档：%s），正在生成文档提纲..." % (
+                    yield ("mode_hint", " 已检索文库（%d 条相关文档：%s），正在生成文档提纲..." % (
                         len(kb_refs), "、".join(_src_labels)))
+                    # 发送 kb_sources 事件，让前端渲染来源卡片（与 chat 模式一致）
+                    yield ("kb_sources", [{"label": s.get("source_label", "?"),
+                                           "snippet": (s.get("text_snippet", "") or s.get("content", ""))[:100]}
+                                          for s in kb_refs[:5]])
                     log.info("[DOC_ACTION] KB 搜索到 %d 条参考资料: %s" % (len(kb_refs), "、".join(_src_labels)))
                 else:
                     yield ("mode_hint", " 文库中未找到相关内容，将直接生成文档提纲。")
+                    log.info("[DOC_ACTION] KB 无检索结果，fallback 直接生成提纲")
         except Exception as e:
             log.warning("[DOC_ACTION] KB 搜索失败: %s" % str(e)[:100])
 

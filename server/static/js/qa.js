@@ -334,7 +334,8 @@ async function kbRefreshDocs() {
     if (overviewEl) overviewEl.style.display = '';
 
     // 构建卡片 HTML
-    var svgLock = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>';
+    var svgLock = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>';
+    var svgInfo = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M7 6.5v3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="7" cy="4.2" r="0.7" fill="currentColor"/></svg>';
     var svgDup = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="3" y="1.5" width="8" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.5" y="3.5" width="8" height="9" rx="1" fill="var(--bg-secondary)" stroke="currentColor" stroke-width="1.2"/></svg>';
     var svgImg = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="5.5" r="1.5" stroke="currentColor" stroke-width="0.8"/><path d="M3 10.5l2.5-2.5L8 10l2-2 2 2" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     var svgEmpty = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M3.5 1.5h5L11.5 4.5v8a.5.5 0 01-.5.5h-7.5a.5.5 0 01-.5-.5V2a.5.5 0 01.5-.5z" stroke="currentColor" stroke-width="1.1"/><path d="M8.5 1.5V4.5h3" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M4 10L10 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>';
@@ -362,14 +363,20 @@ async function kbRefreshDocs() {
       var hitCount = d.hit_count || 0;
       var hitStr = '被搜索 ' + hitCount + ' 次';
 
-      // 状态图标
+      // 状态图标 + 操作按钮（S9: 私密可点击切换；S3: 详情按钮）
       var iconsHtml = '';
-      if (d.is_private) iconsHtml += '<span class="ic-lock" title="私密文档">' + svgLock + '</span>';
+      // S9: 私密锁改为可点击按钮，切换该文档私密状态
+      var _privTitle = d.is_private
+        ? '私密文档：云端 Agent 不可见，仅在本地检索中使用。点击设为公开'
+        : '公开文档：云端 Agent 可访问用于问答。点击设为私密（仅本地可见）';
+      iconsHtml += '<span class="ic-lock ic-btn' + (d.is_private ? ' active' : '') + '" title="' + _privTitle + '" onclick="event.stopPropagation();kbTogglePrivacy(\'' + escAttr(d.doc_id) + '\')">' + svgLock + '</span>';
       if (d.metadata && d.metadata.duplicate_of) iconsHtml += '<span class="ic-dup" title="检测到重复">' + svgDup + '</span>';
       if (d.metadata && d.metadata.has_images) iconsHtml += '<span class="ic-img" title="含图片">' + svgImg + '</span>';
       // P6 诊断：空文档标记（has_no_text 优先，旧数据 fallback 到 chunk_count==0）
       var _isEmptyDoc = (d.metadata && d.metadata.has_no_text) || (!d.chunk_count && d.status === 'ready');
       if (_isEmptyDoc) iconsHtml += '<span class="ic-empty" title="无文本内容（可能是扫描件/纯图），建议重新上传">' + svgEmpty + '</span>';
+      // S3: 详情按钮（点击查看文档详情，不影响卡片选中）
+      iconsHtml += '<span class="ic-btn ic-detail" title="查看详情" onclick="event.stopPropagation();kbShowDocDetail(\'' + escAttr(d.doc_id) + '\')">' + svgInfo + '</span>';
 
       // 热力图圆点
       var hmDotClass = hitCount >= 10 ? 'hot' : (hitCount >= 1 ? 'warm' : 'cold');
@@ -431,16 +438,6 @@ async function kbRefreshDocs() {
         tagsHtml = '<span class="ctag" style="background:var(--bg-tertiary);color:var(--text-muted)">标签生成中...</span>';
       }
 
-      // 上传时间（后端字段为 imported_at，兼容旧 created_at）
-      var uploadTime = '';
-      var _importedAt = d.created_at || d.imported_at;
-      if (_importedAt) {
-        var dDate = new Date(_importedAt);
-        var now = new Date();
-        var diffDays = Math.floor((now - dDate) / 86400000);
-        uploadTime = diffDays === 0 ? '今天上传' : diffDays === 1 ? '1 天前上传' : diffDays + ' 天前上传';
-      }
-
       html += '<div class="kb-card' + (_donutActiveCategory && d.category === _donutActiveCategory ? ' pinned' : '') + '" data-doc-id="' + esc(d.doc_id) + '" onclick="kbCardClick(\'' + escAttr(d.doc_id) + '\')">';
       // 1. 标题行
       html += '<div class="cbar">';
@@ -455,14 +452,13 @@ async function kbRefreshDocs() {
         html += '<span class="cpreview-spinner"></span>';
       }
       html += esc(previewText) + '</div>';
-      // 4. 文件信息 + 上传时间（下对齐）
+      // 4. 文件信息（上传时间移到详情弹窗，卡片不再显示）
       html += '<div class="cstats-bottom">';
       html += '<div class="cstats">';
       html += '<span>文件大小 ' + sizeStr + '</span>';
       if (tokenInfo) html += '<span>' + tokenInfo + '</span>';
       html += '<span>' + hitStr + '</span>';
       html += '</div>';
-      html += '<div class="cmtime">' + uploadTime + '</div>';
       html += '</div>';
       // P6: 私密文档标记（云端Agent不可见，本地正常访问）
       if (d.is_private) {
@@ -1333,6 +1329,68 @@ async function kbPauseDoc(docId) {
   catch (err) { showToast('操作失败: ' + err.message, 'error'); }
 }
 
+// S9: 切换单篇文档私密状态（调现有单篇 privacy 端点）
+async function kbTogglePrivacy(docId) {
+  var doc = null;
+  for (var i = 0; i < _kbLastDocs.length; i++) { if (_kbLastDocs[i].doc_id === docId) { doc = _kbLastDocs[i]; break; } }
+  var nextPrivate = doc ? !doc.is_private : true;
+  try {
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + encodeURIComponent(docId) + '/privacy', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({is_private: nextPrivate})
+    });
+    var data = await resp.json();
+    if (data && data.error) { showToast('设置失败: ' + data.error, 'error'); return; }
+    if (doc) doc.is_private = nextPrivate;  // 本地立即更新，避免等轮询
+    showToast(nextPrivate ? '已设为私密（云端Agent不可见）' : '已设为公开');
+    kbRefreshDocs();
+  } catch (err) { showToast('设置失败: ' + err.message, 'error'); }
+}
+
+// S3: 文档详情弹窗（标题/状态/标签/分类/元数据/全文预览）
+function kbShowDocDetail(docId) {
+  var doc = null;
+  for (var i = 0; i < _kbLastDocs.length; i++) { if (_kbLastDocs[i].doc_id === docId) { doc = _kbLastDocs[i]; break; } }
+  if (!doc) return;
+  var apiBase = (typeof API !== 'undefined') ? API : '';
+  // 构建详情内容
+  var statusMap = {ready: '就绪', processing: '处理中', conflict: '冲突', error: '失败', paused: '已暂停'};
+  var tagStatusMap = {done: '已完成', pending: '待生成', generating: '生成中', failed: '失败'};
+  var sizeStr = doc.file_size > 1048576 ? (doc.file_size/1048576).toFixed(1)+'MB' : doc.file_size > 1024 ? (doc.file_size/1024).toFixed(1)+'KB' : doc.file_size+'B';
+  var _importedAt = doc.created_at || doc.imported_at;
+  var timeStr = _importedAt ? new Date(_importedAt).toLocaleString('zh-CN') : '—';
+  var tagsStr = (doc.tags && doc.tags.length) ? doc.tags.map(function(t){return '<span class="ctag">'+esc(t)+'</span>';}).join('') : '<span style="color:var(--text-muted)">暂无标签</span>';
+
+  // overlay
+  var overlay = document.createElement('div');
+  overlay.className = 'kb-detail-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease';
+  var card = document.createElement('div');
+  card.className = 'kb-detail-card';
+  card.style.cssText = 'background:var(--bg-primary);border:0.5px solid var(--border-color);border-radius:12px;padding:20px 24px;max-width:560px;width:92%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18);animation:msgSlideIn .25s ease-out';
+  var html = '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:14px">' +
+    '<span style="font-size:15px;font-weight:600;color:var(--text-primary);flex:1;word-break:break-all">' + esc(doc.filename) + '</span>' +
+    '<span onclick="this.closest(\'.kb-detail-overlay\').remove()" style="cursor:pointer;color:var(--text-muted);font-size:18px;line-height:1;padding:2px 6px" title="关闭">×</span></div>';
+  // 元数据网格
+  html += '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;margin-bottom:14px">';
+  html += '<span style="color:var(--text-muted)">状态</span><span>' + esc(statusMap[doc.status]||doc.status) + ' · 标签' + esc(tagStatusMap[doc.tag_status]||doc.tag_status) + '</span>';
+  html += '<span style="color:var(--text-muted)">分类</span><span>' + esc(doc.category || '未分类') + '</span>';
+  html += '<span style="color:var(--text-muted)">文件大小</span><span>' + sizeStr + (doc.total_chars ? ' · 约'+Math.ceil(doc.total_chars/1.5).toLocaleString()+' 词元' : '') + '</span>';
+  html += '<span style="color:var(--text-muted)">分块数</span><span>' + (doc.chunk_count||0) + ' 块 · 被搜索 ' + (doc.hit_count||0) + ' 次</span>';
+  html += '<span style="color:var(--text-muted)">私密</span><span>' + (doc.is_private ? '是（云端Agent不可见）' : '否') + '</span>';
+  html += '<span style="color:var(--text-muted)">上传时间</span><span>' + timeStr + '</span>';
+  html += '</div>';
+  // 标签
+  html += '<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">标签</div><div style="display:flex;flex-wrap:wrap;gap:4px">' + tagsStr + '</div></div>';
+  // 摘要预览（用已有的 doc.summary，无需额外端点）
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">内容预览</div>';
+  html += '<div id="kbDetailPreview" style="font-size:12px;color:var(--text-secondary);line-height:1.7;background:var(--bg-secondary);border-radius:6px;padding:10px 12px;max-height:240px;overflow-y:auto">' + (doc.summary ? esc(doc.summary) : '<span style="color:var(--text-muted)">暂无预览</span>') + '</div>';
+  card.innerHTML = html;
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+}
+
 async function kbResumeDoc(docId) {
   try { await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + docId + '/resume', { method: 'POST' }); kbRefreshDocs(); }
   catch (err) { showToast('操作失败: ' + err.message, 'error'); }
@@ -1628,6 +1686,8 @@ window.kbDiagResumeAll = kbDiagResumeAll;
 window.kbDiagBatchRetag = kbDiagBatchRetag;
 window.kbDiagResetHeatmap = kbDiagResetHeatmap;
 window.kbResetKnowledgeBase = kbResetKnowledgeBase;
+window.kbTogglePrivacy = kbTogglePrivacy;
+window.kbShowDocDetail = kbShowDocDetail;
 
 // P6: 诊断按钮事件绑定（点击切换浮层，不依赖 onclick HTML 属性）
 document.addEventListener('DOMContentLoaded', function() {
