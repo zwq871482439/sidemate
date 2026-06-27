@@ -2331,6 +2331,16 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .ic-dup{color:#BA7517}
 .ic-img{color:var(--text-muted)}
 .ic-empty{color:var(--text-muted)}
+/* 可点击图标按钮（私密切换/详情）：hover 高亮 + pointer 光标 */
+.ic-btn{cursor:pointer;border-radius:3px;padding:1px;transition:background .15s,opacity .15s;display:inline-flex;align-items:center}
+.ic-btn:hover{background:var(--bg-tertiary);opacity:.85}
+.ic-lock.ic-btn:not(.active){opacity:.35}   /* 非私密时锁图标淡化，提示可点 */
+.ic-detail{color:var(--text-muted)}
+.ic-detail:hover{color:var(--accent-color)}
+/* 文档详情弹窗滚动条（复用对话区灰色） */
+.kb-detail-card::-webkit-scrollbar{width:5px}
+.kb-detail-card::-webkit-scrollbar-track{background:transparent}
+.kb-detail-card::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
 
 /* 热力图彩色圆点 */
 .hm-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
@@ -2373,6 +2383,9 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .usage-bar-group:hover .usage-seg-in { filter: brightness(1.1); }
 .usage-bar-group:hover .usage-seg-out { filter: brightness(1.08); }
 .usage-bar-group:hover .usage-seg-rea { filter: brightness(1.12); }
+/* 按模型进度条：展开时从 0 增长到目标宽度（分段版动画） */
+.usage-model-bar { height:100%; width:0; border-radius:3px; animation: usage-bar-grow 0.6s cubic-bezier(0.22,0.61,0.36,1) forwards; }
+@keyframes usage-bar-grow { from { width:0; } to { width:var(--target-w, 100%); } }
 .settings-content .card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:14px;margin-bottom:10px}
 .settings-content .card h4{font-size:12px;font-weight:500;margin-bottom:8px;color:var(--text-primary)}
 .settings-content .row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px}

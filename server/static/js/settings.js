@@ -1128,14 +1128,19 @@ function renderCloudUsage(panel, data) {
         var wIn = (_mIn / _mSum * segW).toFixed(1);
         var wOut = (_mOut / _mSum * segW).toFixed(1);
         var wRea = (segW - parseFloat(wIn) - parseFloat(wOut)).toFixed(1);
-        segHtml = '<div style="height:100%;display:flex;width:' + segW + '%;border-radius:3px;overflow:hidden">';
-        if (parseFloat(wIn) > 0) segHtml += '<div style="height:100%;width:' + wIn + '%;background:#60A5FA"></div>';
-        if (parseFloat(wOut) > 0) segHtml += '<div style="height:100%;width:' + wOut + '%;background:#34D399"></div>';
-        if (parseFloat(wRea) > 0) segHtml += '<div style="height:100%;width:' + wRea + '%;background:#A78BFA"></div>';
-        segHtml += '</div>';
+        // 分段进度条：外层 usage-model-bar 从 0 动画增长到目标宽度（CSS animation）
+        // 子段用百分比（相对外层），这样外层增长时三段比例不变
+        var pIn = (_mIn / _mSum * 100).toFixed(1);
+        var pOut = (_mOut / _mSum * 100).toFixed(1);
+        var pRea = (100 - parseFloat(pIn) - parseFloat(pOut)).toFixed(1);
+        segHtml = '<div class="usage-model-bar" style="--target-w:' + segW + '%"><div style="height:100%;display:flex;width:100%;border-radius:3px;overflow:hidden">';
+        if (parseFloat(pIn) > 0) segHtml += '<div style="height:100%;width:' + pIn + '%;background:#60A5FA"></div>';
+        if (parseFloat(pOut) > 0) segHtml += '<div style="height:100%;width:' + pOut + '%;background:#34D399"></div>';
+        if (parseFloat(pRea) > 0) segHtml += '<div style="height:100%;width:' + pRea + '%;background:#A78BFA"></div>';
+        segHtml += '</div></div>';
       } else {
-        // 兜底：无细分数据，整条品牌色
-        segHtml = '<div style="height:100%;width:' + pct + '%;background:#34D399;border-radius:3px"></div>';
+        // 兜底：无细分数据，整条浅绿（也带动画）
+        segHtml = '<div class="usage-model-bar" style="--target-w:' + pct + '%"><div style="height:100%;width:100%;background:#34D399;border-radius:3px"></div></div>';
       }
       html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px" title="' + esc(m.model) + ' · 共 ' + m.tokens.toLocaleString() + ' token (' + sharePct + '%)&#10;输入 ' + _mIn.toLocaleString() + ' · 输出 ' + _mOut.toLocaleString() + (_mRea > 0 ? ' · 推理 ' + _mRea.toLocaleString() : '') + ' token">';
       html += '<span style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' + esc(m.model) + '</span>';
