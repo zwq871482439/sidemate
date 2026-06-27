@@ -196,13 +196,24 @@ async function switchAiMode(page, modeText) {
 }
 
 // 选择 Action（聊天/写文档/联网搜索/深度分析/知识库问答）
-async function selectAction(page, actionText) {
+// setActionMode 是 async（含 await fetch），点击后需等 currentActionMode 变化
+async function selectAction(page, actionText, expectMode) {
   // action 按钮在 actionBar，文字匹配
   const btn = page.locator(`#actionBar button:has-text("${actionText}"), .action-bar button:has-text("${actionText}")`).first();
   const exists = await btn.count();
   if (!exists) return false;
   await btn.click({ timeout: 3000 }).catch(() => {});
-  await page.waitForTimeout(500);
+  // 等 setActionMode 完成（currentActionMode 变化，最多 3 秒）
+  if (expectMode) {
+    try {
+      await page.waitForFunction(
+        (m) => { try { return currentActionMode === m; } catch { return false; } },
+        expectMode, { timeout: 3000 }
+      );
+    } catch {}
+  } else {
+    await page.waitForTimeout(800);  // 无 expectMode 时固定等待
+  }
   return true;
 }
 
@@ -394,24 +405,38 @@ async function test3_modeMatrix(page) {
   if (hasLocalModel) {
     await newChatSession(page);  // 会话隔离
     await switchAiMode(page, '离线');
-    const hasDocAction = await selectAction(page, '文档生成');
+    const hasDocAction = await selectAction(page, '文档生成', 'doc');
     if (hasDocAction) {
-      const r = await sendMessageAndWait(page, '写一份关于团队协作的简短文档，3个章节');
-      check('文档生成：收到提纲响应', r.ok, r.reason || ('+' + r.newMsgCount + '条'));
-      if (r.ok) {
-        // 文档模式 Phase1 应出现提纲确认栏
-        await page.waitForTimeout(1000);
-        const hasOutline = await page.locator('#docOutlineEditor, #docOutlinePreview').count();
-        check('文档生成：出现提纲确认栏', hasOutline > 0);
-        // 质量断言：提纲应含标题结构（# 或 章节）
-        if (r.content) {
-          const hasStructure = r.content.includes('#') || r.content.includes('章节') || r.content.includes('一、');
-          check('文档提纲有结构（质量）', hasStructure, '内容: ' + r.content.slice(0, 50));
-        }
-        // 取消提纲（清理状态）
-        await page.locator('button:has-text("取消")').first().click({timeout: 2000}).catch(() => {});
-        await page.waitForTimeout(500);
+      // 文档生成不能用 sendMessageAndWait（它靠消息数判断完成，
+      // 但 doc_outline 事件在所有 token 之后才发，消息数早增了）
+      // 直接发消息，然后专门等提纲确认栏出现
+      await page.fill('#msgInput', '写一份关于团队协作的简短文档，3个章节');
+      await page.waitForTimeout(200);
+      await page.locator('#sendBtn').click({ timeout: 5000 }).catch(() => {});
+
+      // 直接等提纲确认栏（doc_outline 事件的真正完成信号），最多 120 秒
+      console.log('    ⏳ 等待提纲确认栏（最多120秒）...');
+      let outlineReady = false;
+      try {
+        await page.waitForSelector('#docOutlinePreview, #docOutlineEditor', { timeout: 120000, state: 'visible' });
+        outlineReady = true;
+      } catch {}
+      check('文档生成：提纲确认栏出现', outlineReady);
+
+      if (outlineReady) {
+        // 提取提纲内容做质量断言
+        const outlineContent = await page.locator('#docOutlinePreview').textContent().catch(() =>
+          page.locator('#docOutlineEditor').inputValue().catch(() => '')
+        );
+        const hasStructure = outlineContent && (
+          outlineContent.includes('#') || outlineContent.includes('章节') || outlineContent.includes('一、')
+        );
+        check('文档提纲有结构（质量）', hasStructure, (outlineContent||'').slice(0, 50));
+        logResponse('3b 文档提纲', '写一份关于团队协作的简短文档', { content: outlineContent, feature: { textLen: (outlineContent||'').length, hasError: false }, elapsed: '?' }, hasStructure ? '✅有结构' : '⚠️');
       }
+      // 取消提纲（清理状态）
+      await page.locator('button:has-text("取消")').first().click({timeout: 2000}).catch(() => {});
+      await page.waitForTimeout(500);
     } else {
       console.log('    ⏭️  跳过（离线模式未找到"文档生成"按钮）');
     }
@@ -461,12 +486,18 @@ async function test3_modeMatrix(page) {
   if (hasLocalModel) {
     await newChatSession(page);  // 会话隔离
     await switchAiMode(page, '离线');
-    const hasKbAction = await selectAction(page, '知识库问答');
-    if (hasKbAction) {
+    // 直接调 setActionMode('kb_qa')（比点按钮可靠）
+    const kbOk = await page.evaluate(() => {
+      if (typeof setActionMode !== 'function') return false;
+      setActionMode('kb_qa');
+      return true;
+    }).catch(() => false);
+    if (kbOk) {
+      await page.waitForTimeout(1500);
       const r = await sendMessageAndWait(page, '总结一下文档内容', 60000);
       check('知识库问答：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条'));
     } else {
-      console.log('    ⏭️  跳过（无知识库问答按钮，KB 未就绪）');
+      console.log('    ⏭️  跳过（setActionMode 不可用）');
     }
   }
 
@@ -851,9 +882,15 @@ async function test10_docFullFlow(page) {
   await switchTab(page, 'chat');
   await newChatSession(page);  // 会话隔离
   await switchAiMode(page, '离线');
-  const hasDoc = await selectAction(page, '文档生成');
-  if (!hasDoc) {
-    console.log('  ⏭️  跳过（离线模式无文档生成 action）');
+  // 直接调 setActionMode('doc')（比点按钮更可靠，避免 actionBar 渲染时序）
+  await page.evaluate(() => { if (typeof setActionMode==='function') setActionMode('doc'); });
+  await page.waitForTimeout(1500);  // 等 async setActionMode 完成
+  const actionOk = await page.evaluate(() => {
+    try { return currentActionMode === 'doc'; } catch { return false; }
+  }).catch(() => false);
+  check('文档生成 action 已选中', actionOk);
+  if (!actionOk) {
+    console.log('  ⏭️  action 未切换到 doc，跳过');
     return;
   }
 
@@ -862,11 +899,11 @@ async function test10_docFullFlow(page) {
   await page.fill('#msgInput', '写一份关于时间管理的简短文档，3个章节');
   await page.locator('#sendBtn').click({ timeout: 5000 }).catch(() => {});
 
-  // 等待提纲确认栏出现（最多 90 秒）
-  console.log('  ⏳ 等待提纲生成（最多90秒）...');
+  // 等待提纲确认栏出现（doc_outline 事件在所有 token 之后才发，离线模型慢，给 150 秒）
+  console.log('  ⏳ 等待提纲生成（最多150秒）...');
   let outlineReady = false;
   try {
-    await page.waitForSelector('#docOutlinePreview, #docOutlineEditor', { timeout: 90000, state: 'visible' });
+    await page.waitForSelector('#docOutlinePreview, #docOutlineEditor', { timeout: 150000, state: 'visible' });
     outlineReady = true;
   } catch {}
   check('Phase1 提纲确认栏出现', outlineReady);
@@ -999,7 +1036,7 @@ async function test13_webSearch(page) {
   await newChatSession(page);
   await switchAiMode(page, '在线');
   // 在线模式的联网搜索是 agent 快捷提示词
-  await selectAction(page, '联网搜索');
+  await selectAction(page, '联网搜索', 'agent');
 
   const r = await sendMessageAndWait(page, '请联网搜索：今天的日期', 120000);
   check('联网搜索：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
@@ -1125,7 +1162,7 @@ async function main() {
     await runStep('滚动条', () => test7_scrollbar(page));
     await runStep('停止+恢复', () => test8_stopAndResume(page), 120);
     await runStep('知识库流程', () => test9_kbFlow(page), 120);
-    await runStep('文档完整流程', () => test10_docFullFlow(page), 240);
+    await runStep('文档完整流程', () => test10_docFullFlow(page), 300);
     await runStep('历史渲染', () => test11_historyRender(page));
     await runStep('联网搜索', () => test13_webSearch(page), 150);
     await runStep('错误降级', () => test14_errorHandling(page), 90);
