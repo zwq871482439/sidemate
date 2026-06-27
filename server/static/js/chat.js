@@ -2145,9 +2145,9 @@ var CardRenderer = (function() {
     reformulate: '分析问题',
     search: '检索知识库',
     retrieve: '本地知识库检索',
-    local_gen: '本地生成',
-    cloud_gen: '云端生成',
-    merge: '自动融合优化',
+    local_gen: '本地AI生成回答',
+    cloud_gen: '云端AI补充',
+    merge: '本地自动融合优化',
     understanding: '理解问题',
     thinking: '思考中',
     generating: '生成回答',
@@ -2541,16 +2541,23 @@ var CardRenderer = (function() {
       }
       // P6: 并行模式——本地/云端步骤嵌入对应原文卡片
       // 统一用 .cb-output 包裹（与检索来源/transform 等产出区同构），避免三块风格不一致
-      // 与生成中 _ensureParallelCard 同构：卡片含标题头(圆点+文案) + body
+      // 与生成中 _ensureParallelCard 同构：卡片含标题头(圆点+文案) + body + stats（三状态一致）
       if (m.parallel_texts) {
+        var _ps = m.parallel_stats || {};
         if (s.id === 'local_gen' && m.parallel_texts.local) {
+          var _ls = _fmtParallelTokenStats(_ps.local || null);
           html += '<div class="cb-output"><div class="cb-par-card local">' +
             '<div class="cb-par-card-head"><span class="cb-par-dot local"></span>本地AI生成回答</div>' +
-            '<div class="cb-par-card-body">' + md(m.parallel_texts.local, true) + '</div></div></div>';
+            '<div class="cb-par-card-body">' + md(m.parallel_texts.local, true) + '</div>' +
+            (_ls ? '<div class="cb-par-card-stats">' + _esc(_ls) + '</div>' : '') +
+            '</div></div>';
         } else if (s.id === 'cloud_gen' && m.parallel_texts.cloud) {
+          var _cs = _fmtParallelTokenStats(_ps.cloud || null);
           html += '<div class="cb-output"><div class="cb-par-card cloud">' +
             '<div class="cb-par-card-head"><span class="cb-par-dot cloud"></span>云端AI补充</div>' +
-            '<div class="cb-par-card-body">' + md(m.parallel_texts.cloud, true) + '</div></div></div>';
+            '<div class="cb-par-card-body">' + md(m.parallel_texts.cloud, true) + '</div>' +
+            (_cs ? '<div class="cb-par-card-stats">' + _esc(_cs) + '</div>' : '') +
+            '</div></div>';
         }
       }
       html += '</div>';

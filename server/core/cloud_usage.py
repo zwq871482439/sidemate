@@ -164,6 +164,9 @@ def query_usage(range_days: int = 7, granularity: str = "hour") -> Dict[str, Any
         model_rows = conn.execute(
             """SELECT model,
                       SUM(COALESCE(input_tokens,0) + COALESCE(output_tokens,0) + COALESCE(reasoning_tokens,0)) as tokens,
+                      SUM(COALESCE(input_tokens,0)) as input_tokens,
+                      SUM(COALESCE(output_tokens,0)) as output_tokens,
+                      SUM(COALESCE(reasoning_tokens,0)) as reasoning_tokens,
                       COUNT(*) as calls
                FROM cloud_usage WHERE ts >= ?
                GROUP BY model ORDER BY tokens DESC""",
@@ -178,6 +181,9 @@ def query_usage(range_days: int = 7, granularity: str = "hour") -> Dict[str, Any
         bucket_rows = conn.execute(
             """SELECT strftime(?, ts, 'unixepoch', 'localtime') as bucket,
                       SUM(COALESCE(input_tokens,0) + COALESCE(output_tokens,0) + COALESCE(reasoning_tokens,0)) as tokens,
+                      SUM(COALESCE(input_tokens,0)) as input_tokens,
+                      SUM(COALESCE(output_tokens,0)) as output_tokens,
+                      SUM(COALESCE(reasoning_tokens,0)) as reasoning_tokens,
                       COUNT(*) as calls
                FROM cloud_usage WHERE ts >= ?
                GROUP BY bucket ORDER BY bucket""",
@@ -214,11 +220,13 @@ def query_usage(range_days: int = 7, granularity: str = "hour") -> Dict[str, Any
             "range_days": range_days,
             "granularity": granularity,
             "by_model": [
-                {"model": r["model"], "tokens": r["tokens"] or 0, "calls": r["calls"]}
+                {"model": r["model"], "tokens": r["tokens"] or 0, "calls": r["calls"],
+                 "input": r["input_tokens"] or 0, "output": r["output_tokens"] or 0, "reasoning": r["reasoning_tokens"] or 0}
                 for r in model_rows
             ],
             "by_bucket": [
-                {"bucket": r["bucket"], "tokens": r["tokens"] or 0, "calls": r["calls"]}
+                {"bucket": r["bucket"], "tokens": r["tokens"] or 0, "calls": r["calls"],
+                 "input": r["input_tokens"] or 0, "output": r["output_tokens"] or 0, "reasoning": r["reasoning_tokens"] or 0}
                 for r in bucket_rows
             ],
             "records": [

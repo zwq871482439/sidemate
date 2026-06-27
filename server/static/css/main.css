@@ -2284,6 +2284,15 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .settings-nav-item .ni{opacity:.5;flex-shrink:0;display:flex;align-items:center}
 .settings-nav-item.sel .ni{opacity:1}
 .settings-content{flex:1;overflow-y:auto;padding:16px;min-width:0}
+.settings-content::-webkit-scrollbar{width:5px}
+.settings-content::-webkit-scrollbar-track{background:transparent}
+.settings-content::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+.settings-content::-webkit-scrollbar-thumb:hover{background:#9CA3AF}
+/* 云端用量「最近调用」列表滚动条（与对话区一致） */
+.usage-records::-webkit-scrollbar{width:5px}
+.usage-records::-webkit-scrollbar-track{background:transparent}
+.usage-records::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+.usage-records::-webkit-scrollbar-thumb:hover{background:#9CA3AF}
 .settings-content .card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:14px;margin-bottom:10px}
 .settings-content .card h4{font-size:12px;font-weight:500;margin-bottom:8px;color:var(--text-primary)}
 .settings-content .row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px}
@@ -2377,8 +2386,11 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-time { color:var(--text-muted); font-size:11px; margin-left:auto; padding-left:8px; }
 .cb-count { color:var(--text-muted); font-size:11px; }
 
-/* 产出区（transform/sources/thinking 共用，统一缩进） */
+/* 产出区（transform/sources/keywords 共用外壳，统一缩进+卡片感）
+   统一风格：左侧细边框 + 内容卡片化，生成中/完成后/刷新后一致 */
 .cb-output { margin:4px 0; padding-left:10px; border-left:2px solid var(--bg-tertiary); overflow:hidden; }
+/* 裸内容容器（transform/cloud-kw）统一卡片化；sources 自带 .cb-src 卡片；par-card 自带卡片样式 */
+.cb-output > .cb-transform, .cb-output > .cb-cloud-kw { padding:6px 10px; background:var(--bg-secondary); border-radius:4px; }
 /* transform（reformulate 改写对比） */
 .cb-transform { display:flex; flex-direction:column; gap:3px; }
 .cb-tf-row { display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }

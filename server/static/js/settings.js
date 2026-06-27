@@ -1109,7 +1109,7 @@ function renderCloudUsage(panel, data) {
       var m = data.by_model[i];
       var pct = maxModel > 0 ? Math.round(m.tokens / maxModel * 100) : 0;
       var sharePct = total > 0 ? Math.round(m.tokens / total * 100) : 0;
-      html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px">';
+      html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px" title="' + esc(m.model) + ' · 共 ' + m.tokens.toLocaleString() + ' token (' + sharePct + '%)&#10;输入 ' + (m.input||0).toLocaleString() + ' · 输出 ' + (m.output||0).toLocaleString() + ((m.reasoning||0) > 0 ? ' · 推理 ' + (m.reasoning||0).toLocaleString() : '') + ' token">';
       html += '<span style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' + esc(m.model) + '</span>';
       html += '<div style="flex:1;height:10px;background:var(--bg-secondary);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--accent-color);border-radius:3px"></div></div>';
       html += '<span style="width:90px;text-align:right;flex-shrink:0;color:var(--text-muted)">' + m.tokens.toLocaleString() + ' (' + sharePct + '%)</span>';
@@ -1120,7 +1120,7 @@ function renderCloudUsage(panel, data) {
   // 记录表
   if (data.records && data.records.length) {
     html += '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12px;color:var(--text-muted)">最近调用 (' + data.records.length + ')</summary>';
-    html += '<div style="margin-top:8px;max-height:240px;overflow-y:auto;font-size:11px">';
+    html += '<div class="usage-records" style="margin-top:8px;max-height:240px;overflow-y:auto;font-size:11px">';
     html += '<div style="display:grid;grid-template-columns:1fr 1.4fr 0.7fr 0.7fr 0.6fr;gap:4px;padding:4px 0;border-bottom:0.5px solid var(--border-color);color:var(--text-muted);font-weight:500"><span>时间</span><span>模型</span><span>输入</span><span>输出</span><span>耗时</span></div>';
     for (var j = 0; j < data.records.length; j++) {
       var r = data.records[j];
@@ -1202,7 +1202,10 @@ function _renderUsageChart(buckets, granLabel) {
     var y = H - h;
     if (b.tokens > 0) {
       svg += '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + barW + '" height="' + h + '" rx="1" fill="var(--accent-color)" opacity="0.85">';
-      svg += '<title>' + esc(b.bucket) + ': ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次</title>';
+      svg += '<title>' + esc(b.bucket) + ' · 共 ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次&#10;'
+        + '输入 ' + (b.input||0).toLocaleString() + ' · 输出 ' + (b.output||0).toLocaleString()
+        + ((b.reasoning||0) > 0 ? ' · 推理 ' + (b.reasoning||0).toLocaleString() : '')
+        + ' token</title>';
       svg += '</rect>';
     }
   }

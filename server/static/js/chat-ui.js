@@ -163,17 +163,27 @@ function updateKbLockBar() {
 }
 
 // ===== 滚动控制 =====
+// 自动滚动策略：用户在底部时跟随新内容；用户手动上滚查看时停止自动滚动，
+// 直到点「回到底部」回到底部才恢复。_lastScrollBottom 是跨文件的跟随状态。
 function scrollToBottom() {
   var el = document.getElementById('messages');
   if (el) { el.scrollTop = el.scrollHeight; }
+  // 用户主动点「回到底部」→ 恢复自动跟随
+  if (typeof _lastScrollBottom !== 'undefined') _lastScrollBottom = true;
 }
 
 function checkScrollBtn() {
   var el = document.getElementById('messages');
   var btn = document.getElementById('scrollBottomBtn');
-  if (!el || !btn) return;
+  if (!el) return;
   var dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-  btn.style.display = dist > 200 ? 'block' : 'none';
+  // 实时更新自动跟随状态：距底部超过阈值视为用户主动上滚，停止自动滚动
+  if (typeof _lastScrollBottom !== 'undefined') {
+    _lastScrollBottom = dist < 120;
+  }
+  if (btn) {
+    btn.style.display = dist > 200 ? 'block' : 'none';
+  }
 }
 
 function clearFileRef() {
