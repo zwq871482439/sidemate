@@ -201,11 +201,18 @@ function renderTourStep() {
     positionTourElements(target, s.pos);
   };
 
-  if (step.tab === 'qa') {
-    setTimeout(doPosition, 400);
-  } else {
-    setTimeout(doPosition, 150);
-  }
+  // 切 tab 后目标可能需要异步渲染才可见（如 qa tab 的 kbRouteState 要 fetch 后才显示
+  // kbFullInterface），固定延时不可靠 → 轮询等待目标真正可见再定位。
+  // 静态 tab（chat）首次轮询即命中，行为不变；最多等 ~2s，超时走兜底定位。
+  var _waitTries = 0;
+  var _waitTarget = function() {
+    if (findTourTarget(_tourSteps[_tourStep]) || ++_waitTries > 24) {
+      doPosition();
+      return;
+    }
+    setTimeout(_waitTarget, 80);
+  };
+  setTimeout(_waitTarget, 80);
 }
 
 function findTourTarget(step) {
@@ -241,9 +248,14 @@ function positionTourElements(target, pos) {
       if (!isNaN(_brNum)) tRadius = _brNum;
     }
   } else {
-    // 兜底：目标不可见 → 不画镂空高亮，整屏纯遮罩 + 卡片居中
+    // 兜底：目标不可见 → 整屏纯遮罩 + 卡片居中。
+    // 用显式 width/height（而非依赖 inset 隐式铺满），确保半透明遮罩一定铺满视口。
     spotlight.style.clipPath = 'none';
-    spotlight.style.inset = '0';  // 整屏覆盖
+    spotlight.style.inset = 'auto';
+    spotlight.style.left = '0';
+    spotlight.style.top = '0';
+    spotlight.style.width = viewW + 'px';
+    spotlight.style.height = viewH + 'px';
     spotlight.style.boxShadow = 'none';
     spotlight.style.borderRadius = '0';
     spotlight.style.background = 'rgba(0,0,0,0.45)';
