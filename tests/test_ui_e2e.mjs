@@ -146,67 +146,183 @@ async function test2_modeSwitch(page) {
   await shot(page, '02_mode');
 }
 
-async function test3_sendMessage(page) {
-  console.log('\n🔴 测试 3：发送消息（流式响应）');
-  if (quick) { console.log('  ⏭️  --quick 模式跳过'); return; }
+// ============================================================
+//  模式矩阵测试（test3）：5 种 AI模式 × Action 组合
+// ============================================================
 
-  // 确保在对话页 + 离线模式（真实点击优先，dispatchEvent fallback）
-  await switchTab(page, 'chat');
-  const offlineBtn = page.locator('button:has-text("离线")').first();
-  await offlineBtn.click({ timeout: 3000 }).catch(async () => {
+// 切换 AI 模式（离线/在线/并行）
+async function switchAiMode(page, modeText) {
+  const btn = page.locator(`button:has-text("${modeText}")`).first();
+  await btn.click({ timeout: 3000 }).catch(async () => {
     await page.evaluate(el => { if (el) el.dispatchEvent(new MouseEvent('click', {bubbles:true})); },
-      await offlineBtn.elementHandle().catch(() => null));
+      await btn.elementHandle().catch(() => null));
   });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(2000);  // 等模式切换完成（鱼骨屏）
+}
 
-  // 确认 sendBtn 可见可点
-  const sendVisible = await page.locator('#sendBtn').isVisible().catch(() => false);
-  if (!sendVisible) {
-    console.log('  ⏭️  跳过（sendBtn 不可见，模式状态异常）');
-    return;
-  }
+// 选择 Action（聊天/写文档/联网搜索/深度分析/知识库问答）
+async function selectAction(page, actionText) {
+  // action 按钮在 actionBar，文字匹配
+  const btn = page.locator(`#actionBar button:has-text("${actionText}"), .action-bar button:has-text("${actionText}")`).first();
+  const exists = await btn.count();
+  if (!exists) return false;
+  await btn.click({ timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  return true;
+}
 
-  const msgCountBefore = await page.locator('#messages > .msg').count();
+// 发消息并等待响应，返回 { ok, newMsgCount, hadStopBtn, elapsed }
+async function sendMessageAndWait(page, text, timeoutMs = 90000) {
+  const before = await page.locator('#messages > .msg').count();
 
-  await page.fill('#msgInput', '你好，请用一个字回复');
+  await page.fill('#msgInput', text);
   await page.waitForTimeout(200);
 
-  // 发送：welcomeOverlay 关闭后，真实 click 应能命中 sendBtn
-  // （若仍有覆盖层问题，fallback 到 dispatchEvent）
+  // 真实点击优先，dispatchEvent fallback
   await page.locator('#sendBtn').click({ timeout: 5000 }).catch(async () => {
     await page.evaluate(() => {
-      const btn = document.getElementById('sendBtn');
-      if (btn) btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const b = document.getElementById('sendBtn');
+      if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
   });
   await page.waitForTimeout(800);
 
-  const stopVisible = await page.locator('#stopBtn').isVisible().catch(() => false);
-  check('发送后显示停止按钮', stopVisible);
+  const hadStop = await page.locator('#stopBtn').isVisible().catch(() => false);
+  if (!hadStop) return { ok: false, hadStopBtn: false, reason: '未触发发送' };
 
-  if (!stopVisible) {
-    console.log('  ⏭️  发送未触发（可能模型未加载），跳过响应等待');
-    return;
-  }
-
-  console.log('  ⏳ 等待 AI 响应（最多90秒）...');
+  // 等新消息出现
+  const startT = Date.now();
   try {
     await page.waitForFunction(
-      (before) => document.querySelectorAll('#messages > .msg').length > before,
-      msgCountBefore,
-      { timeout: 90000 }
+      (b) => document.querySelectorAll('#messages > .msg').length > b,
+      before,
+      { timeout: timeoutMs }
     );
-    const msgCountAfter = await page.locator('#messages > .msg').count();
-    check('收到 AI 响应', msgCountAfter > msgCountBefore, '前:' + msgCountBefore + ' 后:' + msgCountAfter);
-
+    const after = await page.locator('#messages > .msg').count();
+    // 等 sendBtn 恢复（响应完成）
     await page.waitForFunction(
       () => { const b = document.getElementById('sendBtn'); return b && b.style.display !== 'none'; },
       { timeout: 30000 }
     ).catch(() => {});
-    await shot(page, '03_response');
+    return { ok: true, hadStopBtn: true, newMsgCount: after - before, elapsed: Math.round((Date.now()-startT)/1000) };
   } catch {
-    check('收到 AI 响应', false, '90秒超时');
+    return { ok: false, hadStopBtn: true, reason: '响应超时' };
   }
+}
+
+// 验证最近一条 AI 消息的特征（含特定标签/结构）
+async function checkLastMsgFeature(page, name, predicate) {
+  const feature = await page.evaluate(() => {
+    const msgs = document.querySelectorAll('#messages > .msg.ai');
+    const last = msgs[msgs.length - 1];
+    if (!last) return null;
+    return {
+      text: last.textContent.slice(0, 500),
+      hasCard: !!last.querySelector('.card-area'),
+      hasDownload: !!last.querySelector('.doc-download-bar, [data-doc-complete]'),
+      hasCite: !!last.querySelector('[data-cite], .cite-ref'),
+      actionTag: last.querySelector('.action-tag')?.textContent?.trim() || '',
+    };
+  }).catch(() => null);
+  if (!feature) { check(name, false, '无 AI 消息'); return feature; }
+  check(name, predicate(feature), JSON.stringify(feature).slice(0, 80));
+  return feature;
+}
+
+async function test3_modeMatrix(page) {
+  console.log('\n🔴 测试 3：模式矩阵（离线/在线/并行 × 各 Action）');
+  if (quick) { console.log('  ⏭️  --quick 模式跳过'); return; }
+
+  await switchTab(page, 'chat');
+
+  // 探测环境能力（避免测了跑不通的组合）
+  const env = await page.evaluate(() => ({
+    modelTag: document.getElementById('modelTag')?.textContent?.trim() || '',
+    modelTagClass: document.getElementById('modelTag')?.className || '',
+    cloudConfigured: typeof _cloudConfigured !== 'undefined' ? _cloudConfigured : false,
+  })).catch(() => ({}));
+  const hasLocalModel = !env.modelTagClass.includes('none');
+  const hasCloud = env.cloudConfigured;
+  console.log('  环境: 本地模型=%s, 云端=%s, tag=%s', hasLocalModel, hasCloud, env.modelTag.slice(0,30));
+
+  // ── 3a. 离线 + 聊天（默认 action，无需选按钮）──
+  console.log('\n  📌 3a: 离线 + 聊天');
+  if (hasLocalModel) {
+    await switchAiMode(page, '离线');
+    // 离线模式默认就是 chat，不需选 action（离线 actionBar 只有 kb_qa 按钮）
+    const r = await sendMessageAndWait(page, '你好，用一个字回复');
+    check('离线聊天：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
+    if (r.ok) await checkLastMsgFeature(page, '离线聊天：有正文内容', f => f.text.length > 5);
+  } else {
+    console.log('    ⏭️  跳过（本地模型未加载）');
+  }
+
+  // ── 3b. 并行 + 文档生成（提纲阶段）──
+  // 文档生成 action 只在并行模式注册（/api/action/list 返回 doc）
+  console.log('\n  📌 3b: 并行 + 文档生成（提纲）');
+  if (hasLocalModel && hasCloud) {
+    await switchAiMode(page, '并行');
+    const hasDocAction = await selectAction(page, '文档生成');
+    if (hasDocAction) {
+      const r = await sendMessageAndWait(page, '写一份关于团队协作的简短文档，3个章节');
+      check('文档生成：收到提纲响应', r.ok, r.reason || ('+' + r.newMsgCount + '条'));
+      if (r.ok) {
+        // 文档模式 Phase1 应出现提纲确认栏
+        await page.waitForTimeout(1000);
+        const hasOutline = await page.locator('#docOutlineEditor, #docOutlinePreview').count();
+        check('文档生成：出现提纲确认栏', hasOutline > 0);
+        // 取消提纲（清理状态）
+        await page.locator('button:has-text("取消")').first().click({timeout: 2000}).catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    } else {
+      console.log('    ⏭️  跳过（并行模式未找到"文档生成"按钮）');
+    }
+  } else {
+    console.log('    ⏭️  跳过（需本地+云端都就绪）');
+  }
+
+  // ── 3c. 在线 + 智能对话（agent）──
+  console.log('\n  📌 3c: 在线 + 智能对话');
+  if (hasCloud) {
+    await switchAiMode(page, '在线');
+    // 在线模式是 agent，可能有"智能对话"action 或快捷提示词
+    await selectAction(page, '智能对话');
+    const r = await sendMessageAndWait(page, '你好，简短回复');
+    check('在线智能对话：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
+    if (r.ok) await checkLastMsgFeature(page, '在线对话：有响应内容', f => f.text.length > 5);
+  } else {
+    console.log('    ⏭️  跳过（云端未配置）');
+  }
+
+  // ── 3d. 并行 + 双模型融合聊天 ──
+  console.log('\n  📌 3d: 并行 + 双模型融合');
+  if (hasLocalModel && hasCloud) {
+    await switchAiMode(page, '并行');
+    await selectAction(page, '聊天');
+    const r = await sendMessageAndWait(page, '你好，简短回复');
+    check('并行模式：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
+    if (r.ok) await checkLastMsgFeature(page, '并行模式：有响应内容', f => f.text.length > 5);
+  } else {
+    console.log('    ⏭️  跳过（需本地+云端都就绪）');
+  }
+
+  // ── 3e. 离线 + 知识库问答（如有 KB）──
+  console.log('\n  📌 3e: 离线 + 知识库问答');
+  if (hasLocalModel) {
+    await switchAiMode(page, '离线');
+    const hasKbAction = await selectAction(page, '知识库问答');
+    if (hasKbAction) {
+      const r = await sendMessageAndWait(page, '总结一下文档内容', 60000);
+      check('知识库问答：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条'));
+    } else {
+      console.log('    ⏭️  跳过（无知识库问答按钮，KB 未就绪）');
+    }
+  }
+
+  // 恢复到并行模式（默认）
+  if (hasLocalModel && hasCloud) await switchAiMode(page, '并行');
+  await shot(page, '03_mode_matrix');
 }
 
 async function test4_sessionSwitch(page) {
@@ -394,12 +510,12 @@ async function main() {
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   page.on('pageerror', e => consoleErrors.push('PAGEERROR: ' + e.message));
 
-  // 单步超时保护：每个测试最多 40 秒，超时跳过继续（防止单步卡死整个测试）
-  async function runStep(name, fn) {
+  // 单步超时保护：每个测试最多指定秒数，超时跳过继续（防止单步卡死整个测试）
+  async function runStep(name, fn, timeoutSec = 40) {
     try {
       await Promise.race([
         fn(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('步骤超时(40s)')), 40000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`步骤超时(${timeoutSec}s)`)), timeoutSec * 1000))
       ]);
     } catch (e) {
       console.log('  ⚠️  %s 异常/超时: %s', name, e.message.slice(0, 80));
@@ -409,7 +525,7 @@ async function main() {
   try {
     await runStep('页面加载', () => test1_pageLoad(page));
     await runStep('模式切换', () => test2_modeSwitch(page));
-    await runStep('发送消息', () => test3_sendMessage(page));
+    await runStep('模式矩阵', () => test3_modeMatrix(page), 360);  // 5个子组合，给6分钟
     await runStep('会话切换', () => test4_sessionSwitch(page));
     await runStep('用量统计', () => test5_usageChart(page));
     await runStep('工具权限', () => test6_permissions(page));
