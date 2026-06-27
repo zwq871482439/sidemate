@@ -1090,13 +1090,22 @@ function renderCloudUsage(panel, data) {
   html += '<button class="btn btn-sm ' + (_cloudUsageRange === 7 ? 'btn-primary' : 'btn-ghost') + '" onclick="_cloudUsageSetRange(7)">本周（按天）</button>';
   html += '</div>';
 
-  // 汇总数字
-  html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">';
+  // 汇总数字（含输入/输出/推理细分，色块对齐柱状图配色）
+  var _tIn = data.total_input || 0, _tOut = data.total_output || 0, _tRea = data.total_reasoning || 0;
+  html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">';
   html += rangeLabel + '累计 <b style="color:var(--text-primary)">' + total.toLocaleString() + '</b> token · <b style="color:var(--text-primary)">' + calls + '</b> 次调用';
   if (!data.all_accurate) {
     html += ' <span style="font-size:11px;color:var(--warning-color,#d97706)">（部分调用未返回用量数据）</span>';
   }
   html += '</div>';
+  // 输入/输出/推理总量（色块图例 + 数值）
+  if (_tIn + _tOut + _tRea > 0) {
+    html += '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-bottom:10px;flex-wrap:wrap">';
+    html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#9CA3AF"></span>输入 ' + _tIn.toLocaleString() + '</span>';
+    html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent-color)"></span>输出 ' + _tOut.toLocaleString() + '</span>';
+    if (_tRea > 0) html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#7C3AED"></span>推理 ' + _tRea.toLocaleString() + '</span>';
+    html += '</div>';
+  }
 
   // 柱状图
   html += _renderUsageChart(data.by_bucket || [], granLabel);

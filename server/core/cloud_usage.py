@@ -190,10 +190,13 @@ def query_usage(range_days: int = 7, granularity: str = "hour") -> Dict[str, Any
             (fmt, cutoff)
         ).fetchall()
 
-        # 总计
+        # 总计（含输入/输出/推理细分，供前端汇总行展示）
         total_row = conn.execute(
             """SELECT
                  SUM(COALESCE(input_tokens,0) + COALESCE(output_tokens,0) + COALESCE(reasoning_tokens,0)) as tokens,
+                 SUM(COALESCE(input_tokens,0)) as input_tokens,
+                 SUM(COALESCE(output_tokens,0)) as output_tokens,
+                 SUM(COALESCE(reasoning_tokens,0)) as reasoning_tokens,
                  COUNT(*) as calls,
                  MIN(token_accurate) as min_accurate
                FROM cloud_usage WHERE ts >= ?""",
@@ -215,6 +218,9 @@ def query_usage(range_days: int = 7, granularity: str = "hour") -> Dict[str, Any
 
         return {
             "total_tokens": total_tokens,
+            "total_input": total_row["input_tokens"] or 0,
+            "total_output": total_row["output_tokens"] or 0,
+            "total_reasoning": total_row["reasoning_tokens"] or 0,
             "total_calls": total_calls,
             "all_accurate": all_accurate,
             "range_days": range_days,
