@@ -83,6 +83,7 @@ def api_warmup():
                     "options": {"num_predict": 1},
                 },
                 timeout=120.0,
+                trust_env=False,
             )
             elapsed = time.time() - t0
             if resp.status_code == 200:

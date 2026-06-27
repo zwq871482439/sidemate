@@ -352,6 +352,7 @@ class ModelManager:
                 "%s/api/generate" % self._ollama_base_url,
                 json={"model": matched_name, "keep_alive": 0},
                 timeout=10.0,
+                trust_env=False,
             )
         except Exception as e:
             log.warning("[Model] Ollama unload 失败: %s" % str(e)[:80])
@@ -417,6 +418,7 @@ class ModelManager:
             resp = httpx.get(
                 "%s/api/ps" % self._ollama_base_url,
                 timeout=3.0,
+                trust_env=False,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -684,6 +686,7 @@ class ModelManager:
                     },
                 },
                 timeout=120.0,
+                trust_env=False,
             )
             if resp.status_code != 200:
                 return {"error": "Ollama API 错误: %d %s" % (resp.status_code, resp.text[:200])}
