@@ -756,6 +756,8 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             "speed": speed,
             "task_type": saved_task_type,
             "action_mode": action_mode,
+            # Doc 模式 Phase1（仅生成提纲）：打标记，供前端刷新后重建确认栏
+            "doc_phase": "outline" if (action_mode == "doc" and _doc_outline_only) else None,
         }
         # P6 #6: 用户终止时标记 _aborted,前端识别后渲染统一终止提示
         if _aborted_flag:

@@ -814,7 +814,10 @@ async function sendMessage() {
   try {
     var history = currentMessages.slice(0, -1);
     history = history.filter(function(m) {
-      if (m.role === 'assistant' && m.content) {
+      if (m.role === 'assistant') {
+        // 中间态刷新残留：assistant 消息 content 为空（思考中刷新，fullText 未累积）
+        // 会污染 history，导致后续对话异常。直接丢弃。
+        if (!m.content || !m.content.trim()) return false;
         if (m.content.startsWith('[ERROR]') || m.content.includes('[TIMEOUT')) return false;
       }
       return true;

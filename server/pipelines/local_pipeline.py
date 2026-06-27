@@ -631,6 +631,11 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
         new_cache = None
         if final_response.strip() and not is_error_response:
             ts = time.strftime("%H:%M:%S")
+            # Doc 模式 Phase1（仅生成提纲）：打标记，供前端刷新后重建确认栏
+            # （与 _base.py:439 stream_with_kb 对齐，local 走自己的 save 之前漏了这个标记）
+            _assistant_extra = {}
+            if action_mode == "doc" and _doc_outline_only:
+                _assistant_extra = {"action_mode": "doc", "doc_phase": "outline"}
             messages = history_raw + [
                 {"role": "user", "content": message, "ts": ts},
                 {"role": "assistant", "content": final_response,
@@ -640,7 +645,8 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                  "chars": response_chars, "think_chars": think_chars,
                  "time": elapsed, "speed": speed,
                  "task_type": saved_task_type,
-                 "token_stats": _token_stats},
+                 "token_stats": _token_stats,
+                 **_assistant_extra},
             ]
             new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
             if did_compress:
