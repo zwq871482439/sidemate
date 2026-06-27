@@ -1101,17 +1101,17 @@ function renderCloudUsage(panel, data) {
   // 输入/输出/推理总量（色块图例 + 数值）
   if (_tIn + _tOut + _tRea > 0) {
     html += '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-bottom:10px;flex-wrap:wrap">';
-    html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#9CA3AF"></span>输入 ' + _tIn.toLocaleString() + '</span>';
-    html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent-color)"></span>输出 ' + _tOut.toLocaleString() + '</span>';
-    if (_tRea > 0) html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#7C3AED"></span>推理 ' + _tRea.toLocaleString() + '</span>';
+    html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#60A5FA"></span>输入 ' + _tIn.toLocaleString() + '</span>';
+    html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#34D399"></span>输出 ' + _tOut.toLocaleString() + '</span>';
+    if (_tRea > 0) html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#A78BFA"></span>推理 ' + _tRea.toLocaleString() + '</span>';
     html += '</div>';
   }
 
   // 柱状图（前置图例，说明分段配色含义）
   html += '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-bottom:6px">';
-  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#9CA3AF"></span>输入</span>';
-  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent-color)"></span>输出</span>';
-  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#7C3AED"></span>推理</span>';
+  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#60A5FA"></span>输入</span>';
+  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#34D399"></span>输出</span>';
+  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#A78BFA"></span>推理</span>';
   html += '</div>';
   html += _renderUsageChart(data.by_bucket || [], granLabel);
 
@@ -1134,13 +1134,13 @@ function renderCloudUsage(panel, data) {
         var wOut = (_mOut / _mSum * segW).toFixed(1);
         var wRea = (segW - parseFloat(wIn) - parseFloat(wOut)).toFixed(1);
         segHtml = '<div style="height:100%;display:flex;width:' + segW + '%;border-radius:3px;overflow:hidden">';
-        if (parseFloat(wIn) > 0) segHtml += '<div style="height:100%;width:' + wIn + '%;background:#6B7280"></div>';
-        if (parseFloat(wOut) > 0) segHtml += '<div style="height:100%;width:' + wOut + '%;background:var(--accent-color)"></div>';
-        if (parseFloat(wRea) > 0) segHtml += '<div style="height:100%;width:' + wRea + '%;background:#7C3AED"></div>';
+        if (parseFloat(wIn) > 0) segHtml += '<div style="height:100%;width:' + wIn + '%;background:#60A5FA"></div>';
+        if (parseFloat(wOut) > 0) segHtml += '<div style="height:100%;width:' + wOut + '%;background:#34D399"></div>';
+        if (parseFloat(wRea) > 0) segHtml += '<div style="height:100%;width:' + wRea + '%;background:#A78BFA"></div>';
         segHtml += '</div>';
       } else {
         // 兜底：无细分数据，整条品牌色
-        segHtml = '<div style="height:100%;width:' + pct + '%;background:var(--accent-color);border-radius:3px"></div>';
+        segHtml = '<div style="height:100%;width:' + pct + '%;background:#34D399;border-radius:3px"></div>';
       }
       html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px" title="' + esc(m.model) + ' · 共 ' + m.tokens.toLocaleString() + ' token (' + sharePct + '%)&#10;输入 ' + _mIn.toLocaleString() + ' · 输出 ' + _mOut.toLocaleString() + (_mRea > 0 ? ' · 推理 ' + _mRea.toLocaleString() : '') + ' token">';
       html += '<span style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' + esc(m.model) + '</span>';
@@ -1263,21 +1263,21 @@ function _renderUsageChart(buckets, granLabel) {
       tipParts.push('输入 ' + _in.toLocaleString() + ' · 输出 ' + _out.toLocaleString() + (_rea > 0 ? ' · 推理 ' + _rea.toLocaleString() : '') + ' token');
     }
     var tipText = tipParts.join('&#10;');
-    // 用 <g> 包裹同一天的段，hover 整组高亮；各段用饱和色去掉透明，提升对比度
+    // 用 <g> 包裹同一天的段，hover 整组高亮；浅绿/浅蓝/浅紫柔和配色
     svg += '<g class="usage-bar-group">';
-    // 输入段（底部，深灰）
+    // 输入段（底部，浅蓝）
     if (hIn > 0) {
-      svg += '<rect class="usage-seg usage-seg-in" x="' + x.toFixed(1) + '" y="' + (yBase - hIn) + '" width="' + barW + '" height="' + hIn + '" rx="1" fill="#6B7280"><title>' + tipText + '</title></rect>';
+      svg += '<rect class="usage-seg usage-seg-in" x="' + x.toFixed(1) + '" y="' + (yBase - hIn) + '" width="' + barW + '" height="' + hIn + '" rx="1" fill="#60A5FA"><title>' + tipText + '</title></rect>';
       yBase -= hIn;
     }
-    // 输出段（中部，品牌色饱和）
+    // 输出段（中部，浅绿）
     if (hOut > 0) {
-      svg += '<rect class="usage-seg usage-seg-out" x="' + x.toFixed(1) + '" y="' + (yBase - hOut) + '" width="' + barW + '" height="' + hOut + '" fill="var(--accent-color)"><title>' + tipText + '</title></rect>';
+      svg += '<rect class="usage-seg usage-seg-out" x="' + x.toFixed(1) + '" y="' + (yBase - hOut) + '" width="' + barW + '" height="' + hOut + '" fill="#34D399"><title>' + tipText + '</title></rect>';
       yBase -= hOut;
     }
-    // 推理段（顶部，紫饱和）
+    // 推理段（顶部，浅紫）
     if (hRea > 0) {
-      svg += '<rect class="usage-seg usage-seg-rea" x="' + x.toFixed(1) + '" y="' + (yBase - hRea) + '" width="' + barW + '" height="' + hRea + '" rx="1" fill="#7C3AED"><title>' + tipText + '</title></rect>';
+      svg += '<rect class="usage-seg usage-seg-rea" x="' + x.toFixed(1) + '" y="' + (yBase - hRea) + '" width="' + barW + '" height="' + hRea + '" rx="1" fill="#A78BFA"><title>' + tipText + '</title></rect>';
     }
     svg += '</g>';
   }
