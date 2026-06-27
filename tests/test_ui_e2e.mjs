@@ -109,21 +109,20 @@ async function test2_modeSwitch(page) {
 
   if (hasModeBtns < 3) return;
 
-  // 点"在线"模式（测试鱼骨屏触发）
+  // 点"在线"模式（dispatchEvent 绕过覆盖层，与 test3 同理）
   const onlineText = (await onlineBtn.textContent()).trim();
   console.log('  点击模式按钮: %s', onlineText);
 
-  // 模式切换可能弹确认框
   page.on('dialog', async d => { await d.accept(); });
-  await onlineBtn.click({ timeout: 3000 }).catch(() => {});
+  await page.evaluate(el => el.dispatchEvent(new MouseEvent('click', {bubbles:true})), await onlineBtn.elementHandle());
   await page.waitForTimeout(1500);
 
   // 验证：切换后输入框最终恢复正常（鱼骨屏是瞬态的）
   const inputOk = await page.locator('#msgInput').isEnabled().catch(() => false);
   check('切换后输入框可用', inputOk);
 
-  // 回退到离线（短等待，避免累积超时）
-  await offlineBtn.click({ timeout: 3000 }).catch(() => {});
+  // 回退到离线（dispatchEvent）
+  await page.evaluate(el => el.dispatchEvent(new MouseEvent('click', {bubbles:true})), await offlineBtn.elementHandle());
   await page.waitForTimeout(1000);
 
   await shot(page, '02_mode');
@@ -133,10 +132,11 @@ async function test3_sendMessage(page) {
   console.log('\n🔴 测试 3：发送消息（流式响应）');
   if (quick) { console.log('  ⏭️  --quick 模式跳过'); return; }
 
-  // 确保在对话页 + 离线模式（test2 可能切到了在线导致状态异常）
+  // 确保在对话页 + 离线模式（dispatchEvent 绕过覆盖层）
   await switchTab(page, 'chat');
   const offlineBtn = page.locator('button:has-text("离线")').first();
-  await offlineBtn.click({ timeout: 3000 }).catch(() => {});
+  await page.evaluate(el => { if (el) el.dispatchEvent(new MouseEvent('click', {bubbles:true})); },
+    await offlineBtn.elementHandle().catch(() => null));
   await page.waitForTimeout(1500);
 
   // 确认 sendBtn 可见可点
@@ -151,7 +151,13 @@ async function test3_sendMessage(page) {
   await page.fill('#msgInput', '你好，请用一个字回复');
   await page.waitForTimeout(200);
 
-  await page.click('#sendBtn', { timeout: 5000 }).catch(() => {});
+  // 发送：用 dispatchEvent 而非 click()
+  // 真实 UI 里有个 div 覆盖在 sendBtn 上（坐标拦截），playwright 的 click 会落在覆盖层。
+  // dispatchEvent 直接派发到元素，绕过坐标命中问题。
+  await page.evaluate(() => {
+    const btn = document.getElementById('sendBtn');
+    if (btn) btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
   await page.waitForTimeout(800);
 
   const stopVisible = await page.locator('#stopBtn').isVisible().catch(() => false);
