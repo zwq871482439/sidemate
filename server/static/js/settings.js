@@ -139,12 +139,18 @@ function _executeModeSwitch(mode) {
   // P6: 显示骨架屏（actionBar + 模型tag 区域半透明 + 加载态）
   var _barEl = document.getElementById('actionBar');
   var _tagEl = document.getElementById('modelTag');
+  var _inputEl = document.getElementById('msgInput');
   if (_barEl) {
     _barEl.style.opacity = '0.4';
     _barEl.style.pointerEvents = 'none';
   }
   if (_tagEl) {
     _tagEl.style.opacity = '0.4';
+  }
+  // 输入框鱼骨屏：切换期间显示 shimmer 占位，禁止输入
+  if (_inputEl) {
+    _inputEl.classList.add('input-skeleton-loading');
+    _inputEl.disabled = true;
   }
 
   // 3. 调用后端 API（映射前端 mode 到后端值）
@@ -176,18 +182,26 @@ function _executeModeSwitch(mode) {
         if (typeof refreshStatus === 'function') refreshStatus();
         if (typeof refreshActionBar === 'function') refreshActionBar();
         // P6: 移除骨架屏（恢复透明度和交互）
-        if (_barEl) { _barEl.style.opacity = ''; _barEl.style.pointerEvents = ''; }
-        if (_tagEl) { _tagEl.style.opacity = ''; }
+        _restoreModeSwitchUI(_barEl, _tagEl, _inputEl);
         if (typeof initKbCompareToggle === 'function') initKbCompareToggle();
         if (typeof fetchContextUsage === 'function') fetchContextUsage();
         if (typeof updateChatOverlay === 'function') updateChatOverlay();
       } else {
         if (typeof showToast === 'function') showToast(data.error || '切换失败', 'error');
+        _restoreModeSwitchUI(_barEl, _tagEl, _inputEl);
       }
     })
     .catch(function(e) {
       if (typeof showToast === 'function') showToast('切换失败: ' + e.message, 'error');
+      _restoreModeSwitchUI(_barEl, _tagEl, _inputEl);
     });
+}
+
+// 统一恢复模式切换期间的 UI 状态（成功/失败/网络错误都调用，避免卡在加载态）
+function _restoreModeSwitchUI(barEl, tagEl, inputEl) {
+  if (barEl) { barEl.style.opacity = ''; barEl.style.pointerEvents = ''; }
+  if (tagEl) { tagEl.style.opacity = ''; }
+  if (inputEl) { inputEl.classList.remove('input-skeleton-loading'); inputEl.disabled = false; }
 }
 
 /**

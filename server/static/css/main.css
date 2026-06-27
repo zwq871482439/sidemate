@@ -422,6 +422,15 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 @keyframes tbGlow{0%,100%{box-shadow:0 2px 12px rgba(0,0,0,.08),0 0 0 3px rgba(24,95,165,.10)}50%{box-shadow:0 2px 12px rgba(0,0,0,.08),0 0 0 5px rgba(24,95,165,.16)}}
 /* 输入行（附件+文本框+发送）*/
 .input-row-inner{display:flex;gap:4px;align-items:flex-end}
+/* 模式切换时输入框鱼骨屏：用渐变背景 + background-position 动画模拟光带流动 */
+#msgInput.input-skeleton-loading{
+  background:linear-gradient(90deg,var(--bg-secondary) 25%,var(--bg-tertiary) 37%,var(--bg-secondary) 63%);
+  background-size:400% 100%;
+  animation:inputSkeleton 1.4s ease-in-out infinite;
+  color:transparent !important;
+  caret-color:transparent}
+#msgInput.input-skeleton-loading::placeholder{color:transparent}
+@keyframes inputSkeleton{0%{background-position:100% 50%}100%{background-position:0 50%}}
 /* 输入框顶部行：左侧 action 模式按钮 + 右侧模型 tag */
 .quick-chips-row{display:flex;align-items:center;gap:4px;padding:0 2px 4px;border-bottom:0.5px solid var(--border-color);margin-bottom:3px}
 .action-bar-inline{display:flex;gap:4px;align-items:center;flex:1;min-width:0}
