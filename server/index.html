@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.52">
+<link rel="stylesheet" href="/static/css/main.css?v=2.53">
 </head>
 <body>
 
@@ -587,6 +587,17 @@
           </div>
 
           <div class="card">
+            <h4>开发调试</h4>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:10px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="corsStrictToggle" onchange="toggleCorsStrict(this.checked)" style="width:15px;height:15px">
+                <label for="corsStrictToggle" style="cursor:pointer">允许第三方页面访问本机 API</label>
+              </div>
+              <div class="sec-hint" style="margin-top:6px">默认关闭（推荐）。开启后取消本机 API 的来源限制，便于用第三方前端工具调试。存在本机恶意网页静默读取数据的风险，调试完成后请关闭。<b>修改后需重启服务生效。</b></div>
+            </div>
+          </div>
+
+          <div class="card">
             <h4>数据导出</h4>
             <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">导出所有对话数据为可读格式</div>
             <button class="btn btn-primary" onclick="exportBackup()">导出备份</button>
@@ -817,8 +828,8 @@ window.addEventListener('load', function() {
 <script src="/static/js/chat-actions.js?v=2.40"></script>
 <script src="/static/js/chat-files.js?v=2.40"></script>
 <script src="/static/js/chat-export.js?v=2.40"></script>
-<script src="/static/js/chat-ui.js?v=2.40"></script>
-<script src="/static/js/chat.js?v=2.52"></script>
+<script src="/static/js/chat-ui.js?v=2.53"></script>
+<script src="/static/js/chat.js?v=2.53"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
 <script src="/static/js/token-estimator.js?v=2.40"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->

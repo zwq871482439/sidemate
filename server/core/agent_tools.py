@@ -556,6 +556,20 @@ TOOL_REGISTRY = {
     },
 }
 
+# 工具级权限映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。
+# 用户可在设置中通过预设或工具开关控制这些工具的启用状态。
+_TOOL_PERM_MAP = {
+    "search_kb": "tool_enabled_kb_search",
+    "search_web": "tool_enabled_web_search",
+    "fetch_url": "tool_enabled_web_search",      # 抓取网页归入联网搜索
+    "read_workspace": "tool_enabled_file_rw",
+    "write_workspace": "tool_enabled_file_rw",
+    "list_workspace": "tool_enabled_file_rw",
+    "delete_workspace": "tool_enabled_file_rw",
+    "append_workspace": "tool_enabled_file_rw",
+    "edit_workspace": "tool_enabled_file_rw",
+}
+
 
 def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="full", chat_id=None, history=None):
     """根据当前环境动态组装工具列表 + system prompt
@@ -579,20 +593,8 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
     kb_available = kb is not None and kb_permission != "disabled"
     doc_mode = mode == "doc"
 
-    # 读取工具级权限配置（tool_permissions 接线）
-    # 映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。
+    # 读取工具级权限配置（_TOOL_PERM_MAP 定义在模块级）
     from config import get as _cfg
-    _TOOL_PERM_MAP = {
-        "search_kb": "tool_enabled_kb_search",
-        "search_web": "tool_enabled_web_search",
-        "fetch_url": "tool_enabled_web_search",      # 抓取网页归入联网搜索
-        "read_workspace": "tool_enabled_file_rw",
-        "write_workspace": "tool_enabled_file_rw",
-        "list_workspace": "tool_enabled_file_rw",
-        "delete_workspace": "tool_enabled_file_rw",
-        "append_workspace": "tool_enabled_file_rw",
-        "edit_workspace": "tool_enabled_file_rw",
-    }
 
     for name, tool_def in TOOL_REGISTRY.items():
         # 条件检查
@@ -759,30 +761,6 @@ def _assemble_context(blocks):
     """把非空的 block 用换行拼接。"""
     parts = [b[1] for b in blocks if b[1]]
     return "\n".join(parts)
-
-
-def _collect_assets_block(chat_path):
-    """收集 assets/ 下的上传文件清单（文件名+大小）。"""
-    import os as _os
-    assets_dir = _os.path.join(chat_path, "assets")
-    if not _os.path.isdir(assets_dir):
-        return ""
-
-    items = []
-    for fname in _os.listdir(assets_dir):
-        fp = _os.path.join(assets_dir, fname)
-        if not _os.path.isfile(fp):
-            continue
-        try:
-            size = _os.path.getsize(fp)
-        except OSError:
-            size = 0
-        items.append("- %s（%s）" % (fname, _format_size(size)))
-
-    if not items:
-        return ""
-
-    return " 上传文件：\n" + "\n".join(items)
 
 
 def _collect_docs_block(chat_id):

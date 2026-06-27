@@ -41,6 +41,10 @@ class OllamaManager:
         self._running = False
         self._restart_count = 0  # 连续重启失败计数
         self._MAX_RESTART_ATTEMPTS = 3  # 最大连续重启次数
+        # 进程所有权：MANAGED=本管理器启动的进程（stop 时负责 kill）；
+        #             EXTERNAL=发现端口已被外部 Ollama 占用，只读复用，stop 为 no-op
+        #             None=尚未启动/已停止
+        self._ownership = None
 
     @property
     def base_url(self) -> str:
@@ -54,6 +58,8 @@ class OllamaManager:
             dict: {"status": "started"|"already_running"|"error", ...}
         """
         if self.is_healthy():
+            self._ownership = "EXTERNAL"  # 端口已有 Ollama，只读复用
+            log.info("[OLLAMA] 检测到已有 Ollama 实例运行（EXTERNAL 模式，stop 将不干预该进程）")
             return {"status": "already_running", "host": self._host, "port": self._port}
 
         # 检查端口是否被其他进程占用
@@ -63,6 +69,8 @@ class OllamaManager:
             # 重试几次再判失败，避免误报"无法连接"导致无法复用已有实例。
             # （此前偶发报"端口被占用但无法连接"，正是撞上了 ollama 短暂繁忙）
             if self._wait_healthy_with_retry(retries=3, interval=3):
+                self._ownership = "EXTERNAL"  # 端口已被外部 Ollama 占用，只读复用
+                log.info("[OLLAMA] 复用已有 Ollama 实例（EXTERNAL 模式，stop 将不干预该进程）")
                 return {"status": "already_running", "host": self._host, "port": self._port}
             return {"status": "error", "error": "端口 %d 被占用但无法连接 Ollama API（已重试 3 次）" % self._port}
 
@@ -75,6 +83,7 @@ class OllamaManager:
 
         # 等待就绪
         if self._wait_ready(timeout=60):
+            self._ownership = "MANAGED"  # 本管理器启动的进程
             self._start_watchdog()
             self._restart_count = 0  # 启动成功后重置重启计数
             return {"status": "started", "host": self._host, "port": self._port}
@@ -84,10 +93,22 @@ class OllamaManager:
     def stop(self) -> dict:
         """停止 Ollama 进程。
 
+        基于 _ownership 决策：
+          - MANAGED：终止本管理器启动的子进程
+          - EXTERNAL：不干预外部 Ollama 进程（我们只读复用）
+          - None/已停止：无操作
+
         Returns:
-            dict: {"status": "stopped"|"not_running"}
+            dict: {"status": "stopped"|"external_not_managed"|"not_running"}
         """
         self._watchdog_stop.set()
+        # EXTERNAL 模式：我们从未拥有该进程，绝不 kill 别人的 Ollama
+        if self._ownership == "EXTERNAL":
+            log.info("[OLLAMA] stop: EXTERNAL 模式，不干预外部 Ollama 进程")
+            self._ownership = None
+            self._running = False
+            return {"status": "external_not_managed"}
+
         if self._process is not None:
             try:
                 self._process.terminate()
@@ -99,7 +120,9 @@ class OllamaManager:
             finally:
                 self._process = None
                 self._running = False
+                self._ownership = None
             return {"status": "stopped"}
+        self._ownership = None
         return {"status": "not_running"}
 
     def is_healthy(self) -> bool:
@@ -151,6 +174,7 @@ class OllamaManager:
             "host": self._host,
             "port": self._port,
             "process_running": self._process is not None and self._process.poll() is None,
+            "ownership": self._ownership,  # MANAGED / EXTERNAL / None
         }
         if healthy:
             try:
@@ -252,6 +276,11 @@ class OllamaManager:
                     if result.get("status") in ("started", "already_running"):
                         log.info("[OLLAMA] 自动重启成功")
                         self._restart_count = 0  # 成功后重置计数
+                        # 若重启后变成 EXTERNAL 模式（外部进程接管了端口），
+                        # watchdog 无法监控外部进程生命周期，退出循环避免误判
+                        if self._ownership == "EXTERNAL":
+                            log.info("[OLLAMA] 重启后检测到外部实例，watchdog 退出（不监控外部进程）")
+                            break
                         continue
                     else:
                         log.warning("[OLLAMA] 自动重启失败: %s" % result.get("error", "unknown"))

@@ -1878,6 +1878,43 @@ async function refreshPrivacyInfo() {
   } catch (e) {
     // 静默失败
   }
+  // CORS strict 开关状态：cors_strict=false 时勾选（语义：允许第三方访问）
+  try {
+    var cfgResp = await fetch(_apiBase + '/api/config');
+    var cfgData = await cfgResp.json();
+    var corsStrict = cfgData.config && cfgData.config.cors_strict;
+    var toggle = document.getElementById('corsStrictToggle');
+    if (toggle) toggle.checked = !corsStrict;  // 勾选 = 关闭严格模式 = 允许第三方
+  } catch (e) {
+    // 静默失败
+  }
+}
+
+// ===== CORS 调试开关：切换严格模式（需重启服务生效）=====
+async function toggleCorsStrict(allowThirdParty) {
+  // allowThirdParty=true 表示关闭严格模式（cors_strict=false）
+  try {
+    var resp = await fetch(_apiBase + '/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cors_strict: !allowThirdParty})
+    });
+    var data = await resp.json();
+    if (data.status === 'ok') {
+      if (typeof showToast === 'function') {
+        showToast(allowThirdParty ? '已允许第三方访问，重启服务后生效' : '已恢复严格模式，重启服务后生效', 'success');
+      }
+    } else {
+      if (typeof showToast === 'function') showToast('保存失败，请重试', 'error');
+      // 回滚 checkbox
+      var toggle = document.getElementById('corsStrictToggle');
+      if (toggle) toggle.checked = !allowThirdParty;
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('网络错误，保存失败', 'error');
+    var toggle = document.getElementById('corsStrictToggle');
+    if (toggle) toggle.checked = !allowThirdParty;
+  }
 }
 
 // ===== 暴露到全局 =====
@@ -1889,6 +1926,7 @@ window._executeModeSwitch = _executeModeSwitch;
 window.switchSettingsTab = switchSettingsTab;
 window.refreshAboutDiagnostics = refreshAboutDiagnostics;
 window.refreshPrivacyInfo = refreshPrivacyInfo;
+window.toggleCorsStrict = toggleCorsStrict;
 // 模型管理
 window.refreshResourcePanel = refreshResourcePanel;
 window.refreshStatus = refreshStatus;

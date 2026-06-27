@@ -423,36 +423,18 @@ async def _lifespan(app):
         log.info("[SHUTDOWN] 全局线程池已关闭")
     except Exception as e:
         log.warning("[SHUTDOWN] 线程池关闭失败: %s" % str(e)[:80])
-    # ===== Patch5: 关闭 BatchQueue worker =====
-    if _batch_queue is not None:
-        try:
-            _batch_queue.stop_worker()
-            _batch_queue.close()  # P5 审计修复：关闭 SQLite 连接 + WAL checkpoint
-            log.info("[SHUTDOWN] BatchQueue worker 已停止")
-        except Exception as e:
-            log.warning("[SHUTDOWN] BatchQueue 停止失败: %s" % str(e)[:80])
-    # 关闭时停止 TaggingScheduler
-    if _tagging_scheduler:
-        try:
-            _tagging_scheduler.stop()
-        except Exception as e:
-            log.warning("[SHUTDOWN] TaggingScheduler 停止失败: %s" % str(e)[:80])
-    # 关闭时停止 Ollama
-    try:
-        ollama_manager.stop()
-    except Exception as e:
-        log.warning("[SHUTDOWN] Ollama 停止失败: %s" % str(e)[:80])
-    # ===== Patch5 T01: 关闭全局线程池 =====
-    try:
-        from core.thread_pool import shutdown_thread_pool
-        shutdown_thread_pool(wait=False)
-        log.info("[SHUTDOWN] 全局线程池已关闭")
-    except Exception as e:
-        log.warning("[SHUTDOWN] 线程池关闭失败: %s" % str(e)[:80])
 
 app = FastAPI(title="sidemate", version="%s.%s" % (VERSION, VERSION_PATCH), lifespan=_lifespan)
+# CORS 配置：
+#   严格模式（默认）= 仅允许 LOCAL_AI_CORS 配置的本地源，防止本机恶意页面静默调用 API
+#   调试模式 = 允许任意源（用户在设置中显式开启，用于第三方前端调试）
+from config import get as _cfg_get
 _CORS_ORIGINS = os.environ.get("LOCAL_AI_CORS", "http://localhost:8976,http://127.0.0.1:8976").split(",")
-app.add_middleware(CORSMiddleware, allow_origins=_CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+if _cfg_get("cors_strict", True):
+    app.add_middleware(CORSMiddleware, allow_origins=_CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+else:
+    log.warning("[CORS] 调试模式：已允许任意源访问本机 API（cors_strict=False）")
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ===== 全局服务实例化 =====
 # Patch5 启动重构：进度上报全部移入 _lifespan，顶层只做 import + 实例化（不写进度文件）

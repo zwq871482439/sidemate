@@ -73,6 +73,9 @@ DEFAULTS = {
     "default_mode": "qa",
     # 确认机制: 读取外部文件时是否需要用户确认
     "confirm_external_read": True,
+    # CORS 严格模式: True=仅允许 LOCAL_AI_CORS 配置的本地源;
+    #               False=调试模式，允许任意源访问本机 API（存在本机恶意页面窃取数据风险）
+    "cors_strict": True,
 
     # ----- 扩展与模型目录（运行时解析）-----
     "extensions_dir": "",                 # 空=DATA_DIR/extensions（D1 重构后）

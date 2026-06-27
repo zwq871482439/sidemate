@@ -2,11 +2,17 @@
 """
 sidemate_validator.py - .sidemate 包校验器
 ======================================
-桌伴·Sidemate 包格式验证器，负责校验 .sidemate 包的完整性、签名和安全性。
+桌伴·Sidemate 包格式验证器，负责校验 .sidemate 包的完整性、格式和安全性。
+
+校验策略（v2 重构，2026-06）：
+  - 移除原 HMAC 签名校验层（默认密钥在源码公开，安全增益为零）
+  - 改为基于 SHA256 的完整性校验：
+      * 包含 _meta.json（含 file_hashes）→ 严格模式：每个文件必须匹配 hash
+      * 不含 _meta.json（旧包/裸包）→ 宽松模式：只校验结构/字段/路径/大小
+  - 校验防的是传输损坏/下载截断/磁盘错误（GB 级模型包常见），非恶意篡改
 """
 
 import hashlib
-import hmac
 import json
 import os
 import zipfile
@@ -15,11 +21,13 @@ from typing import Tuple, Optional, Dict, Any
 # 文件类型白名单 -- 允许的扩展名
 ALLOWED_EXTENSIONS = {
     '.bin', '.xml', '.json', '.whl', '.tar', '.gz', '.txt', '.md',
-    '.safetensors', '.vocab', '.model', '.onnx', '.idx', '.flac',
-    '.wav', '.mp3', '.ogg', '.png', '.jpg', '.jpeg', '.svg',
+    '.safetensors', '.vocab', '.model', '.onnx', '.onnx_data', '.idx', '.flac',
+    '.wav', '.mp3', '.ogg', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif',
     '.ttf', '.otf', '.woff', '.woff2', '.css', '.js', '.html',
     '.cfg', '.ini', '.toml', '.yaml', '.yml', '.csv',
     '.tsv', '.pdf', '.docx', '.xlsx', '.pptx', '.lock',
+    # PyTorch 模型权重（.pt/.pth/.bin，bge-m3 等扩展包使用）
+    '.pt', '.pth',
     # HF / OV 扩展
     '.gitattributes', '.jinja', '.msc', '.mv', '.metadata',
     # GGUF 格式（Ollama LLM 模型）
@@ -44,8 +52,16 @@ MAX_TOTAL_SIZE = 10 * 1024 * 1024 * 1024  # 10GB 总包
 
 
 class SidemateValidator:
-    def __init__(self, hmac_key: str):
-        self.hmac_key = hmac_key.encode('utf-8')
+    """校验 .sidemate 包的完整性、格式和安全性。
+
+    v2 不再需要 hmac_key 参数（HMAC 层已移除）。为向后兼容，
+    构造函数仍接受可选的 hmac_key 参数但忽略它。
+    """
+
+    def __init__(self, hmac_key: str = ""):
+        # hmac_key 保留参数仅为向后兼容，v2 不再使用 HMAC 签名校验
+        # （原默认密钥在源码公开，相对纯 SHA256 安全增益为零）
+        pass
 
     def validate_sidemate(self, sidemate_path: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """
@@ -68,36 +84,7 @@ class SidemateValidator:
             with zipfile.ZipFile(sidemate_path, 'r') as zf:
                 names = zf.namelist()
 
-                # 4. 读取 _meta.json
-                if '_meta.json' not in names:
-                    return False, "包中缺少 _meta.json", None
-
-                try:
-                    meta_bytes = zf.read('_meta.json')
-                    meta = json.loads(meta_bytes)
-                except (json.JSONDecodeError, Exception) as e:
-                    return False, "_meta.json 解析失败: %s" % str(e)[:100], None
-
-                checksums_json = meta.get('checksums', '')
-                signature = meta.get('signature', '')
-
-                if not checksums_json or not signature:
-                    return False, "_meta.json 缺少 checksums 或 signature 字段", None
-
-                # 5. HMAC 签名验证
-                if not self._verify_hmac(checksums_json, signature):
-                    return False, "HMAC 签名验证失败，包可能被篡改", None
-
-                # 解析 checksums
-                try:
-                    checksums = json.loads(checksums_json)
-                except json.JSONDecodeError:
-                    return False, "checksums 不是有效的 JSON", None
-
-                # 6. manifest.json 校验
-                if 'manifest.json' not in names:
-                    return False, "包中缺少 manifest.json", None
-
+                # 4. manifest.json 必需校验
                 try:
                     # ZIP 中可能有多个 manifest.json（原始目录 + packager 写入）
                     # 遍历所有条目，取最后一个（packager 版本，含 type 字段）
@@ -124,7 +111,20 @@ class SidemateValidator:
                     if field not in manifest:
                         return False, "manifest.json 缺少必填字段: %s" % field, None
 
-                # 7. 逐文件校验
+                # 5. _meta.json 可选：读取 file_hashes（严格模式）
+                file_hashes = None
+                if '_meta.json' in names:
+                    try:
+                        meta_bytes = zf.read('_meta.json')
+                        meta = json.loads(meta_bytes)
+                        file_hashes = meta.get('file_hashes')
+                        if file_hashes is not None and not isinstance(file_hashes, dict):
+                            return False, "_meta.json 的 file_hashes 不是合法的键值表", None
+                    except (json.JSONDecodeError, Exception) as e:
+                        return False, "_meta.json 解析失败: %s" % str(e)[:100], None
+
+                # 6. 逐文件校验（路径/类型/禁止模式 + 可选 SHA256）
+                strict_mode = file_hashes is not None
                 total_size = 0
                 for name in names:
                     if name in ('_meta.json', 'manifest.json'):
@@ -145,7 +145,6 @@ class SidemateValidator:
                         if pattern in name:
                             return False, "文件名包含禁止模式 (%s): %s" % (pattern, name), None
 
-                    # SHA256 校验（如果有对应的 checksum）
                     info = zf.getinfo(name)
                     data = zf.read(info)
                     total_size += len(data)
@@ -153,24 +152,25 @@ class SidemateValidator:
                     if len(data) > MAX_FILE_SIZE:
                         return False, "文件超过大小限制 (%s): %s" % (name, len(data)), None
 
-                    if name in checksums:
+                    # SHA256 校验：
+                    #   严格模式（有 file_hashes）→ 每个文件必须在 file_hashes 中且匹配
+                    #   宽松模式（无 file_hashes）→ 跳过（向后兼容旧包）
+                    if strict_mode:
+                        if name not in file_hashes:
+                            return False, "严格校验失败：文件 %s 未在 _meta.json/file_hashes 中登记" % name, None
                         actual_hash = self._compute_sha256(data)
-                        expected_hash = checksums[name]
+                        expected_hash = file_hashes[name]
                         if actual_hash != expected_hash:
-                            return False, "SHA256 校验失败: %s" % name, None
+                            return False, "SHA256 校验失败（文件可能损坏）: %s" % name, None
 
                 if total_size > MAX_TOTAL_SIZE:
                     return False, "包总大小超过限制 (%d bytes)" % total_size, None
 
-                return True, "校验通过", manifest
+                mode_note = "严格模式（SHA256 全覆盖）" if strict_mode else "宽松模式（无 file_hashes，仅结构校验）"
+                return True, "校验通过（%s）" % mode_note, manifest
 
         except Exception as e:
             return False, "ZIP 处理失败: %s" % str(e)[:100], None
-
-    def _verify_hmac(self, checksums_json: str, signature: str) -> bool:
-        """验证 HMAC-SHA256 签名"""
-        expected = hmac.new(self.hmac_key, checksums_json.encode('utf-8'), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(expected, signature)
 
     def _compute_sha256(self, data: bytes) -> str:
         """计算 SHA256"""

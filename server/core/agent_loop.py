@@ -52,6 +52,15 @@ _SAFE_MATH_FUNCS = {
     "min": min, "max": max, "round": round, "abs": abs,
     "sum": sum, "pow": pow,
 }
+# 二元/一元运算符 → Python 运算的映射表（供 _safe_math_eval 的纯 AST 求值器使用）
+import operator as _op
+_BINOP_TABLE = {
+    ast.Add: _op.add, ast.Sub: _op.sub, ast.Mult: _op.mul,
+    ast.Div: _op.truediv, ast.Mod: _op.mod, ast.Pow: _op.pow,
+}
+_UNARYOP_TABLE = {
+    ast.USub: _op.neg, ast.UAdd: _op.pos,
+}
 
 
 def _safe_math_eval(expression: str):
@@ -108,10 +117,28 @@ def _safe_math_eval(expression: str):
         raise ValueError("不允许的语法: %s" % type(node).__name__)
 
     _check(tree)
-    # 编译执行（已通过白名单校验，安全）
-    code = compile(tree, "<calculator>", "eval")
-    result = eval(code, {"__builtins__": {}}, _SAFE_MATH_FUNCS)  # noqa: S307 - 已白名单校验
-    return result
+    # 纯 AST 递归求值（不再使用 eval，彻底杜绝代码注入）
+    # 白名单检查 _check 已确保只有 BinOp/UnaryOp/Constant/Call/Name 五种节点
+    def _eval(node):
+        if isinstance(node, ast.Expression):
+            return _eval(node.body)
+        if isinstance(node, ast.BinOp):
+            left = _eval(node.left)
+            right = _eval(node.right)
+            return _BINOP_TABLE[type(node.op)](left, right)
+        if isinstance(node, ast.UnaryOp):
+            operand = _eval(node.operand)
+            return _UNARYOP_TABLE[type(node.op)](operand)
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Call):
+            func = _SAFE_MATH_FUNCS[node.func.id]
+            args = [_eval(a) for a in node.args]
+            return func(*args)
+        # Name 仅在 Call.func 上下文出现（_check 已保证），不直接求值为值
+        raise ValueError("不可求值的节点: %s" % type(node).__name__)
+
+    return _eval(tree)
 
 
 # ===== 常量 =====
@@ -522,6 +549,30 @@ class AgentLoop:
 
             elif tool_name == "fetch_url":
                 url = args.get("url", "")
+                # SSRF 防护：抓取前校验目标地址分类
+                from core.search_engine import classify_url
+                from config import get as _cfg
+                category, detail = classify_url(url)
+                if category == "blocked":
+                    # 链路本地/非法协议/解析失败 —— 硬拒绝
+                    log.warning("[AGENT] fetch_url 被拒绝（%s）: %s", detail, url[:80])
+                    return {
+                        "success": False, "tool": "fetch_url",
+                        "error": "url_blocked",
+                        "message": "该地址被禁止访问（%s）。" % detail,
+                    }
+                if category == "private":
+                    # 内网/回环 —— 读 confirm_external_read 决策
+                    # True（谨慎模式/默认）= 拒绝并提示；False（完全信任）= 放行
+                    if _cfg("confirm_external_read", True):
+                        log.warning("[AGENT] fetch_url 内网地址受保护，已拒绝: %s", url[:80])
+                        return {
+                            "success": False, "tool": "fetch_url",
+                            "error": "private_network_blocked",
+                            "message": "内网地址受保护（%s）。如需访问，请在设置→安全中选择「完全信任」权限预设。" % detail,
+                        }
+                    log.info("[AGENT] fetch_url 内网地址已放行（完全信任模式）: %s", url[:80])
+
                 result = self.search_engine.fetch(url)
                 stats["fetches"] += 1
                 return {
@@ -788,10 +839,13 @@ class AgentLoop:
                 if not filename:
                     return {"success": False, "tool": "deep_read", "error": "缺少 filename"}
 
-                # 读取工作区文件
-                from config import WORKSPACE_DIR
-                _ws_dir = os.path.join(WORKSPACE_DIR, "chats", self.chat_id, "workspace") if self.chat_id else os.path.join(WORKSPACE_DIR, "workspace")
-                _file_path = os.path.join(_ws_dir, filename)
+                # 读取工作区文件（走安全边界校验，与 read_workspace/table_ops 一致）
+                from core.doc_session import safe_workspace_path
+                try:
+                    _file_path = safe_workspace_path(self.chat_id, filename)
+                except ValueError as e:
+                    return {"success": False, "tool": "deep_read", "error": "path_violation",
+                            "message": str(e)[:120]}
                 if not os.path.exists(_file_path):
                     return {"success": False, "tool": "deep_read", "error": "文件不存在: %s" % filename}
 

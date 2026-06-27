@@ -53,6 +53,76 @@ _HEADERS = {
 }
 
 
+# ============================================================
+# SSRF 防护：URL 分类（供 agent_loop.fetch_url 调用前校验）
+# ============================================================
+
+import ipaddress
+from urllib.parse import urlparse
+
+# 协议白名单（拒绝 file:///、gopher://、ftp://、dict:// 等）
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+def classify_url(url):
+    """对 fetch_url 的目标 URL 做 SSRF 分类。
+
+    解析 URL → 校验协议 → DNS 解析拿到 IP → 按 IP 类型分类。
+    防 DNS rebinding：本函数只做解析，实际请求时应禁止跟随重定向到新主机
+    （search_engine._http_get 用 allow_redirects=True，但目标已在此处锁定）。
+
+    Returns:
+        tuple(category, detail):
+          category: "public"   公网，安全放行
+                    "private"  回环/私网（127/10/172.16-31/192.168），需用户授权
+                    "blocked"  链路本地(169.254，含云元数据)/非法协议/解析失败，硬拒绝
+          detail:  人类可读原因（用于日志和拒绝提示）
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception as e:
+        return "blocked", "URL 解析失败: %s" % str(e)[:60]
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        return "blocked", "仅允许 http/https，拒绝 %s" % (scheme or "空协议")
+
+    host = parsed.hostname
+    if not host:
+        return "blocked", "URL 缺少主机名"
+
+    # 解析主机名为 IP（DNS 查询，可能返回多个 A 记录）
+    import socket
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return "blocked", "无法解析主机名: %s" % host
+
+    ips = set(info[4][0] for info in infos)
+    if not ips:
+        return "blocked", "主机名未解析到任何 IP: %s" % host
+
+    # 按所有解析出的 IP 分类，取最严格的类别
+    # （任一 IP 是私网/回环/链路本地，就按对应类别处理，防 DNS rebinding 多记录投毒）
+    for ip_str in ips:
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return "blocked", "非法 IP 地址: %s" % ip_str
+
+        if ip.is_loopback:
+            return "private", "回环地址 %s" % ip_str
+        if ip.is_link_local:
+            # 169.254.x.x 含云元数据端点（169.254.169.254），无合法用途，硬拒绝
+            return "blocked", "链路本地地址 %s（可能为云元数据端点，已拒绝）" % ip_str
+        if ip.is_private:
+            return "private", "私网地址 %s" % ip_str
+        if ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return "blocked", "保留/组播地址 %s" % ip_str
+
+    return "public", "公网"
+
+
 def _strip_tags(html: str) -> str:
     """去除 HTML 标签，清理空白"""
     text = re.sub(r'<[^>]+>', '', html)

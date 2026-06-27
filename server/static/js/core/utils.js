@@ -384,8 +384,8 @@ function md(text, sanitize) {
   // Step 6: DOMPurify 净化（仅非流式调用时，防 XSS）
   if (sanitize && typeof DOMPurify !== 'undefined') {
     html = DOMPurify.sanitize(html, {
-      ADD_TAGS: ['details', 'summary', 'sup', 'style', 'foreignObject', 'span', 'path', 'rect', 'circle', 'line', 'text', 'g', 'svg', 'polyline', 'polygon', 'ellipse', 'defs', 'marker', 'use', 'tspan'],
-      ADD_ATTR: ['target', 'class', 'id', 'onclick', 'data-mermaid', 'd', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'points', 'transform', 'viewBox', 'xmlns', 'xlink:href', 'href', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline', 'marker-end', 'marker-start', 'refX', 'refY', 'markerWidth', 'markerHeight', 'orient', 'overflow'],
+      ADD_TAGS: ['details', 'summary', 'sup', 'foreignObject', 'span', 'path', 'rect', 'circle', 'line', 'text', 'g', 'svg', 'polyline', 'polygon', 'ellipse', 'defs', 'marker', 'use', 'tspan'],
+      ADD_ATTR: ['target', 'class', 'id', 'data-mermaid', 'd', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'points', 'transform', 'viewBox', 'xmlns', 'xlink:href', 'href', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline', 'marker-end', 'marker-start', 'refX', 'refY', 'markerWidth', 'markerHeight', 'orient', 'overflow'],
       ALLOW_DATA_ATTR: true
     });
   }

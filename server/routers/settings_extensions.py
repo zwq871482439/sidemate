@@ -84,11 +84,9 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
 
     try:
         # === 阶段 1: 校验 (0-10%) ===
-        progress(2, "校验扩展包签名...")
+        progress(2, "校验扩展包完整性...")
         from common.sidemate_validator import SidemateValidator
-        from config import get as cfg_get
-        hmac_key = cfg_get("sidemate_hmac_key", "zhuoban-sidemate-default-key-v1")
-        validator = SidemateValidator(hmac_key)
+        validator = SidemateValidator()  # v2: HMAC 已移除，改为 SHA256 完整性校验
         is_valid, msg, manifest = validator.validate_sidemate(sidemate_path)
 
         if not is_valid:

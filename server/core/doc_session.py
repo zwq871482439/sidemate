@@ -24,6 +24,7 @@ Patch4 v3：Workspace 统一改造。
 """
 
 import os
+import re
 import json
 import time
 import logging
@@ -33,13 +34,26 @@ from config import CHAT_DIR
 
 log = logging.getLogger(__name__)
 
+# chat_id 合法格式：YYYY-MM-DD_NNN（与 chat.py:_is_safe_chat_id 保持一致）
+# 用于 _chat_root 防路径穿越：拒绝包含 ../ 或其它非法字符的 chat_id
+_CHAT_ID_RE = re.compile(r'^\d{4}-\d{2}-\d{2}_\d{3}$')
+
 
 # ============================================================
 #  路径安全
 # ============================================================
 
 def _chat_root(chat_id):
-    """会话根目录：data/chats/{chat_id}"""
+    """会话根目录：data/chats/{chat_id}
+
+    校验 chat_id 格式（YYYY-MM-DD_NNN），防止通过 chat_id 注入 ../ 实现路径穿越。
+    兼容 .json 后缀（部分调用点传入文件名而非目录名）。
+    """
+    if not chat_id:
+        raise ValueError("缺少 chat_id")
+    cid = chat_id.replace(".json", "")
+    if not _CHAT_ID_RE.match(cid):
+        raise ValueError("非法 chat_id 格式: %s" % chat_id)
     return os.path.join(CHAT_DIR, chat_id)
 
 

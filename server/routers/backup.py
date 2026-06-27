@@ -16,6 +16,29 @@ _KB_META_CANDIDATES = [
 ]
 
 
+def _is_unsafe_zip_name(name: str) -> bool:
+    """检查 ZIP 条目名是否包含路径穿越或危险形式（覆盖 POSIX / Windows / UNC / null byte）。
+
+    返回 True 表示危险应跳过。用于备份恢复阶段逐条校验。
+    """
+    if not name or "\x00" in name:
+        return True
+    # 规范化分隔符后按组件检查 ..
+    norm = name.replace("\\", "/")
+    for part in norm.split("/"):
+        if part == "..":
+            return True
+    # POSIX 绝对路径
+    if name.startswith("/"):
+        return True
+    # Windows 盘符绝对路径（C:\ / C:/）或 UNC（\\server\...）
+    if len(name) >= 2 and name[1] == ":":
+        return True
+    if name.startswith("\\\\"):
+        return True
+    return False
+
+
 def _find_kb_meta() -> str | None:
     """查找文库元数据文件路径，不存在则返回 None"""
     for path in _KB_META_CANDIDATES:
@@ -105,8 +128,8 @@ async def import_backup(file: UploadFile = File(...)):
 
                 name = info.filename
 
-                # 防路径穿越：禁止 .. 和绝对路径
-                if ".." in name or name.startswith("/"):
+                # 防路径穿越：禁止 .. / 绝对路径 / UNC / null byte（覆盖 Windows）
+                if _is_unsafe_zip_name(name):
                     log.warning("[BACKUP] 跳过可疑路径: %s" % name)
                     continue
 
