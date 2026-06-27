@@ -381,8 +381,12 @@ function md(text, sanitize) {
   html = html.replace(/<\/?p>\s*<\/?p>/g, '');
   html = html.replace(/<h[1-6]><\/h[1-6]>/g, '');
 
-  // Step 6: DOMPurify 净化（仅非流式调用时，防 XSS）
-  if (sanitize && typeof DOMPurify !== 'undefined') {
+  // Step 6: DOMPurify 净化（BUG-5：流式渲染也净化，防 XSS）
+  // 原先 sanitize=false（流式）跳过净化，导致 <img onerror>/<svg onload> 等在流式窗口执行。
+  // DOMPurify 对半截 HTML 是安全的；且最终/历史渲染用同一配置已验证可正确显示
+  // 代码块/表格/LaTeX/mermaid/html 预览占位符等，流式启用不会改变显示结果。
+  // sanitize 形参保留仅为向后兼容（现在恒净化）。
+  if (typeof DOMPurify !== 'undefined') {
     html = DOMPurify.sanitize(html, {
       ADD_TAGS: ['details', 'summary', 'sup', 'foreignObject', 'span', 'path', 'rect', 'circle', 'line', 'text', 'g', 'svg', 'polyline', 'polygon', 'ellipse', 'defs', 'marker', 'use', 'tspan'],
       ADD_ATTR: ['target', 'class', 'id', 'data-mermaid', 'd', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'points', 'transform', 'viewBox', 'xmlns', 'xlink:href', 'href', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline', 'marker-end', 'marker-start', 'refX', 'refY', 'markerWidth', 'markerHeight', 'orient', 'overflow'],

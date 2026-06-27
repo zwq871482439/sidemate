@@ -880,10 +880,11 @@ async def api_file_upload(file: UploadFile = File(...), chat_id: str = ""):
         return JSONResponse({"error": "未选择文件"}, status_code=400)
 
     safe_name = _safe_filename(file.filename)
-    # N-5：上传扩展名白名单（与 knowledge/file_extractor 可解析类型对齐），拒绝非文档类型落盘
+    # N-5：上传扩展名白名单 = 实际"能被 LLM 消费"的类型（extract_text 能产出正文）。
+    # 排除：.doc/.xls（仅返回"请转换"提示，无正文）、.rtf（striprtf 未打包，提取为空）。
     _ALLOWED_UPLOAD_EXTS = {
-        ".txt", ".md", ".csv", ".docx", ".doc", ".xlsx", ".xls",
-        ".pdf", ".epub", ".html", ".htm", ".srt", ".rtf",
+        ".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf",
+        ".epub", ".html", ".htm", ".srt",
     }
     _up_ext = os.path.splitext(safe_name)[1].lower()
     if _up_ext not in _ALLOWED_UPLOAD_EXTS:
