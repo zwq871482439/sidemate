@@ -73,14 +73,14 @@ async function kbRouteState() {
     }
 
     if (loading) loading.style.display = 'none';
-    if (fullInterface) loading.style.display = 'flex';
+    if (fullInterface) fullInterface.style.display = 'flex';
     await kbRefreshDocs();
     _kbResumeSubscriptions();  // M5: 恢复切 Tab 时关闭的 SSE 订阅
     kbRefreshAIOverview();  // P6: 页面加载时恢复洞察
   } catch (e) {
     silentLog('[KB] 状态路由失败:', e);
     if (loading) loading.style.display = 'none';
-    if (fullInterface) loading.style.display = 'flex';
+    if (fullInterface) fullInterface.style.display = 'flex';
     await kbRefreshDocs();
     _kbResumeSubscriptions();  // M5: 异常兜底也恢复订阅
     kbRefreshAIOverview();  // P6: 异常兜底也恢复洞察
