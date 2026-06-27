@@ -759,12 +759,13 @@ async function sendMessage() {
   window._parallelLastStatus = {};  // P6 打磨：重置云端状态去重
 
   // 阶段3 Step2b：CardRenderer 重置 + 挂载到 #stream-msg
-  // 注意：先 mount #card-area，再 appendStreamingMsg —— 这样并行模式下
-  // thinking-indicator 能被搬到 #card-area 顶部（卡片之上），避免跑到卡片下方。
+  // 注意顺序：#stream-msg 由 appendStreamingMsg 内部创建（不存在时新建元素并赋 id），
+  // 所以必须「先 append 创建 #stream-msg」→「再 mount 挂载 #card-area」。
+  // （之前误改成先 mount 后 append，导致 mount 时 #stream-msg 不存在被跳过 → card-area 不创建）
   CardRenderer.reset();
+  appendStreamingMsg('', '', 0, null, true);
   var _streamMsgEl = document.getElementById('stream-msg');
   if (_streamMsgEl) CardRenderer.mount(_streamMsgEl);
-  appendStreamingMsg('', '', 0, null, true);
   var msgEl = document.getElementById('messages');
   msgEl.scrollTop = msgEl.scrollHeight;
 
@@ -1479,6 +1480,13 @@ async function sendMessage() {
       }
       // 计算要持久化的内容：正常输出 / 中止时已有内容 / 错误消息
       var _persistContent = fullText.trim();
+      // 并行模式兜底：正文走 channel stream 写入 _parallelTexts，不走 fullText 累积，
+      // 若 fullText 为空（merge 未流式或 fallback），用 merge/local/cloud 结果补上，
+      // 否则 assistant 回答不会持久化（刷新后消失）。
+      if (!_persistContent && typeof CardRenderer !== 'undefined') {
+        var _pt = CardRenderer.getState().parallelTexts || {};
+        _persistContent = (_pt.merge || _pt.local || _pt.cloud || '').trim();
+      }
       if (_isAborted && _abortReason === 'user_stop' && _persistContent) {
         // 用户手动中止，已有输出：保留原正文（终止提示由 _aborted 标记驱动渲染，
         // 不再拼进 content，避免 emoji/blockquote 与流式 SVG 样式不一致）
@@ -2291,13 +2299,12 @@ var CardRenderer = (function() {
     if (!_parallelTexts[ch]) _parallelTexts[ch] = '';
     _parallelTexts[ch] += (d.content || '');
 
-    // 阶段1时渲染到双列的流式区
+    // 阶段1时渲染到步骤内的嵌套卡片（与完成后/renderHistory 同构）
     if (ch === 'local' || ch === 'cloud') {
-      _ensureParallelCol(ch);
+      _ensureParallelCard(ch);
       var col = _parallelCols[ch];
       if (col && col.streamEl) {
-        // 与完成后（_collapseParallelCols 的 .cb-par-card-body）保持一致：
-        // 流式正文也走 markdown 渲染，避免生成中（纯文本）与完成后（带格式）风格不一致。
+        // 正文走 markdown 渲染，与完成后一致（消除纯文本 vs 带格式的不一致）
         col.streamEl.innerHTML = md(_parallelTexts[ch], true);
         if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
       }
@@ -2534,12 +2541,15 @@ var CardRenderer = (function() {
       }
       // P6: 并行模式——本地/云端步骤嵌入对应原文卡片
       // 统一用 .cb-output 包裹（与检索来源/transform 等产出区同构），避免三块风格不一致
+      // 与生成中 _ensureParallelCard 同构：卡片含标题头(圆点+文案) + body
       if (m.parallel_texts) {
         if (s.id === 'local_gen' && m.parallel_texts.local) {
           html += '<div class="cb-output"><div class="cb-par-card local">' +
+            '<div class="cb-par-card-head"><span class="cb-par-dot local"></span>本地AI生成回答</div>' +
             '<div class="cb-par-card-body">' + md(m.parallel_texts.local, true) + '</div></div></div>';
         } else if (s.id === 'cloud_gen' && m.parallel_texts.cloud) {
           html += '<div class="cb-output"><div class="cb-par-card cloud">' +
+            '<div class="cb-par-card-head"><span class="cb-par-dot cloud"></span>云端AI补充</div>' +
             '<div class="cb-par-card-body">' + md(m.parallel_texts.cloud, true) + '</div></div></div>';
         }
       }
@@ -2741,44 +2751,25 @@ var CardRenderer = (function() {
   }
 
   // 模块2a：双列折叠成摘要条（阶段1→阶段2过渡，方案Z）
+  // merge 阶段开始时调用。统一结构后，流式内容已直接写入 step 内卡片，
+  // 此函数仅作兜底：若卡片尚未存在（后端未发 stream 仅发 parallel_texts），补建一次。
+  // 已存在则幂等跳过，避免重复卡片。
   function _collapseParallelCols() {
-    var parWrap = _container.querySelector('.cb-par');
-    if (!parWrap) return;
-    var localText = _parallelTexts.local || '';
-    var cloudText = _parallelTexts.cloud || '';
-
-    // P6: 把原文嵌入对应步骤下方（和 renderHistory 一致），而非独立摘要条
-    // 统一用 .cb-output 包裹（与检索来源等产出区同构）
-    if (localText) {
-      var localStep = _container.querySelector('.cb-step[data-id="local_gen"]');
-      if (localStep) {
-        var out1 = document.createElement('div');
-        out1.className = 'cb-output';
-        var card = document.createElement('div');
-        card.className = 'cb-par-card local';
-        // 修 #双列卡片md不渲染：原文含 **加粗**、列表等 markdown，旧代码用 _esc 纯转义
-        // 导致显示成字面量。改用 md() 渲染（与主消息正文一致）。
-        card.innerHTML = '<div class="cb-par-card-body">' + md(localText, true) + '</div>';
-        out1.appendChild(card);
-        localStep.appendChild(out1);
+    if (!_container) return;
+    if (_parallelTexts.local) {
+      var lc = _container.querySelector('.cb-par-card.local');
+      if (!lc) {
+        var c1 = _ensureParallelCard('local');
+        if (c1 && c1.streamEl) c1.streamEl.innerHTML = md(_parallelTexts.local, true);
       }
     }
-    if (cloudText) {
-      var cloudStep = _container.querySelector('.cb-step[data-id="cloud_gen"]');
-      if (cloudStep) {
-        var out2 = document.createElement('div');
-        out2.className = 'cb-output';
-        var card2 = document.createElement('div');
-        card2.className = 'cb-par-card cloud';
-        card2.innerHTML = '<div class="cb-par-card-body">' + md(cloudText, true) + '</div>';
-        out2.appendChild(card2);
-        cloudStep.appendChild(out2);
+    if (_parallelTexts.cloud) {
+      var cc = _container.querySelector('.cb-par-card.cloud');
+      if (!cc) {
+        var c2 = _ensureParallelCard('cloud');
+        if (c2 && c2.streamEl) c2.streamEl.innerHTML = md(_parallelTexts.cloud, true);
       }
     }
-    // 移除并行列容器（原文已嵌入步骤）
-    parWrap.remove();
-    // 清理并行列引用（已折叠）
-    _parallelCols = {};
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
@@ -2812,92 +2803,59 @@ var CardRenderer = (function() {
     if (!_container) return;
     var channel = d.channel;  // local/cloud/merge
     if (evtType === 'phase') {
-      // phase started/done：创建/完成阶段
-      if (d.phase === 'started' && !_parallelCols[channel]) {
-        _ensureParallelCol(channel);
+      // local/cloud phase started：预建嵌套卡片（让用户立即看到"正在生成"的标题占位）
+      if ((channel === 'local' || channel === 'cloud') && d.phase === 'started') {
+        _ensureParallelCard(channel);
       }
-      // 模块2a：merge phase started 时，阶段1结束，把双列折叠成摘要条（方案Z）
+      // merge phase started：兜底确保 local/cloud 卡片已建（若 stream 未触发）
       if (channel === 'merge' && d.phase === 'started') {
         _collapseParallelCols();
       }
-    } else if (evtType === 'step' || evtType === 'step_done') {
-      // 并行子步骤（searching/generating 等）
-      var col = _parallelCols[channel];
-      if (col && col.el) {
-        var _stepName = d.step || '';
-        // P6 修复：step 事件只创建一次（去重），step_done 只更新已有步骤
-        if (evtType === 'step') {
-          // 检查是否已有同名步骤（避免 generating 重复创建）
-          var _existing = col.el.querySelector('.cb-step[data-step-name="' + _stepName + '"]');
-          if (!_existing) {
-            var stepDiv = document.createElement('div');
-            stepDiv.className = 'cb-step';
-            stepDiv.setAttribute('data-status', 'running');
-            stepDiv.setAttribute('data-step-name', _stepName);
-            stepDiv.innerHTML = '<span class="cb-dot run"></span>' +
-              '<div class="cb-step-row"><span class="cb-label">' + _esc(_stepName) + '</span></div>';
-            col.el.appendChild(stepDiv);
-          }
-        } else if (evtType === 'step_done') {
-          // 找到对应步骤标记完成
-          var _doneStep = col.el.querySelector('.cb-step[data-step-name="' + _stepName + '"]');
-          if (_doneStep) {
-            _doneStep.setAttribute('data-status', 'done');
-            var _dot = _doneStep.querySelector('.cb-dot');
-            if (_dot) _dot.className = 'cb-dot ok';
-          }
-        }
-      }
-    } else if (evtType === 'status') {
-      // 云端列状态（understanding/thinking/generating）
-      var col2 = _parallelCols[channel];
-      if (col2 && col2.el) {
-        var _statusKey = 'cb-step[data-status-key="' + channel + '_' + (d.status || '') + '"]';
-        var _existingStatus = col2.el.querySelector(_statusKey);
-        // P6 #10 修复: 同一状态只创建一个 cb-step,不再每事件 appendChild(防 generating 堆积)
-        if (!_existingStatus) {
-          var stDiv = document.createElement('div');
-          stDiv.className = 'cb-step';
-          stDiv.setAttribute('data-status', 'done');
-          stDiv.setAttribute('data-status-key', channel + '_' + (d.status || ''));
-          stDiv.innerHTML = '<span class="cb-dot ok"></span>' +
-            '<div class="cb-step-row"><span class="cb-label">' + _esc(d.status || '') + '</span></div>';
-          col2.el.appendChild(stDiv);
-        }
-      }
     }
+    // step/step_done/status（searching/generating/understanding 等子过程）：
+    // 统一结构后不再塞进卡片（会破坏卡片布局，且这些过程态不持久化）。
+    // 步骤标题 local_gen/cloud_gen 已说明在做什么，子过程细节省略。
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
   // 确保并行列容器存在
-  function _ensureParallelCol(channel) {
+  // 在 .cb-step[data-id=local_gen/cloud_gen] 下创建/取回嵌套卡片
+  // （生成中与完成后、历史重建共用同一结构，消除 UI 跳变）
+  // 结构：.cb-step > .cb-output > .cb-par-card.local/.cloud > .cb-par-card-head + .cb-par-card-body
+  function _ensureParallelCard(channel) {
     if (_parallelCols[channel]) return _parallelCols[channel];
     if (!_container) return null;
-    // 找或创建并行容器
-    var parWrap = _container.querySelector('.cb-par');
-    if (!parWrap) {
-      parWrap = document.createElement('div');
-      parWrap.className = 'cb-par';
-      _container.appendChild(parWrap);
+    var stepId = channel === 'local' ? 'local_gen' : (channel === 'cloud' ? 'cloud_gen' : null);
+    if (!stepId) return null;
+    // 兜底：若步骤尚未由 agent_timeline 创建，先建（首个 stream token 可能早于 step done）
+    if (!_steps[stepId]) {
+      _createStep(stepId, STEP_LABELS[stepId] || (channel === 'local' ? '本地生成' : '云端生成'));
     }
-    var col = document.createElement('div');
-    col.className = 'cb-par-col';
-    col.id = 'cb-par-' + channel;
-    // 统一文案：与 step label（local_gen/cloud_gen）一致，生成中→折叠→刷新三阶段连贯
-    var title = channel === 'local' ? '本地AI生成回答' : (channel === 'cloud' ? '云端AI补充' : '本地自动融合');
-    var titleIcon = channel === 'local' ? 'book' : (channel === 'cloud' ? 'cloud' : 'check');
-    col.innerHTML = '<div class="cb-par-col-title">' + (typeof iconSvg === 'function' ? iconSvg(titleIcon, '12') : '') + ' ' + title + '</div>' +
-      '<div class="cb-par-stream-area"></div>';
-    parWrap.appendChild(col);
-    var streamEl = col.querySelector('.cb-par-stream-area');
-    if (streamEl) {
-      streamEl.className = streamEl.className + ' cb-par-stream';
+    var stepEl = _container.querySelector('.cb-step[data-id="' + stepId + '"]');
+    if (!stepEl) return null;
+    // 复用已有 output / card（防重复）
+    var card = stepEl.querySelector('.cb-par-card.' + channel);
+    var bodyEl;
+    if (!card) {
+      var out = document.createElement('div');
+      out.className = 'cb-output';
+      card = document.createElement('div');
+      card.className = 'cb-par-card ' + channel;
+      var title = channel === 'local' ? '本地AI生成回答' : '云端AI补充';
+      var dotCls = channel === 'local' ? 'local' : 'cloud';
+      var head = document.createElement('div');
+      head.className = 'cb-par-card-head';
+      head.innerHTML = '<span class="cb-par-dot ' + dotCls + '"></span>' + title;
+      bodyEl = document.createElement('div');
+      bodyEl.className = 'cb-par-card-body';
+      card.appendChild(head);
+      card.appendChild(bodyEl);
+      out.appendChild(card);
+      stepEl.appendChild(out);
     } else {
-      streamEl = document.createElement('div');
-      streamEl.className = 'cb-par-stream';
-      col.appendChild(streamEl);
+      bodyEl = card.querySelector('.cb-par-card-body');
     }
-    _parallelCols[channel] = { el: col, streamEl: streamEl };
+    _parallelCols[channel] = { el: card, streamEl: bodyEl };
     return _parallelCols[channel];
   }
 
@@ -3178,29 +3136,6 @@ var CardRenderer = (function() {
       '</div>';
     _container.appendChild(div);
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
-  }
-
-  // 历史回放：并行三栏对比（本地/云端/融合，卡片堆叠，点击展开全文）
-  function _renderParallelSummary(texts) {
-    // P6: 双卡片布局——本地/云端各自独立卡片，体现"两条线"
-    // 融合结果已在正文区显示，摘要区不再重复
-    var html = '<div class="cb-par-dual">';
-    // 本地卡片
-    if (texts.local) {
-      html += '<div class="cb-par-card local">' +
-        '<div class="cb-par-card-head"><span class="cb-par-dot local"></span>本地AI生成回答</div>' +
-        '<div class="cb-par-card-body">' + md(texts.local, true) + '</div>' +
-      '</div>';
-    }
-    // 云端卡片
-    if (texts.cloud) {
-      html += '<div class="cb-par-card cloud">' +
-        '<div class="cb-par-card-head"><span class="cb-par-dot cloud"></span>云端AI生成回答</div>' +
-        '<div class="cb-par-card-body">' + md(texts.cloud, true) + '</div>' +
-      '</div>';
-    }
-    html += '</div>';
-    return html;
   }
 
   // ---- 导出公开 API ----

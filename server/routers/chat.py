@@ -199,6 +199,11 @@ async def api_chat_stream(request: Request):
     _ai_mode = body.get("ai_mode") or _cfg_get("ai_mode", "local")
     # P6: 读取并行模式选项
     _parallel_options = body.get("parallel_options", {}) if _ai_mode == "parallel" else {}
+    # 并行模式：若 body 未带 allow_cloud_keywords，从 config(parallel_keyword_gen) 补全。
+    # 前端开关存到 config.parallel_keyword_gen，但 parallel_pipeline 读的是
+    # parallel_options.allow_cloud_keywords —— 不补全会导致开关开了功能也不触发。
+    if _ai_mode == "parallel" and "allow_cloud_keywords" not in _parallel_options:
+        _parallel_options["allow_cloud_keywords"] = bool(_cfg_get("parallel_keyword_gen", False))
 
     # 无模型防护：云模式/并行模式跳过（云端API可用），本地模式下既没有默认模型、请求也没指定模型时返回错误
     if _ai_mode not in ("cloud", "parallel") and not DEFAULT_LLM and not body.get("model"):

@@ -579,12 +579,15 @@ _static_dir = os.path.join(WORKSPACE_DIR, "static")
 
 @app.middleware("http")
 async def _no_cache_static(request, call_next):
-    """静态文件禁止浏览器缓存，避免更新后用户看到旧版"""
+    """缓存策略：
+    - 根路径（index.html）：no-cache（每次访问向服务器校验 ETag，未变则 304 用本地副本，
+      既保证总能拿到最新 HTML，又不浪费带宽、不影响刷新体验）。
+      关键：index.html 不缓存会导致其内部引用的旧 JS 被反复加载——必须让它可条件校验。
+    - /static/：靠 ?v= 版本号失效（版本号一改浏览器视为新 URL 自动拉新文件），
+      允许正常缓存以提升加载速度，无需 no-store 强制重下。"""
     response = await call_next(request)
-    if request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
+    if request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 if os.path.isdir(_static_dir):

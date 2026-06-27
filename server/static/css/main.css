@@ -2400,40 +2400,22 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* thinking（思考内容） */
 .cb-thinking { padding:5px 8px; background:rgba(127,119,221,.06); border-radius:4px; color:var(--text-muted); font-size:11px; line-height:1.6; border-left:2px solid #AFA9EC; word-break:break-word; }
 
-/* 并行双列 */
-/* P6 #14: 并行布局改竖排堆叠(本地在上、云端在下,两路同时流式) */
-.cb-par { display:flex; flex-direction:column; gap:8px; margin:4px 0; }
-.cb-par-col { padding:10px 14px; background:var(--bg-secondary); border-radius:5px; border-left:3px solid var(--border-color); }
-/* P6 #11-a: 统一配色 — 本地暖(绿)、云端冷(蓝),同色系不同明度 */
-.cb-par-col#cb-par-local { border-left-color:var(--dot-ok); background:rgba(29,158,117,.04); }
-.cb-par-col#cb-par-cloud { border-left-color:var(--primary-500); background:rgba(74,106,143,.04); }
-.cb-par-col-title { font-size:11px; color:var(--text-primary); font-weight:600; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
-.cb-par-col .cb-step { padding:2px 0 2px 17px; font-size:11px; }
-.cb-par-stream { margin-top:6px; font-size:11px; line-height:1.6; color:var(--text-secondary); min-height:14px; white-space:pre-wrap; word-break:break-word; }
-
-/* 并行摘要条（阶段2折叠后） */
-/* P6: 并行双卡片布局（本地/云端各自独立卡片）*/
-.cb-par-dual{display:flex;flex-direction:column;gap:8px;margin:6px 0}
-.cb-par-card{padding:8px 10px;border-radius:4px;background:var(--bg-secondary)}
-/* P6 #11-a: 本地绿、云端蓝浅底区分（左边框交给外层 .cb-output 统一，避免双层） */
-.cb-par-card.local{background:rgba(29,158,117,.05)}
-.cb-par-card.cloud{background:rgba(74,106,143,.05)}
+/* 并行模式嵌套卡片（生成中/完成后/历史重建 统一结构）
+   结构：.cb-step > .cb-output > .cb-par-card.local/.cloud > .cb-par-card-head + .cb-par-card-body */
+.cb-par-card{padding:8px 10px;border-radius:4px;background:var(--bg-secondary);border-left:3px solid var(--border-color)}
+/* 本地绿、云端蓝：浅底 + 彩色左边框（生成中与完成后视觉一致） */
+.cb-par-card.local{background:rgba(29,158,117,.05);border-left-color:var(--dot-ok)}
+.cb-par-card.cloud{background:rgba(74,106,143,.05);border-left-color:var(--primary-500)}
 .cb-par-card-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text-primary);margin-bottom:6px}
 .cb-par-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .cb-par-dot.local{background:var(--dot-ok)}
 .cb-par-dot.cloud{background:var(--primary-500)}
-.cb-par-card-body{font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6}
-/* P6 #13: 并行卡片各自的统计行 */
+/* 正文：white-space:normal（靠 md 的 <p>/<br> 排版），消除旧 pre-wrap 导致的多空行 */
+.cb-par-card-body{font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6;word-break:break-word}
+.cb-par-card-body p{margin:0 0 4px}
+.cb-par-card-body p:last-child{margin-bottom:0}
+/* 并行卡片各自的统计行 */
 .cb-par-card-stats{margin-top:6px;padding-top:4px;border-top:0.5px solid var(--border-color);font-size:10px;color:var(--text-muted)}
-/* 旧的 cb-par-summary 样式保留兼容 */
-.cb-par-summary { display:flex; flex-direction:column; gap:6px; margin:4px 0; }
-.cb-par-sum-item { padding:8px 12px; background:var(--bg-secondary); border-radius:6px; border-left:3px solid var(--bg-tertiary); transition:background .15s; }
-.cb-par-sum-item:hover { background:var(--bg-tertiary); }
-.cb-par-sum-item.local { border-left-color:var(--dot-ok); }
-.cb-par-sum-item.cloud { border-left-color:var(--primary-500); }
-.cb-par-sum-item.merge { border-left-color:var(--dot-run); background:rgba(127,119,221,.05); }
-.cb-par-sum-head { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text-muted); font-weight:500; margin-bottom:2px; }
-.cb-par-sum-preview { font-size:11px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* 阶段标签 */
 .phase-label { font-size:10px; color:var(--text-muted); font-weight:500; margin:8px 0 4px; letter-spacing:.5px; padding-left:0; }
