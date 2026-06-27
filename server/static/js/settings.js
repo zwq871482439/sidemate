@@ -1107,7 +1107,12 @@ function renderCloudUsage(panel, data) {
     html += '</div>';
   }
 
-  // 柱状图
+  // 柱状图（前置图例，说明分段配色含义）
+  html += '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-bottom:6px">';
+  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#9CA3AF"></span>输入</span>';
+  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent-color)"></span>输出</span>';
+  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#7C3AED"></span>推理</span>';
+  html += '</div>';
   html += _renderUsageChart(data.by_bucket || [], granLabel);
 
   // 按模型
@@ -1129,9 +1134,9 @@ function renderCloudUsage(panel, data) {
         var wOut = (_mOut / _mSum * segW).toFixed(1);
         var wRea = (segW - parseFloat(wIn) - parseFloat(wOut)).toFixed(1);
         segHtml = '<div style="height:100%;display:flex;width:' + segW + '%;border-radius:3px;overflow:hidden">';
-        if (parseFloat(wIn) > 0) segHtml += '<div style="height:100%;width:' + wIn + '%;background:#9CA3AF;opacity:0.85"></div>';
+        if (parseFloat(wIn) > 0) segHtml += '<div style="height:100%;width:' + wIn + '%;background:#6B7280"></div>';
         if (parseFloat(wOut) > 0) segHtml += '<div style="height:100%;width:' + wOut + '%;background:var(--accent-color)"></div>';
-        if (parseFloat(wRea) > 0) segHtml += '<div style="height:100%;width:' + wRea + '%;background:#7C3AED;opacity:0.85"></div>';
+        if (parseFloat(wRea) > 0) segHtml += '<div style="height:100%;width:' + wRea + '%;background:#7C3AED"></div>';
         segHtml += '</div>';
       } else {
         // 兜底：无细分数据，整条品牌色
@@ -1250,26 +1255,29 @@ function _renderUsageChart(buckets, granLabel) {
       hIn = 0; hOut = Math.max(1, Math.round((b.tokens / maxTokens) * H)); hRea = 0;
     }
     var yBase = H;  // 柱底（从下往上堆叠）
+    // 小段最小可见高度：输出/推理只要有值，至少 2px，避免占比小看不见
+    if (_sum > 0 && _out > 0 && hOut < 2 && hIn > 4) { hOut = 2; hIn -= 2; }
+    if (_sum > 0 && _rea > 0 && hRea < 2 && hIn > 4) { hRea = 2; hIn -= 2; }
     var tipParts = [esc(b.bucket) + ' · 共 ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次'];
     if (_sum > 0) {
       tipParts.push('输入 ' + _in.toLocaleString() + ' · 输出 ' + _out.toLocaleString() + (_rea > 0 ? ' · 推理 ' + _rea.toLocaleString() : '') + ' token');
     }
     var tipText = tipParts.join('&#10;');
-    // 用 <g> 包裹同一天的段，hover 整组高亮；每段独立 <rect> + <title>
+    // 用 <g> 包裹同一天的段，hover 整组高亮；各段用饱和色去掉透明，提升对比度
     svg += '<g class="usage-bar-group">';
-    // 输入段（底部，灰）
+    // 输入段（底部，深灰）
     if (hIn > 0) {
-      svg += '<rect class="usage-seg usage-seg-in" x="' + x.toFixed(1) + '" y="' + (yBase - hIn) + '" width="' + barW + '" height="' + hIn + '" rx="1" fill="#9CA3AF" opacity="0.7"><title>' + tipText + '</title></rect>';
+      svg += '<rect class="usage-seg usage-seg-in" x="' + x.toFixed(1) + '" y="' + (yBase - hIn) + '" width="' + barW + '" height="' + hIn + '" rx="1" fill="#6B7280"><title>' + tipText + '</title></rect>';
       yBase -= hIn;
     }
-    // 输出段（中部，品牌色）
+    // 输出段（中部，品牌色饱和）
     if (hOut > 0) {
-      svg += '<rect class="usage-seg usage-seg-out" x="' + x.toFixed(1) + '" y="' + (yBase - hOut) + '" width="' + barW + '" height="' + hOut + '" fill="var(--accent-color)" opacity="0.85"><title>' + tipText + '</title></rect>';
+      svg += '<rect class="usage-seg usage-seg-out" x="' + x.toFixed(1) + '" y="' + (yBase - hOut) + '" width="' + barW + '" height="' + hOut + '" fill="var(--accent-color)"><title>' + tipText + '</title></rect>';
       yBase -= hOut;
     }
-    // 推理段（顶部，紫）
+    // 推理段（顶部，紫饱和）
     if (hRea > 0) {
-      svg += '<rect class="usage-seg usage-seg-rea" x="' + x.toFixed(1) + '" y="' + (yBase - hRea) + '" width="' + barW + '" height="' + hRea + '" rx="1" fill="#7C3AED" opacity="0.8"><title>' + tipText + '</title></rect>';
+      svg += '<rect class="usage-seg usage-seg-rea" x="' + x.toFixed(1) + '" y="' + (yBase - hRea) + '" width="' + barW + '" height="' + hRea + '" rx="1" fill="#7C3AED"><title>' + tipText + '</title></rect>';
     }
     svg += '</g>';
   }
