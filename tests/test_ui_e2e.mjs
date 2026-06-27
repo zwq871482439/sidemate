@@ -171,7 +171,7 @@ async function selectAction(page, actionText) {
   return true;
 }
 
-// 发消息并等待响应，返回 { ok, newMsgCount, hadStopBtn, elapsed }
+// 发消息并等待响应，返回 { ok, newMsgCount, hadStopBtn, elapsed, content, feature }
 async function sendMessageAndWait(page, text, timeoutMs = 90000) {
   const before = await page.locator('#messages > .msg').count();
 
@@ -204,10 +204,82 @@ async function sendMessageAndWait(page, text, timeoutMs = 90000) {
       () => { const b = document.getElementById('sendBtn'); return b && b.style.display !== 'none'; },
       { timeout: 30000 }
     ).catch(() => {});
-    return { ok: true, hadStopBtn: true, newMsgCount: after - before, elapsed: Math.round((Date.now()-startT)/1000) };
+
+    // 提取响应内容和特征（质量断言用）
+    const feature = await page.evaluate(() => {
+      const msgs = document.querySelectorAll('#messages > .msg.ai');
+      const last = msgs[msgs.length - 1];
+      if (!last) return null;
+      const streamEl = last.querySelector('.stream-content');
+      return {
+        text: (streamEl || last).textContent.trim(),
+        textLen: (streamEl || last).textContent.trim().length,
+        hasCard: !!last.querySelector('.card-area'),
+        hasError: !!last.querySelector('.error-msg, [class*="error"]') ||
+                  last.textContent.includes('[ERROR]') || last.textContent.includes('请求失败'),
+        hasDownload: !!last.querySelector('.doc-download-bar, [data-doc-complete]'),
+        hasOutline: !!last.querySelector('#docOutlinePreview, #docOutlineEditor'),
+        hasCite: !!last.querySelector('[data-cite], .cite-ref'),
+        actionTag: last.querySelector('.action-tag')?.textContent?.trim() || '',
+      };
+    }).catch(() => null);
+
+    return {
+      ok: true, hadStopBtn: true,
+      newMsgCount: after - before,
+      elapsed: Math.round((Date.now()-startT)/1000),
+      content: feature?.text || '',
+      feature,
+    };
   } catch {
     return { ok: false, hadStopBtn: true, reason: '响应超时' };
   }
+}
+
+// 质量断言：验证响应内容符合预期（不只看有没有，还看好不好）
+function assertQuality(name, response, expectations) {
+  // expectations: { minLen, maxLen, notError, contains, notContains, hasFeature }
+  if (!response.ok || !response.feature) {
+    check(name + '（质量）', false, '无响应');
+    return;
+  }
+  const f = response.feature;
+  const issues = [];
+
+  // 不能是错误响应
+  if (expectations.notError !== false && f.hasError) {
+    issues.push('响应含错误');
+  }
+
+  // 长度范围
+  if (expectations.minLen && f.textLen < expectations.minLen) {
+    issues.push('过短(' + f.textLen + '<' + expectations.minLen + ')');
+  }
+  if (expectations.maxLen && f.textLen > expectations.maxLen) {
+    issues.push('过长(' + f.textLen + '>' + expectations.maxLen + ')');
+  }
+
+  // 关键词包含
+  if (expectations.contains) {
+    const text = f.text;
+    const matched = expectations.contains.some(kw => text.includes(kw));
+    if (!matched) issues.push('缺少关键词(' + expectations.contains.join('/') + ')');
+  }
+
+  // 关键词排除
+  if (expectations.notContains) {
+    const text = f.text;
+    const hit = expectations.notContains.find(kw => text.includes(kw));
+    if (hit) issues.push('含不该有的内容(' + hit + ')');
+  }
+
+  // 结构特征
+  if (expectations.hasFeature && !f[expectations.hasFeature]) {
+    issues.push('缺少结构(' + expectations.hasFeature + ')');
+  }
+
+  check(name + '（质量）', issues.length === 0,
+    issues.length ? issues.join('; ') : (f.textLen + '字 ' + response.elapsed + 's'));
 }
 
 // 验证最近一条 AI 消息的特征（含特定标签/结构）
@@ -249,10 +321,17 @@ async function test3_modeMatrix(page) {
   console.log('\n  📌 3a: 离线 + 聊天');
   if (hasLocalModel) {
     await switchAiMode(page, '离线');
-    // 离线模式默认就是 chat，不需选 action（离线 actionBar 只有 kb_qa 按钮）
     const r = await sendMessageAndWait(page, '你好，用一个字回复');
     check('离线聊天：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
-    if (r.ok) await checkLastMsgFeature(page, '离线聊天：有正文内容', f => f.text.length > 5);
+    if (r.ok) {
+      // 质量断言：要求简短（一个字指令），不能是错误，不能是空
+      assertQuality('离线聊天', r, {
+        minLen: 1, notError: true,
+        // 本地小模型可能不完全遵守"一个字"，但不应过长（<200字）或重复
+        maxLen: 200,
+        notContains: ['[ERROR]', '无法连接', '模型未加载'],
+      });
+    }
   } else {
     console.log('    ⏭️  跳过（本地模型未加载）');
   }
@@ -290,7 +369,13 @@ async function test3_modeMatrix(page) {
     await selectAction(page, '智能对话');
     const r = await sendMessageAndWait(page, '你好，简短回复');
     check('在线智能对话：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
-    if (r.ok) await checkLastMsgFeature(page, '在线对话：有响应内容', f => f.text.length > 5);
+    if (r.ok) {
+      // 在线大模型质量应更好：不能空、不能错误
+      assertQuality('在线对话', r, {
+        minLen: 2, notError: true,
+        notContains: ['[ERROR]', 'API Key', '未授权', '余额不足'],
+      });
+    }
   } else {
     console.log('    ⏭️  跳过（云端未配置）');
   }
@@ -302,7 +387,13 @@ async function test3_modeMatrix(page) {
     await selectAction(page, '聊天');
     const r = await sendMessageAndWait(page, '你好，简短回复');
     check('并行模式：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
-    if (r.ok) await checkLastMsgFeature(page, '并行模式：有响应内容', f => f.text.length > 5);
+    if (r.ok) {
+      // 并行模式融合本地+云端，质量应稳定
+      assertQuality('并行融合', r, {
+        minLen: 2, notError: true,
+        notContains: ['[ERROR]', '请求失败'],
+      });
+    }
   } else {
     console.log('    ⏭️  跳过（需本地+云端都就绪）');
   }
@@ -555,6 +646,20 @@ async function test8_stopAndResume(page) {
       );
       const after2 = await page.locator('#messages > .msg').count();
       check('停止后能继续发新消息', after2 > before2);
+      // 质量断言：停止恢复后的响应不应是错误/空
+      const resumeFeature = await page.evaluate(() => {
+        const msgs = document.querySelectorAll('#messages > .msg.ai');
+        const last = msgs[msgs.length - 1];
+        if (!last) return null;
+        return {
+          textLen: (last.querySelector('.stream-content') || last).textContent.trim().length,
+          hasError: last.textContent.includes('[ERROR]') || last.textContent.includes('请求失败'),
+        };
+      }).catch(() => null);
+      if (resumeFeature) {
+        check('停止后响应质量正常', !resumeFeature.hasError && resumeFeature.textLen > 0,
+          resumeFeature.textLen + '字');
+      }
     } catch {
       // 停止后模型可能还在收尾，宽松判断：只要 sendBtn 再次恢复就算可用
       const finalOk = await page.locator('#sendBtn').isVisible().catch(()=>false);
@@ -636,7 +741,7 @@ async function test9_kbFlow(page) {
   check('文档向量化完成', vectorized);
 
   if (vectorized) {
-    // 检索测试
+    // 检索测试（用上传文档里的概念查询）
     const searchResult = await page.evaluate(async () => {
       try {
         const r = await fetch('/api/kb/search', {
@@ -645,11 +750,19 @@ async function test9_kbFlow(page) {
           body: JSON.stringify({ query: '什么是机器学习', top_k: 3 }),
         });
         const d = await r.json();
-        return { ok: r.ok, count: (d.results || d.documents || []).length };
+        const results = d.results || d.documents || [];
+        // 质量检查：检索结果应包含上传文档的相关内容
+        const hasRelevantContent = results.some(r =>
+          (r.content || r.text || '').includes('机器学习') || (r.content || r.text || '').includes('数据训练')
+        );
+        return { ok: r.ok, count: results.length, hasRelevant: hasRelevantContent };
       } catch(e) { return { ok: false, error: e.message }; }
     }).catch(() => ({ ok: false }));
     check('知识库检索返回结果', searchResult.ok && searchResult.count > 0,
       'count=' + searchResult.count);
+    // 质量断言：检索到的内容应与查询相关（不只是返回任意结果）
+    check('检索结果内容相关（质量）', searchResult.hasRelevant,
+      searchResult.hasRelevant ? '命中"机器学习/数据训练"' : '未命中相关内容');
   }
 
   // 清理：删除测试文档
