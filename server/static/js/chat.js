@@ -93,6 +93,25 @@ function _bindCitationClicks(el) {
   });
 }
 
+// 绑定推理步骤详情的点击展开/折叠（事件委托，覆盖历史渲染的消息）
+// 流式渲染的步骤在 chat.js:2964 已逐个绑 addEventListener，这里只补历史渲染
+function _bindStepToggle(el) {
+  if (!el) el = document.getElementById('messages');
+  if (!el) return;
+  el.querySelectorAll('.cb-step-expandable').forEach(function(step) {
+    // 避免重复绑定（流式渲染已绑过的会有 cursor:pointer 但无标记，用数据属性去重）
+    if (step.getAttribute('data-toggle-bound')) return;
+    step.setAttribute('data-toggle-bound', '1');
+    step.addEventListener('click', function(e) {
+      var det = this.querySelector('.cb-step-detail');
+      if (det) {
+        det.style.display = det.style.display === 'none' ? 'block' : 'none';
+        this.classList.toggle('cb-step-expanded');
+      }
+    });
+  });
+}
+
 // 把正文里的 [1] [2] 渲染成可交互的引用上标（链接到参考来源）
 function _renderCitationSuperscripts(html, kbSources) {
   if (!kbSources || !kbSources.length) return html;
@@ -364,6 +383,7 @@ function renderMessages() {
     if (typeof _renderHtmlPreview === 'function') _renderHtmlPreview(el);
     if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
     _bindCitationClicks(el);
+    _bindStepToggle(el);  // 绑定推理步骤详情展开/折叠（历史渲染的消息）
     if (_lastScrollBottom) { el.scrollTop = el.scrollHeight; }
     return;
   }
@@ -373,6 +393,7 @@ function renderMessages() {
 
   // 绑定引用上标点击：高亮对应参考来源
   _bindCitationClicks(el);
+  _bindStepToggle(el);  // 绑定推理步骤详情展开/折叠
 
   // 恢复未完成的文档提纲（页面刷新后重建确认栏）
   if (currentMessages.length > 0) {
@@ -2470,13 +2491,14 @@ var CardRenderer = (function() {
         if (s.tools && s.tools.length) {
           for (var ti = 0; ti < s.tools.length; ti++) {
             var t = s.tools[ti];
-            html += '<div class="cb-step' + (t.detail ? ' cb-step-expandable' : '') + '" data-status="done">' +
+            // cb-step-expandable: 可点击展开详情；与流式渲染一致，detail 默认折叠
+            html += '<div class="cb-step' + (t.detail ? ' cb-step-expandable' : '') + '" data-status="done"' + (t.detail ? ' style="cursor:pointer"' : '') + '>' +
               '<span class="cb-dot ok"></span>' +
               '<div class="cb-step-row"><span class="cb-label">' + _esc(t.label || t.status) + '</span></div>';
             // P6: 重建工具详情（detail 统一存储为 HTML 字符串，直接 innerHTML 重建）
-            // 修复 bug: 此前用 _esc(t.detail) 导致搜索结果的 HTML 被转义成源码显示
+            // 默认折叠 display:none，与流式渲染一致；点击展开（事件委托见 _bindStepToggle）
             if (t.detail) {
-              html += '<div class="cb-step-detail" style="display:block">' + t.detail + '</div>';
+              html += '<div class="cb-step-detail" style="display:none">' + t.detail + '</div>';
             }
             html += '</div>';
           }

@@ -180,6 +180,64 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 #messages::-webkit-scrollbar-track { background:transparent; }
 #messages::-webkit-scrollbar-thumb { background:#D1D5DB; border-radius:3px; }
 #messages::-webkit-scrollbar-thumb:hover { background:#9CA3AF; }
+/* 统一滚动条样式（灰色 5px，与聊天区 #messages 一致）
+   覆盖所有通用滚动区域；KB 主题区(.kb-main-body/.kb-float-list)保持紫色主题 */
+.cb-step-detail::-webkit-scrollbar,
+.cb-fetch-summary::-webkit-scrollbar,
+.chat-sidebar-list::-webkit-scrollbar,
+.kb-sidebar-list::-webkit-scrollbar,
+.kb-left-panel::-webkit-scrollbar,
+.settings-nav::-webkit-scrollbar,
+.agent-steps::-webkit-scrollbar,
+.agent-thinking::-webkit-scrollbar,
+.kb-diag-body::-webkit-scrollbar,
+.kb-file-popup::-webkit-scrollbar,
+.kb-dup-list::-webkit-scrollbar,
+.kb-sidebar-tokens-wrap::-webkit-scrollbar,
+.doc-outline-preview::-webkit-scrollbar { width:5px; }
+.cb-step-detail::-webkit-scrollbar-track,
+.cb-fetch-summary::-webkit-scrollbar-track,
+.chat-sidebar-list::-webkit-scrollbar-track,
+.kb-sidebar-list::-webkit-scrollbar-track,
+.kb-left-panel::-webkit-scrollbar-track,
+.settings-nav::-webkit-scrollbar-track,
+.agent-steps::-webkit-scrollbar-track,
+.agent-thinking::-webkit-scrollbar-track,
+.kb-diag-body::-webkit-scrollbar-track,
+.kb-file-popup::-webkit-scrollbar-track,
+.kb-dup-list::-webkit-scrollbar-track,
+.kb-sidebar-tokens-wrap::-webkit-scrollbar-track,
+.doc-outline-preview::-webkit-scrollbar-track { background:transparent; }
+.cb-step-detail::-webkit-scrollbar-thumb,
+.cb-fetch-summary::-webkit-scrollbar-thumb,
+.chat-sidebar-list::-webkit-scrollbar-thumb,
+.kb-sidebar-list::-webkit-scrollbar-thumb,
+.kb-left-panel::-webkit-scrollbar-thumb,
+.settings-nav::-webkit-scrollbar-thumb,
+.agent-steps::-webkit-scrollbar-thumb,
+.agent-thinking::-webkit-scrollbar-thumb,
+.kb-diag-body::-webkit-scrollbar-thumb,
+.kb-file-popup::-webkit-scrollbar-thumb,
+.kb-dup-list::-webkit-scrollbar-thumb,
+.kb-sidebar-tokens-wrap::-webkit-scrollbar-thumb,
+.doc-outline-preview::-webkit-scrollbar-thumb { background:#D1D5DB; border-radius:3px; }
+.cb-step-detail::-webkit-scrollbar-thumb:hover,
+.cb-fetch-summary::-webkit-scrollbar-thumb:hover,
+.chat-sidebar-list::-webkit-scrollbar-thumb:hover,
+.kb-sidebar-list::-webkit-scrollbar-thumb:hover,
+.kb-left-panel::-webkit-scrollbar-thumb:hover,
+.settings-nav::-webkit-scrollbar-thumb:hover,
+.agent-steps::-webkit-scrollbar-thumb:hover,
+.agent-thinking::-webkit-scrollbar-thumb:hover,
+.kb-diag-body::-webkit-scrollbar-thumb:hover,
+.kb-file-popup::-webkit-scrollbar-thumb:hover,
+.kb-dup-list::-webkit-scrollbar-thumb:hover,
+.kb-sidebar-tokens-wrap::-webkit-scrollbar-thumb:hover,
+.doc-outline-preview::-webkit-scrollbar-thumb:hover { background:#9CA3AF; }
+/* Firefox: 统一细滚动条 */
+.cb-step-detail, .chat-sidebar-list, .kb-sidebar-list, .kb-left-panel,
+.settings-nav, .agent-steps, .agent-thinking, .kb-diag-body, .kb-file-popup,
+.kb-dup-list, .kb-sidebar-tokens-wrap, .doc-outline-preview { scrollbar-width:thin; scrollbar-color:#D1D5DB transparent; }
 /* 卡片式明盒：扁平卡片 + 3px 左色条（蓝=用户 / 紫=AI），不再用气泡 */
 .msg{width:100%;padding:8px 14px;border-radius:8px;font-size:.9em;line-height:1.7;word-wrap:break-word;overflow-wrap:break-word;overflow:visible;position:relative;background:var(--card-bg);border:0.5px solid var(--border-color)}
 .msg::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:8px 0 0 8px}
