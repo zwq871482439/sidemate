@@ -2363,6 +2363,14 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .usage-records::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
 .usage-records::-webkit-scrollbar-thumb:hover{background:#9CA3AF}
 .usage-records{scrollbar-width:thin;scrollbar-color:#D1D5DB transparent}
+/* 云端用量柱状图：分段（输入灰/输出品牌色/推理紫）+ hover 动画 */
+.usage-bar-group { cursor: pointer; transition: transform 0.2s ease; transform-origin: bottom center; transform-box: fill-box; }
+.usage-bar-group:hover { transform: scaleY(1.08); }
+.usage-seg { transition: opacity 0.2s ease; }
+.usage-bar-group:hover .usage-seg { opacity: 1 !important; }
+.usage-bar-group:hover .usage-seg-in { filter: brightness(1.1); }
+.usage-bar-group:hover .usage-seg-out { filter: brightness(1.08); }
+.usage-bar-group:hover .usage-seg-rea { filter: brightness(1.12); }
 .settings-content .card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:14px;margin-bottom:10px}
 .settings-content .card h4{font-size:12px;font-weight:500;margin-bottom:8px;color:var(--text-primary)}
 .settings-content .row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px}

@@ -1197,17 +1197,45 @@ function _renderUsageChart(buckets, granLabel) {
   var svg = '<svg width="100%" viewBox="0 0 ' + W + ' ' + (H + padB) + '" style="display:block;max-width:100%">';
   for (var i = 0; i < axis.length; i++) {
     var b = axis[i];
-    var h = Math.max(1, Math.round((b.tokens / maxTokens) * H));
+    if (b.tokens <= 0) continue;
     var x = padL + i * slot + gap / 2;
-    var y = H - h;
-    if (b.tokens > 0) {
-      svg += '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + barW + '" height="' + h + '" rx="1" fill="var(--accent-color)" opacity="0.85">';
-      svg += '<title>' + esc(b.bucket) + ' · 共 ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次&#10;'
-        + '输入 ' + (b.input||0).toLocaleString() + ' · 输出 ' + (b.output||0).toLocaleString()
-        + ((b.reasoning||0) > 0 ? ' · 推理 ' + (b.reasoning||0).toLocaleString() : '')
-        + ' token</title>';
-      svg += '</rect>';
+    // 分段：输入(下,灰) / 输出(中,品牌色) / 推理(上,紫)
+    // 按各自占比拆高度；三者都 0 时用 tokens 整根（兼容旧记录 input/output 缺失）
+    var _in = b.input || 0, _out = b.output || 0, _rea = b.reasoning || 0;
+    var _sum = _in + _out + _rea;
+    var hIn, hOut, hRea;
+    if (_sum > 0) {
+      var hTotal = Math.max(1, Math.round((b.tokens / maxTokens) * H));
+      hIn = Math.round((_in / _sum) * hTotal);
+      hOut = Math.round((_out / _sum) * hTotal);
+      hRea = hTotal - hIn - hOut;  // 余数给推理，避免四舍五入丢像素
+    } else {
+      // 旧记录只有 tokens 总数，无细分：整根按输出色
+      hIn = 0; hOut = Math.max(1, Math.round((b.tokens / maxTokens) * H)); hRea = 0;
     }
+    var yBase = H;  // 柱底（从下往上堆叠）
+    var tipParts = [esc(b.bucket) + ' · 共 ' + b.tokens.toLocaleString() + ' token / ' + b.calls + ' 次'];
+    if (_sum > 0) {
+      tipParts.push('输入 ' + _in.toLocaleString() + ' · 输出 ' + _out.toLocaleString() + (_rea > 0 ? ' · 推理 ' + _rea.toLocaleString() : '') + ' token');
+    }
+    var tipText = tipParts.join('&#10;');
+    // 用 <g> 包裹同一天的段，hover 整组高亮；每段独立 <rect> + <title>
+    svg += '<g class="usage-bar-group">';
+    // 输入段（底部，灰）
+    if (hIn > 0) {
+      svg += '<rect class="usage-seg usage-seg-in" x="' + x.toFixed(1) + '" y="' + (yBase - hIn) + '" width="' + barW + '" height="' + hIn + '" rx="1" fill="#9CA3AF" opacity="0.7"><title>' + tipText + '</title></rect>';
+      yBase -= hIn;
+    }
+    // 输出段（中部，品牌色）
+    if (hOut > 0) {
+      svg += '<rect class="usage-seg usage-seg-out" x="' + x.toFixed(1) + '" y="' + (yBase - hOut) + '" width="' + barW + '" height="' + hOut + '" fill="var(--accent-color)" opacity="0.85"><title>' + tipText + '</title></rect>';
+      yBase -= hOut;
+    }
+    // 推理段（顶部，紫）
+    if (hRea > 0) {
+      svg += '<rect class="usage-seg usage-seg-rea" x="' + x.toFixed(1) + '" y="' + (yBase - hRea) + '" width="' + barW + '" height="' + hRea + '" rx="1" fill="#7C3AED" opacity="0.8"><title>' + tipText + '</title></rect>';
+    }
+    svg += '</g>';
   }
   // 基线
   svg += '<line x1="' + padL + '" y1="' + H + '" x2="' + (W - padR) + '" y2="' + H + '" stroke="var(--border-color)" stroke-width="0.5"/>';
