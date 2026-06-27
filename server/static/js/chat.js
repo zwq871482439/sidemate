@@ -2469,9 +2469,10 @@ var CardRenderer = (function() {
             html += '<div class="cb-step' + (t.detail ? ' cb-step-expandable' : '') + '" data-status="done">' +
               '<span class="cb-dot ok"></span>' +
               '<div class="cb-step-row"><span class="cb-label">' + _esc(t.label || t.status) + '</span></div>';
-            // P6: 重建工具详情
+            // P6: 重建工具详情（detail 统一存储为 HTML 字符串，直接 innerHTML 重建）
+            // 修复 bug: 此前用 _esc(t.detail) 导致搜索结果的 HTML 被转义成源码显示
             if (t.detail) {
-              html += '<div class="cb-step-detail" style="display:block">' + _esc(t.detail) + '</div>';
+              html += '<div class="cb-step-detail" style="display:block">' + t.detail + '</div>';
             }
             html += '</div>';
           }
@@ -2925,6 +2926,9 @@ var CardRenderer = (function() {
                   (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : ''));
               }
               // P6 #4-a/#4-b: 详情展示优先级: results列表(搜索) > summary(阅读) > detail(兜底)
+              // 注意: tool.detail 统一存储为 HTML 字符串（供 renderHistory 用 innerHTML 重建）
+              //   - 搜索结果: 已构造的 HTML（内部字段已 _esc）
+              //   - 纯文本(summary/detail): 存储前先 _esc 转义，保证 renderHistory 不二次转义
               var _detailHtml = '';
               if (d.results && d.results.length) {
                 // 搜索结果列表: 编号 + 标题 + 摘要
@@ -2936,12 +2940,12 @@ var CardRenderer = (function() {
                 }).join('');
                 tool.detail = _detailHtml;  // 存储供序列化(历史回放用)
               } else if (d.summary) {
-                // 阅读正文摘要
+                // 阅读正文摘要（纯文本，存储前转义为 HTML 安全串）
                 _detailHtml = '<div class="cb-fetch-summary">' + _esc(d.summary) + '</div>';
-                tool.detail = d.summary;
+                tool.detail = _detailHtml;
               } else if (d.detail) {
                 _detailHtml = _esc(d.detail);
-                tool.detail = d.detail;
+                tool.detail = _detailHtml;
               }
               if (_detailHtml) {
                 tool.el.classList.add('cb-step-expandable');
