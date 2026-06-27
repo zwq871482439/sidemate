@@ -178,9 +178,9 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 #messages{flex:1;overflow-y:auto;padding:8px 16px;display:flex;flex-direction:column;gap:12px;min-height:0;overflow-x:hidden}
 #messages::-webkit-scrollbar { width:5px; }
 #messages::-webkit-scrollbar-track { background:transparent; }
-#messages::-webkit-scrollbar-thumb { background:#86EFAC; border-radius:3px; }
-#messages::-webkit-scrollbar-thumb:hover { background:#4ADE80; }
-#messages { scrollbar-width:thin; scrollbar-color:#86EFAC transparent; }
+#messages::-webkit-scrollbar-thumb { background:#059669; border-radius:3px; }
+#messages::-webkit-scrollbar-thumb:hover { background:#047857; }
+#messages { scrollbar-width:thin; scrollbar-color:#059669 transparent; }
 /* 统一滚动条样式（浅绿色 5px，与聊天区 #messages 一致）
    覆盖所有通用滚动区域；KB 主题区(.kb-main-body/.kb-float-list)保持紫色主题 */
 .cb-step-detail::-webkit-scrollbar,
@@ -221,7 +221,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .kb-file-popup::-webkit-scrollbar-thumb,
 .kb-dup-list::-webkit-scrollbar-thumb,
 .kb-sidebar-tokens-wrap::-webkit-scrollbar-thumb,
-.doc-outline-preview::-webkit-scrollbar-thumb { background:#86EFAC; border-radius:3px; }
+.doc-outline-preview::-webkit-scrollbar-thumb { background:#059669; border-radius:3px; }
 .cb-step-detail::-webkit-scrollbar-thumb:hover,
 .cb-fetch-summary::-webkit-scrollbar-thumb:hover,
 .chat-sidebar-list::-webkit-scrollbar-thumb:hover,
@@ -234,11 +234,11 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .kb-file-popup::-webkit-scrollbar-thumb:hover,
 .kb-dup-list::-webkit-scrollbar-thumb:hover,
 .kb-sidebar-tokens-wrap::-webkit-scrollbar-thumb:hover,
-.doc-outline-preview::-webkit-scrollbar-thumb:hover { background:#4ADE80; }
+.doc-outline-preview::-webkit-scrollbar-thumb:hover { background:#047857; }
 /* Firefox: 统一细滚动条 */
 .cb-step-detail, .chat-sidebar-list, .kb-sidebar-list, .kb-left-panel,
 .settings-nav, .agent-steps, .agent-thinking, .kb-diag-body, .kb-file-popup,
-.kb-dup-list, .kb-sidebar-tokens-wrap, .doc-outline-preview { scrollbar-width:thin; scrollbar-color:#86EFAC transparent; }
+.kb-dup-list, .kb-sidebar-tokens-wrap, .doc-outline-preview { scrollbar-width:thin; scrollbar-color:#059669 transparent; }
 /* 卡片式明盒：扁平卡片 + 3px 左色条（蓝=用户 / 紫=AI），不再用气泡 */
 .msg{width:100%;padding:8px 14px;border-radius:8px;font-size:.9em;line-height:1.7;word-wrap:break-word;overflow-wrap:break-word;overflow:visible;position:relative;background:var(--card-bg);border:0.5px solid var(--border-color)}
 .msg::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:8px 0 0 8px}
@@ -2352,13 +2352,13 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .settings-content{flex:1;overflow-y:auto;padding:16px;min-width:0}
 .settings-content::-webkit-scrollbar{width:5px}
 .settings-content::-webkit-scrollbar-track{background:transparent}
-.settings-content::-webkit-scrollbar-thumb{background:#86EFAC;border-radius:3px}
-.settings-content::-webkit-scrollbar-thumb:hover{background:#4ADE80}
+.settings-content::-webkit-scrollbar-thumb{background:#059669;border-radius:3px}
+.settings-content::-webkit-scrollbar-thumb:hover{background:#047857}
 /* 云端用量「最近调用」列表滚动条（与对话区一致） */
 .usage-records::-webkit-scrollbar{width:5px}
 .usage-records::-webkit-scrollbar-track{background:transparent}
-.usage-records::-webkit-scrollbar-thumb{background:#86EFAC;border-radius:3px}
-.usage-records::-webkit-scrollbar-thumb:hover{background:#4ADE80}
+.usage-records::-webkit-scrollbar-thumb{background:#059669;border-radius:3px}
+.usage-records::-webkit-scrollbar-thumb:hover{background:#047857}
 .settings-content .card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:14px;margin-bottom:10px}
 .settings-content .card h4{font-size:12px;font-weight:500;margin-bottom:8px;color:var(--text-primary)}
 .settings-content .row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px}
