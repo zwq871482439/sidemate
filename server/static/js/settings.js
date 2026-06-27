@@ -1109,9 +1109,28 @@ function renderCloudUsage(panel, data) {
       var m = data.by_model[i];
       var pct = maxModel > 0 ? Math.round(m.tokens / maxModel * 100) : 0;
       var sharePct = total > 0 ? Math.round(m.tokens / total * 100) : 0;
-      html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px" title="' + esc(m.model) + ' · 共 ' + m.tokens.toLocaleString() + ' token (' + sharePct + '%)&#10;输入 ' + (m.input||0).toLocaleString() + ' · 输出 ' + (m.output||0).toLocaleString() + ((m.reasoning||0) > 0 ? ' · 推理 ' + (m.reasoning||0).toLocaleString() : '') + ' token">';
+      // 分段进度条：输入(灰)/输出(品牌色)/推理(紫)，与柱状图配色一致
+      var _mIn = m.input || 0, _mOut = m.output || 0, _mRea = m.reasoning || 0;
+      var _mSum = _mIn + _mOut + _mRea;
+      var segHtml = '';
+      if (_mSum > 0 && pct > 0) {
+        // 各段宽度 = 该模型在条中的占比 × 该段的 token 占比
+        var segW = pct;  // 整条宽度（%）
+        var wIn = (_mIn / _mSum * segW).toFixed(1);
+        var wOut = (_mOut / _mSum * segW).toFixed(1);
+        var wRea = (segW - parseFloat(wIn) - parseFloat(wOut)).toFixed(1);
+        segHtml = '<div style="height:100%;display:flex;width:' + segW + '%;border-radius:3px;overflow:hidden">';
+        if (parseFloat(wIn) > 0) segHtml += '<div style="height:100%;width:' + wIn + '%;background:#9CA3AF;opacity:0.85"></div>';
+        if (parseFloat(wOut) > 0) segHtml += '<div style="height:100%;width:' + wOut + '%;background:var(--accent-color)"></div>';
+        if (parseFloat(wRea) > 0) segHtml += '<div style="height:100%;width:' + wRea + '%;background:#7C3AED;opacity:0.85"></div>';
+        segHtml += '</div>';
+      } else {
+        // 兜底：无细分数据，整条品牌色
+        segHtml = '<div style="height:100%;width:' + pct + '%;background:var(--accent-color);border-radius:3px"></div>';
+      }
+      html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px" title="' + esc(m.model) + ' · 共 ' + m.tokens.toLocaleString() + ' token (' + sharePct + '%)&#10;输入 ' + _mIn.toLocaleString() + ' · 输出 ' + _mOut.toLocaleString() + (_mRea > 0 ? ' · 推理 ' + _mRea.toLocaleString() : '') + ' token">';
       html += '<span style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' + esc(m.model) + '</span>';
-      html += '<div style="flex:1;height:10px;background:var(--bg-secondary);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--accent-color);border-radius:3px"></div></div>';
+      html += '<div style="flex:1;height:10px;background:var(--bg-secondary);border-radius:3px;overflow:hidden">' + segHtml + '</div>';
       html += '<span style="width:90px;text-align:right;flex-shrink:0;color:var(--text-muted)">' + m.tokens.toLocaleString() + ' (' + sharePct + '%)</span>';
       html += '</div>';
     }
