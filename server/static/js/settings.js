@@ -1179,7 +1179,15 @@ function _renderUsageChart(buckets, granLabel) {
   var hasData = false;
   for (var ai = 0; ai < axis.length; ai++) {
     var hit = byKey[axis[ai].bucket];
-    if (hit) { axis[ai].tokens = hit.tokens || 0; axis[ai].calls = hit.calls || 0; if (hit.tokens) hasData = true; }
+    // 复制 tokens/calls + input/output/reasoning（分段柱需要，缺字段会导致不分段）
+    if (hit) {
+      axis[ai].tokens = hit.tokens || 0;
+      axis[ai].calls = hit.calls || 0;
+      axis[ai].input = hit.input || 0;
+      axis[ai].output = hit.output || 0;
+      axis[ai].reasoning = hit.reasoning || 0;
+      if (hit.tokens) hasData = true;
+    }
   }
   if (!hasData) {
     return '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;background:var(--bg-secondary);border-radius:6px">' + (_cloudUsageRange === 1 ? '今日' : '本周') + '暂无调用记录</div>';
