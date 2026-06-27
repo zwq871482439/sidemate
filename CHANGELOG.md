@@ -2,9 +2,11 @@
 
 > 所有版本改动记录。遵循 [keepachangelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。日期格式：YYYY-MM-DD
 
-
+> 详细条目见 [docs/设计文档/用户文档/CHANGELOG.md](docs/设计文档/用户文档/CHANGELOG.md)
 
 ---
+
+
 
 ## [0.9.6] - 2026-06-21 — P6「前端统一化 + 三模式」
 

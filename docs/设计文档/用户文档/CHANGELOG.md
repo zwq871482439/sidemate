@@ -4,34 +4,91 @@
 
 ---
 
-## v0.9.7（2026-06-24）— Indigo + ClearBox
+## v0.9.7（计划中）— Indigo + ClearBox
+
+> ⚠️ **本条目为待发版** —— v0.9.7 功能已在 main 分支实现，但**尚未发版**（当前 `config.py` 仍为 0.9.6）。功能列表仅供参考。
+>
+> **本次发布** 在 P6 基础上做「**视觉精修 + 透明度升级 + 用户引导**」三大方向。
 
 ### 🆕 新功能
 
 | 功能 | 说明 |
 |------|------|
-| **AI 洞察仪表盘** | 环形图 + 分类图例 + 追问按钮，侧栏色点/图例/扇区三重联动 |
-| **KB v2 Indigo 设计** | 渐变顶条 + 结构化 badge + 过渡标头 + pinned 卡片 |
-| **CardRenderer** | 卡片式明盒渲染器，左色条 + AgentTimeline + 折叠摘要 |
-| **提纲编辑器** | 系统字体 + 预览切换 + 刷新恢复 |
+| **新手指引系统（Onboarding）** | 两阶段设计：阶段1欢迎弹窗（按 AI/KB/云端状态智能分支）+ 阶段2交互式 TourGuide（5 步聚光引导） |
+| **AI 洞察仪表盘 v2** | 环形图 SVG（单分类双弧画全圆）+ 分类图例 + 追问按钮 + 侧栏色点/图例/扇区三重联动 |
+| **KB v2 Indigo 设计语言** | 渐变顶条 + 结构化 badge + 过渡标头 + pinned 卡片 + 双工具栏 sticky（浮层效果） |
+| **CardRenderer 卡片式明盒** | 左色条（蓝=用户/紫=AI）+ 折叠统计 + AgentTimeline + KB 来源卡片 |
+| **提纲编辑器** | 系统 UI 字体 + 编辑/预览切换（min-height 220px / 240px）+ 页面刷新后自动恢复 |
+| **Onboarding 入口** | 设置页「关于」分组新增「重新查看新手指引」按钮（`resetOnboarding()`） |
+| **AI 智能筛选占位** | 未生成聚类的文档统一归入「正在等待智能筛选」分类（虚线空心圆点） |
+| **自定义滚动条** | Chat 区 `#D1D5DB`（indigo-300）/ KB 区 `#CFCDF0`（indigo-200）/ 浮动工具栏 Indigo 发光 |
 
 ### 🔧 架构重构
 
 | 变更 | 说明 |
 |------|------|
-| 新增 `core/step_model.py` | 统一步骤流数据模型 |
-| local_pipeline 重构 | KB 块散乱 yield → Step 对象 |
-| memory_local 摘要化 | 并行模式接入 session 压缩 |
-| 输出预留动态化 | 释放一半窗口给历史 |
+| **`core/step_model.py` 步骤流数据模型** | 用 `@dataclass Step` 替代 6+ 散落计时变量；统一 SSE 事件格式 |
+| **`local_pipeline.py` 重构** | KB 块散乱 `yield` → Step 对象流；前端 AgentTimeline 可逐阶段展开 |
+| **`memory_local` 摘要化** | 并行模式接入 session 压缩；local 与 cloud 记忆独立维护 |
+| **输出预留动态化** | 前端消息区释放一半窗口给历史消息 |
+| **LLM 洞察两轮化** | 第一轮合并 tag → 第二轮独立生成问题；不再用空 category 喂数据 |
+| **批量私密对话框文案优化** | 「设为私密后，云端模型将无法读取该文档内容」等清晰提示 |
 
 ### 🐛 关键修复
 
 | Bug | 修复 |
 |-----|------|
-| 温度失效 | 策略路由温度链路修复 |
-| 截断同步 | truncate 事件同步前端正文 |
-| 上下文计数器重构 | 精确注入量 + 双重排除 |
-| 并行 drain 丢事件 | 合并修复 |
+| 温度失效 | 策略路由温度链路修复；模板 override 不再被默认覆盖 |
+| 截断不同步 | `truncate` 事件同步前端正文；避免「内容被剪但 UI 没显示」 |
+| 上下文计数器不准确 | 精确注入量 + 双重排除（已注入文档不再二次计入） |
+| 并行 drain 丢事件 | 本地与云端事件流不再相互吞 |
+| 页面刷新后提纲断 | 抽取共享函数 `_createDocConfirmBar()`；`renderMessages()` 末尾检测 `doc_phase:'outline'` 重建编辑器 |
+| Onboarding 切 Tab 失效 | 用 `_tourFindTabBtn()` 替代失效的 `[data-tab]` 选择器（兼容 `onclick="switchTab(...)"` 形式） |
+| Onboarding spotlight 位置偏差 | 用 box-shadow 扩散替代 `path(evenodd, ...)` 无效语法 |
+| Onboarding 目标元素超出视口 | KB Tab 等可滚动 Tab 中先 `scrollIntoView({block:'center'})` 再定位 |
+| Onboarding 箭头位置偏差 | 相对卡片左边偏移 clamp 到 [8, cardW-8] |
+| Onboarding 卡片掉出页面 | 屏幕边缘小视口下卡片 clamp 到 [8, viewW-8] / [8, viewH-8] |
+| Onboarding resetOnboarding 切 Tab 失败 | 兜底方案采用轮询等待 `#chatMode` offsetWidth > 0 |
+| Insights 瞎编 | 第一轮 merge 吃到空 data 时 fallback 到 `doc.tags` |
+| 追问空泛 | 嵌在 insight prompt 里 → 独立 LLM 调用 |
+| 环形图单分类不闭合 | 100% 扇形 SVG 退化 → 双弧画全圆 |
+| 批量私密对话撤销所有令牌 | 取消私密时主动撤销该文档所有未过期令牌（fail-safe） |
+| search 令牌读不到私密 | 修复 `filter_private_docs` 缩小令牌作用域（search 不能读私密全文） |
+
+### 🔒 安全加固（v0.9.6 已实现，本版本起完整集成）
+
+> 17 项安全与质量修复，详情见 v0.9.6 CHANGELOG "2026-06-27 安全加固补充" 一节。
+
+主要项：
+- 路径穿越闭合（`deep_read` / `_chat_root` / backup）
+- calculator AST 纯递归求值器（替代 eval）
+- SSRF 防护（`fetch_url` 接入 `confirm_external_read` 钩子）
+- XSS 收敛（DOMPurify 移除 `onclick`/`style` 死配置）
+- 扩展包 SHA256 校验（删除 HMAC 摆设层）
+- Ollama MANAGED-EXTERNAL 状态机
+- CORS 严格默认 + 隐私安全 tab 开关
+- 73 项安全单测
+
+### 🗑️ 移除 / 清理
+
+- **Inter Font @font-face 死代码**（28 行未生效注释）
+- **faster-whisper 第三方许可声明**（已不再依赖）
+- **LICENSE 升级到 v1.1**：邮箱更新为 `sidemate@deskware.cn`，版权方改为「Sidemate Team」
+
+### 📚 新增文档
+
+| 文档 | 路径 |
+|------|------|
+| 新手指引使用手册 | `docs/设计文档/用户文档/v0.9.7-新手指引使用手册.md` |
+| 知识库权限与令牌说明 | `docs/设计文档/用户文档/v0.9.7-知识库权限与令牌.md` |
+| AI 洞察仪表盘使用指南 | `docs/设计文档/用户文档/v0.9.7-AI洞察仪表盘使用指南.md` |
+| 三模式切换使用指南 | `docs/设计文档/用户文档/v0.9.7-三模式切换使用指南.md`（覆盖旧 `并行模式使用指南.md`） |
+| Action 模式使用手册 | `docs/设计文档/用户文档/v0.9.7-Action模式使用手册.md` |
+| 设置页使用手册 | `docs/设计文档/用户文档/v0.9.7-设置页使用手册.md` |
+| Onboarding 前端设计 | `docs/设计文档/架构与设计/v0.9.7-Onboarding前端设计.md` |
+| AI 洞察仪表盘设计 | `docs/设计文档/架构与设计/v0.9.7-AI洞察仪表盘设计.md` |
+| ClearBox 明盒设计 | `docs/设计文档/架构与设计/v0.9.7-ClearBox明盒设计.md` |
+| step_model 设计 | `docs/设计文档/架构与设计/v0.9.7-step_model设计.md` |
 
 > 完整日志见 [CHANGELOG.md](../../../CHANGELOG.md)
 
