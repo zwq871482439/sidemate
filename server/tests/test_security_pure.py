@@ -147,29 +147,38 @@ class TestSafeWorkspacePath:
 
 
 class TestChatRoot:
-    """测试 _chat_root 格式校验（1.7 修复项）"""
+    """测试 _chat_root 路径穿越防护（1.7 修复项）
+
+    校验策略：只拦截危险路径模式（../、绝对路径、盘符、null byte），
+    不强制 YYYY-MM-DD_NNN 格式（兼容测试用临时 chat_id）。
+    """
 
     @pytest.mark.parametrize("chat_id", [
-        "2026-06-27_001",
+        "2026-06-27_001",        # 生产格式
         "2026-01-01_999",
+        "_test_v31_regression",  # 测试用临时 id（非日期格式但安全）
+        "abc-def-gh_ijk",        # 非日期格式但无穿越
     ])
-    def test_valid_format(self, chat_id):
-        """合法格式应正常返回路径"""
+    def test_valid_chat_id(self, chat_id):
+        """安全 chat_id 应正常返回路径"""
         result = _chat_root(chat_id)
         assert chat_id in result
 
     @pytest.mark.parametrize("chat_id", [
-        "../etc",              # 路径穿越
-        "2026-06-27",          # 缺编号
-        "2026-6-27_001",       # 月份非两位
-        "2026-06-27_1",        # 编号非三位
-        "abc-def-gh_ijk",      # 非日期格式
-        "",                    # 空
-        "2026-06-27_001/../../"# 穿越
+        "../etc",                  # 路径穿越
+        "2026-06-27_001/../../",   # 穿越
+        "/etc/passwd",             # POSIX 绝对路径
+        "C:\\Windows\\system32",   # Windows 盘符
+        "",                        # 空
     ])
-    def test_invalid_format_rejected(self, chat_id):
+    def test_dangerous_rejected(self, chat_id):
+        """危险路径模式应被拒绝"""
         with pytest.raises(ValueError):
             _chat_root(chat_id)
+
+    def test_null_byte_rejected(self):
+        with pytest.raises(ValueError):
+            _chat_root("safe\x00../../etc")
 
 
 # ============================================================

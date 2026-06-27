@@ -317,12 +317,12 @@ def test_static_review_bugs():
     check("BUG#3 确认/修复：chat.js 含 workspace_edited/editing",
           js_has_edited, "缺失则前端不显示 edit 步骤" if not js_has_edited else "")
 
-    # Bug 4: _collect_assets_block 已废弃（扫描不存在的 assets/ 目录）
-    from core.agent_tools import _collect_assets_block
-    # assets 目录不存在时应返回空字符串
-    result = _collect_assets_block(TEST_CHAT_DIR)
-    check("BUG#4 _collect_assets_block 返回空（assets 已废）",
-          result == "", "assets/ 不存在时应返回空")
+    # Bug 4: _collect_assets_block 已彻底删除（安全审查 #8：死代码清理）
+    # 原测试验证它返回空，现函数已删除，改为验证不存在
+    import core.agent_tools as _at
+    has_func = hasattr(_at, '_collect_assets_block')
+    check("BUG#4 _collect_assets_block 已删除（死代码清理）",
+          not has_func, "该函数是废弃死代码，应已删除" if has_func else "")
 
     # Bug 5: _inject_session_context 应已删除 _collect_assets_block 调用
     # 检查方式：函数定义可以保留（兼容历史数据），但 _inject_session_context 函数体不应再调用

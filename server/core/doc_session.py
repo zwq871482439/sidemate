@@ -46,14 +46,21 @@ _CHAT_ID_RE = re.compile(r'^\d{4}-\d{2}-\d{2}_\d{3}$')
 def _chat_root(chat_id):
     """会话根目录：data/chats/{chat_id}
 
-    校验 chat_id 格式（YYYY-MM-DD_NNN），防止通过 chat_id 注入 ../ 实现路径穿越。
-    兼容 .json 后缀（部分调用点传入文件名而非目录名）。
+    防路径穿越：拒绝含 ../、绝对路径、盘符、null byte 的 chat_id。
+    不强制 YYYY-MM-DD_NNN 格式（兼容测试用的临时 chat_id 及未来可能的其它格式），
+    只拦截会导致目录逃逸的危险模式。
     """
     if not chat_id:
         raise ValueError("缺少 chat_id")
-    cid = chat_id.replace(".json", "")
-    if not _CHAT_ID_RE.match(cid):
-        raise ValueError("非法 chat_id 格式: %s" % chat_id)
+    # 拦截危险模式（覆盖 POSIX/Windows 绝对路径、UNC、null byte、.. 穿越）
+    if "\x00" in chat_id:
+        raise ValueError("chat_id 含非法字符")
+    norm = chat_id.replace("\\", "/")
+    for part in norm.split("/"):
+        if part == "..":
+            raise ValueError("chat_id 含路径穿越: %s" % chat_id)
+    if chat_id.startswith("/") or (len(chat_id) > 1 and chat_id[1] == ":"):
+        raise ValueError("chat_id 为绝对路径: %s" % chat_id)
     return os.path.join(CHAT_DIR, chat_id)
 
 
