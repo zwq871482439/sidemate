@@ -78,6 +78,8 @@
   --bg-tertiary: #334155;
   --text-primary: #f8fafc;
   --text-secondary: #cbd5e1;
+  --color-background-info: rgba(99,102,241,.18);   /* 选中态背景（暗色：柔和紫，不过亮） */
+  --color-text-info: #a5b4fc;                       /* 选中态文字（暗色） */
   --text-muted: #94a3b8;
   --border-color: #334155;
   --accent-color: #5b8cc9;
@@ -2430,6 +2432,8 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   --dot-err: #E24B4A;
   --accent-user: var(--primary-700);
   --accent-ai: var(--dot-run);
+  --color-background-info: #E6F1FB;   /* 选中态背景（亮色） */
+  --color-text-info: #185FA5;         /* 选中态文字（亮色） */
 }
 
 /* 卡片容器（挂载在 #stream-msg 内 #stream-content 之前） */

@@ -995,6 +995,62 @@ def retry_tagging(doc_id: str):
     return {"ok": True, "message": "已重新入队"}
 
 
+@router.post("/api/kb/documents/{doc_id}/reprocess")
+def api_kb_doc_reprocess(doc_id: str):
+    """重新处理文档（用于解决重复冲突后：向量化 + 打标）。
+    conflict 状态的文档在上传时未启动 _process 线程，用户在冲突对话框
+    选择「替换」后调用此端点，把文档从 conflict → processing 并真正处理。"""
+    kb = get_kb()
+    doc = kb.get_document(doc_id)
+    if not doc:
+        return JSONResponse({"error": "文档不存在"}, status_code=404)
+    if doc.status not in ("conflict", "error"):
+        return JSONResponse({"error": "仅冲突/失败文档可重新处理（当前状态: %s）" % doc.status}, status_code=400)
+
+    # 文本：优先用已提取的 doc.text（上传时已提取存到 kb_texts/），无则报错
+    text = getattr(doc, "text", "") or ""
+    if not text:
+        # 兜底：尝试从存储重新加载
+        try:
+            text = kb._load_text(doc_id) if hasattr(kb, "_load_text") else ""
+        except Exception:
+            text = ""
+    if not text:
+        return JSONResponse({"error": "无法重新处理：文档原文已丢失"}, status_code=400)
+
+    import threading
+    def _reprocess():
+        try:
+            doc.status = "processing"
+            doc.error_msg = ""
+            kb._save_meta()
+            kb.process_document(doc_id, text)
+            # 向量化完成后，注册到待打标（与上传流程一致）
+            scheduler = getattr(kb, '_tagging_scheduler', None)
+            if scheduler:
+                d2 = kb.get_document(doc_id)
+                if d2:
+                    d2.tag_status = "pending"
+                    kb._save_meta()
+                    if hasattr(scheduler, 'notify_doc_ready'):
+                        scheduler.notify_doc_ready(doc_id)
+            else:
+                log.warning("[KB] reprocess: 打标调度器未就绪，doc_id=%s", doc_id)
+        except Exception as e:
+            log.error("[KB] reprocess 异常: doc_id=%s error=%s", doc_id, str(e)[:200])
+            try:
+                d3 = kb.get_document(doc_id)
+                if d3 and d3.status == "processing":
+                    d3.status = "error"
+                    d3.error_msg = str(e)[:200]
+                    kb._save_meta()
+            except Exception:
+                pass
+
+    threading.Thread(target=_reprocess, daemon=True).start()
+    return {"ok": True, "message": "已开始重新处理"}
+
+
 @router.get("/api/kb/documents/{doc_id}/status")
 def api_kb_doc_status(doc_id: str):
     """查询文档处理进度"""

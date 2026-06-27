@@ -17,6 +17,8 @@ var _kbModelsLoaded = false;
 var _kbTagClusters = [];
 var _kbLastDocs = [];
 var _kbViewMode = 'card';  // P6: 'card' | 'list'
+var _kbRefreshSeq = 0;     // M4: 请求序号，丢弃过期响应避免竞态
+var _kbFilterTimer = null; // M3: 搜索防抖计时器
 
 // P6: KB 文档视图切换（卡片/列表）
 function kbSwitchView(mode, btn) {
@@ -220,10 +222,14 @@ async function kbRefreshDocs() {
       stats = {};
       _kbSkipFetch = false;
     } else {
+      var _seq = ++_kbRefreshSeq;  // M4: 记录本次请求序号
       var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents');
       docs = await resp.json();
+      // M4: 若期间有更新的请求发出，丢弃本次过期响应（避免慢响应覆盖新数据）
+      if (_seq !== _kbRefreshSeq) return;
       _kbLastDocs = docs;
       var statsResp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/stats');
+      if (_seq !== _kbRefreshSeq) return;
       stats = await statsResp.json();
     }
 
@@ -240,8 +246,13 @@ async function kbRefreshDocs() {
     _kbModelsLoaded = stats.models_loaded || false;
     _updateKbOverlay();
 
-    var hasSummarizing = (stats.summarizing_documents || 0) > 0;
-    _kbBusyProcessing = hasSummarizing;
+    // 是否有文档在处理/打标中（stats 无 summarizing_documents 字段，改为基于文档状态统计）
+    var _busy = 0;
+    for (var _bi = 0; _bi < _kbLastDocs.length; _bi++) {
+      var _st = _kbLastDocs[_bi].status, _ts = _kbLastDocs[_bi].tag_status;
+      if (_st === 'processing' || _ts === 'pending' || _ts === 'generating') _busy++;
+    }
+    _kbBusyProcessing = _busy > 0;
 
     // P6: 页面刷新后重建处理队列（从后端文档状态恢复）
     var _rebuildOne = function(_rd, _conflictInfo) {
@@ -391,21 +402,21 @@ async function kbRefreshDocs() {
           previewText = 'AI 正在生成摘要...';
           previewExtraClass = ' generating';
         } else if (d.tag_status === 'done') {
-          previewText = d.summary || d.content_snippet || '';
+          previewText = d.summary || '';
           if (previewText && previewText.length > 120) previewText = previewText.substring(0, 120) + '...';
           if (!previewText) previewText = '暂无摘要';
         } else if (d.tag_status === 'failed') {
           previewText = '摘要生成失败 · 点选后可重试';
           previewExtraClass = ' failed';
         } else {
-          previewText = d.summary || d.content_snippet || '';
+          previewText = d.summary || '';
           if (previewText && previewText.length > 120) previewText = previewText.substring(0, 120) + '...';
           if (!previewText) previewText = '暂无摘要';
         }
       } else if (d.status === 'error') {
         previewText = '处理失败';
       } else {
-        previewText = d.summary || d.content_snippet || '';
+        previewText = d.summary || '';
         if (previewText && previewText.length > 120) previewText = previewText.substring(0, 120) + '...';
         if (!previewText) previewText = '(暂无预览)';
       }
@@ -420,10 +431,11 @@ async function kbRefreshDocs() {
         tagsHtml = '<span class="ctag" style="background:var(--bg-tertiary);color:var(--text-muted)">标签生成中...</span>';
       }
 
-      // 上传时间
+      // 上传时间（后端字段为 imported_at，兼容旧 created_at）
       var uploadTime = '';
-      if (d.created_at) {
-        var dDate = new Date(d.created_at);
+      var _importedAt = d.created_at || d.imported_at;
+      if (_importedAt) {
+        var dDate = new Date(_importedAt);
         var now = new Date();
         var diffDays = Math.floor((now - dDate) / 86400000);
         uploadTime = diffDays === 0 ? '今天上传' : diffDays === 1 ? '1 天前上传' : diffDays + ' 天前上传';
@@ -456,10 +468,10 @@ async function kbRefreshDocs() {
       if (d.is_private) {
         html += '<span class="ctoken-btn" style="opacity:.6;cursor:default" title="私密文档：云端Agent不可见"><svg width="10" height="10" viewBox="0 0 14 14" fill="none"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg> 私密</span>';
       }
-      // Fix B: 摘要生成失败 + 文档已选中 → 显示重试按钮
+      // Fix B: 标签生成失败 + 文档已选中 → 显示重试按钮（复用 retry-tagging 端点）
       if (d.tag_status === 'failed' && typeof _kbSelectedDocs !== 'undefined' && _kbSelectedDocs && _kbSelectedDocs.has(d.doc_id)) {
         html += '<div class="ctoken-act">';
-        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbRetrySummary(\'' + escAttr(d.doc_id) + '\')" title="重新生成摘要">重新生成摘要</button>';
+        html += '<button class="ctoken-btn" onclick="event.stopPropagation();kbRetrySummary(\'' + escAttr(d.doc_id) + '\')" title="重新生成标签">重新生成标签</button>';
         html += '</div>';
       }
       html += '</div>';
@@ -705,10 +717,11 @@ function kbFilterByTag(tagName, el) {
   kbRefreshDocs();
 }
 
-// --- 按文件名搜索 ---
+// --- 按文件名搜索（M3: 300ms 防抖，避免连续按键触发大量请求） ---
 function kbFilterByName(query) {
   _kbNameFilter = query || '';
-  kbRefreshDocs();
+  if (_kbFilterTimer) clearTimeout(_kbFilterTimer);
+  _kbFilterTimer = setTimeout(function() { _kbFilterTimer = null; kbRefreshDocs(); }, 300);
 }
 
 // --- 卡片点击（进入文档详情/操作） ---
@@ -854,7 +867,7 @@ function _kbRenderInsightDashboard(data) {
 
   bodyEl.innerHTML = '<div class="kb-dash-row">' +
     '<div class="kb-dash-donut">' + donutSvg + legendHtml + '</div>' +
-    '<div class="kb-dash-text">' + insight + '</div>' +
+    '<div class="kb-dash-text">' + (typeof md === 'function' ? md(insight, true) : esc(insight)) + '</div>' +
     '</div>' +
     '<div class="kb-dash-stats">' +
       '<span class="kb-dash-stat">文档 <span class="kb-dash-stat-val">' + docCount + '</span> 篇</span>' +
@@ -1053,11 +1066,16 @@ function kbResolveConflict(docId, action) {
       if (_kbQueueItems[i].docId === docId && _kbQueueItems[i].conflict_info) {
         var existingDocId = _kbQueueItems[i].conflict_info.existing_doc_id;
         fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(existingDocId), { method: 'DELETE' })
-          .then(function() { kbRefreshDocs(); });
-        // M1 修复：清除 conflict 标志后给个 queued phase，让它跟着 SSE 流转
+          .then(function() {
+            // B1 修复：删除旧文档后，重新处理新文档（conflict 文档上传时未启动处理线程，
+            // 不调用 reprocess 会永久卡在 conflict 状态，永不向量化/检索）
+            fetch(apiBase + '/api/kb/documents/' + encodeURIComponent(docId) + '/reprocess', { method: 'POST' })
+              .then(function() { kbRefreshDocs(); })
+              .catch(function() { kbRefreshDocs(); });
+          });
         _kbQueueItems[i].conflict = false;
         _kbQueueItems[i].conflict_info = null;
-        _kbQueueItems[i].phase = 'queued';
+        _kbQueueItems[i].phase = 'processing';
         _kbQueueItems[i].pct = 0;
         break;
       }
@@ -1297,7 +1315,13 @@ function _kbTryNextSubscription() {
 async function kbDeleteDoc(docId) {
   if (!(await showDialog('确认删除', '确定删除此文档？删除后无法恢复。', {type: 'danger', confirm: true, confirmLabel: '删除', cancelLabel: '取消'}))) return;
   try {
-    await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + docId, { method: 'DELETE' });
+    // M6: docId 编码 + 检查返回，失败时给用户反馈
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + encodeURIComponent(docId), { method: 'DELETE' });
+    var data = await resp.json();
+    if (data && data.error) {
+      showToast('删除失败: ' + data.error, 'error');
+      return;
+    }
     kbRefreshDocs();
     // P6: 删除后自动刷新洞察和标签归并
     setTimeout(function() { if (typeof kbRefreshOverviewLLM === 'function') kbRefreshOverviewLLM(); }, 500);
@@ -1320,13 +1344,13 @@ async function kbCancelDoc(docId) {
   catch (err) { showToast('操作失败: ' + err.message, 'error'); }
 }
 
-// Fix B: 重新生成摘要
+// Fix B: 重新生成标签（retry-summary 端点已移除，复用健在的 retry-tagging）
 async function kbRetrySummary(docId) {
   try {
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/documents/' + encodeURIComponent(docId) + '/retry-summary', { method: 'POST' });
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/retry-tagging/' + encodeURIComponent(docId), { method: 'POST' });
     var data = await resp.json();
-    if (data.ok) {
-      showToast('已重新触发摘要生成');
+    if (data.ok || resp.ok) {
+      showToast('已重新触发标签生成');
       kbRefreshDocs();
     } else {
       showToast('重试失败: ' + (data.error || '未知错误'), 'error');
