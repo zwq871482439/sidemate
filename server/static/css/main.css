@@ -181,14 +181,14 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 #messages::-webkit-scrollbar-thumb { background:#059669; border-radius:3px; }
 #messages::-webkit-scrollbar-thumb:hover { background:#047857; }
 #messages { scrollbar-width:thin; scrollbar-color:#059669 transparent; }
-/* 统一滚动条样式（浅绿色 5px，与聊天区 #messages 一致）
-   覆盖所有通用滚动区域；KB 主题区(.kb-main-body/.kb-float-list)保持紫色主题 */
+/* 统一滚动条样式（绿色 5px，与聊天区 #messages 一致）
+   仅覆盖对话/文档/KB 侧栏区域；设置 tab 用灰色（见下方 .settings-* 单独定义）；
+   KB 主题区(.kb-main-body/.kb-float-list)保持紫色主题 */
 .cb-step-detail::-webkit-scrollbar,
 .cb-fetch-summary::-webkit-scrollbar,
 .chat-sidebar-list::-webkit-scrollbar,
 .kb-sidebar-list::-webkit-scrollbar,
 .kb-left-panel::-webkit-scrollbar,
-.settings-nav::-webkit-scrollbar,
 .agent-steps::-webkit-scrollbar,
 .agent-thinking::-webkit-scrollbar,
 .kb-diag-body::-webkit-scrollbar,
@@ -201,7 +201,6 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .chat-sidebar-list::-webkit-scrollbar-track,
 .kb-sidebar-list::-webkit-scrollbar-track,
 .kb-left-panel::-webkit-scrollbar-track,
-.settings-nav::-webkit-scrollbar-track,
 .agent-steps::-webkit-scrollbar-track,
 .agent-thinking::-webkit-scrollbar-track,
 .kb-diag-body::-webkit-scrollbar-track,
@@ -214,7 +213,6 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .chat-sidebar-list::-webkit-scrollbar-thumb,
 .kb-sidebar-list::-webkit-scrollbar-thumb,
 .kb-left-panel::-webkit-scrollbar-thumb,
-.settings-nav::-webkit-scrollbar-thumb,
 .agent-steps::-webkit-scrollbar-thumb,
 .agent-thinking::-webkit-scrollbar-thumb,
 .kb-diag-body::-webkit-scrollbar-thumb,
@@ -227,7 +225,6 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .chat-sidebar-list::-webkit-scrollbar-thumb:hover,
 .kb-sidebar-list::-webkit-scrollbar-thumb:hover,
 .kb-left-panel::-webkit-scrollbar-thumb:hover,
-.settings-nav::-webkit-scrollbar-thumb:hover,
 .agent-steps::-webkit-scrollbar-thumb:hover,
 .agent-thinking::-webkit-scrollbar-thumb:hover,
 .kb-diag-body::-webkit-scrollbar-thumb:hover,
@@ -235,9 +232,9 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
 .kb-dup-list::-webkit-scrollbar-thumb:hover,
 .kb-sidebar-tokens-wrap::-webkit-scrollbar-thumb:hover,
 .doc-outline-preview::-webkit-scrollbar-thumb:hover { background:#047857; }
-/* Firefox: 统一细滚动条 */
+/* Firefox: 对话/文档/KB 侧栏统一细滚动条（绿色） */
 .cb-step-detail, .chat-sidebar-list, .kb-sidebar-list, .kb-left-panel,
-.settings-nav, .agent-steps, .agent-thinking, .kb-diag-body, .kb-file-popup,
+.agent-steps, .agent-thinking, .kb-diag-body, .kb-file-popup,
 .kb-dup-list, .kb-sidebar-tokens-wrap, .doc-outline-preview { scrollbar-width:thin; scrollbar-color:#059669 transparent; }
 /* 卡片式明盒：扁平卡片 + 3px 左色条（蓝=用户 / 紫=AI），不再用气泡 */
 .msg{width:100%;padding:8px 14px;border-radius:8px;font-size:.9em;line-height:1.7;word-wrap:break-word;overflow-wrap:break-word;overflow:visible;position:relative;background:var(--card-bg);border:0.5px solid var(--border-color)}
@@ -2352,13 +2349,20 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .settings-content{flex:1;overflow-y:auto;padding:16px;min-width:0}
 .settings-content::-webkit-scrollbar{width:5px}
 .settings-content::-webkit-scrollbar-track{background:transparent}
-.settings-content::-webkit-scrollbar-thumb{background:#059669;border-radius:3px}
-.settings-content::-webkit-scrollbar-thumb:hover{background:#047857}
-/* 云端用量「最近调用」列表滚动条（与对话区一致） */
+.settings-content::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+.settings-content::-webkit-scrollbar-thumb:hover{background:#9CA3AF}
+/* 设置导航侧栏滚动条（灰色，与对话区的绿色区分） */
+.settings-nav::-webkit-scrollbar{width:5px}
+.settings-nav::-webkit-scrollbar-track{background:transparent}
+.settings-nav::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+.settings-nav::-webkit-scrollbar-thumb:hover{background:#9CA3AF}
+.settings-nav{scrollbar-width:thin;scrollbar-color:#D1D5DB transparent}
+/* 云端用量「最近调用」列表滚动条（灰色，设置 tab 风格） */
 .usage-records::-webkit-scrollbar{width:5px}
 .usage-records::-webkit-scrollbar-track{background:transparent}
-.usage-records::-webkit-scrollbar-thumb{background:#059669;border-radius:3px}
-.usage-records::-webkit-scrollbar-thumb:hover{background:#047857}
+.usage-records::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+.usage-records::-webkit-scrollbar-thumb:hover{background:#9CA3AF}
+.usage-records{scrollbar-width:thin;scrollbar-color:#D1D5DB transparent}
 .settings-content .card{background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:var(--border-radius-md, 8px);padding:14px;margin-bottom:10px}
 .settings-content .card h4{font-size:12px;font-weight:500;margin-bottom:8px;color:var(--text-primary)}
 .settings-content .row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px}
