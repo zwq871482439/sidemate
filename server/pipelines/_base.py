@@ -429,13 +429,20 @@ def save_conversation(ctx: StreamContext, result: EngineResult, t0: float) -> Ge
     is_error_response = final_response.strip().startswith("[ERROR]")
     if final_response.strip() and not is_error_response:
         ts = time.strftime("%H:%M:%S")
+        # Doc 模式 Phase1（仅生成提纲）：打标记，供前端刷新后重建确认栏
+        # 前端 renderMessages 检查 action_mode=='doc' && doc_phase=='outline' (chat.js:380)
+        # 不带此标记则刷新后确认栏丢失，用户卡在中间态无法操作
+        _assistant_extra = {}
+        if ctx.action_mode == "doc" and _doc_outline_only:
+            _assistant_extra = {"action_mode": "doc", "doc_phase": "outline"}
         messages = history_raw + [
             {"role": "user", "content": message, "ts": ts},
             {"role": "assistant", "content": final_response, "ts": time.strftime("%H:%M:%S"),
              "think": (clean_think_content(think_content) if think_folded and len(think_content.strip()) >= 20 else ""),
              "model": model_choice,
              "chars": response_chars, "think_chars": think_chars, "time": elapsed, "speed": speed,
-             "task_type": saved_task_type}
+             "task_type": saved_task_type,
+             **_assistant_extra}
         ]
         new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
         if did_compress:
