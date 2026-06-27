@@ -94,9 +94,17 @@ def _run_phase1(
                     for i, ref in enumerate(kb_refs[:3]):
                         kb_context_parts.append("[参考资料%d] %s" % (i + 1, ref.get("content", "")[:500]))
                     kb_context = "\n\n".join(kb_context_parts)
-                    log.info("[DOC_ACTION] KB 搜索到 %d 条参考资料" % len(kb_refs))
+                    # 告知用户检索结果（与 chat 模式 _base.py:250 对齐）
+                    # doc 模式走 fallback 渲染，不支持 kb_sources 事件，用 mode_hint 列出来源
+                    _src_labels = []
+                    for ref in kb_refs[:3]:
+                        _lbl = ref.get("source_label") or ref.get("filename") or ref.get("doc_id") or "?"
+                        _src_labels.append(_lbl)
+                    yield ("mode_hint", " 已检索文库（%d条相关文档：%s），正在生成文档提纲..." % (
+                        len(kb_refs), "、".join(_src_labels)))
+                    log.info("[DOC_ACTION] KB 搜索到 %d 条参考资料: %s" % (len(kb_refs), "、".join(_src_labels)))
                 else:
-                    yield ("mode_hint", "文库中未找到相关内容，将直接生成文档。")
+                    yield ("mode_hint", " 文库中未找到相关内容，将直接生成文档提纲。")
         except Exception as e:
             log.warning("[DOC_ACTION] KB 搜索失败: %s" % str(e)[:100])
 
