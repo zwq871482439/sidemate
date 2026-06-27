@@ -1107,12 +1107,7 @@ function renderCloudUsage(panel, data) {
     html += '</div>';
   }
 
-  // 柱状图（前置图例，说明分段配色含义）
-  html += '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-bottom:6px">';
-  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#60A5FA"></span>输入</span>';
-  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#34D399"></span>输出</span>';
-  html += '<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#A78BFA"></span>推理</span>';
-  html += '</div>';
+  // 柱状图（图例已在上方的输入/输出/推理汇总行，不重复）
   html += _renderUsageChart(data.by_bucket || [], granLabel);
 
   // 按模型
