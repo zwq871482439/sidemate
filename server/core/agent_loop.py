@@ -406,13 +406,15 @@ class AgentLoop:
                             "message": "已%s%d次，基于已获取信息继续回答" % (_tool_label, _limit),
                         })
                     # 给模型返回一个明确的错误，让它自己收手
+                    # 注意：limit 是"本轮对话"的计数（每次 agent loop 重置），不是"本日"
+                    # 文案必须明确写"本轮"，否则模型会在回答里编造"本日已达上限"误导用户
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc_id,
                         "name": tool_name,
                         "content": json.dumps({
                             "error": "limit_exceeded",
-                            "message": "此工具调用已达上限 %d 次，请改用已有信息继续回答，不要再调用 %s" % (_limit, tool_name),
+                            "message": "本轮对话中此工具已调用 %d 次，达到本轮上限。请基于已获取的信息继续回答，不要再调用 %s（下一条消息可重新使用）" % (_limit, tool_name),
                         }, ensure_ascii=False),
                     })
                     continue
