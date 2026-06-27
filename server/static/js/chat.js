@@ -993,7 +993,8 @@ async function sendMessage() {
             CardRenderer.handleEvent(d);
           } else if (d.type === 'token') {
             // P6 修复空状态：文字到来前，先把 pending 推理单元渲染出来（否则 card-area 空白）
-            if (typeof CardRenderer !== 'undefined') CardRenderer.materializePending();
+            // byToken=true：若该单元无 think 无工具（最后一轮纯文本回答），丢弃不显示空"推理第N轮"
+            if (typeof CardRenderer !== 'undefined') CardRenderer.materializePending(true);
             fullText += d.content;
             // P6 打磨：思考→回答无缝过渡，只改文案不变DOM结构
             if (fullText.length > 0 && _thinkingTimerInterval && !thinkingPhase && !_hasMorphedToAnswering) {
@@ -2343,7 +2344,8 @@ var CardRenderer = (function() {
     if (_reasonUnits && _reasonUnits.length > 0) {
       for (var ri = 0; ri < _reasonUnits.length; ri++) {
         var unit = _reasonUnits[ri];
-        if (!unit.tools || unit.tools.length === 0) continue;  // 跳过空轮次
+        // 跳过完全空的轮次（无工具无思考）——占位符单元不该序列化
+        if ((!unit.tools || unit.tools.length === 0) && !unit.thinkText) continue;
         // 计算耗时
         var unitElapsed = 0;
         if (unit.startTime) {
@@ -2419,15 +2421,17 @@ var CardRenderer = (function() {
       runSteps.forEach(function(s) { s.setAttribute('data-status', 'done'); });
       // 模块3b：关闭最后一个推理单元（保持展开 + 算耗时）
       if (_currentUnit) {
+        var _hasContent = (_currentUnit.tools && _currentUnit.tools.length > 0) || _currentUnit.thinkText;
         if (!_currentUnit.el) {
           // pending 单元（从未渲染，即空轮次）：直接丢弃
           _reasonUnits.pop();
-        } else if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
-          // 已渲染但无工具调用：删除（空轮次不渲染）
+        } else if (!_hasContent) {
+          // 已渲染但无工具无思考（纯"思考中"占位的空轮次）：删除
           _currentUnit.el.remove();
           _reasonUnits.pop();
         } else {
-          // 有内容：保留展开，移除 current 标记 + 算耗时
+          // 有内容：清除可能残留的占位符，保留展开，移除 current 标记 + 算耗时
+          _clearReasonPlaceholder();
           _currentUnit.el.classList.remove('current');
           if (_currentUnit.startTime) {
             var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
@@ -2895,6 +2899,7 @@ var CardRenderer = (function() {
       if (!isDone) {
         // 延迟创建：第一个工具事件到来时才渲染单元 DOM
         _materializeCurrentUnit();
+        _clearReasonPlaceholder();  // 实质内容到来，清除"思考中"占位
         if (!_currentUnit.body) return;
         // start 类工具：在单元内创建步骤
         var stepDiv = document.createElement('div');
@@ -2979,16 +2984,18 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
-  // 模块3b：开新推理单元（延迟创建：先建待定单元，等有内容才渲染 DOM）
+  // 模块3b：开新推理单元（创建即渲染骨架 + "思考中"占位，等实质内容到来填充）
   function _startReasonUnit() {
     // 关闭前一个单元（保持展开，仅移除 current 标记 + 算耗时）
     if (_currentUnit) {
+      var _prevHasContent = (_currentUnit.tools && _currentUnit.tools.length > 0) || _currentUnit.thinkText;
       if (_currentUnit.el) {
-        // 已渲染的单元：若空则删除，否则保留展开
-        if (!_currentUnit.tools || _currentUnit.tools.length === 0) {
+        // 已渲染的单元：若空（无工具无思考，仅占位）则删除，否则保留展开
+        if (!_prevHasContent) {
           _currentUnit.el.remove();
           _reasonUnits.pop();
         } else {
+          _clearReasonPlaceholder();
           _currentUnit.el.classList.remove('current');
           if (_currentUnit.startTime) {
             var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
@@ -3002,18 +3009,29 @@ var CardRenderer = (function() {
         _reasonUnits.pop();
       }
     }
-    // 创建新的「待定」单元（不建 DOM，等 think/工具事件到来才 materialize）
+    // 创建新的「待定」单元
+    // 问题1修复：立即渲染单元 DOM + "思考中..."占位，避免 thinking→首事件之间 card-area 空白
     var round = _reasonUnits.length + 1;
     _currentUnit = {
       round: round,
       thinkText: '',
       tools: [],
       startTime: Date.now(),
-      el: null,        // null = 尚未渲染
+      el: null,
       body: null,
-      pending: true,   // 标记待定
+      pending: true,   // 标记待定（materialize 时填充实质内容）
     };
     _reasonUnits.push(_currentUnit);
+    // 立即渲染单元骨架 + 思考中占位（等 think/工具事件到来再填充实质内容）
+    _materializeCurrentUnit();
+    if (_currentUnit.body) {
+      var _placeholder = document.createElement('div');
+      _placeholder.className = 'cb-thinking-placeholder';
+      _placeholder.innerHTML = '<span class="thinking-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> 思考中...';
+      _currentUnit.body.appendChild(_placeholder);
+      _currentUnit._placeholder = _placeholder;
+    }
+    if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
   // 把待定单元真正渲染成 DOM（think 或工具事件到来时调用）
@@ -3034,11 +3052,20 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
+  // 清除推理单元的"思考中..."占位符（实质内容到来时调用）
+  function _clearReasonPlaceholder() {
+    if (_currentUnit && _currentUnit._placeholder) {
+      _currentUnit._placeholder.remove();
+      _currentUnit._placeholder = null;
+    }
+  }
+
   // 模块3b：处理 think 内容（填入当前推理单元）
   function _handleAgentThink(d) {
     if (!_currentUnit) return;
     // 延迟创建：第一个 think token 到来时才渲染单元 DOM
     _materializeCurrentUnit();
+    _clearReasonPlaceholder();  // 实质内容到来，清除"思考中"占位
     if (!_currentUnit.body) return;
     var token = d.content || '';
     _currentUnit.thinkText += token;
@@ -3169,7 +3196,19 @@ var CardRenderer = (function() {
     renderHistory: renderHistory,
     fillParallelStats: fillParallelStats,
     getState: getState,
-    materializePending: function() { if (_currentUnit && _currentUnit.pending) _materializeCurrentUnit(); }
+    // materializePending: 把 pending 推理单元渲染成 DOM
+    //   byToken=true（正文 token 触发）时，若单元无 think 无工具，
+    //   说明这是最后一轮纯文本回答，不应显示空"推理第N轮"，直接丢弃
+    materializePending: function(byToken) {
+      if (!_currentUnit || !_currentUnit.pending) return;
+      if (byToken && !_currentUnit.thinkText && (!_currentUnit.tools || _currentUnit.tools.length === 0)) {
+        // 最后一轮纯文本回答：丢弃空单元（避免显示无内容的"推理第N轮"）
+        _reasonUnits.pop();
+        _currentUnit = null;
+        return;
+      }
+      _materializeCurrentUnit();
+    }
   };
 })();
 
