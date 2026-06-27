@@ -889,6 +889,18 @@ _PERMISSION_TOOLS = [
         "config_key": "tool_enabled_web_search",
         "default_enabled": True,
     },
+    {
+        # 内网访问确认：控制 Agent 的 fetch_url 能否访问内网地址
+        # config 值 confirm_external_read=True 表示「需确认/拒绝内网」（严格），
+        # 与开关语义相反：勾选=允许内网(confirm_external_read=False)，故用 inverted 标记
+        "tool_id": "intranet_access",
+        "category": "信息检索",
+        "name": "允许内网访问",
+        "description": "允许 Agent 抓取内网/本机地址（如 http://192.168.x.x）。关闭则内网受保护，仅公网可访问",
+        "config_key": "confirm_external_read",
+        "default_enabled": False,  # 默认 False（即 confirm_external_read=True，内网受保护）
+        "inverted": True,          # config 值与勾选状态相反
+    },
     # ===== 工作区文件类 =====
     {
         "tool_id": "file_read_write",
@@ -952,7 +964,9 @@ def api_permissions_tools():
     from config import get as _cfg
     tools = []
     for tool in _PERMISSION_TOOLS:
-        enabled = _cfg(tool["config_key"], tool["default_enabled"])
+        cfg_val = _cfg(tool["config_key"], tool["default_enabled"])
+        # inverted: config 值与勾选状态相反（如 confirm_external_read=True 表示严格，勾选=允许=相反）
+        enabled = (not cfg_val) if tool.get("inverted") else cfg_val
         tools.append({
             "tool_id": tool["tool_id"],
             "category": tool.get("category", ""),
@@ -982,10 +996,12 @@ async def api_permissions_tool_set(tool_id: str, request: Request):
     if not tool:
         return JSONResponse({"error": "未知工具: %s" % tool_id}, status_code=404)
 
-    # 写入 config
+    # 写入 config（inverted 时反转：勾选=enabled → config 存 False）
     from config import set_value
-    set_value(tool["config_key"], enabled)
-    log.info("[PERMISSION] 工具权限设置: %s → enabled=%s", tool_id, enabled)
+    cfg_val = (not enabled) if tool.get("inverted") else enabled
+    set_value(tool["config_key"], cfg_val)
+    log.info("[PERMISSION] 工具权限设置: %s → enabled=%s (config %s=%s)",
+             tool_id, enabled, tool["config_key"], cfg_val)
     return {"ok": True, "tool_id": tool_id, "enabled": enabled}
 
 
