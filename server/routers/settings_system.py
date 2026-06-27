@@ -114,7 +114,7 @@ def api_warmup():
 @router.get("/api/info")
 def api_info():
     """返回版本等信息（前端统一从此接口获取，不硬编码）"""
-    from server import VERSION, VERSION_PATCH, FULL_VERSION
+    from server import FULL_VERSION
     modules = {}
     for mod_name in ("intelligence.task_classifier", "intelligence.response_filter",
                      "common.context_compressor", "prompts", "config"):
@@ -134,7 +134,7 @@ def api_info():
 @router.get("/api/status")
 def api_status():
     """模型状态 + 后台初始化状态"""
-    from server import VERSION, VERSION_PATCH, FULL_VERSION
+    from server import FULL_VERSION
     mgr = get_mgr()
     s = mgr.status()
     result = {"version": FULL_VERSION}
@@ -172,7 +172,7 @@ def api_status():
 @router.get("/api/health")
 def api_health():
     """健康检查端点（适合外部监控）"""
-    from server import VERSION, VERSION_PATCH, FULL_VERSION
+    from server import FULL_VERSION
     mgr = get_mgr()
     loaded = mgr.get_loaded_llms()
     return {
@@ -676,7 +676,7 @@ async def api_onboard_complete():
 def api_system_info():
     """系统运行环境信息（关于对话框用）"""
     import platform
-    from server import VERSION, VERSION_PATCH, FULL_VERSION
+    from server import FULL_VERSION
     from config import get as cfg_get
 
     # Ollama 状态
