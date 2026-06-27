@@ -81,6 +81,15 @@ async function test1_pageLoad(page) {
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
 
+  // 关闭新手欢迎覆层（新浏览器 localStorage 为空会显示，全屏 pointer-events:auto 拦截点击）
+  // 真实用户会点"开始/跳过"，测试模拟 dismissWelcome()
+  await page.evaluate(() => {
+    if (typeof dismissWelcome === 'function') dismissWelcome();
+    const ov = document.getElementById('welcomeOverlay');
+    if (ov) ov.style.display = 'none';
+  }).catch(() => {});
+  await page.waitForTimeout(500);
+
   const title = await page.title();
   check('页面标题含 Sidemate', title.includes('Sidemate'), '实际: ' + title);
   check('消息区存在', await waitFor(page, '#messages'));
@@ -90,6 +99,10 @@ async function test1_pageLoad(page) {
   // 模型标签不应卡在"加载中"（验证之前 ImportError 修复）
   const tagText = await page.locator('#modelTag').textContent().catch(() => '');
   check('模型标签非"加载中"', !tagText.includes('加载中'), '实际: ' + tagText);
+
+  // 欢迎覆层应已关闭（不拦截交互）
+  const welcomeVisible = await page.locator('#welcomeOverlay').isVisible().catch(() => false);
+  check('欢迎覆层已关闭', !welcomeVisible);
 
   await shot(page, '01_load');
 }
@@ -114,15 +127,20 @@ async function test2_modeSwitch(page) {
   console.log('  点击模式按钮: %s', onlineText);
 
   page.on('dialog', async d => { await d.accept(); });
-  await page.evaluate(el => el.dispatchEvent(new MouseEvent('click', {bubbles:true})), await onlineBtn.elementHandle());
+  // welcomeOverlay 关闭后真实点击可用，dispatchEvent 作 fallback
+  await onlineBtn.click({ timeout: 3000 }).catch(async () => {
+    await page.evaluate(el => el.dispatchEvent(new MouseEvent('click', {bubbles:true})), await onlineBtn.elementHandle());
+  });
   await page.waitForTimeout(1500);
 
   // 验证：切换后输入框最终恢复正常（鱼骨屏是瞬态的）
   const inputOk = await page.locator('#msgInput').isEnabled().catch(() => false);
   check('切换后输入框可用', inputOk);
 
-  // 回退到离线（dispatchEvent）
-  await page.evaluate(el => el.dispatchEvent(new MouseEvent('click', {bubbles:true})), await offlineBtn.elementHandle());
+  // 回退到离线
+  await offlineBtn.click({ timeout: 3000 }).catch(async () => {
+    await page.evaluate(el => el.dispatchEvent(new MouseEvent('click', {bubbles:true})), await offlineBtn.elementHandle());
+  });
   await page.waitForTimeout(1000);
 
   await shot(page, '02_mode');
@@ -132,11 +150,13 @@ async function test3_sendMessage(page) {
   console.log('\n🔴 测试 3：发送消息（流式响应）');
   if (quick) { console.log('  ⏭️  --quick 模式跳过'); return; }
 
-  // 确保在对话页 + 离线模式（dispatchEvent 绕过覆盖层）
+  // 确保在对话页 + 离线模式（真实点击优先，dispatchEvent fallback）
   await switchTab(page, 'chat');
   const offlineBtn = page.locator('button:has-text("离线")').first();
-  await page.evaluate(el => { if (el) el.dispatchEvent(new MouseEvent('click', {bubbles:true})); },
-    await offlineBtn.elementHandle().catch(() => null));
+  await offlineBtn.click({ timeout: 3000 }).catch(async () => {
+    await page.evaluate(el => { if (el) el.dispatchEvent(new MouseEvent('click', {bubbles:true})); },
+      await offlineBtn.elementHandle().catch(() => null));
+  });
   await page.waitForTimeout(1500);
 
   // 确认 sendBtn 可见可点
@@ -151,12 +171,13 @@ async function test3_sendMessage(page) {
   await page.fill('#msgInput', '你好，请用一个字回复');
   await page.waitForTimeout(200);
 
-  // 发送：用 dispatchEvent 而非 click()
-  // 真实 UI 里有个 div 覆盖在 sendBtn 上（坐标拦截），playwright 的 click 会落在覆盖层。
-  // dispatchEvent 直接派发到元素，绕过坐标命中问题。
-  await page.evaluate(() => {
-    const btn = document.getElementById('sendBtn');
-    if (btn) btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  // 发送：welcomeOverlay 关闭后，真实 click 应能命中 sendBtn
+  // （若仍有覆盖层问题，fallback 到 dispatchEvent）
+  await page.locator('#sendBtn').click({ timeout: 5000 }).catch(async () => {
+    await page.evaluate(() => {
+      const btn = document.getElementById('sendBtn');
+      if (btn) btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
   });
   await page.waitForTimeout(800);
 
