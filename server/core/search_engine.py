@@ -123,6 +123,29 @@ def classify_url(url):
     return "public", "公网"
 
 
+def _check_url_allowed(url):
+    """对单个 URL 应用 SSRF 策略，返回 (allowed: bool, reason: str)。
+
+    供 fetch 的逐跳重定向校验复用，与 agent_loop.fetch_url 的首跳决策保持一致：
+      - blocked（链路本地/非法协议/解析失败）→ 拒绝
+      - private（回环/内网）→ 默认拒绝；仅当 confirm_external_read=False（完全信任）放行
+      - public → 放行
+    """
+    category, detail = classify_url(url)
+    if category == "blocked":
+        return False, detail
+    if category == "private":
+        try:
+            from config import get as _cfg
+            trust = not _cfg("confirm_external_read", True)
+        except Exception:
+            trust = False
+        if trust:
+            return True, detail
+        return False, "内网地址受保护（%s）" % detail
+    return True, detail
+
+
 def _strip_tags(html: str) -> str:
     """去除 HTML 标签，清理空白"""
     text = re.sub(r'<[^>]+>', '', html)
@@ -216,7 +239,13 @@ class SearchEngine:
             dict: {"title": ..., "text": ..., "url": url}
         """
         try:
-            html = self._http_get(url)
+            # BUG-4：SSRF 安全抓取——禁用自动重定向，逐跳 classify_url 后再跟随，
+            # 防止公网 URL 经 3xx 跳到内网/回环/云元数据端点。
+            try:
+                html = self._http_get_safe(url)
+            except PermissionError as pe:
+                log.warning("[SEARCH] fetch 被 SSRF 策略拒绝: %s（%s）", url[:80], str(pe)[:80])
+                return {"title": "", "text": "[该地址被禁止访问：%s]" % str(pe)[:100], "url": url}
             if not html:
                 return {"title": "", "text": "[HTTP 请求失败]", "url": url}
 
@@ -238,28 +267,22 @@ class SearchEngine:
             log.warning("[SEARCH] 抓取 %s 失败: %s", url[:80], str(e)[:100])
             return {"title": "", "text": "[抓取失败: %s]" % str(e)[:80], "url": url}
 
-    def _http_get(self, url: str, params: dict = None) -> str:
-        """HTTP GET 请求（curl_cffi 优先，httpx fallback）
-
-        Args:
-            url: 目标 URL
-            params: 查询参数（可选）
+    def _request(self, url: str, params: dict = None, allow_redirects: bool = True) -> dict:
+        """底层 HTTP GET（curl_cffi 优先，httpx fallback）。
 
         Returns:
-            str: 响应文本，失败返回空字符串
+            dict: {"status": int, "headers": dict, "text": str}；请求失败时 status=0。
         """
         if _USE_CURL_CFFI:
             try:
                 with _CurlSession(impersonate="chrome") as session:
                     resp = session.get(
                         url, params=params, headers=_HEADERS,
-                        timeout=15, allow_redirects=True,
+                        timeout=15, allow_redirects=allow_redirects,
                     )
-                    if resp.status_code == 200:
-                        return resp.text
-                    log.warning("[SEARCH] curl_cffi 返回 %d: %s",
-                                resp.status_code, str(resp.text)[:200])
-                    return ""
+                    return {"status": resp.status_code,
+                            "headers": dict(resp.headers or {}),
+                            "text": resp.text}
             except Exception as e:
                 log.warning("[SEARCH] curl_cffi 请求失败，fallback httpx: %s", str(e)[:80])
 
@@ -267,19 +290,61 @@ class SearchEngine:
         try:
             import httpx
         except ImportError:
-            log.error("[SEARCH] 缺少 httpx 库，无法搜索")
-            return ""
+            log.error("[SEARCH] 缺少 httpx 库，无法请求")
+            return {"status": 0, "headers": {}, "text": ""}
 
         try:
             resp = httpx.get(url, params=params, headers=_HEADERS,
-                             timeout=15.0, follow_redirects=True)
-            if resp.status_code != 200:
-                log.warning("[SEARCH] httpx 返回 %d", resp.status_code)
-                return ""
-            return resp.text
+                             timeout=15.0, follow_redirects=allow_redirects)
+            return {"status": resp.status_code,
+                    "headers": dict(resp.headers or {}),
+                    "text": resp.text}
         except Exception as e:
             log.error("[SEARCH] httpx 请求失败: %s", str(e)[:200])
+            return {"status": 0, "headers": {}, "text": ""}
+
+    def _http_get(self, url: str, params: dict = None) -> str:
+        """搜索用 GET（固定 Bing，允许自动重定向）。失败返回空字符串。"""
+        r = self._request(url, params=params, allow_redirects=True)
+        if r["status"] == 200:
+            return r["text"]
+        if r["status"]:
+            log.warning("[SEARCH] HTTP %d", r["status"])
+        return ""
+
+    def _http_get_safe(self, url: str, max_redirects: int = 5) -> str:
+        """SSRF 安全 GET（fetch 用）：禁用自动重定向，逐跳 classify_url 后再跟随。
+
+        每一跳（含首跳）都过 _check_url_allowed；命中内网/回环/元数据/非法协议即抛
+        PermissionError。注意：classify 解析 DNS 与实际请求解析之间仍存在 DNS rebinding
+        的理论窗口（需 IP 锁定才能根除），但逐跳校验已堵住绝大多数重定向型 SSRF。
+
+        Returns:
+            str: 最终页面 HTML；非 200/3xx 或请求失败时返回空字符串。
+        Raises:
+            PermissionError: 任一跳被 SSRF 策略拒绝，或重定向次数超限。
+        """
+        from urllib.parse import urljoin
+        current = url
+        for hop in range(max_redirects + 1):
+            allowed, reason = _check_url_allowed(current)
+            if not allowed:
+                raise PermissionError(reason)
+            r = self._request(current, allow_redirects=False)
+            st = r["status"]
+            if st in (301, 302, 303, 307, 308):
+                loc = r["headers"].get("location") or r["headers"].get("Location")
+                if not loc:
+                    return r["text"]
+                current = urljoin(current, loc)
+                log.info("[SEARCH] 重定向跟随(%d/%d) -> %s", hop + 1, max_redirects, current[:80])
+                continue
+            if st == 200:
+                return r["text"]
+            if st:
+                log.warning("[SEARCH] fetch HTTP %d: %s", st, current[:80])
             return ""
+        raise PermissionError("重定向次数过多（>%d）" % max_redirects)
 
     def _extract_title(self, html: str) -> str:
         """从 HTML 中提取 title"""
