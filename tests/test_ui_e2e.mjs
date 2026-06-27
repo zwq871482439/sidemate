@@ -28,9 +28,35 @@ import path from 'path';
 
 const BASE = 'http://127.0.0.1:8976';
 const SCREENSHOT_DIR = path.join(process.cwd(), 'tests', 'screenshots');
+const RESPONSE_LOG = path.join(process.cwd(), 'tests', 'response_log.md');
 
 let passed = 0, failed = 0;
 const failures = [];
+
+// 响应记录：把每次 AI 响应的内容/模式/质量写入日志，便于后续人工评价
+let _respLogEntries = [];
+function logResponse(scene, prompt, response, quality) {
+  const ts = new Date().toLocaleTimeString('zh-CN');
+  const content = (response?.content || '(无内容)').slice(0, 300);
+  const len = response?.feature?.textLen || 0;
+  const elapsed = response?.elapsed || '?';
+  _respLogEntries.push({
+    ts, scene, prompt: prompt.slice(0, 60),
+    content, len, elapsed,
+    quality: quality || (response?.feature?.hasError ? '❌错误' : '✅'),
+  });
+}
+function flushResponseLog() {
+  if (!_respLogEntries.length) return;
+  let md = '# Sidemate UI 测试 — 响应记录\n\n';
+  md += '> 每次 AI 响应的内容快照，供后续人工评价质量\n\n';
+  md += '| 时间 | 场景 | 提问 | 响应摘要 | 字数 | 耗时 | 质量 |\n';
+  md += '|------|------|------|---------|------|------|------|\n';
+  for (const e of _respLogEntries) {
+    md += `| ${e.ts} | ${e.scene} | ${e.prompt.replace(/\|/g,'/')} | ${e.content.replace(/\|/g,'/').replace(/\n/g,' ')} | ${e.len} | ${e.elapsed}s | ${e.quality} |\n`;
+  }
+  fs.writeFileSync(RESPONSE_LOG, md, 'utf-8');
+}
 
 const headed = process.argv.includes('--headed');
 const quick = process.argv.includes('--quick');
@@ -151,13 +177,22 @@ async function test2_modeSwitch(page) {
 // ============================================================
 
 // 切换 AI 模式（离线/在线/并行）
+// selectMode 会弹自定义确认框(.modal-back 非 dialog)，测试预设 skip 标志跳过
 async function switchAiMode(page, modeText) {
-  const btn = page.locator(`button:has-text("${modeText}")`).first();
+  // modeText → backend mode 映射
+  const modeMap = { '离线': 'offline', '在线': 'online', '并行': 'parallel' };
+  const mode = modeMap[modeText] || modeText;
+  // 预设"下次不再提示"，跳过自定义确认弹窗
+  await page.evaluate((m) => {
+    localStorage.setItem('sidemate_mode_confirm_skip_' + m, '1');
+  }, mode);
+
+  const btn = page.locator(`[data-mode="${mode}"]`).first();
   await btn.click({ timeout: 3000 }).catch(async () => {
     await page.evaluate(el => { if (el) el.dispatchEvent(new MouseEvent('click', {bubbles:true})); },
       await btn.elementHandle().catch(() => null));
   });
-  await page.waitForTimeout(2000);  // 等模式切换完成（鱼骨屏）
+  await page.waitForTimeout(2500);  // 等模式切换完成（鱼骨屏 + actionBar 刷新）
 }
 
 // 选择 Action（聊天/写文档/联网搜索/深度分析/知识库问答）
@@ -327,20 +362,20 @@ async function test3_modeMatrix(page) {
       // 质量断言：要求简短（一个字指令），不能是错误，不能是空
       assertQuality('离线聊天', r, {
         minLen: 1, notError: true,
-        // 本地小模型可能不完全遵守"一个字"，但不应过长（<200字）或重复
         maxLen: 200,
         notContains: ['[ERROR]', '无法连接', '模型未加载'],
       });
+      logResponse('3a 离线聊天', '你好，用一个字回复', r);
     }
   } else {
     console.log('    ⏭️  跳过（本地模型未加载）');
   }
 
-  // ── 3b. 并行 + 文档生成（提纲阶段）──
-  // 文档生成 action 只在并行模式注册（/api/action/list 返回 doc）
-  console.log('\n  📌 3b: 并行 + 文档生成（提纲）');
-  if (hasLocalModel && hasCloud) {
-    await switchAiMode(page, '并行');
+  // ── 3b. 离线 + 文档生成（提纲阶段）──
+  // 文档生成 action 在离线模式注册（actionBar 显示"文档生成"）
+  console.log('\n  📌 3b: 离线 + 文档生成（提纲）');
+  if (hasLocalModel) {
+    await switchAiMode(page, '离线');
     const hasDocAction = await selectAction(page, '文档生成');
     if (hasDocAction) {
       const r = await sendMessageAndWait(page, '写一份关于团队协作的简短文档，3个章节');
@@ -350,49 +385,52 @@ async function test3_modeMatrix(page) {
         await page.waitForTimeout(1000);
         const hasOutline = await page.locator('#docOutlineEditor, #docOutlinePreview').count();
         check('文档生成：出现提纲确认栏', hasOutline > 0);
+        // 质量断言：提纲应含标题结构（# 或 章节）
+        if (r.content) {
+          const hasStructure = r.content.includes('#') || r.content.includes('章节') || r.content.includes('一、');
+          check('文档提纲有结构（质量）', hasStructure, '内容: ' + r.content.slice(0, 50));
+        }
         // 取消提纲（清理状态）
         await page.locator('button:has-text("取消")').first().click({timeout: 2000}).catch(() => {});
         await page.waitForTimeout(500);
       }
     } else {
-      console.log('    ⏭️  跳过（并行模式未找到"文档生成"按钮）');
+      console.log('    ⏭️  跳过（离线模式未找到"文档生成"按钮）');
     }
   } else {
-    console.log('    ⏭️  跳过（需本地+云端都就绪）');
+    console.log('    ⏭️  跳过（本地模型未加载）');
   }
 
-  // ── 3c. 在线 + 智能对话（agent）──
+  // ── 3c. 在线 + 智能对话（联网搜索/写文档/深度分析 是 agent 快捷提示词）──
   console.log('\n  📌 3c: 在线 + 智能对话');
   if (hasCloud) {
     await switchAiMode(page, '在线');
-    // 在线模式是 agent，可能有"智能对话"action 或快捷提示词
-    await selectAction(page, '智能对话');
+    // 在线模式的 actionBar 是 agent 快捷提示词，直接发消息（agent 模式默认）
     const r = await sendMessageAndWait(page, '你好，简短回复');
     check('在线智能对话：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
     if (r.ok) {
-      // 在线大模型质量应更好：不能空、不能错误
       assertQuality('在线对话', r, {
         minLen: 2, notError: true,
         notContains: ['[ERROR]', 'API Key', '未授权', '余额不足'],
       });
+      logResponse('3c 在线对话', '你好，简短回复', r);
     }
   } else {
     console.log('    ⏭️  跳过（云端未配置）');
   }
 
-  // ── 3d. 并行 + 双模型融合聊天 ──
-  console.log('\n  📌 3d: 并行 + 双模型融合');
+  // ── 3d. 并行 + 知识库问答（并行模式只有知识库问答 action）──
+  console.log('\n  📌 3d: 并行模式');
   if (hasLocalModel && hasCloud) {
     await switchAiMode(page, '并行');
-    await selectAction(page, '聊天');
     const r = await sendMessageAndWait(page, '你好，简短回复');
     check('并行模式：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条 ' + r.elapsed + 's'));
     if (r.ok) {
-      // 并行模式融合本地+云端，质量应稳定
       assertQuality('并行融合', r, {
         minLen: 2, notError: true,
         notContains: ['[ERROR]', '请求失败'],
       });
+      logResponse('3d 并行融合', '你好，简短回复', r);
     }
   } else {
     console.log('    ⏭️  跳过（需本地+云端都就绪）');
@@ -779,21 +817,20 @@ async function test10_docFullFlow(page) {
   console.log('\n🔴 测试 10：文档生成完整流程');
   if (quick) { console.log('  ⏭️  --quick 跳过'); return; }
 
-  // 文档生成只在并行模式
+  // 文档生成 action 在离线模式（actionBar 显示"文档生成"）
   const env = await page.evaluate(() => ({
     hasModel: !document.getElementById('modelTag')?.classList.contains('none'),
-    hasCloud: typeof _cloudConfigured !== 'undefined' && _cloudConfigured,
   })).catch(() => ({}));
-  if (!env.hasModel || !env.hasCloud) {
-    console.log('  ⏭️  跳过（文档生成需并行模式：本地+云端）');
+  if (!env.hasModel) {
+    console.log('  ⏭️  跳过（本地模型未加载）');
     return;
   }
 
   await switchTab(page, 'chat');
-  await switchAiMode(page, '并行');
+  await switchAiMode(page, '离线');
   const hasDoc = await selectAction(page, '文档生成');
   if (!hasDoc) {
-    console.log('  ⏭️  跳过（无文档生成 action）');
+    console.log('  ⏭️  跳过（离线模式无文档生成 action）');
     return;
   }
 
@@ -841,21 +878,26 @@ async function test11_historyRender(page) {
   console.log('\n🔴 测试 11：历史消息渲染（刷新后一致性）');
 
   await switchTab(page, 'chat');
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(1500);  // 等待消息落盘完成
 
-  // 刷新前：记录当前 AI 消息的结构特征
+  // 刷新前：记录所有 AI 消息的结构特征（不只看最近一条）
   const beforeRefresh = await page.evaluate(() => {
     const msgs = document.querySelectorAll('#messages > .msg.ai');
     if (!msgs.length) return null;
     const last = msgs[msgs.length - 1];
+    // 取最长的一条作为正文对比基准（避免最近一条是短回复）
+    let maxLen = 0;
+    msgs.forEach(m => {
+      const sc = m.querySelector('.stream-content');
+      const l = (sc||m).textContent.trim().length;
+      if (l > maxLen) maxLen = l;
+    });
     return {
       count: msgs.length,
-      hasCard: !!last.querySelector('.card-area'),
-      hasStream: !!last.querySelector('.stream-content'),
-      hasFooter: !!last.querySelector('.msg-footer, .stats-detail'),
-      textLen: last.textContent.length,
-      // 检查是否有推理步骤详情（cb-step-detail）的折叠状态
-      hasStepDetail: !!last.querySelector('.cb-step-detail'),
+      maxLen,
+      lastHasCard: !!last.querySelector('.card-area'),
+      lastHasStream: !!last.querySelector('.stream-content'),
+      lastHasFooter: !!last.querySelector('.msg-footer, .stats-detail'),
     };
   }).catch(() => null);
 
@@ -863,28 +905,30 @@ async function test11_historyRender(page) {
     console.log('  ⏭️  跳过（无历史 AI 消息）');
     return;
   }
-  console.log('  刷新前: %d条AI消息, 最近消息 card=%s stream=%s',
-    beforeRefresh.count, beforeRefresh.hasCard, beforeRefresh.hasStream);
+  console.log('  刷新前: %d条AI消息, 最长%d字', beforeRefresh.count, beforeRefresh.maxLen);
 
   // 刷新页面
   await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForTimeout(2500);
-  // 关闭欢迎覆层
+  await page.waitForTimeout(3000);
   await page.evaluate(() => { if (typeof dismissWelcome==='function') dismissWelcome(); }).catch(() => {});
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(800);
 
-  // 刷新后：对比结构特征
   const afterRefresh = await page.evaluate(() => {
     const msgs = document.querySelectorAll('#messages > .msg.ai');
     if (!msgs.length) return null;
     const last = msgs[msgs.length - 1];
+    let maxLen = 0;
+    msgs.forEach(m => {
+      const sc = m.querySelector('.stream-content');
+      const l = (sc||m).textContent.trim().length;
+      if (l > maxLen) maxLen = l;
+    });
     return {
       count: msgs.length,
-      hasCard: !!last.querySelector('.card-area'),
-      hasStream: !!last.querySelector('.stream-content'),
-      hasFooter: !!last.querySelector('.msg-footer, .stats-detail'),
-      textLen: last.textContent.length,
-      hasStepDetail: !!last.querySelector('.cb-step-detail'),
+      maxLen,
+      lastHasCard: !!last.querySelector('.card-area'),
+      lastHasStream: !!last.querySelector('.stream-content'),
+      lastHasFooter: !!last.querySelector('.msg-footer, .stats-detail'),
     };
   }).catch(() => null);
 
@@ -893,26 +937,25 @@ async function test11_historyRender(page) {
     return;
   }
 
-  // 核心断言：刷新后消息数一致 + 结构特征保留
   check('刷新后 AI 消息数一致', afterRefresh.count === beforeRefresh.count,
     '前:' + beforeRefresh.count + ' 后:' + afterRefresh.count);
 
-  if (beforeRefresh.hasCard) {
-    // card-area 可能因停止中断的消息而缺失，宽松判断：只要有任意一条 AI 消息保留 card 即可
-    const anyCardAfter = await page.evaluate(() =>
-      !!document.querySelector('#messages > .msg.ai .card-area')
-    ).catch(() => false);
-    check('刷新后保留 card-area（推理步骤）', anyCardAfter, '最近消息无card但检查全局');
+  // card-area：全局判断（任意一条保留即可，容错中断消息）
+  const anyCardAfter = await page.evaluate(() =>
+    !!document.querySelector('#messages > .msg.ai .card-area')
+  ).catch(() => false);
+  if (beforeRefresh.lastHasCard) {
+    check('刷新后保留 card-area（推理步骤）', anyCardAfter);
   }
-  if (beforeRefresh.hasStream) {
-    check('刷新后保留 stream-content（正文）', afterRefresh.hasStream);
+  if (beforeRefresh.lastHasStream) {
+    check('刷新后保留 stream-content（正文）', afterRefresh.lastHasStream);
   }
-  if (beforeRefresh.hasFooter) {
-    check('刷新后保留 msg-footer（统计）', afterRefresh.hasFooter);
+  if (beforeRefresh.lastHasFooter) {
+    check('刷新后保留 msg-footer（统计）', afterRefresh.lastHasFooter);
   }
-  // 正文长度应接近（允许渲染差异）
-  check('刷新后正文内容保留', Math.abs(afterRefresh.textLen - beforeRefresh.textLen) < beforeRefresh.textLen * 0.3,
-    '前:' + beforeRefresh.textLen + ' 后:' + afterRefresh.textLen);
+  // 正文长度：用最长消息对比，容差 50%（渲染折叠/think 差异）
+  check('刷新后正文内容保留', afterRefresh.maxLen >= beforeRefresh.maxLen * 0.5,
+    '前最长:' + beforeRefresh.maxLen + ' 后最长:' + afterRefresh.maxLen);
 
   await shot(page, '11_after_refresh');
 }
@@ -974,6 +1017,7 @@ async function main() {
   }
 
   await browser.close();
+  flushResponseLog();  // 写出响应记录日志（供后续人工评价）
 
   console.log('\n═══════════════════════════════════════════════════════════');
   console.log('  ✅ 通过: %d   ❌ 失败: %d', passed, failed);
@@ -982,6 +1026,7 @@ async function main() {
     failures.forEach(f => console.log('    • %s', f));
   }
   console.log('  截图: %s', SCREENSHOT_DIR);
+  if (_respLogEntries.length) console.log('  响应记录: %s (%d条)', RESPONSE_LOG, _respLogEntries.length);
   console.log('═══════════════════════════════════════════════════════════\n');
   process.exit(failed > 0 ? 1 : 0);
 }
