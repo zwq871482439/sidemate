@@ -335,7 +335,7 @@ function renderMsg(m) {
   return '<div class="msg ' + cls + variantCls + '" data-hash="' + esc(m.msg_hash || '') + '">' + _renderSingleMsg(m, 0) + '</div>';
 }
 
-function renderMessages() {
+function renderMessages(forceFull) {
   var el = document.getElementById('messages');
   if (!currentMessages.length) {
     var tag = document.getElementById('modelTag');
@@ -366,10 +366,11 @@ function renderMessages() {
     return;
   }
   // 增量追加（跳过仅含 .empty-state 的情况，走全量渲染）
+  // forceFull=true 时强制全量重建（切换会话时必须，否则会把新会话消息追加到旧会话后面导致堆积）
   var existingNodes = el.children;
   var existingCount = existingNodes.length;
   var hasOnlyEmptyState = existingCount === 1 && existingNodes[0].classList.contains('empty-state');
-  if (!hasOnlyEmptyState && existingCount > 0 && currentMessages.length > existingCount) {
+  if (!forceFull && !hasOnlyEmptyState && existingCount > 0 && currentMessages.length > existingCount) {
     for (var ni = existingCount; ni < currentMessages.length; ni++) {
       var m2 = currentMessages[ni];
       var div = document.createElement('div');
@@ -1921,7 +1922,7 @@ function cancelDocOutline() {
   // 恢复正常渲染
   var oldStream = document.getElementById('stream-msg');
   if (oldStream) oldStream.removeAttribute('id');
-  renderMessages();
+  renderMessages(true);  // 取消提纲：消息已从列表删除，强制全量重建
   showToast('已取消文档撰写', 'info');
 }
 

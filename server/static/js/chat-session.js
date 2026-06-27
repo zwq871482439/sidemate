@@ -35,7 +35,7 @@ function startSessionPoll() {
       var serverMsgs = (data.messages || []).length;
       if (typeof _lastMsgCount !== 'undefined' && _lastMsgCount > 0 && serverMsgs !== _lastMsgCount) {
         currentMessages = data.messages || [];
-        renderMessages();
+        renderMessages(true);  // 消息数变化：强制全量重建（数量增减都走全量，避免增量追加错位）
         await loadChatList();
       }
       _lastMsgCount = serverMsgs;
@@ -50,7 +50,7 @@ function startSessionPoll() {
           var serverMsgs = (data.messages || []).length;
           if (typeof _lastMsgCount !== 'undefined' && _lastMsgCount > 0 && serverMsgs !== _lastMsgCount) {
             currentMessages = data.messages || [];
-            renderMessages();
+            renderMessages(true);  // 消息数变化：强制全量重建
             loadChatList();
           }
           _lastMsgCount = serverMsgs;
@@ -147,7 +147,7 @@ function _sidebarSelectChat(path) {
     // P6: 清除残留的流式消息元素（防止切换会话后消息叠加）
     var _oldStream = document.getElementById('stream-msg');
     if (_oldStream) _oldStream.remove();
-    renderMessages();
+    renderMessages(true);  // P0 修复：切换会话强制全量重建，避免消息堆积
     loadChatList();
     // P6 T04: 切换会话后保持模式状态，刷新 action bar 和 placeholder
     if (typeof _currentMode !== 'undefined') {
@@ -250,7 +250,7 @@ function _sidebarExportChat(path) {
       }).then(function(r2) { return r2.json(); }).then(function(d2) {
         currentChatFile = origPath;
         currentMessages = d2.messages || [];
-        renderMessages();
+        renderMessages(true);  // 会话切换：强制全量重建
       });
     }
   });
@@ -287,7 +287,7 @@ async function _sidebarDeleteChat(path) {
       });
       var swData = await swResp.json();
       currentMessages = swData.messages || [];
-      renderMessages();
+      renderMessages(true);  // 会话切换：强制全量重建
     } else {
       await newChat();
     }
@@ -307,7 +307,7 @@ async function onSessionChange() {
   currentChatFile = path;
   currentMessages = data.messages || [];
   _lastMsgCount = currentMessages.length;
-  renderMessages();
+  renderMessages(true);  // 会话切换：强制全量重建
   await loadChatList();
   // P6 T04: 切换会话后保持模式状态
   if (typeof _currentMode !== 'undefined') {
@@ -327,7 +327,7 @@ async function newChat() {
   var data = await resp.json();
   currentChatFile = data.path;
   currentMessages = [];
-  renderMessages();
+  renderMessages(true);  // 新建会话：强制全量重建
   await loadChatList();
   if (typeof fetchContextUsage === 'function') fetchContextUsage();
 }
@@ -364,7 +364,7 @@ async function deleteChat() {
     });
     var swData = await swResp.json();
     currentMessages = swData.messages || [];
-    renderMessages();
+    renderMessages(true);  // 删除会话后切换：强制全量重建
   } else {
     await newChat();
   }
