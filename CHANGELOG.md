@@ -6,77 +6,19 @@
 
 ---
 
-## [0.9.7] - 2026-06-24 — P6 打磨「Indigo + ClearBox」
-
-在 v0.9.6 三模式框架基础上，完成三大系统性升级：**KB 知识库全页面 Indigo 设计重构**、**CardRenderer 卡片式明盒渲染器**、**步骤流架构重构（step_model）**。同步修复数十项体验问题，端到端测试达到 60 pass / 0 fail。
-
-### Added（新功能）
-
-- **AI 洞察仪表盘可视化**：环形图（100px SVG donut）+ 分类图例 + 统计 pill + 建议追问按钮，侧栏色点/图例/扇区三重联动排序置顶
-- **KB v2 Indigo 全页面设计**：渐变装饰顶条（#534AB7 → #A78BFA）、「结构报告」badge、过渡标头「文档档案」、pinned 置顶态卡片、虚线空心「正在等待智能筛选」
-- **CardRenderer 卡片式明盒渲染器**：新增并行模式卡片式明盒（左色条/折叠摘要/AgentTimeline），旧气泡渲染器保留并存
-- **并行三栏对比**：阶段卡片持久化 + Phase:started 事件补全 + 阶段1双列折叠
-- **推理单元折叠**：在线 Agent 每轮打包折叠 + agent_think 透传
-- **文档注入明盒**：KB 引用文档的词元统计折叠展示
-- **提纲编辑器升级**：系统 UI 字体（替代等宽）、编辑/预览切换（Markdown 渲染）、min-height 220px、页面刷新后自动恢复编辑栏
-- **全局自定义滚动条**：聊天区 #D1D5DB、KB 主区 #CFCDF0、浮动处理栏 Indigo 渐变发光，5px 窄条
-
-### Changed（改进）
-
-- **步骤流架构重构**：新建 `core/step_model.py` 统一步骤流数据模型，local_pipeline KB 块从散乱 yield 重构为 Step 对象
-- **输出预留动态化**：释放一半上下文窗口给对话历史，解决长对话截断问题
-- **memory_local 摘要化**：并行模式接入 session 压缩，降低上下文占用
-- **洞察 prompt 重写为实用价值导向**：从"骨架-空白-行动"三段式改为"能回答什么问题 / 适合做哪类讨论 / 最值得补什么"，追问独立 LLM 生成
-- **处理进度全中文化**：「正在切分段落 · 20%」「正在向量化 · 60%」等，补充 chunking_done 映射，卡片/浮动栏统一格式
-- **批量私密对话框文案优化**：改为"设为私密后，云端模型将无法读取该文档内容"，清晰说明权限边界
-- **设置页重构**：文档优化 + 令牌修复 + UI 统一
-- **令牌系统简化**：单文档私密标记，批量操作支持
-- **在线模式**：合并子按钮（取消智能对话/智能文档）
-- **三模式主题色 + 卡片 hover**：视觉一致性提升
-- **消息气泡 action mode 标签**：离线模式下可见
-- **全栈 emoji 清理**：全部图标迁移到 SVG 体系
-
-### Fixed（修复）
-
-- **温度失效**：修复策略路由温度链路断裂，code/math/creative 等策略重新生效
-- **截断同步**：filter 截断后发 truncate 事件同步前端正文
-- **上下文计数器重构**：精确计算注入量，修复 KB 选择+文件上传不更新、取消引用不重置、并行模式双重排除
-- **并行 drain 合并**：修复丢事件 bug
-- **在线 agent_status**：改用后端 phase 字段判断完成态
-- **暗色主题**：KB 洞察仪表盘 + insight badge + 注入防护
-- **KB 洞察持久化**：刷新页面不丢失，删除/批量删除后自动更新
-- **KB 上传队列**：刷新页面后重建队列 + SSE 进度重连，chunking 进度细化
-- **enrich 白名单**：补 card_data 和 parallel_texts，修复持久化丢失
-- **ponytail 审计 F1-F9**：净删死代码 / 函数合一 / stdlib 替代
-
-### Removed（移除）
-
-- 旧 Cloud Agent 系统 5 个死函数
-- 前端 localStorage 洞察缓存（全部统一走服务端）
-
-
-## [0.9.8] - 2026-06-26 — 遗漏 bug 补丁（#5-b/#5-d + #18-b/#18-c）
-
-P6 打磨后发现的几个遗漏缺陷的集中修复，覆盖文档生成与知识库批量上传两条链路。新增回归测试 31 项，全部通过。
-
-### Fixed（修复）
-
-- **#5-b/#5-d 文档生成第二轮崩溃 + 无下载按钮**：根因是 `generate_docx` 里 `import pypandoc` 写在 `try` 块之外，环境缺 pypandoc 时 `ModuleNotFoundError` 直接冒泡，既走不到 manual 回退，又让 `set_doc_status` 返回失败 → 前端拿不到 docx 路径 → 不生成下载按钮。改为三层兜底：pypandoc（import 移入 try）→ subprocess 直调 pandoc CLI（pandoc 二进制通常存在）→ `_generate_docx_manual` 纯 python-docx 回退。不再依赖重装环境
-- **#18-b KB 进度永久卡 30%**：进程崩溃/重启后，`batch_queue.recover_pending()` 会把队列任务重置重跑，但 KB 文档状态没有对应恢复——卡在 `indexing` + `progress=0.3` 的文档变成僵尸（重跑会建新 doc_id，旧的永久停滞）。新增 `KnowledgeBase.cleanup_zombie_docs()`，lifespan startup 时把 `processing/chunking/indexing` 状态的文档重置为 `error`，让用户可见可重试
-- **#18-c 摘要阶段文档混进处理队列**：`kbRefreshDocs` 的队列重建逻辑把所有 `ready` + `tag_status=pending/generating`（等 AI 摘要）的文档都塞进浮动"处理中"队列，批量上传后几十个文件一起涌入。已删除该入队分支——ready 文档不算"处理中"，它们的卡片自身已显示"AI 生成摘要中"提示
-
-### Changed（改进）
-
-- **僵尸清理逻辑下沉为 KB 方法**：`cleanup_zombie_docs()` 从 `server.py` 内联代码抽到 `knowledge/ops.py`，server 与测试共用同一实现，避免逻辑漂移
-
-### Tests（测试）
-
-- 新增 `tests/test_fix_5b_18bc.py`（31 项）：generate_docx 三层兜底（pypandoc 缺失/最小内容/特殊字符/import 位置静态校验）、僵尸文档清理（processing/indexing/chunking/多僵尸/空库/无僵尸不误伤）、#18-c 前端逻辑静态校验
-
-
 ## [0.9.6] - 2026-06-21 — P6「前端统一化 + 三模式」
 
 本次发布聚焦于**前端全面重构、模式系统统一化（离线/在线/并行）、知识库去对话化、ClearBox 明盒透明度**，并完成 P5 遗留的技术债清理。
+
+> **2026-06-27 安全加固补充**：基于全栈代码 review 完成 17 项安全与质量修复。
+> - **路径安全**：`deep_read`/`_chat_root` 闭合路径穿越缺口；backup 排除覆盖 Windows 盘符/UNC/null byte
+> - **代码注入**：calculator 工具的 `eval` 替换为纯 AST 递归求值器（保留白名单前置守卫）
+> - **SSRF 防护**：`fetch_url` 接入 `confirm_external_read` 钩子，公网放行/私网按权限预设/云元数据端点硬拒绝，防 DNS rebinding
+> - **XSS 收敛**：DOMPurify 移除 `onclick`/`style` 死配置
+> - **扩展包校验重做**：删除 HMAC 摆设层（默认密钥源码公开，增益为零），改为 SHA256 完整性校验（有 `_meta.json` 严格全覆盖，无则宽松兼容）；修复"无 checksum 文件跳过校验"漏洞
+> - **进程所有权**：ollama 新增 MANAGED/EXTERNAL 状态，根治 watchdog 撞外部实例的状态混乱
+> - **CORS 调试开关**：默认严格模式，隐私安全 tab 加「允许第三方访问」开关
+> - **质量**：删除 shutdown 重复执行块/死代码；新增 73 项安全单测
 
 ### Added（新功能）
 

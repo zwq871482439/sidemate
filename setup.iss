@@ -1,10 +1,10 @@
 ; ====================================================================
 ; Sidemate 安装脚本 (Inno Setup)
-; 版本: 0.9.5.0
+; 版本: 0.9.6.0
 ; ====================================================================
 
 #define MyAppName "桌伴 Sidemate"
-#define MyAppVersion "0.9.5.0"
+#define MyAppVersion "0.9.6.0"
 #define MyAppPublisher "Sidemate Team"
 #define MyAppURL "https://sidemate.app"
 #define MyAppExeName "Sidemate.exe"
@@ -14,7 +14,7 @@
 AppId={{B7E3F2A1-8C9D-4E5F-A6B0-1D2E3F4A5B6C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName=Sidemate v0.9 Patch 5
+AppVerName=Sidemate v0.9.6
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -26,7 +26,7 @@ DisableDirPage=yes
 
 ; 输出设置
 OutputDir=output
-OutputBaseFilename=Sidemate_Setup_v0.9.5
+OutputBaseFilename=Sidemate_Setup_v0.9.6
 SetupIconFile=installer\setup.ico
 ; Patch4 v3.1：ultra64 → normal（含模型时 ultra 跑一整天，normal 30 分钟）
 Compression=lzma2/normal
@@ -42,13 +42,13 @@ InfoBeforeFile=LICENSE
 ; 品牌图（可选，如不存在会使用默认图）
 ; 取消注释以下两行当品牌图准备好后:
 ; WizardImageFile=installer\wizard_image.bmp
-; WizardSmallImageFile=installer\wizard_small.bmp
+; WizardSmallSetupFile=installer\wizard_small.bmp
 
 ; 版本信息
-VersionInfoVersion=0.9.5.0
+VersionInfoVersion=0.9.6.0
 VersionInfoCompany=Sidemate Team
 VersionInfoProductName=桌伴 Sidemate
-VersionInfoProductVersion=0.9.5.0
+VersionInfoProductVersion=0.9.6.0
 
 ; 禁用程序组页（桌面应用不需要）
 DisableProgramGroupPage=yes
@@ -69,8 +69,9 @@ Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs
 ; Python 嵌入式环境
 Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
 
-; Server 源码（排除用户数据和测试注册）
-Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\deps_manifest.json,settings.json,extensions\*.json,requirements.txt"
+; Server 源码（排除：用户数据、缓存、日志、开发测试、本地设置）
+; 注意：实际用户数据运行时落在 {app}\server\data\ 下，安装包只带空壳结构
+Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests"
 
 ; LICENSE 和第三方许可
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion

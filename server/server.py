@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Sidemate v0.9 Patch 4 — FastAPI + Ollama + Qwen3.5-4B
-版本号唯一权威来源：config.py 的 DEFAULTS["version"]（前端/launcher 均从此处取）。
-VERSION / VERSION_PATCH 保留用于向后兼容显示。
+Sidemate — FastAPI + Ollama + Qwen3.5-4B
+版本号唯一权威来源：config.py 的 DEFAULTS["version"]（当前 0.9.6，前端/launcher 均从此处取）。
 启动: python server.py
 
 本文件(server.py)是主服务进程，负责：
@@ -86,15 +85,14 @@ ensure_dirs()
 # ===== 配置常量 =====
 HOST = os.environ.get("LOCAL_AI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LOCAL_AI_PORT", "8976"))
-VERSION = "0.9"
-VERSION_PATCH = 5
 LOG_FILE = os.path.join(LOG_DIR, "server.log")
 
 # 会话缓存常量（P1-A4: 已移至 session/context_cache.py 中按需调用）
 from config import get as _cfg_get, DEFAULTS as _DEFAULTS, __version__ as CONFIG_VERSION
 
-# 统一版本号：FULL_VERSION 由 config.__version__ 驱动（单一来源：config.py DEFAULTS["version"]）
-FULL_VERSION = CONFIG_VERSION  # "0.9.5"
+# 版本号唯一来源：config.py 的 DEFAULTS["version"]（当前 0.9.6）
+# 前端/launcher/CHANGELOG 均以此为准
+FULL_VERSION = CONFIG_VERSION
 
 # ===== 日志 =====
 _LOG_LEVEL = getattr(logging, os.environ.get("LOCAL_AI_LOG_LEVEL", "INFO").upper(), logging.INFO)
@@ -424,7 +422,7 @@ async def _lifespan(app):
     except Exception as e:
         log.warning("[SHUTDOWN] 线程池关闭失败: %s" % str(e)[:80])
 
-app = FastAPI(title="sidemate", version="%s.%s" % (VERSION, VERSION_PATCH), lifespan=_lifespan)
+app = FastAPI(title="sidemate", version=FULL_VERSION, lifespan=_lifespan)
 # CORS 配置：
 #   严格模式（默认）= 仅允许 LOCAL_AI_CORS 配置的本地源，防止本机恶意页面静默调用 API
 #   调试模式 = 允许任意源（用户在设置中显式开启，用于第三方前端调试）
@@ -626,7 +624,7 @@ def main():
                 mod_versions.append("%s=%s" % (parts[-1], v))
         except ImportError:
             pass
-    log.info("Sidemate v%s.%s (%s) 启动 [%s]" % (VERSION, VERSION_PATCH, FULL_VERSION, ", ".join(mod_versions)))
+    log.info("Sidemate v%s 启动 [%s]" % (FULL_VERSION, ", ".join(mod_versions)))
 
     print("[2/2] 启动 HTTP 服务...")
     print("")
