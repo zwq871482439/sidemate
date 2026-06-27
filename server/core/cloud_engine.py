@@ -903,7 +903,12 @@ class CloudEngine:
         if not _HAS_OPENAI:
             return (False, 0, "openai 包未安装")
 
-        api_key = self._decode_api_key(_temp_api_key or _cfg("cloud_api_key", ""))
+        # N-4 修复：表单传入的 _temp_api_key 是原始明文 key，不能按 base64 解码；
+        # 只有已保存的配置值 cloud_api_key 是 base64 编码，需要解码。
+        if _temp_api_key:
+            api_key = _temp_api_key
+        else:
+            api_key = self._decode_api_key(_cfg("cloud_api_key", ""))
         if not api_key:
             return (False, 0, "API Key 未配置")
 

@@ -62,6 +62,19 @@ _UNARYOP_TABLE = {
     ast.USub: _op.neg, ast.UAdd: _op.pos,
 }
 
+# BUG-6：幂运算指数上限，防止 `9**9**9` 之类巨整数算力/内存 DoS。
+# 表达式自底向上求值，每个 ** 的指数都会被检查，嵌套幂同样受限。
+_MAX_POW_EXPONENT = 1000
+
+
+def _check_pow_exponent(exp):
+    """校验幂运算指数规模，超限抛 ValueError。"""
+    try:
+        if abs(exp) > _MAX_POW_EXPONENT:
+            raise ValueError("指数过大（绝对值上限 %d）" % _MAX_POW_EXPONENT)
+    except TypeError:
+        raise ValueError("非法指数")
+
 
 def _safe_math_eval(expression: str):
     """安全计算数学表达式。仅允许数字 + 四则运算 + 白名单函数，拒绝任何代码/属性访问。
@@ -125,6 +138,8 @@ def _safe_math_eval(expression: str):
         if isinstance(node, ast.BinOp):
             left = _eval(node.left)
             right = _eval(node.right)
+            if isinstance(node.op, ast.Pow):
+                _check_pow_exponent(right)
             return _BINOP_TABLE[type(node.op)](left, right)
         if isinstance(node, ast.UnaryOp):
             operand = _eval(node.operand)
@@ -134,6 +149,8 @@ def _safe_math_eval(expression: str):
         if isinstance(node, ast.Call):
             func = _SAFE_MATH_FUNCS[node.func.id]
             args = [_eval(a) for a in node.args]
+            if node.func.id == "pow" and len(args) >= 2:
+                _check_pow_exponent(args[1])
             return func(*args)
         # Name 仅在 Call.func 上下文出现（_check 已保证），不直接求值为值
         raise ValueError("不可求值的节点: %s" % type(node).__name__)
@@ -638,7 +655,8 @@ class AgentLoop:
             elif tool_name == "summarize_history":
                 # Patch5 G.一致性：调用云端模型压缩历史
                 focus = args.get("focus", "")
-                stats["summarizes"] += 1
+                # BUG-3 修复：summarizes 未在 stats 初始化，原 += 1 会 KeyError 导致工具必失败
+                stats["summarizes"] = stats.get("summarizes", 0) + 1
                 try:
                     summary = self._summarize_history(focus)
                     if summary:

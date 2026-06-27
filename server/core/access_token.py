@@ -325,6 +325,14 @@ class AccessTokenManager:
         # 验证令牌
         is_valid, level = self.verify_token(token)
 
+        # N-3 修复：一次性在锁内取出令牌绑定的 doc_id，避免在下方循环里无锁读 _tokens_cache。
+        # 若令牌已失效/被清理，bound_doc_id 为 None，私密文档一律不放行（fail-safe）。
+        bound_doc_id = None
+        if is_valid and level == "full":
+            with self._lock:
+                _tok = self._tokens_cache.get(token)
+                bound_doc_id = _tok.doc_id if _tok else None
+
         accessible = []
         for doc_id in doc_ids:
             is_private = is_private_map.get(doc_id, False)
@@ -333,11 +341,8 @@ class AccessTokenManager:
                 accessible.append(doc_id)
             else:
                 # 私密文档：只有 full 令牌绑定到此 doc_id 时才放行
-                if is_valid and level == "full":
-                    # 检查令牌是否绑定到此 doc_id
-                    access_token_obj = self._tokens_cache.get(token)
-                    if access_token_obj and access_token_obj.doc_id == doc_id:
-                        accessible.append(doc_id)
+                if is_valid and level == "full" and bound_doc_id == doc_id:
+                    accessible.append(doc_id)
                 # level == "search" 或无有效令牌 → 跳过
 
         return accessible

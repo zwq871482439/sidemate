@@ -390,6 +390,10 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         _chat_id = chat_id_from_path(chat_file)
     agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id, history=model_history)
 
+    # BUG-2 修复：timeline 缓冲必须在 preload 块之前初始化（下方 preload 分支会 append），
+    # 否则在赋值前引用会触发 UnboundLocalError。
+    _agent_timeline_buf = []  # Patch4 v3.1 BUG#7：收集 agent_status 用于持久化到 messages.json
+
     # P6: 如果用户附带了文件（上传文件或KB引用），预先注入内容到 context_cache
     _preloaded_kb = False
     if hasattr(ctx, 'file_path') and ctx.file_path:
@@ -495,7 +499,11 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     think_text = ""
     think_len = 0
     agent_summary = None
-    _agent_timeline_buf = []  # Patch4 v3.1 BUG#7：收集 agent_status 用于持久化到 messages.json
+    # BUG-2 修复：_agent_timeline_buf 已上移到 preload 块之前初始化，此处不再重置，
+    # 否则会清掉 preload 阶段写入的 timeline 条目。
+    # BUG-1 修复：_run_agent_loop 无"仅提纲"流程，doc_phase 恒为 None，
+    # 但保存分支会引用 _doc_outline_only，需在此提供该变量避免 NameError。
+    _doc_outline_only = False
 
     # Patch4 v3：UI 状态机 + 进度可视化（精简版）
     # 不再有 doc_started / section_done / docx 兜底生成。
@@ -706,9 +714,8 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     doc_filename = None
 
     # ====== 保存对话 ======
-    elapsed = time.time() - ctx.__dict__.get('_t0', time.time())
-    # 重新计算 elapsed（用模块级 t0）
-    # 由于 _run_agent_loop 不直接有 t0，我们用 time.time() 近似
+    # N-1 修复：删除未使用的 elapsed（_t0 从未设置）。耗时统一用管道启动时间 _pipeline_t0
+    # （由 routers/chat.py 在创建 StreamContext 后设置）。
     _elapsed = time.time() - (ctx.__dict__.get('_pipeline_t0') or time.time())
 
     response_chars = len(full_text)

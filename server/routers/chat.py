@@ -242,7 +242,22 @@ async def api_chat_stream(request: Request):
     # 文件处理：支持上传文件路径 或 KB doc_id 引用
     file_info = None
     if file_path:
+        # BUG-7 修复：file_path 仅接受位于会话目录(CHAT_DIR)或上传缓存(UPLOAD_DIR)内的真实路径，
+        # 防止传入任意本机绝对路径读取服务器文件（如 C:\Windows\...）。越界路径落入下方 KB doc_id 分支。
+        _fp_is_local_file = False
         if os.path.exists(file_path):
+            try:
+                _rp = os.path.realpath(file_path)
+                for _base in (CHAT_DIR, UPLOAD_DIR):
+                    _rb = os.path.realpath(_base)
+                    if _rp == _rb or _rp.startswith(_rb + os.sep):
+                        _fp_is_local_file = True
+                        break
+            except Exception:
+                _fp_is_local_file = False
+            if not _fp_is_local_file:
+                log.warning("[CHAT] 拒绝越界 file_path（不在会话/上传目录内）: %s" % file_path)
+        if _fp_is_local_file:
             # Patch5 G：上传文件不再截断，前端预检已确保 token 在预算内
             from knowledge.file_extractor import process_uploaded_file
             file_info = process_uploaded_file(file_path, message or "", max_chars=10**9)
@@ -865,6 +880,14 @@ async def api_file_upload(file: UploadFile = File(...), chat_id: str = ""):
         return JSONResponse({"error": "未选择文件"}, status_code=400)
 
     safe_name = _safe_filename(file.filename)
+    # N-5：上传扩展名白名单（与 knowledge/file_extractor 可解析类型对齐），拒绝非文档类型落盘
+    _ALLOWED_UPLOAD_EXTS = {
+        ".txt", ".md", ".csv", ".docx", ".doc", ".xlsx", ".xls",
+        ".pdf", ".epub", ".html", ".htm", ".srt", ".rtf",
+    }
+    _up_ext = os.path.splitext(safe_name)[1].lower()
+    if _up_ext not in _ALLOWED_UPLOAD_EXTS:
+        return JSONResponse({"error": "不支持的文件类型: %s" % (_up_ext or "(无扩展名)")}, status_code=400)
     content = await file.read()
     if len(content) > _UPLOAD_MAX_SIZE:
         return JSONResponse({"error": "文件过大（最大50MB）"}, status_code=400)
