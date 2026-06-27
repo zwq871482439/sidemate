@@ -6,13 +6,24 @@ var _kbPollTimer = null;
 var _kbModuleStatus = null;
 var _kbBusyProcessing = false;
 
-// P6 审计修复 M5：切出 KB Tab 时清理轮询定时器，防止泄漏
+// P6 审计修复 M5：切出 KB Tab 时清理轮询定时器 + 关闭所有 SSE 连接，防止泄漏
 function _kbStopPolling() {
   if (_kbPollTimer) {
     clearInterval(_kbPollTimer);
     _kbPollTimer = null;
   }
+  // M5: 关闭所有活跃 SSE 连接（切 Tab 后不需要继续接收进度，切回时会重新订阅）
+  // 记录被关闭的 docId，供切回时恢复订阅
+  _kbClosedDocIds = [];
+  for (var _did in _kbEventSources) {
+    try { _kbEventSources[_did].close(); } catch (e) {}
+    _kbClosedDocIds.push(_did);
+  }
+  _kbEventSources = {};
+  _kbActiveEventSources = 0;
+  _kbPendingSubscriptions = [];  // 排队中的也清空，切回时按需重建
 }
+var _kbClosedDocIds = [];   // M5: 切 Tab 时被关闭的 SSE docId，切回时恢复
 var _kbModelsLoaded = false;
 var _kbTagClusters = [];
 var _kbLastDocs = [];
@@ -62,16 +73,44 @@ async function kbRouteState() {
     }
 
     if (loading) loading.style.display = 'none';
-    if (fullInterface) fullInterface.style.display = 'flex';
+    if (fullInterface) loading.style.display = 'flex';
     await kbRefreshDocs();
+    _kbResumeSubscriptions();  // M5: 恢复切 Tab 时关闭的 SSE 订阅
     kbRefreshAIOverview();  // P6: 页面加载时恢复洞察
   } catch (e) {
     silentLog('[KB] 状态路由失败:', e);
     if (loading) loading.style.display = 'none';
-    if (fullInterface) fullInterface.style.display = 'flex';
+    if (fullInterface) loading.style.display = 'flex';
     await kbRefreshDocs();
+    _kbResumeSubscriptions();  // M5: 异常兜底也恢复订阅
     kbRefreshAIOverview();  // P6: 异常兜底也恢复洞察
   }
+}
+
+// M5: 切回 KB Tab 时，对仍在处理中的文档重新订阅 SSE（之前切 Tab 时被关闭）
+function _kbResumeSubscriptions() {
+  if (!_kbClosedDocIds || _kbClosedDocIds.length === 0) return;
+  // 只恢复仍在处理中的文档（kbRefreshDocs 已更新 _kbLastDocs 状态）
+  for (var i = 0; i < _kbClosedDocIds.length; i++) {
+    var _did = _kbClosedDocIds[i];
+    var _stillProcessing = false;
+    for (var j = 0; j < _kbLastDocs.length; j++) {
+      if (_kbLastDocs[j].doc_id === _did) {
+        var _st = _kbLastDocs[j].status;
+        if (_st === 'processing' || _st === 'indexing' || _st === 'pending') _stillProcessing = true;
+        break;
+      }
+    }
+    if (_stillProcessing) {
+      // 从队列找文件名（订阅需要显示用）
+      var _fn = '';
+      for (var k = 0; k < _kbQueueItems.length; k++) {
+        if (_kbQueueItems[k].docId === _did) { _fn = _kbQueueItems[k].filename || ''; break; }
+      }
+      kbSubscribeProgress(_did, _fn);
+    }
+  }
+  _kbClosedDocIds = [];
 }
 
 // --- 安装模块 ---
@@ -1225,6 +1264,7 @@ async function kbUploadFile(f) {
 var _kbActiveEventSources = 0;
 var _kbMaxEventSources = 3;
 var _kbPendingSubscriptions = [];
+var _kbEventSources = {};    // M5: {docId: EventSource} 跟踪活跃连接，供切 Tab 时统一关闭
 
 function kbSubscribeProgress(docId, filename) {
   if (_kbActiveEventSources >= _kbMaxEventSources) {
@@ -1238,6 +1278,7 @@ function kbSubscribeProgress(docId, filename) {
   try {
     es = new EventSource(url);
     _kbActiveEventSources++;
+    _kbEventSources[docId] = es;  // M5: 记录实例，供切 Tab 关闭
   } catch (e) {
     console.warn('[KB] SSE 不支持，回退轮询', e);
     return;
@@ -1249,6 +1290,7 @@ function kbSubscribeProgress(docId, filename) {
     _closed = true;
     try { es.close(); } catch (e) {}
     _kbActiveEventSources--;
+    delete _kbEventSources[docId];  // M5: 清理记录
     _kbTryNextSubscription();
   };
 

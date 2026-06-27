@@ -380,86 +380,6 @@ function kbRenderTagClusters(docs) {
 //  去重处理
 // ============================================================
 
-async function kbShowDuplicates() {
-  try {
-    var resp = await fetch(_apiBase + '/api/kb/duplicates');
-    var data = await resp.json();
-    if (!data.duplicates || data.duplicates.length === 0) {
-      showToast('暂无待处理的重复文档', 'info');
-      return;
-    }
-    kbRenderDuplicatesDialog(data.duplicates);
-  } catch (err) {
-    showToast('加载重复列表失败: ' + err.message, 'error');
-  }
-}
-
-function kbRenderDuplicatesDialog(duplicates) {
-  var overlay = document.createElement('div');
-  overlay.className = 'kb-dup-overlay';
-  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
-
-  var card = document.createElement('div');
-  card.className = 'kb-dup-card';
-
-  var html = '<div class="kb-dup-header">';
-  html += '<span class="kb-dup-title">重复文档处理</span>';
-  html += '<button class="kb-dup-close" onclick="this.closest(\'.kb-dup-overlay\').remove()">' + (typeof iconSvg === 'function' ? iconSvg('close', '14') : '×') + '</button>';
-  html += '</div>';
-  html += '<div class="kb-dup-desc">检测到 ' + duplicates.length + ' 个重复文档，请选择处理方式：</div>';
-  html += '<div class="kb-dup-list">';
-
-  for (var i = 0; i < duplicates.length; i++) {
-    var dup = duplicates[i];
-    var levelText = dup.duplicate_level === 'l1_filename_size' ? '文件名+大小完全相同' : '内容相似度 ' + (dup.duplicate_similarity * 100).toFixed(0) + '%';
-    html += '<div class="kb-dup-item" data-doc-id="' + esc(dup.doc_id) + '">';
-    html += '<div class="kb-dup-item-info">';
-    html += '<div class="kb-dup-item-name">' + esc(dup.filename) + '</div>';
-    html += '<div class="kb-dup-item-detail">与「' + esc(dup.existing_filename) + '」重复 · ' + levelText + '</div>';
-    html += '</div>';
-    html += '<div class="kb-dup-actions">';
-    html += '<button onclick="kbResolveDuplicate(\'' + esc(dup.doc_id) + '\', \'keep_both\')" class="kb-dup-btn">保留两版</button>';
-    html += '<button onclick="kbResolveDuplicate(\'' + esc(dup.doc_id) + '\', \'replace\')" class="kb-dup-btn">替换旧版</button>';
-    html += '<button onclick="kbResolveDuplicate(\'' + esc(dup.doc_id) + '\', \'cancel\')" class="kb-dup-btn kb-dup-btn-danger">删除新版</button>';
-    html += '</div>';
-    html += '</div>';
-  }
-
-  html += '</div>';
-  card.innerHTML = html;
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-}
-
-async function kbResolveDuplicate(docId, action) {
-  try {
-    var resp = await fetch(_apiBase + '/api/kb/duplicates/resolve', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({doc_id: docId, action: action})
-    });
-    var data = await resp.json();
-    if (data.ok) {
-      showToast(data.detail, 'success');
-      var item = document.querySelector('.kb-dup-item[data-doc-id="' + docId + '"]');
-      if (item) { item.style.opacity = '0.4'; item.style.pointerEvents = 'none'; }
-      setTimeout(function() {
-        if (item) item.remove();
-        var remaining = document.querySelectorAll('.kb-dup-item');
-        if (remaining.length === 0) {
-          var overlay = document.querySelector('.kb-dup-overlay');
-          if (overlay) overlay.remove();
-        }
-        kbRefreshDocs();
-      }, 600);
-    } else {
-      showToast('操作失败: ' + (data.error || '未知错误'), 'error');
-    }
-  } catch (err) {
-    showToast('操作失败: ' + err.message, 'error');
-  }
-}
-
 // ============================================================
 //  初始化（文档列表刷新后调用）
 // ============================================================
@@ -508,8 +428,6 @@ window.kbRenderTagClusters = kbRenderTagClusters;
 window.kbLoadHeatmap = kbLoadHeatmap;
 window.kbResetHeatmap = kbResetHeatmap;
 window.kbRenderHeatmapInDocList = kbRenderHeatmapInDocList;
-window.kbShowDuplicates = kbShowDuplicates;
-window.kbResolveDuplicate = kbResolveDuplicate;
 window.kbOnDocsRendered = kbOnDocsRendered;
 window._kbSelectedDocs = _kbSelectedDocs;
 window._kbHeatmapData = _kbHeatmapData;
