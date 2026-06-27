@@ -1833,16 +1833,23 @@ function _createDocConfirmBar(outlineText) {
   bar.className = 'doc-confirm-bar';
   bar.id = 'docConfirmBar';
   bar.innerHTML =
-    '<details class="doc-outline-edit-wrap"><summary>' + iconSvg('doc','14') + ' 文档提纲已生成 — 点击查看，可编辑章节后确认</summary>' +
-    '<div class="doc-outline-hint">编辑下方 Markdown 提纲后点击「确认生成」，按钮旁可切换预览</div>' +
-    '<div class="doc-outline-toolbar"><button class="doc-outline-toggle-btn active" id="docOutlineEditBtn" onclick="toggleOutlinePreview(false)">编辑</button><button class="doc-outline-toggle-btn" id="docOutlinePreviewBtn" onclick="toggleOutlinePreview(true)">预览</button></div>' +
-    '<textarea class="doc-outline-editor" id="docOutlineEditor">' + esc(outlineText || '') + '</textarea>' +
-    '<div class="doc-outline-preview" id="docOutlinePreview"></div>' +
+    '<details class="doc-outline-edit-wrap" open><summary>' + iconSvg('doc','14') + ' 文档提纲已生成 — 点击查看，可编辑章节后确认</summary>' +
+    '<div class="doc-outline-hint">默认显示结构预览；点击「编辑」可修改章节，修改后切回「预览」查看效果</div>' +
+    '<div class="doc-outline-toolbar"><button class="doc-outline-toggle-btn" id="docOutlineEditBtn" onclick="toggleOutlinePreview(false)">编辑</button><button class="doc-outline-toggle-btn active" id="docOutlinePreviewBtn" onclick="toggleOutlinePreview(true)">预览</button></div>' +
+    '<textarea class="doc-outline-editor" id="docOutlineEditor" style="display:none">' + esc(outlineText || '') + '</textarea>' +
+    '<div class="doc-outline-preview" id="docOutlinePreview" style="display:block"></div>' +
     '</details>' +
     '<div class="doc-confirm-actions">' +
     '<button class="doc-confirm-ok" onclick="confirmDocOutline()">' + iconSvg('check','14') + ' 确认生成</button>' +
     '<button class="doc-confirm-cancel" onclick="cancelDocOutline()">取消</button>' +
     '</div>';
+  // 默认预览态：立即渲染结构预览（无需用户点按钮即可看清层级）
+  var _previewDiv = bar.querySelector('#docOutlinePreview');
+  if (_previewDiv && typeof md === 'function') {
+    _previewDiv.innerHTML = md(outlineText || '');
+  } else if (_previewDiv) {
+    _previewDiv.innerHTML = '<pre>' + esc(outlineText || '') + '</pre>';
+  }
   return bar;
 }
 
@@ -2308,13 +2315,7 @@ var CardRenderer = (function() {
         col.streamEl.innerHTML = md(_parallelTexts[ch], true);
         if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
       }
-      // 首个 token 标记对应步骤开始
-      var stepId = ch === 'local' ? 'local_gen' : 'cloud_gen';
-      if (_steps[stepId] && _steps[stepId].status === 'pending') {
-        _steps[stepId].status = 'running';
-        _steps[stepId].startTime = Date.now();
-        _updateStepDot(stepId, 'running');
-      }
+      // 步骤状态由 agent_timeline 的 phase 事件驱动（_handleParallelEvent），此处不再重复设置
     }
     return _parallelTexts[ch];
   }
@@ -2528,10 +2529,17 @@ var CardRenderer = (function() {
       var dotCls = _dotClass(s.status);
       var elapsedTxt = s.elapsed_ms != null ? _formatElapsed(s.elapsed_ms) : '';
       var countTxt = s.count != null ? '(' + s.count + '篇)' : '';
+      // 并行步骤(local_gen/cloud_gen)：label 前加彩色圆点 + 文字着色（与生成中 _createStep 一致）
+      var _labelInner = '<span class="cb-label">' + _esc(s.label) + '</span>';
+      if (s.id === 'local_gen') {
+        _labelInner = '<span class="cb-par-dot local"></span><span class="cb-label cb-label-local">' + _esc(s.label) + '</span>';
+      } else if (s.id === 'cloud_gen') {
+        _labelInner = '<span class="cb-par-dot cloud"></span><span class="cb-label cb-label-cloud">' + _esc(s.label) + '</span>';
+      }
       html += '<div class="cb-step" data-status="' + s.status + '">' +
                 '<span class="cb-dot ' + dotCls + '"></span>' +
                 '<div class="cb-step-row">' +
-                  '<span class="cb-label">' + _esc(s.label) + '</span>' +
+                  _labelInner +
                   (countTxt ? '<span class="cb-count">' + countTxt + '</span>' : '') +
                   (elapsedTxt ? '<span class="cb-time">' + elapsedTxt + '</span>' : '') +
                 '</div>';
@@ -2547,14 +2555,12 @@ var CardRenderer = (function() {
         if (s.id === 'local_gen' && m.parallel_texts.local) {
           var _ls = _fmtParallelTokenStats(_ps.local || null);
           html += '<div class="cb-output"><div class="cb-par-card local">' +
-            '<div class="cb-par-card-head"><span class="cb-par-dot local"></span>本地AI生成回答</div>' +
             '<div class="cb-par-card-body">' + md(m.parallel_texts.local, true) + '</div>' +
             (_ls ? '<div class="cb-par-card-stats">' + _esc(_ls) + '</div>' : '') +
             '</div></div>';
         } else if (s.id === 'cloud_gen' && m.parallel_texts.cloud) {
           var _cs = _fmtParallelTokenStats(_ps.cloud || null);
           html += '<div class="cb-output"><div class="cb-par-card cloud">' +
-            '<div class="cb-par-card-head"><span class="cb-par-dot cloud"></span>云端AI补充</div>' +
             '<div class="cb-par-card-body">' + md(m.parallel_texts.cloud, true) + '</div>' +
             (_cs ? '<div class="cb-par-card-stats">' + _esc(_cs) + '</div>' : '') +
             '</div></div>';
@@ -2583,8 +2589,15 @@ var CardRenderer = (function() {
     div.className = 'cb-step';
     div.setAttribute('data-status', 'running');
     div.setAttribute('data-id', stepId);
+    // 并行步骤(local_gen/cloud_gen)：label 前加彩色圆点 + 文字着色，替代卡片内重复标题
+    var _labelHtml = '<span class="cb-label">' + _esc(label) + '</span>';
+    if (stepId === 'local_gen') {
+      _labelHtml = '<span class="cb-par-dot local"></span><span class="cb-label cb-label-local">' + _esc(label) + '</span>';
+    } else if (stepId === 'cloud_gen') {
+      _labelHtml = '<span class="cb-par-dot cloud"></span><span class="cb-label cb-label-cloud">' + _esc(label) + '</span>';
+    }
     div.innerHTML = '<span class="cb-dot run"></span>' +
-      '<div class="cb-step-row"><span class="cb-label">' + _esc(label) + '</span></div>';
+      '<div class="cb-step-row">' + _labelHtml + '</div>';
     _container.appendChild(div);
     step.el = div;
     _steps[stepId] = step;
@@ -2828,7 +2841,7 @@ var CardRenderer = (function() {
   // 确保并行列容器存在
   // 在 .cb-step[data-id=local_gen/cloud_gen] 下创建/取回嵌套卡片
   // （生成中与完成后、历史重建共用同一结构，消除 UI 跳变）
-  // 结构：.cb-step > .cb-output > .cb-par-card.local/.cloud > .cb-par-card-head + .cb-par-card-body
+  // 结构：.cb-step(步骤行含彩色圆点+label) > .cb-output > .cb-par-card.local/.cloud > .cb-par-card-body
   function _ensureParallelCard(channel) {
     if (_parallelCols[channel]) return _parallelCols[channel];
     if (!_container) return null;
@@ -2848,14 +2861,9 @@ var CardRenderer = (function() {
       out.className = 'cb-output';
       card = document.createElement('div');
       card.className = 'cb-par-card ' + channel;
-      var title = channel === 'local' ? '本地AI生成回答' : '云端AI补充';
-      var dotCls = channel === 'local' ? 'local' : 'cloud';
-      var head = document.createElement('div');
-      head.className = 'cb-par-card-head';
-      head.innerHTML = '<span class="cb-par-dot ' + dotCls + '"></span>' + title;
+      // 不再加卡片内标题头（与步骤行标题重复）；本地/云端区分靠步骤行的彩色圆点+文字
       bodyEl = document.createElement('div');
       bodyEl.className = 'cb-par-card-body';
-      card.appendChild(head);
       card.appendChild(bodyEl);
       out.appendChild(card);
       stepEl.appendChild(out);

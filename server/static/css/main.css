@@ -792,13 +792,20 @@ body.has-offline-banner #app{padding-top:44px}
 .doc-outline-edit-wrap > summary::before{content:'▸';font-size:9px;transition:transform .15s}
 .doc-outline-edit-wrap[open] > summary::before{transform:rotate(90deg)}
 .doc-outline-editor{width:100%;min-height:220px;margin-top:8px;padding:10px;border:1px solid var(--border-color);border-radius:6px;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7;color:var(--text-primary);background:var(--bg-primary);resize:vertical;box-sizing:border-box}
+  /* 等宽字体让 # / ## 符号对齐醒目，用户编辑时能看清标题层级 */
+  font-family:"SF Mono","Cascadia Code","Consolas","Microsoft YaHei",monospace;font-size:13px;line-height:1.8;
+  color:var(--text-primary);background:var(--bg-primary);resize:vertical;box-sizing:border-box;tab-size:2}
 .doc-outline-editor:focus{outline:none;border-color:var(--accent-color)}
-.doc-outline-preview{width:100%;min-height:220px;margin-top:8px;padding:12px;border:1px solid var(--border-color);border-radius:6px;
-  background:var(--bg-primary);overflow-y:auto;font-size:13px;line-height:1.7;color:var(--text-primary);box-sizing:border-box;display:none}
-.doc-outline-preview h1{font-size:1.2em;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border-color)}
-.doc-outline-preview h2{font-size:1.05em;margin:12px 0 4px}
-.doc-outline-preview ul{margin:4px 0;padding-left:18px}
+.doc-outline-preview{width:100%;min-height:220px;max-height:360px;margin-top:8px;padding:14px 16px;border:1px solid var(--border-color);border-radius:6px;
+  background:var(--bg-primary);overflow-y:auto;font-size:13px;line-height:1.8;color:var(--text-primary);box-sizing:border-box;display:none}
+/* 预览态：标题层级用色条 + 缩进 + 字重强化区分，解决"结构看不清"的根问题 */
+.doc-outline-preview h1{font-size:1.15em;font-weight:600;margin:0 0 12px;padding:6px 10px;
+  border-left:3px solid var(--accent-color);background:var(--bg-tertiary);border-radius:0 4px 4px 0}
+.doc-outline-preview h2{font-size:1em;font-weight:600;margin:14px 0 4px;padding-left:10px;
+  border-left:3px solid var(--border-color);color:var(--text-primary)}
+.doc-outline-preview h3{font-size:.92em;font-weight:500;margin:10px 0 4px;padding-left:20px;color:var(--text-muted)}
+.doc-outline-preview p{margin:4px 0 4px 10px;color:var(--text-secondary)}
+.doc-outline-preview ul{margin:4px 0;padding-left:24px}
 .doc-outline-preview li{margin:2px 0}
 .doc-outline-toolbar{display:flex;align-items:center;gap:8px;margin-top:8px}
 .doc-outline-toggle-btn{padding:3px 10px;border:0.5px solid var(--border-color);border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:11px;transition:all .15s}
@@ -2389,6 +2396,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* 产出区（transform/sources/keywords 共用外壳，统一缩进+卡片感）
    统一风格：左侧细边框 + 内容卡片化，生成中/完成后/刷新后一致 */
 .cb-output { margin:4px 0; padding-left:10px; border-left:2px solid var(--bg-tertiary); overflow:hidden; }
+/* 并行卡片的外层 output 左边线随内容着色：本地浅绿、云端蓝、检索紫（知识库主题色） */
+.cb-output:has(> .cb-par-card.local) { border-left-color:rgba(29,158,117,.5); }
+.cb-output:has(> .cb-par-card.cloud) { border-left-color:var(--primary-500); }
+.cb-output:has(> .cb-sources) { border-left-color:#AFA9EC; }
 /* 裸内容容器（transform/cloud-kw）统一卡片化；sources 自带 .cb-src 卡片；par-card 自带卡片样式 */
 .cb-output > .cb-transform, .cb-output > .cb-cloud-kw { padding:6px 10px; background:var(--bg-secondary); border-radius:4px; }
 /* transform（reformulate 改写对比） */
@@ -2413,21 +2424,24 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .cb-thinking { padding:5px 8px; background:rgba(127,119,221,.06); border-radius:4px; color:var(--text-muted); font-size:11px; line-height:1.6; border-left:2px solid #AFA9EC; word-break:break-word; }
 
 /* 并行模式嵌套卡片（生成中/完成后/历史重建 统一结构）
-   结构：.cb-step > .cb-output > .cb-par-card.local/.cloud > .cb-par-card-head + .cb-par-card-body */
-.cb-par-card{padding:8px 10px;border-radius:4px;background:var(--bg-secondary);border-left:3px solid var(--border-color)}
-/* 本地绿、云端蓝：浅底 + 彩色左边框（生成中与完成后视觉一致） */
-.cb-par-card.local{background:rgba(29,158,117,.05);border-left-color:var(--dot-ok)}
-.cb-par-card.cloud{background:rgba(74,106,143,.05);border-left-color:var(--primary-500)}
-.cb-par-card-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text-primary);margin-bottom:6px}
+   向检索来源(.cb-src)看齐：中性 bg + 圆角，无彩色左边框；
+   本地/云端区分靠步骤行的彩色圆点(cb-par-dot) + label 着色(cb-label-local/cloud)。 */
+.cb-par-card{padding:5px 8px;border-radius:4px;background:var(--bg-secondary)}
+.cb-par-card.local,.cb-par-card.cloud{background:var(--bg-secondary)}
 .cb-par-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .cb-par-dot.local{background:var(--dot-ok)}
 .cb-par-dot.cloud{background:var(--primary-500)}
+/* 并行步骤行 label 着色（本地绿/云端蓝），与圆点呼应。
+   用 !important + 高特异性确保在任意 data-status(running/done) 下都保持模式色，
+   不被 .cb-step[data-status] .cb-label 覆盖，保证三状态（生成中/生成后/刷新后）一致。 */
+.cb-step .cb-label.cb-label-local{color:var(--dot-ok) !important;font-weight:600}
+.cb-step .cb-label.cb-label-cloud{color:var(--primary-500) !important;font-weight:600}
 /* 正文：white-space:normal（靠 md 的 <p>/<br> 排版），消除旧 pre-wrap 导致的多空行 */
 .cb-par-card-body{font-size:11px;color:var(--text-secondary);white-space:normal;line-height:1.6;word-break:break-word}
 .cb-par-card-body p{margin:0 0 4px}
 .cb-par-card-body p:last-child{margin-bottom:0}
 /* 并行卡片各自的统计行 */
-.cb-par-card-stats{margin-top:6px;padding-top:4px;border-top:0.5px solid var(--border-color);font-size:10px;color:var(--text-muted)}
+.cb-par-card-stats{margin-top:4px;padding-top:3px;border-top:0.5px solid var(--border-color);font-size:10px;color:var(--text-muted)}
 
 /* 阶段标签 */
 .phase-label { font-size:10px; color:var(--text-muted); font-weight:500; margin:8px 0 4px; letter-spacing:.5px; padding-left:0; }
