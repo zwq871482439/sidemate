@@ -613,7 +613,19 @@
           <div class="card">
             <h4>程序版本</h4>
             <div class="row"><span class="lbl">桌伴 Sidemate</span><span class="val" id="versionDisplay" style="color:var(--accent-color);font-weight:600">加载中...</span></div>
-            <div style="margin-top:6px"><a href="javascript:void(0)" onclick="resetOnboarding()" style="color:var(--text-muted);text-decoration:none;font-size:11px">重新查看新手指引</a></div>
+            <div style="margin-top:14px">
+              <button type="button" class="btn-ghost" onclick="resetOnboarding()"
+                      style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;border:0.5px solid var(--border-color);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;transition:all 0.15s"
+                      onmouseover="this.style.background='var(--bg-primary)';this.style.borderColor='var(--accent-color)';this.style.color='var(--accent-color)'"
+                      onmouseout="this.style.background='var(--bg-secondary)';this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                重新查看新手指引
+              </button>
+            </div>
           </div>
 
           <div class="card">
@@ -827,7 +839,7 @@ window.addEventListener('load', function() {
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
 <script src="/static/js/chat-session.js?v=2.40"></script>
-<script src="/static/js/chat-actions.js?v=2.40"></script>
+<script src="/static/js/chat-actions.js?v=2.41"></script>
 <script src="/static/js/chat-files.js?v=2.40"></script>
 <script src="/static/js/chat-export.js?v=2.40"></script>
 <script src="/static/js/chat-ui.js?v=2.68"></script>
