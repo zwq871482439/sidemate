@@ -279,370 +279,445 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
                       "note": "recorder module archived in P6"}
 
         elif ext_type == "llm":
-            # LLM 模型包：safetensors/GGUF 文件，Ollama 直接读取
-            progress(42, "安装 LLM 模型文件...")
-            llm_dst = os.path.join(_project_dir, "models", "llm", ext_name)
-            os.makedirs(llm_dst, exist_ok=True)
+            # LLM 模型包。两种格式：
+            #   (A) Ollama 原生格式：包内已有 models/blobs/sha256-* + models/manifests/registry.ollama.ai/...
+            #       （由 ollama 导出或本工具 --repack 生成），manifest.json 含 "models": {blobs, manifests}
+            #   (B) 裸 GGUF 格式：包内是 .gguf 文件，需现场计算 SHA256、生成 blob/manifest、注册到 Ollama
+            # 先检测 (A)，命中则走快速合并路径（省去 GB 级文件重算 hash）；否则回退到 (B)。
+            native_manifests_src = os.path.join(extracted_dir, "models", "manifests")
+            native_blobs_src = os.path.join(extracted_dir, "models", "blobs")
 
-            # 模型文件可能在 extracted_dir 根目录或 models/ 子目录
-            models_src = os.path.join(extracted_dir, "models")
-            if os.path.isdir(models_src):
-                # 检查是否存在 models/llm/<ext_name>/ 结构（打包时带了完整路径）
-                deep_path = os.path.join(models_src, "llm", ext_name)
-                if os.path.isdir(deep_path):
-                    models_src = deep_path
-                    log.info("[EXT] 检测到深层路径，使用: %s", deep_path)
-                # 结构: models/<model_name>/ 或 models/ 下直接是文件
-                for item in os.listdir(models_src):
-                    src = os.path.join(models_src, item)
-                    dst = os.path.join(llm_dst, item)
-                    if os.path.isdir(src):
-                        if os.path.exists(dst):
-                            shutil.rmtree(dst)
-                        shutil.copytree(src, dst)
-                    elif os.path.isfile(src):
-                        os.makedirs(os.path.dirname(dst), exist_ok=True)
-                        shutil.copy2(src, dst)
-                    progress(70, "复制模型文件 %s..." % item)
-            else:
-                # 模型文件在根目录
-                for item in os.listdir(extracted_dir):
-                    if item in ("_meta.json", "manifest.json", "wheels"):
+            if os.path.isdir(native_manifests_src) and os.path.isdir(native_blobs_src):
+                # === 格式 (A): Ollama 原生格式 — 直接合并 blobs + manifests ===
+                progress(42, "安装 LLM 模型文件（Ollama 原生格式）...")
+                models_dst = os.path.join(_project_dir, "models")
+                blobs_dst = os.path.join(models_dst, "blobs")
+                manifests_dst = os.path.join(models_dst, "manifests")
+                os.makedirs(blobs_dst, exist_ok=True)
+                os.makedirs(manifests_dst, exist_ok=True)
+
+                # 合并 blobs（按 hash 命名，重复 hash 跳过）
+                blob_count = 0
+                blob_total = 0
+                for item in os.listdir(native_blobs_src):
+                    src = os.path.join(native_blobs_src, item)
+                    if not os.path.isfile(src):
                         continue
-                    src = os.path.join(extracted_dir, item)
-                    dst = os.path.join(llm_dst, item)
-                    if os.path.isdir(src):
-                        if os.path.exists(dst):
-                            shutil.rmtree(dst)
-                        shutil.copytree(src, dst)
-                    elif os.path.isfile(src):
-                        shutil.copy2(src, dst)
-                    progress(70, "复制模型文件 %s..." % item)
+                    dst = os.path.join(blobs_dst, item)
+                    if os.path.exists(dst):
+                        log.info("[EXT] blob 已存在，跳过: %s", item)
+                        continue
+                    # GB 级文件硬链接失败则降级为复制
+                    try:
+                        try:
+                            os.link(src, dst)
+                        except OSError:
+                            shutil.copy2(src, dst)
+                    except Exception as copy_err:
+                        raise RuntimeError("复制 blob 失败 %s: %s" % (item, str(copy_err)[:100]))
+                    blob_count += 1
+                    blob_total += os.path.getsize(src)
+                    progress(min(42 + int(blob_count * 30 / max(1, len(os.listdir(native_blobs_src)))), 72),
+                             "安装模型文件 %s..." % item[:24])
+                log.info("[EXT] 已合并 %d 个 blob（%.1f MB）", blob_count, blob_total / 1048576)
 
-            progress(80, "注册 LLM 模型...")
-            # 直接写 Ollama blob + manifest 文件（绕过所有 API 和 CLI 的坑）
-            try:
-                import hashlib as _hashlib
-                import json as _json
-                import shutil as _shutil
-                import httpx as _httpx
-                import time as _time
+                # 合并 manifests（覆盖写入，保留目录结构）
+                progress(75, "注册 Ollama 模型 manifest...")
+                for dirpath, dirnames, filenames in os.walk(native_manifests_src):
+                    rel_dir = os.path.relpath(dirpath, native_manifests_src)
+                    dst_dir = os.path.join(manifests_dst, rel_dir) if rel_dir != "." else manifests_dst
+                    os.makedirs(dst_dir, exist_ok=True)
+                    for fname in filenames:
+                        shutil.copy2(os.path.join(dirpath, fname), os.path.join(dst_dir, fname))
 
-                ollama_model_name = ext_name.replace(".", "-")
-                model_path = os.path.join(_project_dir, "models", "llm", ext_name)
-                models_dir = os.path.join(_project_dir, "models")
-                blobs_dir = os.path.join(models_dir, "blobs")
-                # Ollama API 地址从配置读取（与 model_manager 一致）
+                # 从 manifest 路径推断 ollama 模型名（.../library/<name>/latest）
+                ollama_model_name = "unknown"
+                for dirpath, dirnames, filenames in os.walk(manifests_dst):
+                    if "latest" in filenames:
+                        # dirpath = .../manifests/registry.ollama.ai/library/<name>
+                        ollama_model_name = os.path.basename(dirpath.rstrip(os.sep))
+                        break
+                log.info("[EXT] Ollama 原生模型已注册: %s", ollama_model_name)
+
+                # 触发 Ollama 刷新模型列表缓存（NOPRUNE 模式下写文件即生效，这里只是加速识别）
+                progress(80, "刷新 Ollama 模型列表...")
                 try:
-                    from config import get as _cfg
-                    _ollama_host = _cfg("ollama_host", "127.0.0.1")
-                    _ollama_port = _cfg("ollama_port", 11434)
+                    import httpx as _httpx
+                    try:
+                        from config import get as _cfg
+                        _oh = _cfg("ollama_host", "127.0.0.1")
+                        _op = _cfg("ollama_port", 11434)
+                    except Exception:
+                        _oh, _op = "127.0.0.1", 11434
+                    _httpx.get("http://%s:%d/api/ps" % (_oh, _op), timeout=5, trust_env=False)
                 except Exception:
-                    _ollama_host, _ollama_port = "127.0.0.1", 11434
-                ollama_api = "http://%s:%d" % (_ollama_host, _ollama_port)
+                    pass  # 刷新失败不影响（文件已就位，重启后必生效）
 
-                # 找到 GGUF 文件
-                gguf_files = [f for f in os.listdir(model_path) if f.endswith(".gguf")]
-                if not gguf_files:
-                    raise RuntimeError("未找到 GGUF 文件: %s" % model_path)
-                gguf_name = gguf_files[0]
-                gguf_path = os.path.join(model_path, gguf_name)
-                gguf_size = os.path.getsize(gguf_path)
-                log.info("[EXT] GGUF 文件: %s (%.1f MB)", gguf_name, gguf_size / 1048576)
+            else:
+                # === 格式 (B): 裸 GGUF 包 — 现场生成 blob/manifest 注册 ===
+                progress(42, "安装 LLM 模型文件...")
+                llm_dst = os.path.join(_project_dir, "models", "llm", ext_name)
+                os.makedirs(llm_dst, exist_ok=True)
 
-                progress(82, "计算文件指纹...")
-
-                # Step 1: 计算 GGUF 文件的 SHA256
-                log.info("[EXT] 计算 GGUF SHA256...")
-                sha256 = _hashlib.sha256()
-                with open(gguf_path, "rb") as f:
-                    while True:
-                        chunk = f.read(8192)
-                        if not chunk:
-                            break
-                        sha256.update(chunk)
-                gguf_digest = "sha256:%s" % sha256.hexdigest()
-                gguf_blob_name = "sha256-%s" % sha256.hexdigest()
-                log.info("[EXT] GGUF digest: %s", gguf_digest)
-
-                # Step 2: 移动 GGUF 到 blobs 目录（硬链接或移动）
-                os.makedirs(blobs_dir, exist_ok=True)
-                blob_dst = os.path.join(blobs_dir, gguf_blob_name)
-                progress(85, "注册模型（%.0f MB）..." % (gguf_size / 1048576))
-                if os.path.exists(blob_dst):
-                    log.info("[EXT] Blob 已存在，跳过: %s", blob_dst)
+                # 模型文件可能在 extracted_dir 根目录或 models/ 子目录
+                models_src = os.path.join(extracted_dir, "models")
+                if os.path.isdir(models_src):
+                    # 检查是否存在 models/llm/<ext_name>/ 结构（打包时带了完整路径）
+                    deep_path = os.path.join(models_src, "llm", ext_name)
+                    if os.path.isdir(deep_path):
+                        models_src = deep_path
+                        log.info("[EXT] 检测到深层路径，使用: %s", deep_path)
+                    # 结构: models/<model_name>/ 或 models/ 下直接是文件
+                    for item in os.listdir(models_src):
+                        src = os.path.join(models_src, item)
+                        dst = os.path.join(llm_dst, item)
+                        if os.path.isdir(src):
+                            if os.path.exists(dst):
+                                shutil.rmtree(dst)
+                            shutil.copytree(src, dst)
+                        elif os.path.isfile(src):
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            shutil.copy2(src, dst)
+                        progress(70, "复制模型文件 %s..." % item)
                 else:
-                    # 先尝试硬链接（省空间），失败则复制
-                    try:
-                        os.link(gguf_path, blob_dst)
-                        log.info("[EXT] 硬链接 GGUF → blob")
-                    except OSError:
-                        _shutil.copy2(gguf_path, blob_dst)
-                        log.info("[EXT] 复制 GGUF → blob")
-                    log.info("[EXT] Blob 写入完成: %s", blob_dst)
+                    # 模型文件在根目录
+                    for item in os.listdir(extracted_dir):
+                        if item in ("_meta.json", "manifest.json", "wheels"):
+                            continue
+                        src = os.path.join(extracted_dir, item)
+                        dst = os.path.join(llm_dst, item)
+                        if os.path.isdir(src):
+                            if os.path.exists(dst):
+                                shutil.rmtree(dst)
+                            shutil.copytree(src, dst)
+                        elif os.path.isfile(src):
+                            shutil.copy2(src, dst)
+                        progress(70, "复制模型文件 %s..." % item)
 
-                # Step 3: 创建 params layer blob
-                from config import MAX_OUTPUT_TOKENS as _DEFAULT_NUM_PREDICT
-                params = {"num_predict": _DEFAULT_NUM_PREDICT}
-                # Ollama 要求的整数参数列表（字符串值必须转换）
-                _INT_PARAMS = {
-                    "num_predict", "num_ctx", "num_keep", "num_batch",
-                    "top_k", "seed", "num_gpu",
-                }
-                _FLOAT_PARAMS = {
-                    "temperature", "top_p", "min_p", "repeat_penalty",
-                    "presence_penalty", "frequency_penalty",
-                }
-                _ARRAY_PARAMS = {"stop"}  # Ollama 要求这些参数必须是数组
-                # 解析 Modelfile 中的参数
-                modelfile_src = os.path.join(model_path, "Modelfile")
-                if os.path.exists(modelfile_src):
-                    with open(modelfile_src, "r", encoding="utf-8") as mf:
-                        for line in mf:
-                            stripped = line.strip()
-                            if stripped.startswith("PARAMETER "):
-                                parts = stripped[len("PARAMETER "):].split(None, 1)
-                                if len(parts) == 2:
-                                    key, val = parts[0].strip(), parts[1].strip()
-                                    # 剥离值两端的引号（Modelfile 格式常见）
-                                    if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
-                                        val = val[1:-1]
-                                    # 解析 JSON 值（如 stop 的数组）
-                                    if val.startswith("["):
-                                        try:
-                                            val = _json.loads(val)
-                                        except Exception:
-                                            pass
-                                    elif key in _INT_PARAMS and isinstance(val, str):
-                                        try:
-                                            val = int(val)
-                                        except (ValueError, TypeError):
-                                            pass
-                                    elif key in _FLOAT_PARAMS and isinstance(val, str):
-                                        try:
-                                            val = float(val)
-                                        except (ValueError, TypeError):
-                                            pass
-                                    # Ollama 要求 stop 等参数必须是数组
-                                    if key in _ARRAY_PARAMS and isinstance(val, str):
-                                        val = [val]
-                                    params[key] = val
-                # 确保 num_predict 是整数
-                if "num_predict" not in params:
-                    params["num_predict"] = _DEFAULT_NUM_PREDICT
-                elif isinstance(params["num_predict"], str):
-                    try:
-                        params["num_predict"] = int(params["num_predict"])
-                    except (ValueError, TypeError):
-                        params["num_predict"] = _DEFAULT_NUM_PREDICT
-                params_bytes = _json.dumps(params, separators=(",", ":")).encode("utf-8")
-                params_digest = "sha256:%s" % _hashlib.sha256(params_bytes).hexdigest()
-                params_blob_name = "sha256-%s" % _hashlib.sha256(params_bytes).hexdigest()
-                params_blob_path = os.path.join(blobs_dir, params_blob_name)
-                with open(params_blob_path, "wb") as f:
-                    f.write(params_bytes)
-                log.info("[EXT] Params blob: %s → %s", params_digest, params)
-
-                # Step 4: 创建 template layer blob（从 Modelfile 解析，或使用默认 ChatML）
-                template_str = ""
-                if os.path.exists(modelfile_src):
-                    with open(modelfile_src, "r", encoding="utf-8") as mf:
-                        mf_content = mf.read()
-                    # 提取 TEMPLATE "..." 或 TEMPLATE '''...''' 块
-                    import re as _re
-                    tmpl_match = _re.search(r'TEMPLATE\s+["\'](.+?)["\']', mf_content, _re.DOTALL)
-                    if not tmpl_match:
-                        # 尝试多行 TEMPLATE ... END 块
-                        tmpl_match = _re.search(r'TEMPLATE\s+"""\s*(.*?)\s*"""', mf_content, _re.DOTALL)
-                    if tmpl_match:
-                        template_str = tmpl_match.group(1).replace("\\n", "\n")
-                if not template_str:
-                    # 默认 ChatML 模板（Qwen 系列通用）
-                    template_str = (
-                        "{{- if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n"
-                        "{{- end }}<|im_start|>user\n{{ .Prompt }}<|im_end|>\n"
-                        "<|im_start|>assistant\n"
-                    )
-                template_bytes = template_str.encode("utf-8")
-                template_digest = "sha256:%s" % _hashlib.sha256(template_bytes).hexdigest()
-                template_blob_name = "sha256-%s" % _hashlib.sha256(template_bytes).hexdigest()
-                template_blob_path = os.path.join(blobs_dir, template_blob_name)
-                with open(template_blob_path, "wb") as f:
-                    f.write(template_bytes)
-                log.info("[EXT] Template blob: %s", template_digest)
-
-                # Step 5: 创建 system prompt layer blob（从 Modelfile 解析，或使用默认）
-                system_str = ""
-                if os.path.exists(modelfile_src):
-                    with open(modelfile_src, "r", encoding="utf-8") as mf:
-                        mf_content = mf.read()
-                    import re as _re
-                    sys_match = _re.search(r'SYSTEM\s+["\'](.+?)["\']', mf_content, _re.DOTALL)
-                    if sys_match:
-                        system_str = sys_match.group(1)
-                if not system_str:
-                    # 使用 prompt_builder 中的默认身份 prompt
-                    try:
-                        from prompts import SYSTEM_PROMPT_V2
-                        system_str = SYSTEM_PROMPT_V2.split("\n")[0]  # 取第一行核心身份
-                    except Exception:
-                        system_str = "你是桌伴(Sidemate)，本地AI办公助手。中文直接回答。"
-                system_bytes = system_str.encode("utf-8")
-                system_digest = "sha256:%s" % _hashlib.sha256(system_bytes).hexdigest()
-                system_blob_name = "sha256-%s" % _hashlib.sha256(system_bytes).hexdigest()
-                system_blob_path = os.path.join(blobs_dir, system_blob_name)
-                with open(system_blob_path, "wb") as f:
-                    f.write(system_bytes)
-                log.info("[EXT] System blob: %s", system_digest)
-
-                # Step 6: 创建 config layer blob
-                layer_digests = [gguf_digest, template_digest, params_digest, system_digest]
-                # 从 manifest 提取模型元信息（非必须，仅供 Ollama 展示）
-                _model_family = manifest.get("model_family", "")
-                _model_type = manifest.get("model_type", "")
-                _file_type = manifest.get("file_type", "")
-                # 从 GGUF 文件名推断（如 qwen3-5-4b-q5_k_m.gguf）
-                if not _model_family:
-                    _name_lower = gguf_name.lower()
-                    if "qwen3" in _name_lower:
-                        _model_family = "qwen3"
-                    elif "qwen2" in _name_lower:
-                        _model_family = "qwen2"
-                    elif "qwen" in _name_lower:
-                        _model_family = "qwen"
-                    elif "llama" in _name_lower:
-                        _model_family = "llama"
-                    elif "gemma" in _name_lower:
-                        _model_family = "gemma"
-                    else:
-                        _model_family = "unknown"
-                if not _file_type:
-                    _name_lower = gguf_name.lower()
-                    for _qtype in ["q8_0", "q6_k", "q5_k_m", "q5_k_s", "q4_k_m", "q4_k_s", "q4_0", "q3_k_m", "f16", "fp16"]:
-                        if _qtype in _name_lower:
-                            _file_type = _qtype.upper()
-                            break
-                    if not _file_type:
-                        _file_type = "unknown"
-                config_obj = {
-                    "os": "linux",
-                    "architecture": "amd64",
-                    "rootfs": {"type": "layers", "diff_ids": layer_digests},
-                    "model_family": _model_family,
-                    "model_type": _model_type,
-                    "file_type": _file_type,
-                }
-                config_bytes = _json.dumps(config_obj, separators=(",", ":")).encode("utf-8")
-                config_digest = "sha256:%s" % _hashlib.sha256(config_bytes).hexdigest()
-                config_blob_name = "sha256-%s" % _hashlib.sha256(config_bytes).hexdigest()
-                config_blob_path = os.path.join(blobs_dir, config_blob_name)
-                with open(config_blob_path, "wb") as f:
-                    f.write(config_bytes)
-                log.info("[EXT] Config blob: %s", config_digest)
-
-                # Step 7: 写 manifest
-                progress(90, "写入模型注册信息...")
-                layers = [
-                    {
-                        "mediaType": "application/vnd.ollama.image.model",
-                        "digest": gguf_digest,
-                        "size": gguf_size,
-                    },
-                    {
-                        "mediaType": "application/vnd.ollama.image.template",
-                        "digest": template_digest,
-                        "size": len(template_bytes),
-                    },
-                    {
-                        "mediaType": "application/vnd.ollama.image.params",
-                        "digest": params_digest,
-                        "size": len(params_bytes),
-                    },
-                    {
-                        "mediaType": "application/vnd.ollama.image.system",
-                        "digest": system_digest,
-                        "size": len(system_bytes),
-                    },
-                ]
-                manifest_obj = {
-                    "schemaVersion": 2,
-                    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-                    "config": {
-                        "mediaType": "application/vnd.docker.container.image.v1+json",
-                        "digest": config_digest,
-                        "size": len(config_bytes),
-                    },
-                    "layers": layers,
-                }
-
-                manifest_dir = os.path.join(
-                    models_dir, "manifests", "registry.ollama.ai", "library", ollama_model_name
-                )
-                os.makedirs(manifest_dir, exist_ok=True)
-                manifest_path = os.path.join(manifest_dir, "latest")
-                with open(manifest_path, "w", encoding="utf-8") as f:
-                    _json.dump(manifest_obj, f, separators=(",", ":"))
-                log.info("[EXT] Manifest 写入: %s", manifest_path)
-                log.info("[EXT] Manifest 内容: %s", _json.dumps(manifest_obj, indent=2))
-
-                # Step 8: 验证 — 轮询 /api/tags 确认 Ollama 识别
-                progress(92, "验证模型注册...")
-                log.info("[EXT] 等待 Ollama 识别 manifest...")
-                create_ok = False
-                for _poll in range(10):
-                    _time.sleep(1)
-                    try:
-                        tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10, trust_env=False)
-                        if tags_resp.status_code == 200:
-                            existing = [m.get("name", "") for m in tags_resp.json().get("models", [])]
-                            existing_base = [n.split(":")[0] for n in existing]
-                            if ollama_model_name in existing or ollama_model_name in existing_base:
-                                log.info("[EXT] 模型注册成功 (轮询 #%d): %s", _poll + 1, existing)
-                                create_ok = True
-                                break
-                    except Exception as poll_err:
-                        log.warning("[EXT] 轮询异常: %s", str(poll_err)[:100])
-
-                if not create_ok:
-                    log.warning("[EXT] Ollama 未立即识别 manifest，但文件已就位，重启后生效")
-                    log.info("[EXT] 尝试重启 Ollama 刷新缓存...")
-                    try:
-                        _httpx.get("%s/api/ps" % ollama_api, timeout=5, trust_env=False)
-                    except Exception:
-                        pass
-                    _time.sleep(2)
-                    try:
-                        tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10, trust_env=False)
-                        if tags_resp.status_code == 200:
-                            existing = [m.get("name", "") for m in tags_resp.json().get("models", [])]
-                            existing_base = [n.split(":")[0] for n in existing]
-                            if ollama_model_name in existing or ollama_model_name in existing_base:
-                                log.info("[EXT] 重试后模型出现: %s", existing)
-                                create_ok = True
-                    except Exception:
-                        pass
-
-                if not create_ok:
-                    log.warning("[EXT] Ollama 缓存未刷新，但模型文件已注册，需重启生效")
-
-                log.info("[EXT] Ollama 模型注册完成: %s (ollama name: %s)", ext_name, ollama_model_name)
-
-                # 清理 llm 目录（GGUF 已在 blobs 中，llm 目录不再需要）
+                progress(80, "注册 LLM 模型...")
+                # 直接写 Ollama blob + manifest 文件（绕过所有 API 和 CLI 的坑）
                 try:
-                    if os.path.isdir(model_path):
-                        shutil.rmtree(model_path)
-                        log.info("[EXT] 清理 llm 目录: %s (%.1f MB 已释放)", model_path, gguf_size / 1048576)
-                        # 如果 llm 父目录为空也一并清理
-                        llm_parent = os.path.join(_project_dir, "models", "llm")
-                        if os.path.isdir(llm_parent) and not os.listdir(llm_parent):
-                            os.rmdir(llm_parent)
-                            log.info("[EXT] 清理空的 llm 父目录: %s", llm_parent)
-                except Exception as clean_err:
-                    log.warning("[EXT] llm 目录清理失败（不影响使用）: %s", str(clean_err)[:100])
+                    import hashlib as _hashlib
+                    import json as _json
+                    import shutil as _shutil
+                    import httpx as _httpx
+                    import time as _time
 
-            except Exception as ollama_err:
-                log.warning("[EXT] Ollama 注册异常: %s", str(ollama_err)[:200])
-                raise
+                    ollama_model_name = ext_name.replace(".", "-")
+                    model_path = os.path.join(_project_dir, "models", "llm", ext_name)
+                    models_dir = os.path.join(_project_dir, "models")
+                    blobs_dir = os.path.join(models_dir, "blobs")
+                    # Ollama API 地址从配置读取（与 model_manager 一致）
+                    try:
+                        from config import get as _cfg
+                        _ollama_host = _cfg("ollama_host", "127.0.0.1")
+                        _ollama_port = _cfg("ollama_port", 11434)
+                    except Exception:
+                        _ollama_host, _ollama_port = "127.0.0.1", 11434
+                    ollama_api = "http://%s:%d" % (_ollama_host, _ollama_port)
+
+                    # 找到 GGUF 文件
+                    gguf_files = [f for f in os.listdir(model_path) if f.endswith(".gguf")]
+                    if not gguf_files:
+                        raise RuntimeError("未找到 GGUF 文件: %s" % model_path)
+                    gguf_name = gguf_files[0]
+                    gguf_path = os.path.join(model_path, gguf_name)
+                    gguf_size = os.path.getsize(gguf_path)
+                    log.info("[EXT] GGUF 文件: %s (%.1f MB)", gguf_name, gguf_size / 1048576)
+
+                    progress(82, "计算文件指纹...")
+
+                    # Step 1: 计算 GGUF 文件的 SHA256
+                    log.info("[EXT] 计算 GGUF SHA256...")
+                    sha256 = _hashlib.sha256()
+                    with open(gguf_path, "rb") as f:
+                        while True:
+                            chunk = f.read(8192)
+                            if not chunk:
+                                break
+                            sha256.update(chunk)
+                    gguf_digest = "sha256:%s" % sha256.hexdigest()
+                    gguf_blob_name = "sha256-%s" % sha256.hexdigest()
+                    log.info("[EXT] GGUF digest: %s", gguf_digest)
+
+                    # Step 2: 移动 GGUF 到 blobs 目录（硬链接或移动）
+                    os.makedirs(blobs_dir, exist_ok=True)
+                    blob_dst = os.path.join(blobs_dir, gguf_blob_name)
+                    progress(85, "注册模型（%.0f MB）..." % (gguf_size / 1048576))
+                    if os.path.exists(blob_dst):
+                        log.info("[EXT] Blob 已存在，跳过: %s", blob_dst)
+                    else:
+                        # 先尝试硬链接（省空间），失败则复制
+                        try:
+                            os.link(gguf_path, blob_dst)
+                            log.info("[EXT] 硬链接 GGUF → blob")
+                        except OSError:
+                            _shutil.copy2(gguf_path, blob_dst)
+                            log.info("[EXT] 复制 GGUF → blob")
+                        log.info("[EXT] Blob 写入完成: %s", blob_dst)
+
+                    # Step 3: 创建 params layer blob
+                    from config import MAX_OUTPUT_TOKENS as _DEFAULT_NUM_PREDICT
+                    params = {"num_predict": _DEFAULT_NUM_PREDICT}
+                    # Ollama 要求的整数参数列表（字符串值必须转换）
+                    _INT_PARAMS = {
+                        "num_predict", "num_ctx", "num_keep", "num_batch",
+                        "top_k", "seed", "num_gpu",
+                    }
+                    _FLOAT_PARAMS = {
+                        "temperature", "top_p", "min_p", "repeat_penalty",
+                        "presence_penalty", "frequency_penalty",
+                    }
+                    _ARRAY_PARAMS = {"stop"}  # Ollama 要求这些参数必须是数组
+                    # 解析 Modelfile 中的参数
+                    modelfile_src = os.path.join(model_path, "Modelfile")
+                    if os.path.exists(modelfile_src):
+                        with open(modelfile_src, "r", encoding="utf-8") as mf:
+                            for line in mf:
+                                stripped = line.strip()
+                                if stripped.startswith("PARAMETER "):
+                                    parts = stripped[len("PARAMETER "):].split(None, 1)
+                                    if len(parts) == 2:
+                                        key, val = parts[0].strip(), parts[1].strip()
+                                        # 剥离值两端的引号（Modelfile 格式常见）
+                                        if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                                            val = val[1:-1]
+                                        # 解析 JSON 值（如 stop 的数组）
+                                        if val.startswith("["):
+                                            try:
+                                                val = _json.loads(val)
+                                            except Exception:
+                                                pass
+                                        elif key in _INT_PARAMS and isinstance(val, str):
+                                            try:
+                                                val = int(val)
+                                            except (ValueError, TypeError):
+                                                pass
+                                        elif key in _FLOAT_PARAMS and isinstance(val, str):
+                                            try:
+                                                val = float(val)
+                                            except (ValueError, TypeError):
+                                                pass
+                                        # Ollama 要求 stop 等参数必须是数组
+                                        if key in _ARRAY_PARAMS and isinstance(val, str):
+                                            val = [val]
+                                        params[key] = val
+                    # 确保 num_predict 是整数
+                    if "num_predict" not in params:
+                        params["num_predict"] = _DEFAULT_NUM_PREDICT
+                    elif isinstance(params["num_predict"], str):
+                        try:
+                            params["num_predict"] = int(params["num_predict"])
+                        except (ValueError, TypeError):
+                            params["num_predict"] = _DEFAULT_NUM_PREDICT
+                    params_bytes = _json.dumps(params, separators=(",", ":")).encode("utf-8")
+                    params_digest = "sha256:%s" % _hashlib.sha256(params_bytes).hexdigest()
+                    params_blob_name = "sha256-%s" % _hashlib.sha256(params_bytes).hexdigest()
+                    params_blob_path = os.path.join(blobs_dir, params_blob_name)
+                    with open(params_blob_path, "wb") as f:
+                        f.write(params_bytes)
+                    log.info("[EXT] Params blob: %s → %s", params_digest, params)
+
+                    # Step 4: 创建 template layer blob（从 Modelfile 解析，或使用默认 ChatML）
+                    template_str = ""
+                    if os.path.exists(modelfile_src):
+                        with open(modelfile_src, "r", encoding="utf-8") as mf:
+                            mf_content = mf.read()
+                        # 提取 TEMPLATE "..." 或 TEMPLATE '''...''' 块
+                        import re as _re
+                        tmpl_match = _re.search(r'TEMPLATE\s+["\'](.+?)["\']', mf_content, _re.DOTALL)
+                        if not tmpl_match:
+                            # 尝试多行 TEMPLATE ... END 块
+                            tmpl_match = _re.search(r'TEMPLATE\s+"""\s*(.*?)\s*"""', mf_content, _re.DOTALL)
+                        if tmpl_match:
+                            template_str = tmpl_match.group(1).replace("\\n", "\n")
+                    if not template_str:
+                        # 默认 ChatML 模板（Qwen 系列通用）
+                        template_str = (
+                            "{{- if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n"
+                            "{{- end }}<|im_start|>user\n{{ .Prompt }}<|im_end|>\n"
+                            "<|im_start|>assistant\n"
+                        )
+                    template_bytes = template_str.encode("utf-8")
+                    template_digest = "sha256:%s" % _hashlib.sha256(template_bytes).hexdigest()
+                    template_blob_name = "sha256-%s" % _hashlib.sha256(template_bytes).hexdigest()
+                    template_blob_path = os.path.join(blobs_dir, template_blob_name)
+                    with open(template_blob_path, "wb") as f:
+                        f.write(template_bytes)
+                    log.info("[EXT] Template blob: %s", template_digest)
+
+                    # Step 5: 创建 system prompt layer blob（从 Modelfile 解析，或使用默认）
+                    system_str = ""
+                    if os.path.exists(modelfile_src):
+                        with open(modelfile_src, "r", encoding="utf-8") as mf:
+                            mf_content = mf.read()
+                        import re as _re
+                        sys_match = _re.search(r'SYSTEM\s+["\'](.+?)["\']', mf_content, _re.DOTALL)
+                        if sys_match:
+                            system_str = sys_match.group(1)
+                    if not system_str:
+                        # 使用 prompt_builder 中的默认身份 prompt
+                        try:
+                            from prompts import SYSTEM_PROMPT_V2
+                            system_str = SYSTEM_PROMPT_V2.split("\n")[0]  # 取第一行核心身份
+                        except Exception:
+                            system_str = "你是桌伴(Sidemate)，本地AI办公助手。中文直接回答。"
+                    system_bytes = system_str.encode("utf-8")
+                    system_digest = "sha256:%s" % _hashlib.sha256(system_bytes).hexdigest()
+                    system_blob_name = "sha256-%s" % _hashlib.sha256(system_bytes).hexdigest()
+                    system_blob_path = os.path.join(blobs_dir, system_blob_name)
+                    with open(system_blob_path, "wb") as f:
+                        f.write(system_bytes)
+                    log.info("[EXT] System blob: %s", system_digest)
+
+                    # Step 6: 创建 config layer blob
+                    layer_digests = [gguf_digest, template_digest, params_digest, system_digest]
+                    # 从 manifest 提取模型元信息（非必须，仅供 Ollama 展示）
+                    _model_family = manifest.get("model_family", "")
+                    _model_type = manifest.get("model_type", "")
+                    _file_type = manifest.get("file_type", "")
+                    # 从 GGUF 文件名推断（如 qwen3-5-4b-q5_k_m.gguf）
+                    if not _model_family:
+                        _name_lower = gguf_name.lower()
+                        if "qwen3" in _name_lower:
+                            _model_family = "qwen3"
+                        elif "qwen2" in _name_lower:
+                            _model_family = "qwen2"
+                        elif "qwen" in _name_lower:
+                            _model_family = "qwen"
+                        elif "llama" in _name_lower:
+                            _model_family = "llama"
+                        elif "gemma" in _name_lower:
+                            _model_family = "gemma"
+                        else:
+                            _model_family = "unknown"
+                    if not _file_type:
+                        _name_lower = gguf_name.lower()
+                        for _qtype in ["q8_0", "q6_k", "q5_k_m", "q5_k_s", "q4_k_m", "q4_k_s", "q4_0", "q3_k_m", "f16", "fp16"]:
+                            if _qtype in _name_lower:
+                                _file_type = _qtype.upper()
+                                break
+                        if not _file_type:
+                            _file_type = "unknown"
+                    config_obj = {
+                        "os": "linux",
+                        "architecture": "amd64",
+                        "rootfs": {"type": "layers", "diff_ids": layer_digests},
+                        "model_family": _model_family,
+                        "model_type": _model_type,
+                        "file_type": _file_type,
+                    }
+                    config_bytes = _json.dumps(config_obj, separators=(",", ":")).encode("utf-8")
+                    config_digest = "sha256:%s" % _hashlib.sha256(config_bytes).hexdigest()
+                    config_blob_name = "sha256-%s" % _hashlib.sha256(config_bytes).hexdigest()
+                    config_blob_path = os.path.join(blobs_dir, config_blob_name)
+                    with open(config_blob_path, "wb") as f:
+                        f.write(config_bytes)
+                    log.info("[EXT] Config blob: %s", config_digest)
+
+                    # Step 7: 写 manifest
+                    progress(90, "写入模型注册信息...")
+                    layers = [
+                        {
+                            "mediaType": "application/vnd.ollama.image.model",
+                            "digest": gguf_digest,
+                            "size": gguf_size,
+                        },
+                        {
+                            "mediaType": "application/vnd.ollama.image.template",
+                            "digest": template_digest,
+                            "size": len(template_bytes),
+                        },
+                        {
+                            "mediaType": "application/vnd.ollama.image.params",
+                            "digest": params_digest,
+                            "size": len(params_bytes),
+                        },
+                        {
+                            "mediaType": "application/vnd.ollama.image.system",
+                            "digest": system_digest,
+                            "size": len(system_bytes),
+                        },
+                    ]
+                    manifest_obj = {
+                        "schemaVersion": 2,
+                        "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                        "config": {
+                            "mediaType": "application/vnd.docker.container.image.v1+json",
+                            "digest": config_digest,
+                            "size": len(config_bytes),
+                        },
+                        "layers": layers,
+                    }
+
+                    manifest_dir = os.path.join(
+                        models_dir, "manifests", "registry.ollama.ai", "library", ollama_model_name
+                    )
+                    os.makedirs(manifest_dir, exist_ok=True)
+                    manifest_path = os.path.join(manifest_dir, "latest")
+                    with open(manifest_path, "w", encoding="utf-8") as f:
+                        _json.dump(manifest_obj, f, separators=(",", ":"))
+                    log.info("[EXT] Manifest 写入: %s", manifest_path)
+                    log.info("[EXT] Manifest 内容: %s", _json.dumps(manifest_obj, indent=2))
+
+                    # Step 8: 验证 — 轮询 /api/tags 确认 Ollama 识别
+                    progress(92, "验证模型注册...")
+                    log.info("[EXT] 等待 Ollama 识别 manifest...")
+                    create_ok = False
+                    for _poll in range(10):
+                        _time.sleep(1)
+                        try:
+                            tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10, trust_env=False)
+                            if tags_resp.status_code == 200:
+                                existing = [m.get("name", "") for m in tags_resp.json().get("models", [])]
+                                existing_base = [n.split(":")[0] for n in existing]
+                                if ollama_model_name in existing or ollama_model_name in existing_base:
+                                    log.info("[EXT] 模型注册成功 (轮询 #%d): %s", _poll + 1, existing)
+                                    create_ok = True
+                                    break
+                        except Exception as poll_err:
+                            log.warning("[EXT] 轮询异常: %s", str(poll_err)[:100])
+
+                    if not create_ok:
+                        log.warning("[EXT] Ollama 未立即识别 manifest，但文件已就位，重启后生效")
+                        log.info("[EXT] 尝试重启 Ollama 刷新缓存...")
+                        try:
+                            _httpx.get("%s/api/ps" % ollama_api, timeout=5, trust_env=False)
+                        except Exception:
+                            pass
+                        _time.sleep(2)
+                        try:
+                            tags_resp = _httpx.get("%s/api/tags" % ollama_api, timeout=10, trust_env=False)
+                            if tags_resp.status_code == 200:
+                                existing = [m.get("name", "") for m in tags_resp.json().get("models", [])]
+                                existing_base = [n.split(":")[0] for n in existing]
+                                if ollama_model_name in existing or ollama_model_name in existing_base:
+                                    log.info("[EXT] 重试后模型出现: %s", existing)
+                                    create_ok = True
+                        except Exception:
+                            pass
+
+                    if not create_ok:
+                        log.warning("[EXT] Ollama 缓存未刷新，但模型文件已注册，需重启生效")
+
+                    log.info("[EXT] Ollama 模型注册完成: %s (ollama name: %s)", ext_name, ollama_model_name)
+
+                    # 清理 llm 目录（GGUF 已在 blobs 中，llm 目录不再需要）
+                    try:
+                        if os.path.isdir(model_path):
+                            shutil.rmtree(model_path)
+                            log.info("[EXT] 清理 llm 目录: %s (%.1f MB 已释放)", model_path, gguf_size / 1048576)
+                            # 如果 llm 父目录为空也一并清理
+                            llm_parent = os.path.join(_project_dir, "models", "llm")
+                            if os.path.isdir(llm_parent) and not os.listdir(llm_parent):
+                                os.rmdir(llm_parent)
+                                log.info("[EXT] 清理空的 llm 父目录: %s", llm_parent)
+                    except Exception as clean_err:
+                        log.warning("[EXT] llm 目录清理失败（不影响使用）: %s", str(clean_err)[:100])
+
+                except Exception as ollama_err:
+                    log.warning("[EXT] Ollama 注册异常: %s", str(ollama_err)[:200])
+                    raise
 
             progress(90, "扫描模型...")
             mgr = get_mgr()
