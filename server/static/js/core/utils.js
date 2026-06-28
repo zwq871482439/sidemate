@@ -262,6 +262,14 @@ function _renderMermaid(el) {
     } catch(err) {
       // 同步异常路径：不设 data-rendered，允许下次重试
       container.innerHTML = '<pre style="font-size:11px">' + esc(code) + '</pre>';
+      // 同步异常也可能发生在 mermaid.render 已挪走容器之后，同样兜底放回
+      if (!container.parentElement && parent) {
+        if (nextSibling && nextSibling.parentElement === parent) {
+          parent.insertBefore(container, nextSibling);
+        } else {
+          parent.appendChild(container);
+        }
+      }
     }
   });
 }
