@@ -452,7 +452,15 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .model-tag-inline.none{background:transparent;color:var(--text-muted)}
 /* P6: Mermaid 图表容器 */
 .mermaid-container{margin:8px 0;text-align:center;overflow-x:auto}
-.mermaid-container svg{max-width:100%;height:auto}
+/* svg 不压缩：用原始尺寸，超出容器宽度时由 .mermaid-container 的 overflow-x:auto 横向滚动。
+   之前 max-width:100% 会把大图压扁，导致节点框缩小但文字（foreignObject HTML）不缩，
+   文字溢出框外不可读。 */
+.mermaid-container svg{max-width:none;height:auto}
+/* mermaid 节点内文字行高收紧：库默认按 24px/行算框尺寸，但中文+emoji 实际行高约 27px
+   （继承 body 的 line-height:1.7），多行（4行+）节点文字会溢出框。
+   强制 line-height:1.2 让 4 行文字（4×19.2=77）塞进框（84）内。 */
+.mermaid-container .nodeLabel,.mermaid-container .edgeLabel,
+.mermaid-container .node foreignObject div{line-height:1.2 !important}
 .mermaid-loading{color:var(--text-muted);font-size:12px;padding:20px;text-align:center}
 /* P6: HTML 预览容器 */
 .html-preview-wrap{margin:8px 0;border:0.5px solid var(--border-color);border-radius:8px;overflow:hidden}

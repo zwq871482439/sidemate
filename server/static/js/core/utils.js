@@ -218,7 +218,23 @@ function _restoreLatex(text, placeholders) {
 
 // P6: Mermaid 初始化 + 异步渲染
 if (typeof mermaid !== 'undefined') {
-  mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose', fontFamily: 'inherit' });
+  // 关键: fontFamily 必须用显式字体而非 'inherit'。
+  // mermaid 库在测量节点尺寸时若拿到 'inherit'(无具体字体)会用 fallback 字体度量,
+  // 但实际 SVG 渲染时 foreignObject 内继承的是系统字体(行高更大),
+  // 导致测量框偏小、中文多行文字溢出框外不可读。
+  // 用系统默认字体栈保持测量/渲染一致。
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'default',
+    securityLevel: 'loose',
+    fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+    flowchart: {
+      padding: 12,
+      nodeSpacing: 60,
+      rankSpacing: 60,
+      useMaxWidth: false
+    }
+  });
 }
 
 function _renderMermaid(el) {
