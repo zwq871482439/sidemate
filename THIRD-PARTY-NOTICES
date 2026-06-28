@@ -83,6 +83,7 @@ Apache License 2.0 组件
   - requests
   - tzdata
   - FlagEmbedding (BAAI, Apache License 2.0, 用于 BGE-M3 向量模型推理)
+  - bge-reranker-v2-m3 / bge-reranker-large (BAAI, Apache License 2.0, 用于知识库检索精排)
   - aiofiles (Apache License 2.0, 用于知识库上传的流式文件写入)
 
 Apache License 2.0 通知要求：
@@ -198,8 +199,12 @@ Python Software Foundation License 属于 permissive license，
 
   - Qwen3.5-4B / Qwen3.5-8B (通义千问)
     版权所有：阿里巴巴集团
-    许可协议：Apache License 2.0
+    许可协议：Apache License 2.0（纯 Apache-2.0，无附加限制条款）
     来源：https://huggingface.co/Qwen
+    商用：允许（含商业分发、私有化部署、模型微调再分发）
+    商标注意：Apache-2.0 不授予 "Qwen" / "通义千问" 商标使用权。
+              本软件在功能层面使用模型，但不得在产品名称/宣传中暗示
+              阿里巴巴官方背书或商标授权。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
