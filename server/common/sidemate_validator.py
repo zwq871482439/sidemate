@@ -218,10 +218,10 @@ class SidemateValidator:
                 except Exception:
                     pass  # inferrer 只做最佳推测，失败不影响主流程
 
-        if manifest and manifest.get("type") == "extension-knowledge":
-            return "extension-knowledge"
-        if manifest and manifest.get("type") == "extension-recorder":
-            return "extension-recorder"
+        if manifest and manifest.get("type") in ("extension-knowledge", "knowledge"):
+            return "knowledge"
+        if manifest and manifest.get("type") in ("extension-recorder", "recorder"):
+            return "recorder"
         if manifest and manifest.get("type") == "llm":
             return "llm"
 

@@ -69,9 +69,9 @@ Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs
 ; Python 嵌入式环境
 Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
 
-; Server 源码（排除：用户数据、缓存、日志、开发测试、本地设置）
+; Server 源码（排除：用户数据、缓存、日志、开发测试、本地设置、归档旧代码、用户工作区）
 ; 注意：实际用户数据运行时落在 {app}\server\data\ 下，安装包只带空壳结构
-Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests"
+Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests,archive,workspace"
 
 ; LICENSE 和第三方许可
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion

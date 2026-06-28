@@ -52,6 +52,7 @@ node_modules/
 tests/screenshots/
 tests/_probe.mjs
 tests/response_log.md
+tests/test_v2_import.py
 
 # ====== IDE/工具记忆文件（非项目代码）======
 .codebuddy/
