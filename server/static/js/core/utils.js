@@ -224,18 +224,43 @@ if (typeof mermaid !== 'undefined') {
 function _renderMermaid(el) {
   if (!el || typeof mermaid === 'undefined') return;
   var containers = el.querySelectorAll('.mermaid-container:not([data-rendered])');
-  containers.forEach(function(container) {
+  // mermaid.render() 同步部分会把待渲染的容器临时移到 body 末尾做测量，
+  // 但在 promise resolve 前不会放回——若期间发生其他 DOM 重建（如 renderMessages
+  // 二次调用、流式追加），容器会永久脱离原位置，导致图表"渲染中"占位消失。
+  // 修复：渲染前记住原位置，promise settle 后无条件放回。
+  var list = Array.prototype.slice.call(containers);
+  list.forEach(function(container) {
     var code = decodeURIComponent(container.getAttribute('data-mermaid') || '');
     if (!code) return;
-    container.setAttribute('data-rendered', '1');
     try {
       var id = container.id || ('mermaid-' + Math.random().toString(36).slice(2, 10));
+      var parent = container.parentElement;
+      var nextSibling = container.nextSibling;
       mermaid.render(id, code).then(function(result) {
+        container.setAttribute('data-rendered', '1');
         container.innerHTML = result.svg;
+        // 兜底：若 mermaid 库在测量过程中让容器脱离了原位，放回去
+        if (!container.parentElement) {
+          if (nextSibling && nextSibling.parentElement === parent) {
+            parent.insertBefore(container, nextSibling);
+          } else if (parent) {
+            parent.appendChild(container);
+          }
+        }
       }).catch(function(err) {
+        container.setAttribute('data-rendered', '1');
         container.innerHTML = '<pre style="color:var(--error-color);font-size:11px">mermaid 渲染失败: ' + esc(String(err.message || err).slice(0, 100)) + '</pre>';
+        // 失败也要放回原位
+        if (!container.parentElement && parent) {
+          if (nextSibling && nextSibling.parentElement === parent) {
+            parent.insertBefore(container, nextSibling);
+          } else {
+            parent.appendChild(container);
+          }
+        }
       });
     } catch(err) {
+      // 同步异常路径：不设 data-rendered，允许下次重试
       container.innerHTML = '<pre style="font-size:11px">' + esc(code) + '</pre>';
     }
   });
