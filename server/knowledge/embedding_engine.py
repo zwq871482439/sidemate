@@ -62,41 +62,52 @@ class EmbeddingEngine:
     def _resolve_model_path(self) -> str:
         """解析模型路径（优先扩展注册表，降级到默认路径）
 
+        模型实际安装在 ROOT_DIR/models（= server/models），与 OLLAMA_MODELS、
+        扩展安装路径（_project_dir=server/）一致。同时兼容 PROJECT_ROOT/models
+        （开发环境历史布局）。
+
         Returns:
             模型目录路径，找不到返回空字符串
         """
         _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+        # 可能的模型根：ROOT_DIR(server/) 和 PROJECT_ROOT(server 父目录) 都试
+        try:
+            from config import ROOT_DIR as _root_dir, PROJECT_ROOT as _proj_root, EXTENSIONS_DIR
+        except ImportError:
+            _root_dir = _project_dir
+            _proj_root = os.path.dirname(_project_dir)
+            EXTENSIONS_DIR = None
+        model_roots = [_root_dir, _proj_root]
+
         # 尝试从扩展注册表获取模型路径
         model_path = None
         try:
             from core.extension_manager import ExtensionRegistry
-            from config import PROJECT_ROOT, EXTENSIONS_DIR
             registry = ExtensionRegistry(EXTENSIONS_DIR)
             if registry.is_installed("knowledge"):
                 registered_path = registry.get_model_path("knowledge", "embedding")
                 if registered_path:
-                    # Patch5 修复：用 PROJECT_ROOT（项目根）而非 ROOT_DIR（server/）
-                    candidate = os.path.join(PROJECT_ROOT, registered_path)
-                    if os.path.isdir(candidate):
-                        model_path = candidate
-                        log.info("[KB] 从扩展注册表获取嵌入模型路径: %s", model_path)
+                    # registered_path 形如 "models/embedding"，需对每个候选根拼接验证
+                    for root in model_roots:
+                        candidate = os.path.join(root, registered_path)
+                        if os.path.isdir(candidate):
+                            model_path = candidate
+                            log.info("[KB] 从扩展注册表获取嵌入模型路径: %s", model_path)
+                            break
         except Exception as e:
             log.debug("[KB] 读取扩展注册表失败: %s", str(e)[:80])
 
-        # 降级：使用默认路径（按优先级逐级尝试）
+        # 降级：使用默认路径（按优先级逐级尝试，覆盖两个根）
         if model_path is None:
             model_basename = self.model_name.split("/")[-1]
-            # Patch5 修复：_project_dir 是 server/，模型实际在 PROJECT_ROOT（server 的父目录）
-            try:
-                from config import PROJECT_ROOT as _proj_root
-            except ImportError:
-                _proj_root = os.path.dirname(_project_dir)
-            candidates = [
-                os.path.join(_proj_root, "models", "embedding", model_basename),
-                os.path.join(_proj_root, "models", "embedding"),
-                os.path.join(_proj_root, "models", model_basename),
-            ]
+            candidates = []
+            for root in model_roots:
+                candidates.extend([
+                    os.path.join(root, "models", "embedding", model_basename),
+                    os.path.join(root, "models", "embedding"),
+                    os.path.join(root, "models", model_basename),
+                ])
             for c in candidates:
                 if os.path.isdir(c) and os.path.exists(os.path.join(c, "config.json")):
                     model_path = c
