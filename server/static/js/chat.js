@@ -392,6 +392,11 @@ function renderMessages(forceFull) {
   applyCodeHighlight(el);
   if (typeof CodeBlockEnhancer !== 'undefined') CodeBlockEnhancer.enhance(el);
 
+  // P6 修复: 全量重建路径也要触发 mermaid / html 预览异步渲染
+  // （增量追加分支已调过；这里补全，避免打开历史会话后图表一直停在"渲染图表中"占位）
+  if (typeof _renderMermaid === 'function') _renderMermaid(el);
+  if (typeof _renderHtmlPreview === 'function') _renderHtmlPreview(el);
+
   // 绑定引用上标点击：高亮对应参考来源
   _bindCitationClicks(el);
   _bindStepToggle(el);  // 绑定推理步骤详情展开/折叠
@@ -1630,6 +1635,9 @@ async function sendMessage() {
           // P6 修复终止bug: 终止时同样走 finalizeDOM，清掉 thinking-indicator 计时器
           // （否则计时器 interval 永驻狂飙，且 indicator 残留 + 双卡片）
           CardRenderer.finalizeDOM(streamErrFix);
+          // P6 修复: 终止分支也要触发 mermaid / html 预览异步渲染（占位符已生成）
+          if (typeof _renderMermaid === 'function') _renderMermaid(streamErrFix);
+          if (typeof _renderHtmlPreview === 'function') _renderHtmlPreview(streamErrFix);
         }
         _restoreChatUI();
         input.focus();
@@ -1650,6 +1658,10 @@ async function sendMessage() {
           _streamContent.innerHTML = _renderCitationSuperscripts(_streamContent.innerHTML, _savedKbSources);
         }
         CardRenderer.finalizeDOM(streamEl4);
+        // P6 修复: 流式完成后触发 mermaid / html 预览异步渲染
+        // （占位符在 _renderMsgBody 阶段生成，但只有全量重建或这里的增量追加才会触发实际渲染）
+        if (typeof _renderMermaid === 'function') _renderMermaid(streamEl4);
+        if (typeof _renderHtmlPreview === 'function') _renderHtmlPreview(streamEl4);
         _bindCitationClicks(streamEl4);  // 流式完成后绑定引用上标点击
         // P6 结构统一：固化后补 data-hash（和 renderMsg 输出一致）
         if (newMsg && newMsg.msg_hash) {
