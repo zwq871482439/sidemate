@@ -77,16 +77,18 @@ Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD-PARTY-NOTICES"; DestDir: "{app}"; Flags: ignoreversion
 
-; 安装工具脚本
-Source: "installer\make_snapshot.py"; DestDir: "{app}\installer"; Flags: ignoreversion
+; 注：make_snapshot.py（site-packages 备份）首发版本不需要——
+; 0.9.6 是首个公开版本，无老扩展需回滚保护，自动备份会拖慢安装且占空间。
+; 后续版本（用户可能装过扩展）再启用：解开下方两行注释即可。
+; Source: "installer\make_snapshot.py"; DestDir: "{app}\installer"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; 安装完成后自动压缩 site-packages 备份
-Filename: "{app}\python\python.exe"; Parameters: "-u ""{app}\installer\make_snapshot.py"" ""{app}"""; Flags: runhidden; StatusMsg: "正在生成环境备份..."
+; 注：首发版本不自动生成 site-packages 备份（无老扩展需保护）
+; Filename: "{app}\python\python.exe"; Parameters: "-u ""{app}\installer\make_snapshot.py"" ""{app}"""; Flags: runhidden; StatusMsg: "正在生成环境备份..."
 ; 启动应用（用户勾选时）
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 桌伴 Sidemate"; Flags: nowait postinstall skipifsilent
 
