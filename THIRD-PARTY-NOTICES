@@ -222,16 +222,11 @@ Copyleft 许可组件（GPL / AGPL / MPL）
 ⚠️ 重要法律提示：以下组件使用强 Copyleft 许可，具有传染性。使用、修改或再分发
    这些组件（或与之链接）时，必须遵守相应许可的开源要求。详见各许可原文。
 
-  - EbookLib (AGPLv3+, 历史 EPUB 文档解析)
-    许可协议：GNU Affero General Public License v3 or later
-    来源：https://github.com/aerkalov/ebooklib
-    ✅ P6 已替换：改用 zipfile(标准库) + BeautifulSoup(MIT) 解析 EPUB，
-       不再依赖 EbookLib，彻底消除 AGPL 传染风险。
-
   - orjson (MPL-2.0 AND (Apache-2.0 OR MIT), JSON 高性能序列化)
     许可协议：Mozilla Public License 2.0
     特别要求：MPL 为文件级弱传染——修改 MPL 文件需开源修改部分。
     来源：https://github.com/ijl/orjson
+    状态：间接依赖（某传递依赖拉入），项目代码无直接 import。
 
   - tqdm (MPL-2.0 AND MIT, 进度条显示)
     许可协议：Mozilla Public License 2.0 / MIT (双许可)
@@ -240,9 +235,22 @@ Copyleft 许可组件（GPL / AGPL / MPL）
   - certifi (Mozilla Public License 2.0, Mozilla CA 证书包)
     许可协议：MPL-2.0（仅证书数据部分，非代码）
 
+  - CairoSVG (LGPL-3.0-or-later, SVG → PNG 渲染)
+    许可协议：GNU Lesser General Public License v3 or later
+    来源：https://github.com/Kozea/CairoSVG
+    状态：原 installer/generate_icons.py 用作 SVG fallback。
+    2026-06-28 许可证审计：installer/ 改强制 logo.jpg 路径，已移除 cairosvg import。
+    本组件不再进入构建期或运行时依赖。
+
+  - paramiko (LGPL-2.1, SSH 客户端)
+    许可协议：GNU Lesser General Public License v2.1
+    来源：https://github.com/paramiko/paramiko
+    状态：requirements.txt 未声明；site-packages 仅作为其他包传递依赖存在。
+    项目代码无直接 import。
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-本声明最后更新：2026年6月26日
+本声明最后更新：2026年6月28日（0.9.6 首发重发 — 218 commit 累积）
 
 如需获取任何第三方组件的完整许可协议文本或源代码，请联系：
-[待补充]
+sidemate@deskware.cn

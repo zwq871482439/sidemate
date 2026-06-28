@@ -3,10 +3,13 @@
 """
 generate_icons.py — 品牌图标批量生成工具
 ==========================================
-从 logo.jpg（或 logo.svg）生成多尺寸 PNG + 多尺寸 favicon.ico。
+从 logo.jpg 生成多尺寸 PNG + 多尺寸 favicon.ico。
 
 用法：
     python installer/generate_icons.py
+
+前置依赖（仅构建期需要，不进入用户安装包）：
+    pip install Pillow
 
 产出文件（输出到 server/static/img/）：
     - icon-16.png     16x16   任务栏 / 标签 favicon
@@ -16,6 +19,9 @@ generate_icons.py — 品牌图标批量生成工具
     - favicon.ico     多尺寸（16/32/48）ICO 文件
 
 Patch5 C3（T01.1.1）：品牌视觉全套。
+2026-06-28 许可证审计：移除 SVG/cairosvg 分支。cairosvg 依赖 cairo 图形库（LGPLv3），
+CairoSVG 本身是 LGPLv3（虽然 Python 解释器动态加载自动合规，但增加构建期依赖
+复杂度且实际有 logo.jpg 兜底）。改用强制 jpg 路径。
 """
 
 import os
@@ -36,9 +42,8 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 # 图片输出目录
 IMG_DIR = os.path.join(PROJECT_DIR, "server", "static", "img")
 
-# 源 logo 文件（优先 jpg，回退 svg 但 Pillow 不支持 svg 渲染）
+# 源 logo 文件（必须是 jpg，SVG 不再支持）
 LOGO_JPG = os.path.join(IMG_DIR, "logo.jpg")
-LOGO_SVG = os.path.join(IMG_DIR, "logo.svg")
 
 # 需要生成的 PNG 尺寸列表
 PNG_SIZES = [16, 32, 48, 256]
@@ -50,55 +55,41 @@ ICO_SIZES = [(16, 16), (32, 32), (48, 48)]
 RESAMPLE_FILTER = Image.LANCZOS
 
 
-def find_source_image():
-    """查找可用的源 logo 图片。
+def find_source_image() -> str:
+    """查找可用的源 logo 图片（必须是 jpg）。
 
-    优先使用 logo.jpg（位图，Pillow 原生支持）。
-    如果只有 logo.svg，Pillow 无法直接渲染，需要 cairosvg。
+    2026-06-28 许可证审计：之前支持 svg 路径（用 cairosvg 渲染），
+    现已移除以减少构建期依赖。SVG → JPG 转换请开发者本地完成。
 
     Returns:
         str: 源图片绝对路径
     Raises:
-        FileNotFoundError: 找不到任何可用的源图片
+        FileNotFoundError: 找不到 logo.jpg
     """
-    if os.path.isfile(LOGO_JPG):
-        return LOGO_JPG
-    if os.path.isfile(LOGO_SVG):
-        log.warning("logo.jpg 不存在，尝试用 cairosvg 渲染 logo.svg...")
-        return LOGO_SVG
-    raise FileNotFoundError(
-        "找不到源 logo 图片（logo.jpg 或 logo.svg），请确认文件存在于: %s" % IMG_DIR
-    )
+    if not os.path.isfile(LOGO_JPG):
+        raise FileNotFoundError(
+            "找不到源 logo 图片：%s\n"
+            "若仅有 logo.svg，请先用 Inkscape/GIMP 等工具导出为 jpg 后再运行此脚本。" % LOGO_JPG
+        )
+    return LOGO_JPG
 
 
 def load_source_image(path: str) -> Image.Image:
     """加载源图片并转换为 RGBA 模式。
 
-    Pillow 不支持 SVG。如果传入 SVG，尝试用 cairosvg 渲染为位图。
-
     Args:
-        path: 源图片路径
+        path: 源 jpg 图片路径
 
     Returns:
         PIL.Image: RGBA 模式的图片对象
 
     Raises:
-        RuntimeError: SVG 渲染失败或图片加载失败
+        RuntimeError: 图片加载失败
     """
-    if path.lower().endswith(".svg"):
-        try:
-            import cairosvg  # 延迟导入，避免未安装时报错
-        except ImportError:
-            raise RuntimeError(
-                "logo.svg 需要 cairosvg 才能渲染，请 pip install cairosvg，"
-                "或提供 logo.jpg 作为源图片"
-            )
-        # 渲染为高分辨率 PNG 内存流
-        import io
-        png_bytes = cairosvg.svg2png(url=path, output_width=512, output_height=512)
-        img = Image.open(io.BytesIO(png_bytes))
-    else:
+    try:
         img = Image.open(path)
+    except Exception as e:
+        raise RuntimeError("加载 jpg 失败: %s" % e)
 
     # 统一转为 RGBA（带 alpha 通道），确保 resize 和 save 一致
     if img.mode != "RGBA":

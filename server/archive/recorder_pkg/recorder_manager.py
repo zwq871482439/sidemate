@@ -592,16 +592,10 @@ class RecorderManager:
             rough_draft = "\n".join(text_parts)
 
             # 繁体→简体转换（某些 Whisper 模型对 "zh" 输出繁体）
-            # P6 讨论4: zhconv(GPLv2+)已移除以消除Copyleft传染风险。
-            # 如需繁简转换,用户可自行安装 zhconv 或改用 OpenCC(BSD-3)。
-            try:
-                import zhconv
-                rough_draft = zhconv.convert(rough_draft, 'zh-cn')
-                for seg_item in segments_data:
-                    seg_item['text'] = zhconv.convert(seg_item['text'], 'zh-cn')
-                log.info("[WHISPER-FW] 已执行繁体→简体转换")
-            except ImportError:
-                pass  # zhconv 未安装,跳过繁简转换(不影响核心功能)
+            # P6 讨论4 + 2026-06-28 许可证审计：zhconv(GPLv2+) 代码路径已删除。
+            # 原因：① 文件位于 server/archive/ 归档目录 ② requirements.txt 不再声明
+            # ③ 实际从未在生产环境生效（永远 ImportError）
+            # 如需繁简转换，迁移至主分支后改用 OpenCC(BSD-3) 或 zhconv 用户自行安装。
 
             session.segments = segments_data if segments_data else None
 
@@ -658,12 +652,8 @@ class RecorderManager:
 
             text = " ".join(text_parts)
             if text:
-                # 繁体→简体
-                try:
-                    import zhconv
-                    text = zhconv.convert(text, 'zh-cn')
-                except ImportError:
-                    pass
+                # 2026-06-28 许可证审计：zhconv(GPLv2+) 代码路径已删除
+                # （与 WHISPER-FW 段同步处理，详见上方注释）
                 log.info("[LIVE-FW] 实时转写: %d 字符", len(text))
             return {"ok": True, "text": text}
 
