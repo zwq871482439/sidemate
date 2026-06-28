@@ -158,38 +158,22 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
                                  "安装文库模型 %s..." % sub)
 
             progress(65, "检查文库依赖...")
-            # 先检查依赖是否已就绪（基础包可能已自带）
-            _kb_deps_ok = True
+            # 依赖健康检查：KB 依赖（sentence_transformers/torch/transformers）已由
+            # 基础安装包预装进嵌入式 python，knowledge 包不带 wheels（确认：包内 0 个 .whl）
+            # 此处仅做健康检查，若依赖缺失则提示重装基础包（不再尝试从包内 wheels 安装）
+            missing_deps = []
             for _mod in ("sentence_transformers", "torch", "transformers"):
                 try:
                     __import__(_mod)
                 except ImportError:
-                    _kb_deps_ok = False
-                    break
+                    missing_deps.append(_mod)
 
-            if _kb_deps_ok:
-                progress(70, "文库依赖已就绪，跳过安装")
-                log.info("[EXT] 文库依赖已就绪（基础包自带），跳过 wheels 安装")
+            if missing_deps:
+                # 依赖缺失：基础安装包损坏，提示用户重装（而非尝试从包内 wheels 安装）
+                log.warning("[EXT] 文库依赖缺失: %s（基础包应预装，请重装 Sidemate）", missing_deps)
+                progress(70, "⚠️ 文库依赖缺失，文档检索可能不可用")
             else:
-                # 依赖缺失 → 从 wheels/ 安装
-                wheels_dir = os.path.join(extracted_dir, "wheels")
-                if os.path.isdir(wheels_dir):
-                    wheel_files = [os.path.join(wheels_dir, f) for f in os.listdir(wheels_dir) if f.endswith(".whl")]
-                    if wheel_files:
-                        log.info("[EXT] 文库依赖缺失，安装 %d 个 wheels...", len(wheel_files))
-                        pip_args = [sys.executable, "-m", "pip", "install", "--no-index",
-                                    "--no-deps"] + wheel_files
-                        try:
-                            result = subprocess.run(pip_args, capture_output=True, encoding="utf-8", errors="replace", timeout=300)
-                            if result.returncode != 0:
-                                log.warning("[EXT] wheels 安装返回非零: %s", (result.stderr or "")[:200])
-                        except Exception as pip_err:
-                            log.warning("[EXT] wheels 安装异常: %s", str(pip_err)[:200])
-                        progress(70, "文库依赖安装完成")
-                    else:
-                        log.warning("[EXT] wheels 目录为空，跳过依赖安装")
-                else:
-                    log.warning("[EXT] 无 wheels 目录，跳过依赖安装（依赖应由基础包提供）")
+                progress(70, "文库依赖已就绪")
 
             progress(80, "注册文库扩展...")
             from core.extension_manager import ExtensionRegistry
