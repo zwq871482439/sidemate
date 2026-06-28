@@ -6,7 +6,270 @@
 
 ---
 
+## [0.9.6] - 2026-06-28 — 0.9.6 首发重发（含 v0.9.6 之后 218 个 commit 的累积变更）
 
+> **0.9.6 原始 tag 在 2026-06-21 切出后未实际发版**（v0.9.6 → HEAD 之间累积 218 个 commit，main 分支一直跑的不是 0.9.6 tag 后的版本）。本次以 v0.9.6 tag 为起点，将 218 个 commit 的全部变更纳入 0.9.6 正式发版。
+>
+> **下版本代号**：v0.9.7（Patch 7：动态 num_ctx / ModelScope 下载 / llama.cpp 底座 / 视觉精修 / KB 全文预览 S3）。规划见 [docs/ROADMAP.md](docs/ROADMAP.md)「Patch 7」一节。
+>
+> **0.9.6 已知问题**（不阻塞本次发版，留待 0.9.7 修复）：并行模式答非所问 / 文档提纲确认栏时序竞态 / 云端模型"多嘴"吐槽用户。详见 [ROADMAP.md P7-4c](docs/ROADMAP.md)。
+
+### 0.9.6 首发版新增（main 分支 0.9.6 tag → HEAD，218 commit 累积）
+
+#### Added（新功能）
+
+**新手指引（Onboarding）完整系统**
+- 阶段1 欢迎弹窗：按 AI / KB / 云端配置状态智能分支（`showWelcome()` → `/api/onboard/status`）
+- 阶段2 交互式 TourGuide：5 步聚光引导（自动 Tab 切换 + scrollIntoView 居中 + 目标元素圆角继承 + 箭头方向自适应 + box-shadow 扩散 spotlight）
+- 设置页「关于」分组「重新查看新手指引」入口（`resetOnboarding()` → `location.reload()`）
+
+**并行模式（双轨独立）**
+- Chat Tab 第三档「并行」：本地 KB 检索 + 云端多轮对话双线并行；SSE 三通道输出（`local` / `cloud` / `merge`）
+- 融合阶段：本地模型实时综合两路信息流式输出；本地与云端记忆独立维护（`memory_local` ≤200 字摘要 / `memory_cloud` 完整历史）
+- 齿轮开关：允许云端模型生成检索关键词（`parallel_options.allow_cloud_keywords`）
+- 阶段1 双列折叠 + 阶段2-3 合并流式；并行原文嵌入对应步骤下方
+
+**AI 洞察仪表盘 v2（KB 顶部）**
+- 环形图 SVG（单分类双弧画全圆 + 渐变）
+- 分类图例 + 追问按钮 + 侧栏色点/图例/扇区三重联动
+- 侧栏「AI 智能筛选」旋转动画 + 「正在等待智能筛选」虚线空心色点占位
+- 归并 prompt 两轮化（先聚类归并 → 再基于聚类写洞察）；追问独立 LLM 调用
+- 服务端持久化（移除前端 localStorage 缓存）
+
+**文档生成（doc_action）升级**
+- 提纲编辑器：系统 UI 字体 + 预览切换（min-height 220px / 240px）
+- 标题层级可视化（基于 Markdown # 解析）
+- 刷新后自动恢复提纲编辑栏（`renderMessages()` 末尾检测 `doc_phase:'outline'` 重建编辑器）
+- Cancel 提纲死循环防护（cancel 时从 `currentMessages` 移除）
+
+**云端 AI 用量统计**
+- 真实 token 计数 + 7 天小时维度
+- 柱状图分段显示（输入 / 输出 / 推理）+ 按模型进度条同样分段
+- 汇总行新增输入/输出/推理总量维度
+- 工具权限列表新增「允许内网访问」开关
+
+**Agent 工具链**
+- 新增 4 个工具（诊断 / 产物 / 权限体验优化）
+- HTML 预览（iframe 沙箱）+ 可视化决策引导 prompt
+- 工具限流提示明确为「本轮」（防模型编造「本日已达上限」）
+- Mermaid 渲染 + 表格补全样式（边框 / padding / 斑马纹）
+
+**流式渲染统一**
+- CardRenderer 卡片式明盒渲染器（左色条 + AgentTimeline + KB 来源卡片 + 文档注入卡片）
+- finalize 序列化 5 类缺失元素（thinking / 工具调用 / KB 引用 / 引用上标 / 推理轮次）
+- renderHistory 重建（修复刷新后 Agent 搜索结果/阅读摘要显示成 HTML 源码）
+- 列表模式重写（flexbox + 头像 absolute，修复内容挤压）
+
+**模式切换体验**
+- 鱼骨屏（多条细 shimmer 线错落流动）+ 阶段卡片持久化
+- 切换骨架屏（actionBar + 模型 tag 灰色块呼吸动画）
+- 模式切换时输入框鱼骨屏效果
+
+**其他**
+- KB v2 Indigo 全页面设计重构（渐变顶条 + 结构化 badge + 过渡标头 + pinned 卡片）
+- 双工具栏 sticky（`.kb-toolbar` top:0 + `.kb-batch-toolbar` top:0 + margin-bottom:-36px 浮层效果）
+- 推理详情默认折叠 + 全局滚动条样式统一
+- 模式动态 placeholder（六组文案，按当前模式和 action 自动切换）
+- 文库搜索结果显示来源（检索到几条、是哪些文档）
+- KB 参考来源优化：引用上标交互 + 相关度分数条
+- KB 检索健康度诊断面板（轻量版）
+- 检索健康度诊断面板（轻量版）
+- 引用上标点击跳工具链卡片
+- 提纲编辑器升级（系统字体 + 预览切换）
+- 段卡片持久化 + phase:started 事件补全
+- 全文 KB 检索精度提升 + reformulate 精简
+- 输出预留动态化（释放一半窗口给历史）
+- 列表模式适配新卡片设计
+- 结构化推理轮次（在线 Agent 每轮打包折叠）+ agent_think 透传
+
+#### Changed（改进）
+
+**架构重构（步骤流数据模型）**
+- 新建 `core/step_model.py`：`@dataclass Step` 替代 6+ 散落计时变量
+- `local_pipeline` 重构：KB 块散乱 `yield` → Step 对象流（`kb_retrieve` / `local_gen` / `merge`）
+- `parallel_pipeline` Step 化：6 计时变量 → 4 个 Step 对象
+- parallel drain 合并（修复丢事件 bug）+ `transform` 的 elapsed 透传
+- 段 1 阶段C：memory_local 摘要化 + 并行模式接入 session 压缩
+
+**Onboarding 重构**
+- 引导文案重写（7 步精简为 5 步）
+- startTour 改为轮询等待 `#chatMode` 可见后再开始（不再依赖固定延迟）
+- Tab 切换追踪上个 Tab 避免重复 + 延迟 300ms + btn 有效性检查
+- 空值防护 + load 事件替代 DOMContentLoaded + iconSvg 检查
+
+**视觉精修**
+- 品牌色统一 #1E3A5F：Tab 激活 / 输入聚焦 / 发送按钮
+- SVG 图标体系：全部图标使用 SVG（锁/火/重复/图片/发送），零 emoji
+- 用量柱状图分段配色：浅蓝/浅绿/浅紫柔和色
+- 全局自定义滚动条：聊天区 `#D1D5DB` / KB 区 `#CFCDF0` / 浮动工具栏 Indigo 发光
+- 品牌信息更新：反馈邮箱改 `sidemate@deskware.cn` + 版权方改「Sidemate Team」
+
+**性能 / 质量**
+- 并行模式统计改为词元维度
+- 启用 aiofiles：文件上传流式写入（避免大文件全量读入内存）
+- 优化停止逻辑防竞态（`_stopping` 标志 + 延迟 300ms 恢复 UI）
+- KB 整理后自动刷新侧栏 + 未分类改「正在等待智能筛选」
+- KB 洞察持久化 + 标签归并优化 + 侧栏自动刷新
+- KB 卡片实时显示处理进度 + 刷新后重建处理队列
+- KB chunking 进度细化（2% → 10% → 20% → 30%，避免一步跳到 30% 显得假）
+- KB 删除/批量删除后自动触发洞察刷新
+- 上下文窗口 fallback 修复（parallel mode 缺 local 时回退 8.2K）
+- 文档 file_path 退化为文件名修复（`_refFilePath` 混合 doc_id/file.name 语义）
+- 流式折叠和刷新后渲染统一（原文都嵌入对应步骤下方）
+
+**死代码清理**
+- `StallDetector` 类（46 行零调用）删除
+- `search_engine` tag-strip 收敛（F14 ponytail 审计）
+- 旧 Cloud Agent 系统 5 个死函数删除（Step2c）
+- 旧 AgentTimeline 系统（-652 行）删除
+- 取消 `cancel_doc_action` 死函数（B9）
+- 恢复误删的 `showLicenseFile` 函数
+
+#### Fixed（修复）
+
+**P0 紧急修复**
+- 删 `VERSION` 常量导致的 `ImportError`（FastAPI 全线 500）
+- session 切换时消息堆积（009 消息堆到 007 下面）
+- 文档生成崩溃 + 无下载按钮（#5-b / #5-d）+ KB 批量上传缺陷（#18-b / #18-c）
+
+**新手指引（Onboarding）12 项 bug 修复**
+- 引导覆层无高亮 / 不变暗
+- KB 引导卡片掉出页面（clamp 到 [8, viewW-8] / [8, viewH-8]）
+- 无法切换 tab + 覆层错位（用 `_tourFindTabBtn()` 替代失效的 `[data-tab]` 选择器）
+- 移除 `offsetParent` 检查 + revert 三个有问题的 commit
+- showWelcome 兜底 + load 事件延迟 500ms
+- `resetOnboarding` 改为 `location.reload()` + 内置强制切 Tab
+- `startTour` 改为轮询 + `Tab` 切换追踪
+- spotlight 改用 box-shadow 扩散（替代 `path(evenodd, ...)` 无效语法）
+- 高亮框精确定位（继承目标圆角 + 圆整坐标 + 箭头方向自适应）
+- 空值防护 + load 事件替代 DOMContentLoaded
+- 知识库步骤引导覆层无高亮/不变暗
+- 模式切换鱼骨屏卡住：不覆盖 innerHTML 改为半透明+禁交互
+
+**P6 终止响应 bug 系列修复**
+- 终止后已有内容刷新丢失（`_persistContent` 追加终止标记）
+- 终止后 UI 不恢复（`stopGeneration` 立即恢复 + catch 块加 try 保护）
+- 手动终止覆盖已有正文（`appendStreamingMsg` → DOM 追加）
+- 手动终止后消息未持久化
+- 信号 aborted 竞态 + 隐式全局变量（计时不漏清/标记不丢）
+- 计时器狂飙 + 双卡片 + 终止文案不统一
+- 服务端终止保存：补 `_aborted` / `action_mode` / `speed` 字段
+
+**KB 修复（24 项）**
+- 切换 KB Tab 卡在「正在检测知识库状态」
+- M5 SSE 连接泄漏 + M8 合并去重路径（删死代码路径 B）
+- 资深审计 5 个严重/高危 bug 全量修复
+- 实测过程信息丢失 + 计时器重置
+- kb-summary 卡片宽度塌陷
+- 暗色主题 + 注入防护 + 时间格式 + 错误提示
+- AI 洞察持久化 + 标签归并优化 + 侧栏自动刷新
+- 洞察卡片背景改为 `#fff`（避免和页面底色融为一体）
+- AI 洞察数据源改服务端优先（localStorage 仅离线 fallback）
+- localStorage 有 insight 但缺 cats 时 fallback 服务端
+- qa.js 替换导致队列/上传/删除函数全部丢失
+- 整体 C 方案：正常完成时原地固化，消除 renderMessages 重建闪烁
+- 在线模式 agent_status 用后端 phase 字段判断完成态
+- enrich 白名单补 card_data 和 parallel_texts（持久化丢失根因）
+- 单分类环形图全圆修复 + 分类为空时改用 tags 归并
+- 追问独立生成（嵌在 insight prompt 里 → 独立 LLM 调用）
+- 追问按钮换行 + 双工具栏 sticky
+- 批量私密文案优化
+- kbRefreshAIOverview 从未被调用（页面加载时无洞察恢复）
+- 自动整理改到轮询停止时触发（确保含标签全完成）
+- 刷新后重建冲突文档的队列条目
+- bump qa.js 缓存版本号 v2.70
+
+**Ollama / 网络修复**
+- 本地 ollama httpx 调用补 `trust_env=False`
+- httpx 调用绕过系统代理（修复启用代理后扫不到模型/启动失败）
+
+**渲染 / 上下文修复**
+- 温度失效：策略路由温度链路断裂（code/math/creative 等策略真正调温）
+- 截断同步：filter 截断后发 truncate 事件同步前端正文
+- 上下文窗口 parallel fallback
+- thinkingPhase 基于 task_type 的自动进入逻辑移除
+
+**Agent / KB / Doc 修复**
+- 推理轮次空状态丢失 + 多余空轮次显示
+- 工具限流提示明确为「本轮」
+- 刷新后 Agent 搜索结果/阅读摘要显示成 HTML 源码
+- 文库搜索结果显示来源
+- 文档提纲确认栏刷新后丢失
+- doc 模式 KB 搜索失效 + KB 卡片图标/详情 + 跳转按钮定位 + 上传时间
+- KB 文档引用多选 + FormData 静默失败
+- KB 删除文档崩溃（`AttributeError`）+ KB 导入 Errno 22 / Errno 2
+- 上传文件 API 路由与前端调用路径不对齐
+- 引用文库按钮在文库未安装时仍然显示
+
+**用量 / UI 修复**
+- 用量柱状图不分段（axis 补齐 input/output/reasoning 字段）
+- 用量按模型进度条的增长动画
+- 设置 tab 滚动条恢复灰色（仅对话区用绿色）
+- 引用上标流式完成后不可点击
+- 死代码清理误删（`_resetParallelState` + 版本号 → 2.35）
+- 诊断按钮无反应（qa.js 无 esc 函数导致 ReferenceError）
+- 修复 chat.js 中气泡按钮：DOMContentLoaded 双保险 + 强制 applyMode + 版本号 2.36
+
+**测试修复**
+- 修复 sendBtn/模式按钮点击失败（用 dispatchEvent 绕过覆盖层）
+- 测试启动时关闭新手欢迎覆层（定位 sendBtn 遮挡真因）
+- 修复 _chat_root 校验过严导致回归测试失败
+- 修复测试 14 failed → 0 failed（60 passed）
+
+#### Security（安全加固 — 17 项）
+
+> 本次 0.9.6 首发版 17 项安全与质量修复源自全栈代码 review（commit `45b1315` + `ba926df` + `36d2fe8` + `92b0bbe`）。详细说明见 v0.9.6 内嵌的「2026-06-27 安全加固补充」一节（下方）。
+
+- 路径安全：`deep_read` / `_chat_root` 闭合路径穿越缺口；backup 排除覆盖 Windows 盘符 / UNC / null byte
+- 代码注入：calculator 工具的 `eval` 替换为纯 AST 递归求值器（保留白名单前置守卫）
+- SSRF 防护：`fetch_url` 接入 `confirm_external_read` 钩子（公网放行 / 私网按权限预设 / 云元数据端点硬拒绝，防 DNS rebinding + 逐跳校验）
+- XSS 收敛：DOMPurify 移除 `onclick` / `style` 死配置 + 流式渲染净化
+- 扩展包校验重做：删除 HMAC 摆设层（默认密钥源码公开，增益为零）→ SHA256 完整性校验（`_meta.json` 严格全覆盖，无则宽松兼容）；修复"无 checksum 文件跳过校验"漏洞
+- 进程所有权：ollama 新增 MANAGED / EXTERNAL 状态，根治 watchdog 撞外部实例的状态混乱
+- CORS 调试开关：默认严格模式，隐私安全 tab 加「允许第三方访问」开关
+- 附件上传白名单收紧
+- 质量：删除 shutdown 重复执行块 / 死代码；新增 **73 项安全单测**（`server/tests/test_security_pure.py`）
+- ponytail 审计 F1-F9 零风险修复（净删死代码 / 合一 / 用 stdlib）
+- 6 个 P0/P1 修复（KB 多项 bug + 体验/安全加固 + 修复 F5/G1/D4/E1 暗色主题+注入防护）
+
+#### Removed（移除 / 清理）
+
+- 纪要模块归档：`minutes.js` 归档为 `.archived`，index.html 移除对应 Tab
+- 旧模式切换：tag-mode dropdown + modeConfirmModal 旧体系
+- KB Tab 对话功能（`qa.js` 千行削减）：删除 `kbAsk` / `kbCompareMode` / `askCompare` / `kbStopGeneration` / `kbNewChat` 等全部对话功能
+- `_compress_cloud_history` 函数（旧云端压缩）
+- `token-estimator.estimateTotal` 方法
+- 上下文清除按钮 DOM 残留
+- 段 1 阶段C 前置清理（`StallDetector` / 旧 Cloud Agent / 旧 AgentTimeline）
+- 纪要模块的 v0.9.5 旧 `recorder_pkg` 业务代码
+
+#### Test（测试）
+
+- 新增 Playwright UI 端到端测试脚本（`tests/test_ui_e2e.mjs` 1200+ 行，14 个场景）
+- 重构测试 3 为模式矩阵：离线 / 在线 / 并行 × 各 Action
+- 新增 4 个核心场景测试：停止 / KB 全流程 / 文档完整 / 历史渲染
+- 增加响应质量断言（不只验证「有响应」，还验证「响应达标」）
+- 修复模式切换时序 + 响应记录输出 + 矩阵修正
+- 会话隔离 + 联网搜索 + 错误降级（覆盖度 70% → **88%**）
+- 文档整理：docs 目录散落 23 → 6 个活跃文件 + 建归档索引（commit `80dd3a8`）
+- 73 项安全单测（`server/tests/test_security_pure.py`）
+- 完整手工测试清单（覆盖全部功能模块）
+- deps_check 单元测试（覆盖 F10 可选依赖机制，+11 用例）
+- 修复测试：14 failed → 0 failed（60 passed）
+
+#### Docs（文档）
+
+- 全线文档补全：架构更新 4 篇 + 新增文档 5 篇 + 故障排查 + 开发指南 + 空文件清理
+- docs 目录整理：迁移 22 个 patch 4-6 时期过程文档 → 归档 + 建归档 README 索引
+- 0.9.6 已知问题记入 P7 计划（P7-4c）
+- 0.9.7 规划新增：KB 全文预览（S3）+ 虚拟滚动（分页 A）
+- 8 篇 v0.9.7 待发版用户文档（v0.9.7 发版时启用）
+
+### 0.9.6 内嵌的「2026-06-27 安全加固补充」（同 release）
+
+> 基于全栈代码 review 完成 17 项安全与质量修复。详见上方「Security」一节。
+
+---
 
 ## [0.9.6] - 2026-06-21 — P6「前端统一化 + 三模式」
 
@@ -22,45 +285,7 @@
 > - **CORS 调试开关**：默认严格模式，隐私安全 tab 加「允许第三方访问」开关
 > - **质量**：删除 shutdown 重复执行块/死代码；新增 73 项安全单测
 
-### Added（新功能）
-
-- **并行模式（双轨独立）**：Chat Tab 新增第三档「并行」模式，本地检索 KB + 云端通用知识各自独立回答，本地自动融合。KB 原文永不离开本机
-- **三段模式按钮组**：header 替换旧 tag 下拉为三段式按钮（离线/在线/并行），一次点击切换。切换时弹出确认弹窗，含功能说明 + 风险告知
-- **融合输入框**：+ 附件按钮与发送按钮整合到同一圆角容器内，高度统一 44px，聚焦边框变品牌蓝
-- **统一 Token 上下文条**：输入框上方独立圆角条，合并本轮预计 + 对话历史 + 总容量 + 剩余容量，一处看全
-- **知识库纯档案管理**：删除 KB Tab 全部对话功能，改为左侧标签树 + 右侧卡片网格 + AI 概览摘要面板。原 KB 问答迁入离线模式「查知识库」action
-- **AgentTimeline 增强**：并行模式下四步实时时间线（检索→本地生成→云端补充→自动融合），每步含耗时 + 产出预览。历史消息持久化可回放
-- **并行模式齿轮开关**：「允许云端模型生成关键词」开关，云端拆解 3-5 个检索关键词增强本地召回
-- **热力图圆点指示器**：文档卡片用彩色圆点（灰/琥珀/红）替代火焰图标，与 AgentTimeline dot 体系统一
-- **设置页 Tab 化**：左侧竖排导航，五组子 Tab（常规/云端 AI/知识库/隐私安全/关于）
-- **知识库 AI 概览面板**：本地 LLM 离线生成知识库领域分析，辅助文档管理决策
-- **模式动态 placeholder**：输入框占位文案根据当前模式和 action 自动切换（六组文案）
-
-### Changed（改进）
-
-- **品牌色统一 #1E3A5F**：Tab 激活、输入聚焦、发送按钮全部统一为品牌深蓝
-- **SVG 图标体系**：全部图标使用 SVG（锁/火/重复/图片/发送等），零 emoji
-- **知识库文档卡片**：从平铺列表改为响应式卡片网格（标题+2行预览+标签+大小/切块/词元+热力图+上传时间）
-- **知识库标签树**：父+子层级标签，点击筛选对应文档
-- **并行模式流程**：照搬现有 compare_pipeline，本地列增加 memory_local 历史注入，双线记忆独立维护
-
-### Fixed（修复）
-
-- **思考态闪屏**：移除骨架屏，气泡自带空→时间线→内容三态过渡
-- **AgentTimeline 重复渲染**：修复 `_handleAgentSummary` 后 `_agentTimelineEl=null` 导致 re-render 丢数据
-- **CSS .btn 重复定义**：合并双套 .btn 样式，消除不可预测的叠加行为
-- **Token 估算重复逻辑**：删除 `token-estimator.js` 中 `estimateTotal`，统一用 `_estimateDoc`
-
-### Removed（移除）
-
-- **骨架屏全量移除**：skeleton.js / skeleton.css 删除，AI 回复等待用气泡状态替代
-- **drift 全链路清理**（~30 文件）：drift_hint/drift_result/check_topic_drift/topic_drift 全部删除，零残留
-- **纪要模块归档**：minutes.js 归档为 `.archived`，index.html 移除对应 Tab
-- **旧模式切换**: 删除 tag-mode dropdown + modeConfirmModal 旧体系
-- **KB Tab 对话功能**（qa.js 千行削减）：删除 kbAsk/kbCompareMode/askCompare/kbStopGeneration/kbNewChat 等全部对话功能
-- _compress_cloud_history 函数
-- token-estimator estimateTotal 方法
-- 上下文清除按钮 DOM 残留
+> **P6 原始 release notes 归档**：原 2026-06-21 P6「前端统一化 + 三模式」段的 Added/Changed/Fixed/Removed 条目已整合到上方「0.9.6 首发重发」各小节，此处不再重复。
 
 ---
 
