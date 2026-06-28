@@ -100,6 +100,55 @@ P7 两大主线：**底层能力升级** + **品牌视觉精修**。
 - 修复方向：system prompt 增加「不要评价用户的提问方式，直接执行」约束
 - 关联代码：`prompts.py`（在线 agent system prompt）
 
+#### P7-4d: 切 Apache-2.0 + 商业补充协议（0.9.7 战略性变更）
+
+> 来源：0.9.6 首发重发时讨论（2026-06-28，commit `51e6df4` 后）
+> 这是 Sidemate **首个战略性协议变更**，需要在 0.9.7 完成。
+
+**为什么 0.9.7 切开源**：
+- 副业团队 + 试用客户为主 = **试错阶段** → 切开源获客
+- 0.9.8 计划卖"开箱即用 API" → **核心代码开源 + 商业服务收费** 是最佳路径
+- 持续开发 + 没客户 = 缺乏用户反馈 → 开源能带来外部 PR / Issue
+- 已有的 THIRD-PARTY-NOTICES 完善 + LICENSE v1.2 严格 EULA → 切协议成本低
+
+**目标协议**：
+- 核心代码：**Apache License 2.0**
+- 商业补充协议：Custom EULA v2.0（保留商标 / API 服务条款 / 大企业授权）
+- 第三方依赖：THIRD-PARTY-NOTICES（保持现状，已 `6ebc02a` + `11227c1` 完善）
+
+**实施拆解**：
+1. **LICENSE 文件改写**（核心工作量 2-3 小时）
+   - Apache-2.0 全文（保留版权 + 专利 + 商标声明）
+   - 头部加 NOTICE 段引用 THIRD-PARTY-NOTICES
+   - 保留你 EULA v1.2 的 4 类精神（不可分发的商标 / 不可暗示背书 / 商业版另行 / 数据合规）
+2. **README.md 加 License badge**（5 分钟）
+   - 顶部加 `[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)`
+   - 加 1 段「License & Commercial」说明（200 字）
+3. **新建 `LICENSE-COMMERCIAL.md`**（1-2 小时）
+   - 商业补充 EULA v2.0
+   - 覆盖：开箱即用 API 服务条款 / 私有化部署授权费 / 大企业 SLA
+4. **CONTRIBUTING.md**（1 小时）
+   - 写明如何提交 PR / Issue
+   - CLA（贡献者协议）— 选 Apache ICLA 简化版
+5. **CODE_OF_CONDUCT.md**（30 分钟）
+   - 用 Contributor Covenant v2.1 模板
+6. **`.github/` 工作流**（1 小时）
+   - ISSUE_TEMPLATE / PR_TEMPLATE
+   - CI 加 license-eye（自动检查依赖协议）
+
+**范围边界**：
+- ❌ 不做：商业模式定价（等你 0.9.8 API 商业化时再写）
+- ❌ 不做：开源治理（GitHub Org 迁移 / 投票机制 / TSC 委员会）
+- ❌ 不做：企业版功能差异（先把核心开源，差异化靠 API 服务）
+- ✅ 做：协议切换 + 必备治理文件
+
+**关联提交链**：
+- `6ebc02a` THIRD-PARTY-NOTICES 4 项清理（前置）
+- `11227c1` THIRD-PARTY-NOTICES 3 项补充 + EULA 第十条商标注意（前置）
+- `51e6df4` 0.9.6 首发重发收尾（含 EULA v1.2 完整版，已 6ebc02a+11227c1 强化）
+
+**预计工作量**：5-8 小时分散在 0.9.7 周期内
+
 ### P7 技术债：代码整洁项（F11 / F12）
 
 > 来源：P6 审计（AUDIT-ponytail.md D1/D2），逐行对比后判定 P6 不改（发版前不承担回归风险），移入 P7。

@@ -56,6 +56,10 @@ DisableProgramGroupPage=yes
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"
 
+; 模型目录占位：空目录，内容由 .sidemate 扩展包运行时注入
+[Dirs]
+Name: "{app}\server\models"
+
 [Files]
 ; Go Launcher
 Source: "launcher\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -69,9 +73,14 @@ Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs
 ; Python 嵌入式环境
 Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
 
-; Server 源码（排除：用户数据、缓存、日志、开发测试、本地设置、归档旧代码、用户工作区）
-; 注意：实际用户数据运行时落在 {app}\server\data\ 下，安装包只带空壳结构
-Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests,archive,workspace"
+; Server 源码（排除：用户数据、缓存、日志、开发测试、本地设置、归档旧代码、用户工作区、模型）
+; 注意：实际用户数据运行时落在 {app}\server\data\ 下；
+;       models/ 下的模型（embedding/reranker/ollama blobs）由 .sidemate 扩展包按需安装，
+;       安装包只保留空目录占位（见下方 [Dirs]），避免把 9GB+ 模型打进安装包。
+Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests,archive,workspace,models"
+
+; 模型目录空壳：models 必须存在（OLLAMA_MODELS 指向此），但内容由扩展包注入。
+; Excludes 排除了整个 models 子树，这里用 [Dirs] 重建空目录占位。
 
 ; LICENSE 和第三方许可
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
