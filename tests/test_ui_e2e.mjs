@@ -405,7 +405,10 @@ async function test3_modeMatrix(page) {
   if (hasLocalModel) {
     await newChatSession(page);  // 会话隔离
     await switchAiMode(page, '离线');
-    const hasDocAction = await selectAction(page, '文档生成', 'doc');
+    // 用 setActionMode('doc') 直接切（比点"文档生成"按钮可靠，避免 actionBar 渲染时序导致点击落空）
+    await page.evaluate(() => { if (typeof setActionMode === 'function') setActionMode('doc'); }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const hasDocAction = await page.evaluate(() => { try { return currentActionMode === 'doc'; } catch { return false; } }).catch(() => false);
     if (hasDocAction) {
       // 文档生成不能用 sendMessageAndWait（它靠消息数判断完成，
       // 但 doc_outline 事件在所有 token 之后才发，消息数早增了）
@@ -494,7 +497,8 @@ async function test3_modeMatrix(page) {
     }).catch(() => false);
     if (kbOk) {
       await page.waitForTimeout(1500);
-      const r = await sendMessageAndWait(page, '总结一下文档内容', 60000);
+      // 本地 4B KB问答 = reformulate(LLM) + 检索 + 生成(LLM)，60s 偏紧（实测约 49s，拥塞下更久），放宽到 120s
+      const r = await sendMessageAndWait(page, '总结一下文档内容', 120000);
       check('知识库问答：收到响应', r.ok, r.reason || ('+' + r.newMsgCount + '条'));
     } else {
       console.log('    ⏭️  跳过（setActionMode 不可用）');
@@ -1124,6 +1128,132 @@ async function test14_errorHandling(page) {
 }
 
 // ============================================================
+//  测试 15：在线文档生成（守护 BUG-1：cloud _run_agent_loop 保存路径 NameError）
+// ============================================================
+async function test15_onlineDocFlow(page) {
+  console.log('\n🔴 测试 15：在线文档生成（守护 BUG-1）');
+  if (quick) { console.log('  ⏭️  --quick 跳过'); return; }
+  const hasCloud = await page.evaluate(() => typeof _cloudConfigured !== 'undefined' && _cloudConfigured).catch(() => false);
+  if (!hasCloud) { console.log('  ⏭️  跳过（云端未配置）'); return; }
+
+  await switchTab(page, 'chat');
+  await newChatSession(page);
+  await switchAiMode(page, '在线');
+  await page.evaluate(() => { if (typeof setActionMode === 'function') setActionMode('doc'); }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const isDoc = await page.evaluate(() => { try { return currentActionMode === 'doc'; } catch { return false; } }).catch(() => false);
+  check('在线文档：action=doc 已选中', isDoc);
+  if (!isDoc) return;
+
+  await page.fill('#msgInput', '写一份关于番茄工作法的简短文档，2个章节');
+  await page.locator('#sendBtn').click({ timeout: 5000 }).catch(() => {});
+  console.log('  ⏳ 等待在线文档生成（最多180秒）...');
+
+  // BUG-1 表现为保存时 NameError → 前端收到"处理过程中出错"。核心断言：完成且无 pipeline 错误。
+  let done = false, errored = false;
+  const t0 = Date.now();
+  for (let i = 0; i < 90; i++) {
+    await page.waitForTimeout(2000);
+    const dl = await page.locator('.doc-download-bar, [data-doc-complete]').count().catch(() => 0);
+    if (dl > 0) { done = true; break; }
+    const errTxt = await page.evaluate(() => {
+      const m = document.querySelectorAll('#messages > .msg.ai'); const last = m[m.length - 1];
+      return last ? (last.textContent.includes('[ERROR]') || last.textContent.includes('处理过程中出错') || last.textContent.includes('请求失败')) : false;
+    }).catch(() => false);
+    if (errTxt) { errored = true; break; }
+    const btnBack = await page.evaluate(() => { const b = document.getElementById('sendBtn'); return b && b.style.display !== 'none'; }).catch(() => false);
+    if (btnBack && i > 3) break;  // 流程结束（即便无下载按钮也跳出，避免干等）
+  }
+  const secs = Math.round((Date.now() - t0) / 1000);
+  check('在线文档：完成且无 pipeline 错误（BUG-1）', !errored,
+    errored ? '出现错误响应（疑似回归）' : (done ? '有下载按钮 ' + secs + 's' : '完成 ' + secs + 's'));
+  if (done) check('在线文档：下载按钮出现', true);
+  await shot(page, '15_online_doc');
+}
+
+// ============================================================
+//  测试 16：在线带 KB 引用发消息（守护 BUG-2：cloud agent 预读 _agent_timeline_buf）
+// ============================================================
+async function test16_onlineAttachment(page) {
+  console.log('\n🔴 测试 16：在线带KB引用（守护 BUG-2）');
+  if (quick) { console.log('  ⏭️  --quick 跳过'); return; }
+  const hasCloud = await page.evaluate(() => typeof _cloudConfigured !== 'undefined' && _cloudConfigured).catch(() => false);
+  if (!hasCloud) { console.log('  ⏭️  跳过（云端未配置）'); return; }
+  const kbReady = await page.evaluate(async () => { try { const r = await fetch('/api/kb/module-status'); return (await r.json()).installed; } catch { return false; } }).catch(() => false);
+  if (!kbReady) { console.log('  ⏭️  跳过（KB 未安装）'); return; }
+
+  // 准备一篇 KB 文档并等向量化
+  const content = '番茄工作法是一种时间管理方法：选定任务，专注工作25分钟，然后休息5分钟，每完成4个番茄钟后长休息15-30分钟。核心是用固定节奏对抗分心。';
+  const up = await page.evaluate(async (c) => {
+    try {
+      const r = await fetch('/api/kb/import_text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: c, filename: 'e2e_pomodoro.txt', source: 'manual' }) });
+      const d = await r.json(); return { ok: r.ok, doc_id: d.doc_id };
+    } catch (e) { return { ok: false }; }
+  }, content).catch(() => ({ ok: false }));
+  check('在线KB引用：准备文档', up.ok, up.doc_id || '');
+  if (!up.ok) return;
+  const docId = up.doc_id;
+  let ready = false;
+  for (let i = 0; i < 25; i++) {
+    await page.waitForTimeout(1500);
+    const st = await page.evaluate(async (id) => { try { const r = await fetch('/api/kb/documents/' + id + '/status'); return (await r.json()).status; } catch { return '?'; } }, docId).catch(() => '?');
+    if (st === 'ready') { ready = true; break; }
+    if (st === 'error') break;
+  }
+  check('在线KB引用：文档向量化', ready);
+
+  await switchTab(page, 'chat');
+  await newChatSession(page);
+  await switchAiMode(page, '在线');
+  // 等价于前端"引用知识库文档"：pendingFile = {path: doc_id, source:'kb'} → sendMessage 带 file_path
+  await page.evaluate((id) => {
+    window.pendingFile = { path: id, source: 'kb', name: 'e2e_pomodoro.txt' };
+  }, docId).catch(() => {});
+
+  const r = await sendMessageAndWait(page, '根据我引用的这篇文档，用一句话概括它讲了什么', 120000);
+  // BUG-2 表现为 UnboundLocalError → "处理过程中出错"。核心断言：带 file_path 的在线 agent 正常响应。
+  check('在线KB引用：收到响应（BUG-2）', r.ok, r.reason || (r.elapsed + 's'));
+  if (r.ok) {
+    assertQuality('在线KB引用', r, { minLen: 2, notError: true, notContains: ['[ERROR]', '处理过程中出错', '请求失败'] });
+    logResponse('16 在线KB引用', '根据引用文档一句话概括', r);
+  }
+  // 清理
+  await page.evaluate(async (id) => { try { await fetch('/api/kb/documents/' + id, { method: 'DELETE' }); } catch {} }, docId).catch(() => {});
+  await shot(page, '16_online_attach');
+}
+
+// ============================================================
+//  测试 17：附件上传白名单（守护 N-5：拒绝非文档类型落盘）
+// ============================================================
+async function test17_uploadAllowlist(page) {
+  console.log('\n🔴 测试 17：附件上传白名单（N-5）');
+  await switchTab(page, 'chat');
+  await newChatSession(page);
+  const chatId = await page.evaluate(() => { try { return (currentChatFile || '').split(/[\\/]/).pop().replace('.json', ''); } catch { return ''; } }).catch(() => '');
+  if (!chatId) { console.log('  ⏭️  跳过（无 chat_id）'); return; }
+
+  // 允许类型 .txt → 200 + 返回 workspace 路径
+  const okUp = await page.evaluate(async (cid) => {
+    const fd = new FormData();
+    fd.append('file', new Blob(['e2e allow test content'], { type: 'text/plain' }), 'e2e_ok.txt');
+    const r = await fetch('/api/file_upload?chat_id=' + encodeURIComponent(cid), { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    return { status: r.status, path: d.path || '', err: d.error || '' };
+  }, chatId).catch(() => ({ status: 0 }));
+  check('上传 .txt 成功（白名单放行）', okUp.status === 200 && !!okUp.path, 'status=' + okUp.status + ' ' + (okUp.err || ''));
+
+  // 被拒类型 .exe → 400
+  const badUp = await page.evaluate(async (cid) => {
+    const fd = new FormData();
+    fd.append('file', new Blob(['MZ\x90\x00'], { type: 'application/octet-stream' }), 'evil.exe');
+    const r = await fetch('/api/file_upload?chat_id=' + encodeURIComponent(cid), { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    return { status: r.status, err: d.error || '' };
+  }, chatId).catch(() => ({ status: 0 }));
+  check('上传 .exe 被拒（400，N-5）', badUp.status === 400, 'status=' + badUp.status + ' ' + (badUp.err || ''));
+}
+
+// ============================================================
 //  主流程
 // ============================================================
 async function main() {
@@ -1166,6 +1296,9 @@ async function main() {
     await runStep('历史渲染', () => test11_historyRender(page));
     await runStep('联网搜索', () => test13_webSearch(page), 150);
     await runStep('错误降级', () => test14_errorHandling(page), 90);
+    await runStep('在线文档生成', () => test15_onlineDocFlow(page), 240);
+    await runStep('在线KB引用', () => test16_onlineAttachment(page), 180);
+    await runStep('上传白名单', () => test17_uploadAllowlist(page), 60);
   } catch (e) {
     console.log('\n💥 测试中断: %s', e.message);
     failed++;

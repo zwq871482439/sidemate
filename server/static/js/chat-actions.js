@@ -203,22 +203,9 @@ async function setActionMode(mode, btn) {
   if (typeof hideFileIndicator === 'function') hideFileIndicator();
   if (typeof clearPendingFile === 'function') clearPendingFile();
 
-  // 在线模式 agent 映射到 chat（后端 action_mode）
-  var backendMode = mode;
-  if (mode === 'agent') backendMode = 'chat';
-
-  // 调用后端切换 Action
-  try {
-    var _apiBase = (typeof API !== 'undefined' ? API : '');
-    await fetch(_apiBase + '/api/action/switch', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: backendMode})
-    });
-  } catch(e) {
-    console.error('[chat.setActionMode]', e);
-  }
-
+  // Action 模式是纯客户端状态：随每条 /api/chat/stream 请求以 action_mode 字段下发，
+  // 无需单独的后端切换调用。旧的 POST /api/action/switch 无对应路由（命中 DELETE
+  // /api/action/{action_id} 的路径 → 405 Method Not Allowed），属死代码，已移除。
   currentActionMode = mode;
 
   // 更新 UI 高亮
