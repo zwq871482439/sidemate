@@ -40,7 +40,14 @@ function _buildFileTag(m) {
 
 function _buildDocDownload(m) {
   if (!m.doc_url || m.role === 'user') return '';
-  return '<div class="doc-download-bar"><a href="' + esc(m.doc_url) + '" download="' + esc(m.doc_filename || 'document.docx') + '" class="doc-download-btn" target="_blank"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M8 2v8M5 6.5L8 4l3 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11.5" width="12" height="2" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>下载 ' + esc(m.doc_filename || 'document.docx') + '</a></div>';
+  var _fn = m.doc_filename || 'document.docx';
+  var _isHtml = _fn.toLowerCase().endsWith('.html');
+  var _url = m.doc_url;
+  if (_isHtml && _url.indexOf('fmt=') < 0) {
+    _url += (_url.indexOf('?') >= 0 ? '&' : '?') + 'fmt=html';
+  }
+  var _label = _isHtml ? ('下载 HTML 报告 ' + esc(_fn)) : ('下载 ' + esc(_fn));
+  return '<div class="doc-download-bar"><a href="' + esc(_url) + '" download="' + esc(_fn) + '" class="doc-download-btn" target="_blank"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M8 2v8M5 6.5L8 4l3 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11.5" width="12" height="2" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>' + _label + '</a></div>';
 }
 
 function _buildKbSources(m) {
@@ -304,7 +311,12 @@ function _renderSingleMsg(m, idx) {
       var _dlUrl = _a.url || _a.doc_url || '';
       if (_dlUrl.indexOf('http') !== 0) _dlUrl = (typeof API !== 'undefined' ? API : '') + _dlUrl;
       var _fn = _a.filename || _a.doc_filename || 'document.docx';
-      _tags.push('<a href="' + esc(_dlUrl) + '" download="' + esc(_fn) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(_fn) + '</a>');
+      var _aIsHtml = _fn.toLowerCase().endsWith('.html');
+      if (_aIsHtml && _dlUrl.indexOf('fmt=') < 0) {
+        _dlUrl += (_dlUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=html';
+      }
+      var _aLabel = _aIsHtml ? ('下载 HTML 报告 ' + esc(_fn)) : ('下载 ' + esc(_fn));
+      _tags.push('<a href="' + esc(_dlUrl) + '" download="' + esc(_fn) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' ' + _aLabel + '</a>');
     }
     docBarHtml = '<div class="doc-download-bar" data-doc-complete="1">' + _tags.join('') + '</div>';
   }
@@ -1416,14 +1428,21 @@ async function sendMessage() {
           } else if (d.type === 'doc_ready') {
             var _apiBase = (typeof API !== 'undefined' ? API : '');
             var downloadUrl = _apiBase + d.url;
+            var _dlFilename = d.filename || 'document.docx';
+            // P7: HTML 报告的下载 URL 带 fmt=html，文案适配
+            var _isHtml = _dlFilename.toLowerCase().endsWith('.html');
+            if (_isHtml && downloadUrl.indexOf('fmt=') < 0) {
+              downloadUrl += (downloadUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=html';
+            }
+            var _dlLabel = _isHtml ? ('下载 HTML 报告 ' + esc(_dlFilename)) : ('下载 ' + esc(_dlFilename));
             // 保存下载信息到变量，用于 renderMessages 后恢复
-            window._docDownloadInfo = { url: downloadUrl, filename: d.filename || 'document.docx' };
+            window._docDownloadInfo = { url: downloadUrl, filename: _dlFilename };
             // 在当前流式消息末尾追加下载按钮
             var streamEl = document.getElementById('stream-msg');
             if (streamEl) {
               var docBar = document.createElement('div');
               docBar.className = 'doc-download-bar';
-              docBar.innerHTML = '<a href="' + esc(downloadUrl) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(d.filename || 'document.docx') + '</a>';
+              docBar.innerHTML = '<a href="' + esc(downloadUrl) + '" download="' + esc(_dlFilename) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' ' + _dlLabel + '</a>';
               streamEl.appendChild(docBar);
             }
             showToast('文档撰写完成', 'success');
@@ -1432,10 +1451,17 @@ async function sendMessage() {
             // set_doc_status completed 完成 → 进度面板标记完成 + 下载按钮
             // 新数据结构（来自 cloud_pipeline）: {filename, doc_url, md_filename, total_time, ts}
             // Patch4 v3.1 BUG#13：同时保存到 window._docDownloadInfo 供持久化
-            if (d.doc_url) {
+            var _dcFilename = d.filename || 'document.docx';
+            var _dcIsHtml = _dcFilename.toLowerCase().endsWith('.html');
+            var _dcDocUrl = d.doc_url || '';
+            // P7: HTML 报告下载 URL 带 fmt=html
+            if (_dcIsHtml && _dcDocUrl && _dcDocUrl.indexOf('fmt=') < 0) {
+              _dcDocUrl += (_dcDocUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=html';
+            }
+            if (_dcDocUrl) {
               window._docDownloadInfo = {
-                url: d.doc_url,
-                filename: d.filename || 'document.docx',
+                url: _dcDocUrl,
+                filename: _dcFilename,
               };
             }
             if (typeof _handleDocProgressEvent === 'function') {
@@ -1444,11 +1470,12 @@ async function sendMessage() {
             // Patch4 v3.1 BUG#13：额外保险——在 streamEl 末尾追加一个独立的下载栏
             // （进度面板可能在 done 事件重渲染时被覆盖，独立下载栏更稳）
             var _streamElDl = document.getElementById('stream-msg');
-            if (_streamElDl && d.doc_url) {
+            if (_streamElDl && _dcDocUrl) {
               var _docDlBar = document.createElement('div');
               _docDlBar.className = 'doc-download-bar';
               _docDlBar.setAttribute('data-doc-complete', '1');
-              _docDlBar.innerHTML = '<a href="' + esc((typeof API !== 'undefined' ? API : '') + d.doc_url) + '" download="' + esc(d.filename || 'document.docx') + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' 下载 ' + esc(d.filename || 'document.docx') + '</a>';
+              var _dcLabel = _dcIsHtml ? ('下载 HTML 报告 ' + esc(_dcFilename)) : ('下载 ' + esc(_dcFilename));
+              _docDlBar.innerHTML = '<a href="' + esc((typeof API !== 'undefined' ? API : '') + _dcDocUrl) + '" download="' + esc(_dcFilename) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' ' + _dcLabel + '</a>';
               _streamElDl.appendChild(_docDlBar);
             }
             showToast('文档撰写完成', 'success');

@@ -936,13 +936,13 @@ class AgentLoop:
                         "error": "invalid_status",
                         "message": "status 目前只支持 'completed'",
                     }
-                # 必须是 .md 文件
-                if not filename.endswith(".md"):
+                # 必须是 .md 或 .html 文件
+                if not filename.endswith((".md", ".html")):
                     return {
                         "success": False,
                         "tool": "set_doc_status",
                         "error": "invalid_filename",
-                        "message": "filename 必须是 .md 文件（如 '团队协作.md'）",
+                        "message": "filename 必须是 .md（生成 docx）或 .html（生成可视化报告）文件",
                     }
                 stats["docs"] += 1
                 try:
@@ -962,28 +962,38 @@ class AgentLoop:
                         }
                     md_content = f["content"]
 
-                    # 2. 生成 docx（Patch4 v3.1 BUG#22：输出到 workspace/，模型可见）
-                    docx_filename = filename[:-3] + ".docx"  # 去掉 .md 加 .docx
-                    docs_dir = _workspace_root(self.chat_id)  # 改为 workspace（模型可见）
+                    # 2. 生成产物（输出到 workspace/，模型可见）
+                    docs_dir = _workspace_root(self.chat_id)
                     os.makedirs(docs_dir, exist_ok=True)
-                    docx_path = os.path.join(docs_dir, docx_filename)
 
-                    from pipelines.doc_action import generate_docx
-                    title = _extract_md_title(md_content) or filename[:-3]
-                    generate_docx(md_content, docx_path, title=title)
+                    if filename.endswith(".html"):
+                        # HTML 可视化报告：内联 mermaid.js 自包含
+                        from pipelines.doc_action import generate_html_report
+                        out_filename = filename  # .html 直接用原名
+                        out_path = os.path.join(docs_dir, out_filename)
+                        title = _extract_md_title(md_content) or filename[:-5]
+                        generate_html_report(md_content, out_path, title=title)
+                    else:
+                        # Word 文档：.md → .docx（pandoc）
+                        from pipelines.doc_action import generate_docx
+                        out_filename = filename[:-3] + ".docx"  # 去掉 .md 加 .docx
+                        out_path = os.path.join(docs_dir, out_filename)
+                        title = _extract_md_title(md_content) or filename[:-3]
+                        generate_docx(md_content, out_path, title=title)
+                    docx_filename = out_filename  # 保持原变量名兼容下游 doc_complete 派生
 
                     # 3. 标记完成
                     mark_doc_completed(self.chat_id, filename)
 
-                    log.info("[AGENT] set_doc_status completed: file=%s → docx=%s",
-                             filename, docx_filename)
+                    log.info("[AGENT] set_doc_status completed: file=%s → %s",
+                             filename, out_filename)
                     return {
                         "success": True,
                         "tool": "set_doc_status",
                         "data": {
                             "filename": filename,
                             "status": "completed",
-                            "docx_path": docx_filename,
+                            "docx_path": out_filename,
                             "title": title,
                         },
                     }

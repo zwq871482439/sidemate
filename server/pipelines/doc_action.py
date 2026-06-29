@@ -372,6 +372,123 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
     log.info("[DOC] .docx 生成完成 (pandoc): %s (%d bytes)", os.path.basename(output_path), file_size)
 
 
+# ===== HTML 可视化报告（含 mermaid 图表，自包含单文件） =====
+
+_mermaid_js_cache = None  # mermaid.min.js 全文缓存，避免每次读盘
+
+
+def _load_mermaid_js() -> str:
+    """读取 mermaid.min.js 全文（带缓存）"""
+    global _mermaid_js_cache
+    if _mermaid_js_cache is not None:
+        return _mermaid_js_cache
+    # mermaid.min.js 在 server/static/vendor/
+    _here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.path.join(_here, "static", "vendor", "mermaid.min.js"),
+        os.path.join(_here, "static", "vendor", "mermaid.js"),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    _mermaid_js_cache = f.read()
+                log.info("[DOC] mermaid.min.js 已加载 (%d bytes)", len(_mermaid_js_cache))
+                return _mermaid_js_cache
+            except Exception as e:
+                log.warning("[DOC] 读取 mermaid.min.js 失败: %s", e)
+    log.warning("[DOC] 未找到 mermaid.min.js，HTML 报告将无法渲染图表")
+    _mermaid_js_cache = ""  # 空字符串兜底，避免反复读盘
+    return _mermaid_js_cache
+
+
+# HTML 报告的打印友好 CSS（A4 宽度、字体、表格、mermaid 居中、打印优化）
+_HTML_REPORT_CSS = """
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  max-width: 800px; margin: 32px auto; padding: 0 24px;
+  color: #1F2937; line-height: 1.75; font-size: 15px;
+}
+h1 { font-size: 26px; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; margin-top: 32px; }
+h2 { font-size: 21px; margin-top: 28px; border-left: 4px solid #3b82f6; padding-left: 10px; }
+h3 { font-size: 17px; margin-top: 22px; color: #374151; }
+p { margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+th { background: #f3f4f6; font-weight: 600; }
+tr:nth-child(even) { background: #fafafa; }
+blockquote { border-left: 4px solid #3b82f6; margin: 16px 0; padding: 8px 16px; background: #eff6ff; color: #374151; }
+code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
+pre { background: #1e293b; color: #e2e8f0; padding: 14px 18px; border-radius: 8px; overflow-x: auto; }
+pre code { background: transparent; color: inherit; padding: 0; }
+ul, ol { padding-left: 24px; }
+li { margin: 4px 0; }
+img { max-width: 100%; border-radius: 8px; }
+/* mermaid 图表容器居中 + 滚动 */
+.mermaid { text-align: center; margin: 20px 0; }
+svg { max-width: 100% !important; height: auto !important; }
+/* 打印优化 */
+@media print {
+  body { max-width: none; margin: 0; padding: 12mm; font-size: 12pt; }
+  pre, .mermaid, svg { page-break-inside: avoid; }
+  h1, h2, h3 { page-break-after: avoid; }
+}
+"""
+
+
+def generate_html_report(content: str, output_path: str, title: str = "报告"):
+    """生成自包含的 HTML 可视化报告（内联 mermaid.js，单文件可独立打开）
+
+    Args:
+        content: LLM 写的 HTML body 内容（可含 ```mermaid``` 围栏代码块）
+        output_path: 输出 .html 文件路径
+        title: 报告标题
+    """
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+    mermaid_js = _load_mermaid_js()
+
+    # 把 ```mermaid ... ``` 围栏代码块转成 mermaid.js 能识别的 <div class="mermaid">
+    # mermaid.js startOnLoad 模式会自动渲染 .mermaid 元素
+    def _fence_to_div(m):
+        return '<div class="mermaid">\n' + m.group(1).strip() + '\n</div>'
+
+    processed_content = re.sub(
+        r"```mermaid\s*\n(.*?)```",
+        _fence_to_div,
+        content,
+        flags=re.DOTALL,
+    )
+
+    # mermaid 初始化脚本（startOnLoad:true 打开即自动渲染）
+    init_script = (
+        "mermaid.initialize({startOnLoad:true, theme:'default', "
+        "securityLevel:'loose', fontFamily:inherit'});"
+    ) if mermaid_js else ""
+
+    html = (
+        '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        '<title>' + title.replace("<", "&lt;").replace(">", "&gt;") + '</title>\n'
+        '<style>' + _HTML_REPORT_CSS + '</style>\n'
+    )
+    if mermaid_js:
+        html += '<script>' + mermaid_js + '</script>\n'
+        html += '<script>' + init_script + '</script>\n'
+    html += '</head>\n<body>\n'
+    html += processed_content
+    html += '\n</body>\n</html>\n'
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    file_size = os.path.getsize(output_path)
+    log.info("[DOC] .html 报告生成完成: %s (%d bytes, mermaid=%s)",
+             os.path.basename(output_path), file_size, "yes" if mermaid_js else "no")
+
+
 def _generate_docx_manual(content: str, output_path: str, title: str = "文档"):
     """pandoc 不可用时的手动回退方案"""
     from docx import Document
