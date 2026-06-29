@@ -85,11 +85,11 @@ async function refreshActionBar() {
 
       // 快捷提示词：点击填入引导词，agent 模式不变
       var cloudPrompts = [
-        { label: '联网搜索', tip: '请联网搜索以下主题的最新信息，总结关键要点：', icon: 'search' },
-        { label: '写文档', tip: '请帮我撰写一份专业的 Word 文档，主题和要求如下：', icon: 'write' },
-        { label: '可视化报告', tip: '请帮我制作一份图文并茂的可视化报告（含流程图/架构图等图表），主题如下：', icon: 'chart' },
-        { label: '写PPT', tip: '请帮我制作一份专业的演示文稿，要求信息充实、排版美观、善用图表和卡片展示，主题如下：', icon: 'slides' },
-        { label: '深度分析', tip: '请对以下内容进行深度分析，给出洞察、建议和行动方案：', icon: 'brain' }
+        { label: '联网搜索', tip: '请联网搜索下面这个主题：', icon: 'search' },
+        { label: '写文档', tip: '请帮我写一份 Word 文档：', icon: 'write' },
+        { label: '可视化报告', tip: '请帮我做一份图文并茂的报告（带图表）：', icon: 'chart' },
+        { label: '写PPT', tip: '请帮我做一份演示文稿 PPT：', icon: 'slides' },
+        { label: '深度分析', tip: '请对以下内容做深度分析：', icon: 'brain' }
       ];
       cloudPrompts.forEach(function(p) {
         var btn = document.createElement('button');
