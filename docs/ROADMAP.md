@@ -100,6 +100,61 @@ P7 两大主线：**底层能力升级** + **品牌视觉精修**。
 - 修复方向：system prompt 增加「不要评价用户的提问方式，直接执行」约束
 - 关联代码：`prompts.py`（在线 agent system prompt）
 
+#### P7-4e: 工具与 action 模式拆分（架构清理）
+
+> 来源：0.9.6 后期 HTML报告/PPT 功能开发时发现的架构耦合（2026-06-30）
+
+**现状问题**：
+- `action_mode`（chat/doc/agent/kb_qa）和工具能力（write_workspace/set_doc_status/read_workspace_chunk 等）**耦合在一起**
+- 在线模式（cloud/agent）有自己的工具链，本地模式（local/doc）走 doc_action pipeline，两者互不通用
+- 用户选了「文档生成」action → 强制走 doc_action 的 Phase1/Phase2，**不能享受在线 agent 的工具能力**
+- 反过来，在线 agent 模式下想用文档生成的提纲确认功能，也不行
+- HTML报告/PPT/可视化报告 这些产物格式只在在线 agent 的 set_doc_status 分支里，本地模式用不了
+
+**目标**：工具和 action **正交解耦**，模式之间不互相影响
+
+**拆分原则**：
+```
+工具层（与模式无关）：
+  write_workspace / read_workspace / read_workspace_chunk
+  set_doc_status（支持 .md/.html/.ppt.html）
+  search_kb / search_web / fetch_url
+  calculator / format_convert / table_ops / deep_read
+  → 所有模式都能用同一套工具
+
+action 层（决定交互流程）：
+  chat     → 直接对话（可调工具）
+  doc      → 提纲确认 + 两阶段生成（保留 Phase1/Phase2）
+  agent    → 多轮工具调用循环（agent_loop）
+  kb_qa    → 知识库问答
+  → action 决定"怎么交互"，不决定"能用什么工具"
+
+模式层（决定用什么模型）：
+  local    → 本地 Ollama
+  cloud    → 在线 LLM
+  parallel → 双模型
+  → 模式决定"用谁回答"，不决定"怎么交互"和"能用什么工具"
+```
+
+**实施拆解**：
+1. **工具注册统一化**：所有工具定义在 `agent_tools.py` 的 TOOL_REGISTRY，不按 action/mode 区分
+2. **action 只控制流程**：doc_action 的 Phase1/Phase2 保留，但内部也用统一工具集
+3. **产物格式统一**：set_doc_status 的 .md/.html/.ppt.html 分支，所有 action 都能调
+4. **权限独立**：工具权限（工具开关）和 action 选择（用户选哪个模式）分开配置
+
+**不做**：
+- ❌ 不合并 doc_action 到 agent_loop（Phase1/Phase2 的提纲确认是独特交互，合并不划算）
+- ❌ 不让本地模式强上 agent 工具链（本地模型能力有限，保持简单）
+
+**关联代码**：
+- `agent_tools.py`（TOOL_REGISTRY 统一）
+- `agent_loop.py`（工具调用循环）
+- `pipelines/doc_action.py`（Phase1/Phase2）
+- `pipelines/cloud_pipeline.py`（模式路由）
+- `routers/chat.py`（action_mode 参数处理）
+
+**预计工作量**：8-12 小时
+
 #### P7-4d: 切 Apache-2.0 + 商业补充协议（0.9.7 战略性变更）
 
 > 来源：0.9.6 首发重发时讨论（2026-06-28，commit `51e6df4` 后）
