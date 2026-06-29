@@ -497,6 +497,8 @@ class AgentLoop:
 
         # ===== 6. 发送统计摘要 =====
         elapsed = int(time.time() - stats["start_time"])
+        # P7: 统计真实 messages 总字符数（含工具历史/system prompt），推给前端更新上下文指示器
+        _total_chars = sum(len(str(m.get("content", ""))) for m in messages)
         yield ("agent_summary", {
             "searches": stats["searches"],
             "fetches": stats["fetches"],
@@ -507,6 +509,7 @@ class AgentLoop:
             "conversions": stats.get("conversions", 0),
             "table_ops": stats.get("table_ops_count", 0),
             "elapsed": elapsed,
+            "total_chars": _total_chars,  # P7: 真实上下文字符数（前端据此更新指示器）
         })
 
         log.info("[AGENT] 完成: %d轮, searches=%d, fetches=%d, kb=%d, docs=%d, time=%d, calc=%d, conv=%d, tbl=%d, %.1fs",

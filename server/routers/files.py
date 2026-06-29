@@ -177,17 +177,27 @@ def download_chat_doc(chat_id: str, doc_id: str, fmt: str = "docx"):
                             filename=doc_id + ".json")
 
     # 默认 docx — Patch4 v3.1 BUG#22：优先 workspace/，fallback docs/
-    # P7: 同时支持 .html 可视化报告（fmt=html 或 .html 文件存在时优先返回）
-    html_target = os.path.join(workspace_dir, doc_id + ".html")
+    # P7: 支持 .html 报告和 .ppt.html 演示文稿
+    # 依次找 .ppt.html → .html（PPT 文件实际后缀是 .ppt.html）
+    html_target = None
+    for _suffix in ('.ppt.html', '.html'):
+        _candidate_ws = os.path.join(workspace_dir, doc_id + _suffix)
+        _candidate_docs = os.path.join(docs_dir, doc_id + _suffix)
+        if os.path.isfile(_candidate_ws):
+            html_target = _candidate_ws
+            break
+        elif os.path.isfile(_candidate_docs):
+            html_target = _candidate_docs
+            break
     target = os.path.join(workspace_dir, doc_id + ".docx")
     if not os.path.isfile(target):
         # fallback 到旧位置 docs/
         target = os.path.join(docs_dir, doc_id + ".docx")
-    if not os.path.isfile(target) and not os.path.isfile(html_target):
+    if not os.path.isfile(target) and not html_target:
         return JSONResponse({"error": "docx 产物尚未生成"}, status_code=404)
 
-    # .html 可视化报告：fmt=html 显式指定，或 .docx 不存在但 .html 存在
-    if fmt == "html" or (not os.path.isfile(target) and os.path.isfile(html_target)):
+    # .html/.ppt.html 报告：fmt=html 显式指定，或 .docx 不存在但 html 存在
+    if (fmt == "html" or (not os.path.isfile(target) and html_target)) and html_target:
         return FileResponse(html_target,
                             media_type="text/html; charset=utf-8",
                             filename=doc_id + ".html")

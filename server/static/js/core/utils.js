@@ -321,7 +321,7 @@ function _enhanceMermaid(container, code) {
     '<span class="mt-zoom">100%</span>' +
     '<button type="button" class="mt-btn" data-act="zoomin" title="放大">+</button>' +
     '<button type="button" class="mt-btn" data-act="reset" title="复位">⟲</button>' +
-    '<button type="button" class="mt-btn mt-dl" data-act="download" title="下载 SVG">⬇</button>';
+    '<button type="button" class="mt-btn mt-dl" data-act="download" title="下载 PNG">⬇</button>';
   container.appendChild(toolbar);
 
   // 包裹 svg 为可变换的视口
@@ -381,25 +381,87 @@ function _enhanceMermaid(container, code) {
   viewport.style.cursor = 'grab';
 }
 
-// 下载 mermaid SVG
+// 下载 mermaid 图为 PNG（白底，所有软件可打开）；taint 时降级 SVG（加白底）
 function _downloadMermaidSvg(svg, name) {
+  // 1. 克隆 svg，补 xmlns + 显式 width/height
+  var clone = svg.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  // 从 viewBox 或属性获取尺寸
+  var vb = clone.getAttribute('viewBox');
+  var w = parseFloat(clone.getAttribute('width')) || (vb ? parseFloat(vb.split(/\s+/)[2]) : 800);
+  var h = parseFloat(clone.getAttribute('height')) || (vb ? parseFloat(vb.split(/\s+/)[3]) : 600);
+  clone.setAttribute('width', w);
+  clone.setAttribute('height', h);
+
+  var svgStr = new XMLSerializer().serializeToString(clone);
+
+  // 2. 尝试 PNG（canvas 光栅化 + 白底）
   try {
-    // 克隆 svg 并补 xmlns，确保独立可用
-    var clone = svg.cloneNode(true);
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    var data = new XMLSerializer().serializeToString(clone);
-    var blob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
+    var blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
     var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = name + '.svg';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    var img = new Image();
+    img.onload = function() {
+      try {
+        var scale = 2;  // 2x 高清
+        var canvas = document.createElement('canvas');
+        canvas.width = w * scale;
+        canvas.height = h * scale;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';  // 白底
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // toBlob 可能因 taint 抛 SecurityError
+        canvas.toBlob(function(pngBlob) {
+          if (pngBlob) {
+            _triggerDownload(pngBlob, name + '.png');
+            URL.revokeObjectURL(url);
+          } else {
+            // toBlob 返回 null（taint），降级 SVG
+            _downloadSvgWithBg(svgStr, name, w, h);
+            URL.revokeObjectURL(url);
+          }
+        }, 'image/png');
+      } catch(e) {
+        // SecurityError (taint)，降级 SVG
+        console.warn('[mermaid] PNG 失败(taint)，降级 SVG:', e.message);
+        _downloadSvgWithBg(svgStr, name, w, h);
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = function() {
+      // SVG 加载失败，降级直接下载 SVG
+      _downloadSvgWithBg(svgStr, name, w, h);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
   } catch(e) {
     console.warn('[mermaid] 下载失败:', e);
+    _downloadSvgWithBg(svgStr, name, w, h);
   }
+}
+
+// 降级：下载 SVG（加白底 rect，浏览器可正常查看）
+function _downloadSvgWithBg(svgStr, name, w, h) {
+  try {
+    // 在 svg 开头插入白底 rect
+    var bgRect = '<rect width="' + w + '" height="' + h + '" fill="#ffffff"/>';
+    var withBg = svgStr.replace(/(<svg[^>]*>)/, '$1' + bgRect);
+    var blob = new Blob([withBg], { type: 'image/svg+xml;charset=utf-8' });
+    _triggerDownload(blob, name + '.svg');
+  } catch(e) {
+    console.warn('[mermaid] SVG 降级也失败:', e);
+  }
+}
+
+function _triggerDownload(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 }
 
 // Issue2.1: mermaid 渲染失败 → 自动触发修复（最多 3 次，双位置提示）

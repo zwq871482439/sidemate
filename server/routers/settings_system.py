@@ -906,7 +906,7 @@ _PERMISSION_TOOLS = [
         "tool_id": "file_read_write",
         "category": "工作区文件",
         "name": "文件读写",
-        "description": "允许 Agent 读取、创建、修改、删除工作区文件（含文档生成、深度阅读）",
+        "description": "允许 Agent 读取（含分段读取）、创建、修改、删除工作区文件（含文档生成、深度阅读）",
         "config_key": "tool_enabled_file_rw",
         "default_enabled": True,
     },

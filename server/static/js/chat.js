@@ -660,6 +660,32 @@ function _resetParallelState() {
 }
 window._resetParallelState = _resetParallelState;
 
+// P7: 用 agent 真实 messages 字符数更新 token 指示器（比前端估算准确）
+// total_chars 是含工具历史/system prompt 的真实上下文总量
+function _updateTokenBarFromChars(totalChars) {
+  // 粗估 token = 字符数 / 3（中英混合经验值）
+  var estTokens = Math.round(totalChars / 3);
+  var totalLimit = 1048576;  // DeepSeek-V4-Flash 上下文窗口
+  var remainK = Math.max(0, (totalLimit - estTokens) / 1000).toFixed(1);
+  var usedK = (estTokens / 1000).toFixed(1);
+  var percent = Math.min(100, (estTokens / totalLimit) * 100);
+  // 更新 DOM
+  var histEl = document.getElementById('tokenHist');
+  if (histEl) histEl.textContent = usedK + 'K';
+  var remainEl = document.getElementById('tokenRemain');
+  if (remainEl) remainEl.textContent = remainK + 'K词元';
+  var usedFill = document.getElementById('tbUsed');
+  if (usedFill) usedFill.style.width = percent + '%';
+  // 状态色
+  var statusEl = document.getElementById('tokenStatus');
+  if (statusEl) {
+    statusEl.className = 'tb-tag tb-tag-status ' + (percent > 80 ? 'status-over' : percent > 50 ? 'status-warn' : 'status-ok');
+    statusEl.textContent = percent > 80 ? '空间紧张' : percent > 50 ? '注意用量' : '空间充足';
+  }
+  console.log('[TokenBar] agent 真实上下文: %d字符 ≈ %sK token (%.1f%%)', totalChars, usedK, percent);
+}
+window._updateTokenBarFromChars = _updateTokenBarFromChars;
+
 // ===== 发送消息 =====
 async function sendMessage() {
   var input = document.getElementById('msgInput');
@@ -1353,6 +1379,10 @@ async function sendMessage() {
             }
           } else if (d.type === 'agent_summary') {
             CardRenderer.handleEvent(d);
+            // P7: 用真实上下文字符数更新指示器（比前端估算准确）
+            if (d.total_chars && typeof _updateTokenBarFromChars === 'function') {
+              _updateTokenBarFromChars(d.total_chars);
+            }
           } else if (d.type === 'agent_think') {
             // 新版 agent_think 事件（data = {content: string}）
             // 复用现有 think 机制

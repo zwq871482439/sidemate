@@ -814,20 +814,61 @@ def _load_reveal_js():
 
 # PPT slide 内的辅助样式（补充 reveal 主题，让 mermaid/表格/列表更好看）
 _PPT_SLIDE_CSS = """
-.reveal section { text-align: left; }
-.reveal h1 { font-size: 2em; margin-bottom: 0.3em; }
-.reveal h2 { font-size: 1.4em; }
-.reveal h3 { font-size: 1.1em; color: #ddd; }
-.reveal p { font-size: 0.7em; line-height: 1.5; }
-.reveal ul, .reveal ol { font-size: 0.65em; }
-.reveal table { font-size: 0.55em; border-collapse: collapse; margin: 0.3em auto; }
-.reveal th, .reveal td { border: 1px solid #555; padding: 4px 10px; }
-.reveal th { background: #333; }
-.reveal pre { font-size: 0.5em; }
-.reveal .chart-stage svg { max-width: 90% !important; height: auto !important; }
-.reveal .chart-frame { background: #fff; color: #333; border-radius: 8px; margin: 0.2em 0; }
-.reveal .chart-stage { padding: 8px; min-height: 60px; }
-.reveal .cf-hint, .reveal .chart-toolbar { display: none; }  /* PPT 模式隐藏图表工具栏 */
+/* PPT slide 内容样式 — 专业美观，信息密度合理 */
+.reveal section { text-align: left; padding: 0.5em 1.2em; }
+.reveal h1 { font-size: 2.2em; margin-bottom: 0.2em; line-height: 1.2; }
+.reveal h2 { font-size: 1.55em; margin-top: 0.1em; margin-bottom: 0.3em; line-height: 1.25; }
+.reveal h3 { font-size: 1.15em; color: #a8b2d1; margin-bottom: 0.25em; }
+.reveal p { font-size: 0.82em; line-height: 1.55; margin: 0.35em 0; }
+.reveal ul, .reveal ol { font-size: 0.78em; line-height: 1.6; margin-left: 1.2em; }
+.reveal li { margin: 0.18em 0; }
+.reveal strong { color: #64ffda; }
+
+/* 表格：清晰对比 */
+.reveal table { font-size: 0.68em; border-collapse: collapse; margin: 0.4em auto; width: 92%; }
+.reveal th { background: rgba(100,255,218,.12); border-bottom: 2px solid #64ffda; padding: 6px 12px; font-weight: 600; }
+.reveal td { border-bottom: 1px solid #333; padding: 5px 12px; }
+.reveal tr:nth-child(even) { background: rgba(255,255,255,.03); }
+
+/* 代码 */
+.reveal pre { font-size: 0.55em; margin: 0.4em auto; width: 92%; }
+.reveal code { font-size: 0.9em; }
+
+/* 卡片：幻灯片内紧凑卡片 */
+.reveal .card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 12px 14px; margin: 0.3em 0; }
+.reveal .card-title { font-size: 0.85em; font-weight: 600; color: #64ffda; margin-bottom: 4px; }
+
+/* 网格：幻灯片内多列布局 */
+.reveal .grid-2, .reveal .grid-3 { gap: 12px; margin: 0.4em 0; }
+.reveal .grid-2 { display: grid; grid-template-columns: 1fr 1fr; }
+.reveal .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); }
+
+/* 数据统计块：大数字突出 */
+.reveal .stats { display: flex; gap: 14px; margin: 0.5em 0; justify-content: center; }
+.reveal .stat { flex: 1; text-align: center; padding: 10px; }
+.reveal .stat-num { font-size: 2em; font-weight: 700; color: #64ffda; line-height: 1.1; }
+.reveal .stat-label { font-size: 0.6em; color: #8892b0; margin-top: 2px; }
+
+/* 标签 */
+.reveal .badge { font-size: 0.6em; padding: 2px 8px; border-radius: 999px; background: rgba(100,255,218,.15); color: #64ffda; }
+.reveal .badge.green { background: rgba(5,150,105,.2); color: #6ee7b7; }
+.reveal .badge.orange { background: rgba(245,158,11,.2); color: #fcd34d; }
+
+/* mermaid 图：白底卡片（深色幻灯片上看清） */
+.reveal .chart-frame { background: #fff; color: #333; border-radius: 10px; margin: 0.4em auto; padding: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+.reveal .chart-stage { padding: 8px; min-height: 60px; text-align: center; }
+.reveal .chart-stage svg { max-width: 88% !important; height: auto !important; }
+.reveal .cf-hint, .reveal .chart-toolbar { display: none; }
+
+/* 引用 */
+.reveal blockquote { font-size: 0.75em; border-left: 3px solid #64ffda; padding: 8px 16px; margin: 0.4em 0; background: rgba(100,255,218,.05); font-style: italic; }
+
+/* 高亮 */
+.reveal .highlight { background: rgba(100,255,218,.25); padding: 0 4px; border-radius: 3px; }
+
+/* 进度条 */
+.reveal .progress { background: rgba(100,255,218,.15); }
+
 /* 提示条 */
 .ppt-tipbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(59,130,246,.95);
   color: #fff; padding: 6px 20px; font-size: 13px; text-align: center; display: flex; align-items: center;
