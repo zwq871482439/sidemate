@@ -661,6 +661,182 @@ initReportMermaid();
              os.path.basename(output_path), file_size, "yes" if mermaid_js else "no", _frame_counter[0])
 
 
+# ===== PPT 演示文稿（reveal.js，含 mermaid 图，自包含单文件） =====
+
+_reveal_js_cache = None
+_reveal_css_cache = None
+_reveal_theme_cache = None
+
+
+def _load_reveal_js():
+    """读取 reveal.min.js + reveal.css + 主题 CSS（带缓存，全部内联）"""
+    global _reveal_js_cache, _reveal_css_cache, _reveal_theme_cache
+    if _reveal_js_cache is not None:
+        return _reveal_js_cache, _reveal_css_cache, _reveal_theme_cache
+    _here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    vdir = os.path.join(_here, "static", "vendor")
+    def _read(name):
+        p = os.path.join(vdir, name)
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                pass
+        return ""
+    _reveal_js_cache = _read("reveal.min.js")
+    _reveal_css_cache = _read("reveal.css")
+    _reveal_theme_cache = _read("reveal-theme-black.css")  # 默认黑底白字
+    log.info("[DOC] reveal.js 资源已加载 (js=%d css=%d theme=%d)",
+             len(_reveal_js_cache), len(_reveal_css_cache), len(_reveal_theme_cache))
+    return _reveal_js_cache, _reveal_css_cache, _reveal_theme_cache
+
+
+# PPT slide 内的辅助样式（补充 reveal 主题，让 mermaid/表格/列表更好看）
+_PPT_SLIDE_CSS = """
+.reveal section { text-align: left; }
+.reveal h1 { font-size: 2em; margin-bottom: 0.3em; }
+.reveal h2 { font-size: 1.4em; }
+.reveal h3 { font-size: 1.1em; color: #ddd; }
+.reveal p { font-size: 0.7em; line-height: 1.5; }
+.reveal ul, .reveal ol { font-size: 0.65em; }
+.reveal table { font-size: 0.55em; border-collapse: collapse; margin: 0.3em auto; }
+.reveal th, .reveal td { border: 1px solid #555; padding: 4px 10px; }
+.reveal th { background: #333; }
+.reveal pre { font-size: 0.5em; }
+.reveal .chart-stage svg { max-width: 90% !important; height: auto !important; }
+.reveal .chart-frame { background: #fff; color: #333; border-radius: 8px; margin: 0.2em 0; }
+.reveal .chart-stage { padding: 8px; min-height: 60px; }
+.reveal .cf-hint, .reveal .chart-toolbar { display: none; }  /* PPT 模式隐藏图表工具栏 */
+/* 提示条 */
+.ppt-tipbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(59,130,246,.95);
+  color: #fff; padding: 6px 20px; font-size: 13px; text-align: center; display: flex; align-items: center;
+  justify-content: center; gap: 8px; }
+.ppt-tipbar .close { position: absolute; right: 14px; cursor: pointer; opacity: .8; font-size: 16px; }
+"""
+
+
+def generate_ppt_html(content: str, output_path: str, title: str = "演示文稿"):
+    """生成自包含的 PPT 演示文稿（内联 reveal.js + mermaid.js，单文件可独立演示）
+
+    - LLM 写的内容应是多个 `<section>`（每张幻灯片），系统包进 reveal.js 结构
+    - ```mermaid``` 围栏自动转成可交互容器（复用报告的 mermaid 注入逻辑）
+    - 用户浏览器打开 → 方向键翻页 → 按 F 全屏 → 加 ?print-pdf 导出 PDF
+
+    Args:
+        content: LLM 写的幻灯片内容（多个 <section>，可含 ```mermaid``` 围栏）
+        output_path: 输出 .ppt.html 文件路径
+        title: 演示文稿标题
+    """
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+    mermaid_js = _load_mermaid_js()
+    reveal_js, reveal_css, reveal_theme = _load_reveal_js()
+
+    # 把 ```mermaid``` 围栏转成占位容器（复用报告的逻辑，源码进 JS 数组）
+    import json as _json
+    _mermaid_codes = []
+    _frame_counter = [0]
+
+    def _fence_to_frame(m):
+        code = m.group(1).strip()
+        idx = _frame_counter[0]
+        _frame_counter[0] += 1
+        _mermaid_codes.append(code)
+        return (
+            '<div class="chart-frame"><div class="chart-stage" data-stage>'
+            '<div class="chart-slot" data-idx="%d"></div></div></div>' % idx
+        )
+
+    processed_content = re.sub(
+        r"```mermaid\s*\n(.*?)```",
+        _fence_to_frame,
+        content,
+        flags=re.DOTALL,
+    )
+    _codes_json = _json.dumps(_mermaid_codes, ensure_ascii=False)
+
+    # 顶部提示条
+    tipbar = (
+        '<div class="ppt-tipbar" id="pptTipbar">'
+        '⬅ ➡ 方向键翻页 · 按 <b>F</b> 全屏 · 导出 PDF 请在网址后加 <b>?print-pdf</b>'
+        '<span class="close" onclick="var t=document.getElementById(\'pptTipbar\');'
+        'if(t)t.style.display=\'none\';try{localStorage.setItem(\'pptTipHidden\',\'1\')}catch(e){}">×</span>'
+        '</div>'
+    )
+
+    # PPT 的 mermaid 渲染脚本（slidechanged 时渲染当前页的图，解决懒加载时序）
+    ppt_mermaid_js = """
+<script>
+var _MERMAID_CODES = %s;
+function initPptMermaid(){
+  if(typeof mermaid==='undefined'){setTimeout(initPptMermaid,50);return;}
+  mermaid.initialize({startOnLoad:false,theme:'dark',securityLevel:'loose',
+    flowchart:{useMaxWidth:false,padding:12}});
+  function renderSlide(slide){
+    if(!slide)return;
+    var slots=slide.querySelectorAll('.chart-slot[data-idx]:not([data-done])');
+    slots.forEach(function(slot){
+      var idx=parseInt(slot.getAttribute('data-idx')||'0',10);
+      var code=_MERMAID_CODES[idx];if(!code)return;
+      slot.setAttribute('data-done','1');
+      var id='p'+idx+'-'+Math.random().toString(36).slice(2,6);
+      mermaid.render(id,code).then(function(res){slot.innerHTML=res.svg;})
+        .catch(function(e){slot.innerHTML='<pre style="color:#f66;font-size:11px">图表渲染失败</pre>';});
+    });
+  }
+  // 初始化时渲染当前页
+  if(typeof Reveal!=='undefined'){
+    renderSlide(Reveal.getCurrentSlide());
+    Reveal.addEventListener('slidechanged',function(ev){renderSlide(ev.currentSlide);});
+    Reveal.addEventListener('ready',function(ev){renderSlide(ev.currentSlide);});
+  }else{
+    // Reveal 未就绪，轮询
+    var t=setInterval(function(){
+      if(typeof Reveal!=='undefined'&&Reveal.getCurrentSlide){
+        clearInterval(t);renderSlide(Reveal.getCurrentSlide());
+        Reveal.addEventListener('slidechanged',function(ev){renderSlide(ev.currentSlide);});
+      }
+    },100);
+  }
+  try{if(localStorage.getItem('pptTipHidden')==='1'){var t=document.getElementById('pptTipbar');if(t)t.style.display='none';}}catch(e){}
+}
+</script>
+""" % _codes_json
+
+    html = (
+        '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">\n'
+        '<title>' + title.replace("<", "&lt;").replace(">", "&gt;") + '</title>\n'
+        '<style>' + reveal_css + '</style>\n'
+        '<style>' + reveal_theme + '</style>\n'
+        '<style>' + _PPT_SLIDE_CSS + '</style>\n'
+        '</head>\n<body>\n'
+        + tipbar + '\n'
+        '<div class="reveal">\n<div class="slides">\n'
+        + processed_content + '\n'
+        '</div>\n</div>\n'
+    )
+    # reveal.js 必须先加载并 initialize，mermaid 在其后
+    if reveal_js:
+        html += '<script>' + reveal_js + '</script>\n'
+        html += '<script>Reveal.initialize({controls:true,progress:true,center:true,'
+        html += 'hash:true,slideNumber:true,viewDistance:5,transition:"slide"});</script>\n'
+    if mermaid_js:
+        html += '<script>' + mermaid_js + '</script>\n'
+    html += ppt_mermaid_js
+    html += '<script>initPptMermaid();</script>\n'
+    html += '</body>\n</html>\n'
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    file_size = os.path.getsize(output_path)
+    log.info("[DOC] .ppt.html 演示文稿生成完成: %s (%d bytes, slides mermaid=%d)",
+             os.path.basename(output_path), file_size, _frame_counter[0])
+
+
 def _generate_docx_manual(content: str, output_path: str, title: str = "文档"):
     """pandoc 不可用时的手动回退方案"""
     from docx import Document

@@ -592,7 +592,13 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                         _docx_basename = _docx_path
                         if "/" in _docx_basename:
                             _docx_basename = _docx_basename.rsplit("/", 1)[-1]
-                        _doc_key = _docx_basename[:-5] if _docx_basename.endswith(".docx") else _docx_basename
+                        # P7: 剥掉所有后缀（.docx/.html/.ppt.html），用文件基名做 doc_id
+                        # 之前只剥 .docx，.html 报告的 doc_id 含点号被 files.py 白名单拒绝(400)
+                        import os as _os_mod
+                        _doc_key = _os_mod.path.splitext(_docx_basename)[0]
+                        # .ppt.html 会留下 .ppt，再剥一次
+                        if _doc_key.endswith(".ppt"):
+                            _doc_key = _doc_key[:-4]
                         from urllib.parse import quote as _url_quote
                         _doc_url = "/api/chat/%s/doc/%s/download" % (_chat_id, _url_quote(_doc_key, safe=''))
                         if not _doc_complete_sent:

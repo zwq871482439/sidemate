@@ -159,9 +159,10 @@ def download_chat_doc(chat_id: str, doc_id: str, fmt: str = "docx"):
         return JSONResponse({"error": "非法或不存在会话"}, status_code=404)
 
     # doc_id 白名单（Patch4 v3.1 BUG#15+21：允许中文 + 全角字符/中文标点）
+    # P7: 加 . 支持 .html 报告的 doc_id（cloud_pipeline 现在剥后缀，但兼容历史数据）
     # FastAPI 会自动 URL 解码路径参数，所以 doc_id 已经是解码后的原文
     # N-2 修复：fullmatch 替代 re.match(^...$)，避免结尾换行绕过
-    if not doc_id or not re.fullmatch(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\w\-]+', doc_id):
+    if not doc_id or not re.fullmatch(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\w\-.]+', doc_id):
         return JSONResponse({"error": "非法 doc_id"}, status_code=400)
 
     # Patch4 v3.1 BUG#22：优先在 workspace/ 找（新位置），fallback 到 docs/（旧位置）

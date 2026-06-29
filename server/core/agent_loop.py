@@ -966,7 +966,14 @@ class AgentLoop:
                     docs_dir = _workspace_root(self.chat_id)
                     os.makedirs(docs_dir, exist_ok=True)
 
-                    if filename.endswith(".html"):
+                    if filename.endswith(".ppt.html"):
+                        # PPT 演示文稿：内联 reveal.js + mermaid.js 自包含
+                        from pipelines.doc_action import generate_ppt_html
+                        out_filename = filename
+                        out_path = os.path.join(docs_dir, out_filename)
+                        title = _extract_md_title(md_content) or filename[:-9]
+                        generate_ppt_html(md_content, out_path, title=title)
+                    elif filename.endswith(".html"):
                         # HTML 可视化报告：内联 mermaid.js 自包含
                         from pipelines.doc_action import generate_html_report
                         out_filename = filename  # .html 直接用原名
