@@ -87,6 +87,8 @@ async function refreshActionBar() {
       var cloudPrompts = [
         { label: '联网搜索', tip: '请联网搜索最新信息：', icon: 'search' },
         { label: '写文档', tip: '请帮我撰写一份文档：', icon: 'write' },
+        { label: '可视化报告', tip: '请帮我做一份可视化报告（含图表），用 mermaid 画流程图/架构图：', icon: 'chart' },
+        { label: '写PPT', tip: '请帮我制作一份演示文稿（PPT），每页一个主题：', icon: 'slides' },
         { label: '深度分析', tip: '请对以下内容进行深度分析：', icon: 'brain' }
       ];
       cloudPrompts.forEach(function(p) {

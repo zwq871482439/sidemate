@@ -839,6 +839,20 @@ async function sendMessage() {
       }
       return true;
     });
+    // P7 修复上下文爆炸：超长的 assistant 回答(文档/报告)截断成摘要进历史
+    // 文档全文存在 workspace，模型需要时用 read_workspace 工具读，不该靠历史塞全文
+    var _MAX_HIST_CHARS = 1500;
+    history = history.map(function(m) {
+      if (m.role === 'assistant' && m.content && m.content.length > _MAX_HIST_CHARS) {
+        var _truncated = m.content.slice(0, _MAX_HIST_CHARS);
+        // 检测是否是文档生成回答（含 mermaid/HTML/长表格）
+        var _isDoc = m.content.includes('```') || m.content.includes('<table') || m.content.includes('write_workspace');
+        var _note = _isDoc ? '（以上为文档/报告摘要，完整内容已存入工作区，可用 read_workspace 工具读取）'
+                           : '（内容过长已截断）';
+        return Object.assign({}, m, { content: _truncated + '\n\n...' + _note });
+      }
+      return m;
+    });
 
     // Patch5 C7: 清除上下文 — 只取最后一个 context_cutoff 标记之后的消息
     var _cutoffIdx = -1;

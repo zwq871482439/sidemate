@@ -96,6 +96,10 @@ _AGENT_BASE_PROMPT = (
     "- 用户说\"报告\"未指定格式 → 看内容：需要图→HTML，纯文字→docx\n\n"
     "关键：write_workspace 只是写文件，必须再调 set_doc_status 标记 completed 才会生成可下载产物。\n"
     "写完文件后请立即调 set_doc_status，不要等用户确认。\n\n"
+    "重要：工作区管理\n"
+    "- 你之前写的文档/报告存在工作区，不会自动出现在对话上下文里\n"
+    "- 需要回顾或修改之前的文档时，用 list_workspace 看有哪些文件，用 read_workspace_chunk 分段读取\n"
+    "- 不要假设之前的文档内容在记忆里，用工具去读才准确\n\n"
     "注意：纯文本回复不会生成文档。如果用户只是问问题，用正常回答即可；\n"
     "只有用户明确要\"文档/报告/总结一份\"时才用 write_workspace 写文件。\n"
 )
@@ -462,13 +466,46 @@ TOOL_REGISTRY = {
             "type": "function",
             "function": {
                 "name": "read_workspace",
-                "description": "读取你工作区的某个文件内容。path 是相对工作区根目录的相对路径（如 'outline.md'）。",
+                "description": "读取你工作区的某个文件内容。path 是相对工作区根目录的相对路径（如 'outline.md'）。注意：文件较长时会占用大量上下文，建议优先用 read_workspace_chunk 分段读。",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {
                             "type": "string",
                             "description": "相对工作区根目录的文件路径（禁止绝对路径和 ../）"
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "workspace_reading",
+            "done": "workspace_read_done",
+        },
+        "condition": None,
+    },
+    "read_workspace_chunk": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_workspace_chunk",
+                "description": "分段读取工作区长文件，每次返回一段（默认3000字符）。适合读取之前写的长文档/报告，避免一次性占用过多上下文。返回包含 has_more 和 next_offset，需要继续读时用 next_offset 作为新的 offset。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "相对工作区根目录的文件路径"
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "开始读取的字符位置（默认0，续读时用上次的 next_offset）"
+                        },
+                        "chunk_size": {
+                            "type": "integer",
+                            "description": "每段字符数（默认3000，最大10000）"
                         }
                     },
                     "required": ["path"]
@@ -607,6 +644,7 @@ _TOOL_PERM_MAP = {
     "search_web": "tool_enabled_web_search",
     "fetch_url": "tool_enabled_web_search",      # 抓取网页归入联网搜索
     "read_workspace": "tool_enabled_file_rw",
+    "read_workspace_chunk": "tool_enabled_file_rw",
     "write_workspace": "tool_enabled_file_rw",
     "list_workspace": "tool_enabled_file_rw",
     "delete_workspace": "tool_enabled_file_rw",

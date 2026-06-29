@@ -1114,6 +1114,45 @@ class AgentLoop:
                 except Exception as e:
                     return self._workspace_error("read_workspace", e)
 
+            elif tool_name == "read_workspace_chunk":
+                # P7: 分段读取长文件（避免一次性读全文爆上下文）
+                from core.doc_session import read_workspace_file
+                path = args.get("path", "")
+                offset = int(args.get("offset", 0))
+                chunk_size = int(args.get("chunk_size", 3000))
+                try:
+                    f = read_workspace_file(self.chat_id, path)
+                    full = f["content"]
+                    total = len(full)
+                    chunk = full[offset:offset + chunk_size]
+                    has_more = (offset + chunk_size) < total
+                    next_offset = offset + chunk_size if has_more else None
+                    return {
+                        "success": True,
+                        "tool": "read_workspace_chunk",
+                        "data": {
+                            "name": f["name"],
+                            "chunk": chunk,
+                            "offset": offset,
+                            "chunk_size": len(chunk),
+                            "total_size": total,
+                            "has_more": has_more,
+                            "next_offset": next_offset,
+                        },
+                    }
+                except ValueError as e:
+                    return {
+                        "success": False, "tool": "read_workspace_chunk",
+                        "error": "path_violation", "message": str(e)[:120],
+                    }
+                except FileNotFoundError as e:
+                    return {
+                        "success": False, "tool": "read_workspace_chunk",
+                        "error": "not_found", "message": str(e)[:120],
+                    }
+                except Exception as e:
+                    return self._workspace_error("read_workspace_chunk", e)
+
             elif tool_name == "write_workspace":
                 # Patch4 修复 1：写入 workspace 文件
                 from core.doc_session import write_workspace_file
@@ -1277,7 +1316,7 @@ class AgentLoop:
                                     status=args.get("status", ""))
         elif tool_name == "list_docs":
             return get_status_event(tool_name, "start")
-        elif tool_name in ("list_workspace", "read_workspace", "write_workspace", "delete_workspace",
+        elif tool_name in ("list_workspace", "read_workspace", "read_workspace_chunk", "write_workspace", "delete_workspace",
                            "append_workspace", "edit_workspace"):
             path = args.get("path", "")
             return get_status_event(tool_name, "start", path=path[:50] if path else "")
@@ -1339,7 +1378,7 @@ class AgentLoop:
             return get_status_event(tool_name, "done", count=data.get("count", 0))
         elif tool_name == "list_workspace":
             return get_status_event(tool_name, "done", count=data.get("count", 0))
-        elif tool_name in ("read_workspace", "delete_workspace"):
+        elif tool_name in ("read_workspace", "read_workspace_chunk", "delete_workspace"):
             return get_status_event(tool_name, "done", name=data.get("name", ""))
         elif tool_name == "write_workspace":
             # Patch4 v3：write_workspace done 带 size（字节）、words（字数）、lines（行数）
@@ -1454,6 +1493,9 @@ class AgentLoop:
         elif tool == "write_workspace":
             name = data.get("data", {}).get("name", "")
             return "写入了工作区文件: %s" % name
+        elif tool == "read_workspace_chunk":
+            data2 = data.get("data", {})
+            return "分段读取了 %s（offset=%s，%d字符）" % (data2.get("name",""), data2.get("offset",""), data2.get("chunk_size",0))
         elif tool == "append_workspace":
             # Patch4 v3.1 BUG#1 修复
             name = data.get("data", {}).get("name", "")
