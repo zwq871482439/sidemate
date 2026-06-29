@@ -267,7 +267,10 @@ function _renderMermaid(el) {
         _enhanceMermaid(container, code);
       }).catch(function(err) {
         container.setAttribute('data-rendered', '1');
-        container.innerHTML = '<pre style="color:var(--error-color);font-size:11px">mermaid 渲染失败: ' + esc(String(err.message || err).slice(0, 100)) + '</pre>';
+        container.setAttribute('data-fix-status', 'failed');
+        container.setAttribute('data-fix-error', String(err.message || err).slice(0, 300));
+        // Issue2.1: 显示"自动修复中"提示（图内位置），并触发修复流程
+        container.innerHTML = '<div class="mermaid-fixing"><span class="mf-dot"></span>图表语法有误，AI 正在自动修复...</div>';
         // 失败也要放回原位
         if (!container.parentElement && parent) {
           if (nextSibling && nextSibling.parentElement === parent) {
@@ -276,10 +279,16 @@ function _renderMermaid(el) {
             parent.appendChild(container);
           }
         }
+        // 触发自动修复（收集原始代码 + 错误 + 用户问题）
+        if (typeof _triggerMermaidFix === 'function') {
+          _triggerMermaidFix(container, code, String(err.message || err).slice(0, 300));
+        }
       });
     } catch(err) {
       // 同步异常路径：不设 data-rendered，允许下次重试
-      container.innerHTML = '<pre style="font-size:11px">' + esc(code) + '</pre>';
+      container.innerHTML = '<div class="mermaid-fixing"><span class="mf-dot"></span>图表语法有误，AI 正在自动修复...</div>';
+      container.setAttribute('data-fix-status', 'failed');
+      container.setAttribute('data-fix-error', String(err).slice(0, 300));
       // 同步异常也可能发生在 mermaid.render 已挪走容器之后，同样兜底放回
       if (!container.parentElement && parent) {
         if (nextSibling && nextSibling.parentElement === parent) {
@@ -287,6 +296,9 @@ function _renderMermaid(el) {
         } else {
           parent.appendChild(container);
         }
+      }
+      if (typeof _triggerMermaidFix === 'function') {
+        _triggerMermaidFix(container, code, String(err).slice(0, 300));
       }
     }
   });
@@ -387,6 +399,149 @@ function _downloadMermaidSvg(svg, name) {
     console.warn('[mermaid] 下载失败:', e);
   }
 }
+
+// Issue2.1: mermaid 渲染失败 → 自动触发修复（最多 3 次，双位置提示）
+function _triggerMermaidFix(container, failedCode, errorMsg, attempt) {
+  if (!container) return;
+  attempt = attempt || 1;
+  if (attempt > 3) {
+    // 超过 3 次：转为手动按钮
+    container.innerHTML = '<div class="mermaid-fix-fail">⚠️ 自动修复未成功 <button type="button" class="mf-retry" onclick="this.parentNode.parentNode._manualFix()">再试一次</button></div>';
+    container._manualFix = function() {
+      container.innerHTML = '<div class="mermaid-fixing"><span class="mf-dot"></span>AI 正在重新修复...</div>';
+      _triggerMermaidFix(container, failedCode, errorMsg, 1);
+    };
+    _updateMermaidFixBanner();
+    return;
+  }
+
+  // 收集用户原始问题（取最近一条 user 消息文本）
+  var originalQuestion = '';
+  try {
+    var userMsgs = document.querySelectorAll('.msg.user');
+    if (userMsgs.length) {
+      originalQuestion = (userMsgs[userMsgs.length - 1].textContent || '').replace(/\d{2}:\d{2}:\d{2}/, '').trim().slice(0, 500);
+    }
+  } catch(e) {}
+
+  // 确定模型
+  var model = '';
+  try {
+    var tag = document.getElementById('modelTag');
+    if (tag) model = tag.getAttribute('data-model') || '';
+  } catch(e) {}
+
+  // 更新提示（图内 + 卡片底部）
+  container.setAttribute('data-fix-attempt', attempt);
+  _updateMermaidFixBanner();
+
+  // SSE 调后端修复接口
+  fetch((typeof API !== 'undefined' ? API : '') + '/api/chat/fix-mermaid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      failed_code: failedCode,
+      error_msg: errorMsg,
+      original_question: originalQuestion,
+      model: model,
+      attempt: attempt
+    })
+  }).then(function(resp) {
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var fixedCode = '';
+
+    function pump() {
+      reader.read().then(function(_ref) {
+        var done = _ref.done, value = _ref.value;
+        if (done) {
+          _finishFix(container, failedCode, errorMsg, attempt, fixedCode);
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        var lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          if (line.indexOf('data: ') !== 0) continue;
+          try {
+            var evt = JSON.parse(line.slice(6));
+            if (evt.type === 'text') {
+              // 流式累计（不实时显示，修复完一次性渲染）
+            } else if (evt.type === 'done') {
+              fixedCode = evt.code || '';
+            } else if (evt.type === 'error') {
+              console.warn('[mermaid-fix] 接口错误:', evt.message);
+            }
+          } catch(e) {}
+        }
+        pump();
+      }).catch(function(e) {
+        console.warn('[mermaid-fix] 流读取失败:', e);
+        _finishFix(container, failedCode, errorMsg, attempt, '');
+      });
+    }
+    pump();
+  }).catch(function(e) {
+    console.warn('[mermaid-fix] 请求失败:', e);
+    _finishFix(container, failedCode, errorMsg, attempt, '');
+  });
+}
+
+function _finishFix(container, failedCode, errorMsg, attempt, fixedCode) {
+  if (!fixedCode || !fixedCode.trim()) {
+    // 修复无产出，重试
+    _triggerMermaidFix(container, failedCode, errorMsg, attempt + 1);
+    return;
+  }
+  // 用修复后的代码重新渲染
+  try {
+    var id = container.id || ('mermaid-' + Math.random().toString(36).slice(2, 10));
+    mermaid.render(id, fixedCode).then(function(result) {
+      // 渲染成功 → 替换
+      container.removeAttribute('data-fix-status');
+      container.removeAttribute('data-fix-attempt');
+      container.setAttribute('data-mermaid', encodeURIComponent(fixedCode));
+      container.innerHTML = result.svg;
+      _enhanceMermaid(container, fixedCode);
+      _updateMermaidFixBanner();
+    }).catch(function(e) {
+      // 修复后仍失败，重试
+      _triggerMermaidFix(container, fixedCode, String(e.message || e).slice(0, 300), attempt + 1);
+    });
+  } catch(e) {
+    _triggerMermaidFix(container, fixedCode, String(e).slice(0, 300), attempt + 1);
+  }
+}
+
+// 更新卡片底部"自动修复中"提示条（汇总所有失败图）
+function _updateMermaidFixBanner() {
+  var failed = document.querySelectorAll('.mermaid-container[data-fix-status="failed"]');
+  var banner = document.getElementById('mermaidFixBanner');
+  if (!failed.length) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'mermaidFixBanner';
+    banner.className = 'mermaid-fix-banner';
+    var messages = document.getElementById('messages');
+    if (messages) messages.appendChild(banner);
+  }
+  var maxAttempt = 0;
+  failed.forEach(function(c) {
+    var a = parseInt(c.getAttribute('data-fix-attempt') || '1', 10);
+    if (a > maxAttempt) maxAttempt = a;
+  });
+  banner.innerHTML = '<span class="mfb-icon">🔄</span> 正在自动修复 ' + failed.length + ' 张图表（第 ' + maxAttempt + ' 次尝试）';
+  // 点击跳转到第一个失败图
+  banner.onclick = function() {
+    if (failed.length) failed[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+}
+window._triggerMermaidFix = _triggerMermaidFix;
 
 // P6: HTML 预览——iframe 沙箱渲染
 function _renderHtmlPreview(el) {

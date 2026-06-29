@@ -1092,3 +1092,89 @@ async def api_scheduler_cancel(request: Request):
     except Exception as e:
         return JSONResponse({"error": str(e)[:100]}, status_code=500)
 
+
+@router.post("/api/chat/fix-mermaid")
+async def api_chat_fix_mermaid(request: Request):
+    """修复渲染失败的 mermaid 图表（无状态流式，不入库）
+
+    前端检测到 mermaid.render() 失败后调用，把失败代码 + 错误信息 + 原始问题
+    喂给同一个云端模型，让它输出修正后的 mermaid 代码。前端用新代码原地替换。
+
+    请求体: { failed_code, error_msg, original_question, model?, attempt }
+    响应: SSE 流，事件:
+      - data: {"type":"text","content":"..."}  修正后的代码片段(逐 token)
+      - data: {"type":"done","code":"完整代码"}
+      - data: {"type":"error","message":"..."}
+    """
+    from config import get as _cfg
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "无效的请求体"}, status_code=400)
+
+    failed_code = (body.get("failed_code") or "").strip()
+    error_msg = (body.get("error_msg") or "").strip()
+    original_question = (body.get("original_question") or "").strip()
+    model = body.get("model") or _cfg("cloud_model", "gpt-4o-mini")
+    attempt = int(body.get("attempt") or 1)
+
+    if not failed_code:
+        return JSONResponse({"error": "缺少 failed_code"}, status_code=400)
+
+    # 构造修正 prompt（带失败的代码 + 错误信息 + 常见错误提示）
+    prompt_parts = [
+        "你之前生成的 mermaid 图表渲染失败了，请修正语法后只输出修正后的 mermaid 代码块（用 ```mermaid 包裹），不要任何解释或其他内容。",
+        "",
+        "用户原本的问题（图的用途）：" + original_question[:500],
+        "",
+        "失败的 mermaid 代码：",
+        "```mermaid",
+        failed_code,
+        "```",
+        "",
+        "渲染错误信息：",
+        error_msg[:500],
+        "",
+        "常见修复方法：",
+        "- 节点文字里的双引号 \" 会破坏语法，需用 &quot; 或去掉引号，或把节点内容用引号整体包裹",
+        "- <br/> 换行只能用在用引号包裹的节点里（如 A[\"第一行<br/>第二行\"]）",
+        "- 括号 [] {} () 必须配对闭合",
+        "- 节点 id 不能含空格和特殊字符",
+        "- 保持图的原意不变，只改语法",
+    ]
+
+    def _gen():
+        import json as _json
+        try:
+            from core.cloud_engine import CloudEngine
+            ce = CloudEngine(get_mgr())
+            full_code = []
+            # override_task_type="text" 跳过任务分类，纯文本生成
+            for phase, content in ce.run(
+                "\n".join(prompt_parts),
+                model=model,
+                override_task_type="text",
+                _skip_queue=True,
+            ):
+                if phase == "text" and content:
+                    full_code.append(content)
+                    yield ('data: {"type":"text","content":%s}\n\n' % _json.dumps(content, ensure_ascii=False)).encode("utf-8")
+                elif phase == "raw" and content and "[ERROR]" in str(content):
+                    yield ('data: {"type":"error","message":%s}\n\n' % _json.dumps(str(content)[:200], ensure_ascii=False)).encode("utf-8")
+                    yield None
+                    return
+            # 从完整输出里提取 mermaid 代码块
+            raw = "".join(full_code)
+            import re as _re
+            m = _re.search(r"```(?:mermaid)?\s*\n(.*?)```", raw, _re.DOTALL)
+            clean_code = m.group(1).strip() if m else raw.strip()
+            yield ('data: {"type":"done","code":%s}\n\n' % _json.dumps(clean_code, ensure_ascii=False)).encode("utf-8")
+            log.info("[FIX-MERMAID] 修复完成 attempt=%d code_len=%d", attempt, len(clean_code))
+        except Exception as e:
+            log.error("[FIX-MERMAID] 异常: %s", str(e)[:200])
+            yield ('data: {"type":"error","message":%s}\n\n' % _json.dumps(str(e)[:200], ensure_ascii=False)).encode("utf-8")
+        yield None
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
