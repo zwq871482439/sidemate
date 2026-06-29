@@ -402,43 +402,136 @@ def _load_mermaid_js() -> str:
     return _mermaid_js_cache
 
 
-# HTML 报告的打印友好 CSS（A4 宽度、字体、表格、mermaid 居中、打印优化）
+# HTML 报告 CSS：基础排版 + 双风格组件库（商务/现代）+ mermaid 交互容器 + 打印优化
+# LLM 可按需用这些预设 class，也可自己写 <style> 覆盖
 _HTML_REPORT_CSS = """
 * { box-sizing: border-box; }
+:root {
+  --c-primary: #3b82f6; --c-text: #1F2937; --c-muted: #6b7280;
+  --c-border: #e5e7eb; --c-bg: #ffffff; --c-bg-soft: #f9fafb; --c-bg-card: #ffffff;
+  --radius: 8px; --shadow: 0 1px 3px rgba(0,0,0,.08);
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
-  max-width: 800px; margin: 32px auto; padding: 0 24px;
-  color: #1F2937; line-height: 1.75; font-size: 15px;
+  max-width: 820px; margin: 0 auto; padding: 40px 28px 80px;
+  color: var(--c-text); line-height: 1.78; font-size: 15px; background: var(--c-bg);
 }
-h1 { font-size: 26px; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; margin-top: 32px; }
-h2 { font-size: 21px; margin-top: 28px; border-left: 4px solid #3b82f6; padding-left: 10px; }
-h3 { font-size: 17px; margin-top: 22px; color: #374151; }
-p { margin: 12px 0; }
+h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; letter-spacing: -.3px; }
+h2 { font-size: 22px; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--c-border); }
+h3 { font-size: 17px; margin: 24px 0 8px; color: #111827; }
+h4 { font-size: 15px; margin: 18px 0 6px; color: #374151; }
+p { margin: 10px 0; }
+a { color: var(--c-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+hr { border: none; border-top: 1px solid var(--c-border); margin: 28px 0; }
+
+/* 表格 */
 table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
-th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
-th { background: #f3f4f6; font-weight: 600; }
-tr:nth-child(even) { background: #fafafa; }
-blockquote { border-left: 4px solid #3b82f6; margin: 16px 0; padding: 8px 16px; background: #eff6ff; color: #374151; }
-code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
-pre { background: #1e293b; color: #e2e8f0; padding: 14px 18px; border-radius: 8px; overflow-x: auto; }
-pre code { background: transparent; color: inherit; padding: 0; }
-ul, ol { padding-left: 24px; }
-li { margin: 4px 0; }
-img { max-width: 100%; border-radius: 8px; }
-/* mermaid 图表容器居中 + 滚动 */
-.mermaid { text-align: center; margin: 20px 0; }
-svg { max-width: 100% !important; height: auto !important; }
+th, td { border: 1px solid var(--c-border); padding: 9px 13px; text-align: left; }
+th { background: var(--c-bg-soft); font-weight: 600; color: #374151; }
+tr:nth-child(even) { background: #fafbfc; }
+
+/* 代码 */
+code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; color: #be185d; }
+pre { background: #0f172a; color: #e2e8f0; padding: 16px 20px; border-radius: var(--radius); overflow-x: auto; line-height: 1.5; }
+pre code { background: transparent; color: inherit; padding: 0; font-size: 13px; }
+ul, ol { padding-left: 24px; } li { margin: 5px 0; }
+img { max-width: 100%; border-radius: var(--radius); }
+blockquote { border-left: 4px solid var(--c-primary); margin: 16px 0; padding: 10px 18px; background: #eff6ff; color: #374151; border-radius: 0 var(--radius) var(--radius) 0; }
+
+/* ===== 预设组件库（LLM 可直接用 class）===== */
+/* 提示框：note/tip/warning/danger/success */
+.note, .tip, .warning, .danger, .success {
+  padding: 12px 16px; margin: 14px 0; border-radius: var(--radius);
+  border-left: 4px solid; font-size: 14px;
+}
+.note { background: #eff6ff; border-color: #3b82f6; color: #1e40af; }
+.tip { background: #ecfdf5; border-color: #10b981; color: #065f46; }
+.warning { background: #fffbeb; border-color: #f59e0b; color: #92400e; }
+.danger { background: #fef2f2; border-color: #ef4444; color: #991b1b; }
+.success { background: #f0fdf4; border-color: #22c55e; color: #166534; }
+
+/* 卡片 */
+.card { background: var(--c-bg-card); border: 1px solid var(--c-border); border-radius: var(--radius); padding: 18px 20px; margin: 16px 0; box-shadow: var(--shadow); }
+.card-title { font-weight: 600; font-size: 16px; margin-bottom: 8px; color: #111827; }
+
+/* 网格布局 */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin: 16px 0; }
+@media (max-width: 640px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+/* 统计数字块 */
+.stats { display: flex; gap: 18px; flex-wrap: wrap; margin: 18px 0; }
+.stat { flex: 1; min-width: 120px; background: var(--c-bg-soft); border-radius: var(--radius); padding: 14px 16px; text-align: center; }
+.stat-num { font-size: 26px; font-weight: 700; color: var(--c-primary); line-height: 1.2; }
+.stat-label { font-size: 12px; color: var(--c-muted); margin-top: 4px; }
+
+/* 标签/徽章 */
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #eff6ff; color: #1e40af; }
+.badge.green { background: #ecfdf5; color: #065f46; }
+.badge.orange { background: #fffbeb; color: #92400e; }
+.badge.red { background: #fef2f2; color: #991b1b; }
+.badge.gray { background: #f3f4f6; color: #4b5563; }
+
+/* 进度条 */
+.progress { background: var(--c-border); border-radius: 999px; height: 8px; overflow: hidden; margin: 8px 0; }
+.progress-bar { background: var(--c-primary); height: 100%; border-radius: 999px; }
+
+/* 时间线 */
+.timeline { border-left: 2px solid var(--c-border); padding-left: 20px; margin: 16px 0; }
+.timeline-item { margin: 12px 0; position: relative; }
+.timeline-item::before { content: ''; position: absolute; left: -26px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--c-primary); }
+
+/* 高亮文本 */
+.highlight { background: linear-gradient(transparent 60%, #fde68a 60%); padding: 0 2px; }
+
+/* 现代风格（LLM 在 body 加 class=vibrant 启用） */
+body.vibrant {
+  background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 100%);
+  max-width: 900px;
+}
+body.vibrant h1 { background: linear-gradient(135deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body.vibrant h2 { border-bottom-color: #c4b5fd; }
+body.vibrant .card { border: none; box-shadow: 0 4px 14px rgba(99,102,241,.1); }
+body.vibrant .stat { background: rgba(255,255,255,.7); backdrop-filter: blur(4px); }
+body.vibrant blockquote { background: linear-gradient(135deg, #eff6ff, #fdf4ff); border-color: #8b5cf6; }
+
+/* ===== mermaid 图表交互容器 ===== */
+.chart-frame { border: 1px solid var(--c-border); border-radius: var(--radius); overflow: hidden; margin: 18px 0; position: relative; background: var(--c-bg-soft); }
+.cf-hint { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--c-muted); background: rgba(255,255,255,.85); padding: 2px 8px; border-radius: 4px; z-index: 5; pointer-events: none; }
+.chart-stage { overflow: hidden; cursor: grab; padding: 16px 8px; min-height: 80px; text-align: center; }
+.chart-stage:active { cursor: grabbing; }
+.chart-stage svg { max-width: none !important; height: auto !important; transition: none; display: inline-block; }
+.chart-toolbar { position: absolute; bottom: 6px; right: 6px; display: flex; gap: 2px; align-items: center; background: rgba(255,255,255,.9); border: 1px solid var(--c-border); border-radius: 6px; padding: 2px 4px; font-size: 11px; z-index: 5; opacity: 0; transition: opacity .15s; }
+.chart-frame:hover .chart-toolbar { opacity: 1; }
+.chart-toolbar button { border: none; background: transparent; cursor: pointer; width: 22px; height: 22px; font-size: 14px; border-radius: 4px; color: var(--c-text); line-height: 1; }
+.chart-toolbar button:hover { background: var(--c-border); }
+.chart-toolbar .zoom-val { min-width: 36px; text-align: center; color: var(--c-muted); font-variant-numeric: tabular-nums; }
+
+/* ===== 顶部提示条（可关闭）===== */
+.report-tipbar { position: sticky; top: 0; z-index: 50; background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff; padding: 8px 20px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: -40px -28px 24px; }
+.report-tipbar .tipbar-close { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); cursor: pointer; opacity: .8; font-size: 16px; }
+.report-tipbar .tipbar-close:hover { opacity: 1; }
+
 /* 打印优化 */
 @media print {
-  body { max-width: none; margin: 0; padding: 12mm; font-size: 12pt; }
-  pre, .mermaid, svg { page-break-inside: avoid; }
+  body { max-width: none; margin: 0; padding: 12mm; font-size: 12pt; background: #fff; }
+  .report-tipbar, .chart-toolbar { display: none !important; }
+  .chart-stage { overflow: visible !important; }
+  .chart-stage svg { transform: none !important; }
+  pre, .chart-frame, .card, table { page-break-inside: avoid; }
   h1, h2, h3 { page-break-after: avoid; }
 }
 """
 
 
 def generate_html_report(content: str, output_path: str, title: str = "报告"):
-    """生成自包含的 HTML 可视化报告（内联 mermaid.js，单文件可独立打开）
+    """生成自包含的 HTML 可视化报告（内联 mermaid.js + 交互，单文件可独立打开）
+
+    - ```mermaid``` 围栏自动转成可缩放/拖拽的交互容器
+    - 内联 mermaid.min.js + 交互增强脚本
+    - 顶部提示条（滚轮缩放/Ctrl+P 转 PDF，可关闭）
+    - 预设 CSS 组件库（note/card/grid/stats/badge 等），LLM 可直接用 class
 
     Args:
         content: LLM 写的 HTML body 内容（可含 ```mermaid``` 围栏代码块）
@@ -449,23 +542,98 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
 
     mermaid_js = _load_mermaid_js()
 
-    # 把 ```mermaid ... ``` 围栏代码块转成 mermaid.js 能识别的 <div class="mermaid">
-    # mermaid.js startOnLoad 模式会自动渲染 .mermaid 元素
-    def _fence_to_div(m):
-        return '<div class="mermaid">\n' + m.group(1).strip() + '\n</div>'
+    # 把 ```mermaid ... ``` 围栏转成空占位 div，源码收集进 JS 数组注入。
+    # 不在 DOM 放任何 mermaid 文本/class/data（mermaid.min.js 的 MutationObserver
+    # 会扫描并移除它认得的元素），源码全靠 JS 注入。
+    import json as _json
+    _mermaid_codes = []
+    _frame_counter = [0]
+
+    def _fence_to_frame(m):
+        code = m.group(1).strip()
+        idx = _frame_counter[0]
+        _frame_counter[0] += 1
+        _mermaid_codes.append(code)
+        return (
+            '<div class="chart-frame">'
+            '<div class="cf-hint">滚轮缩放 · 拖拽移动 · 双击复位</div>'
+            '<div class="chart-stage" data-stage>'
+            '<div class="chart-slot" data-idx="%d"></div>' % idx +
+            '</div>'
+            '<div class="chart-toolbar">'
+            '<button type="button" data-act="out" title="缩小">−</button>'
+            '<span class="zoom-val">100%</span>'
+            '<button type="button" data-act="in" title="放大">+</button>'
+            '<button type="button" data-act="reset" title="复位">⟲</button>'
+            '</div>'
+            '</div>'
+        )
 
     processed_content = re.sub(
         r"```mermaid\s*\n(.*?)```",
-        _fence_to_div,
+        _fence_to_frame,
         content,
         flags=re.DOTALL,
     )
+    # 源码数组（JSON 序列化，安全转义）
+    _codes_json = _json.dumps(_mermaid_codes, ensure_ascii=False)
 
-    # mermaid 初始化脚本（startOnLoad:true 打开即自动渲染）
-    init_script = (
-        "mermaid.initialize({startOnLoad:true, theme:'default', "
-        "securityLevel:'loose', fontFamily:inherit'});"
-    ) if mermaid_js else ""
+    # 顶部提示条
+    tipbar = (
+        '<div class="report-tipbar" id="reportTipbar">'
+        '💡 图表支持滚轮缩放/拖拽。需要 PDF/打印？按 <b>Ctrl+P</b> 另存'
+        '<span class="tipbar-close" onclick="var t=document.getElementById(\'reportTipbar\');'
+        'if(t)t.style.display=\'none\';try{localStorage.setItem(\'reportTipHidden\',\'1\')}catch(e){}">×</span>'
+        '</div>'
+    )
+
+    # 交互增强脚本（原生 JS，不依赖任何库；验证过的稳定方案）
+    # mermaid 源码从注入的 JS 数组读取（不在 DOM 暴露 mermaid 文本）
+    interact_js = """
+<script>
+var _MERMAID_CODES = %s;  // 由 Python 注入的源码数组
+function initReportMermaid(){
+  if(typeof mermaid==='undefined'){setTimeout(initReportMermaid,50);return;}
+  mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose',
+    flowchart:{useMaxWidth:false,padding:12}});
+  var slots=document.querySelectorAll('.chart-slot[data-idx]');
+  slots.forEach(function(slot){
+    var idx=parseInt(slot.getAttribute('data-idx')||'0',10);
+    var code=_MERMAID_CODES[idx];
+    if(!code){enhanceMermaidStage(slot.closest('[data-stage]'));return;}
+    var id='m'+idx+'-'+Math.random().toString(36).slice(2,6);
+    mermaid.render(id,code).then(function(res){
+      slot.innerHTML=res.svg;
+      slot.className='chart-rendered';
+      enhanceMermaidStage(slot.closest('[data-stage]'));
+    }).catch(function(e){
+      slot.innerHTML='<pre style="color:#dc2626;font-size:12px">图表渲染失败: '+String(e.message||e).slice(0,150)+'</pre>';
+      enhanceMermaidStage(slot.closest('[data-stage]'));
+    });
+  });
+  try{if(localStorage.getItem('reportTipHidden')==='1'){var t=document.getElementById('reportTipbar');if(t)t.style.display='none';}}catch(e){}
+}
+function enhanceMermaidStage(stage){
+  if(!stage||stage._enhanced)return;
+  stage._enhanced=true;
+  var svg=stage.querySelector('svg');if(!svg)return;
+  var frame=stage.closest('.chart-frame');
+  var zoomVal=frame?frame.querySelector('.zoom-val'):null;
+  var toolbar=frame?frame.querySelector('.chart-toolbar'):null;
+  var scale=1,tx=0,ty=0,MIN=0.3,MAX=3;
+  function apply(){svg.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';svg.style.transformOrigin='center center';if(zoomVal)zoomVal.textContent=Math.round(scale*100)+'%%';}
+  function reset(){scale=1;tx=0;ty=0;apply();}
+  stage.addEventListener('wheel',function(e){e.preventDefault();var d=e.deltaY<0?0.1:-0.1;scale=Math.max(MIN,Math.min(MAX,scale+d));apply();},{passive:false});
+  var drag=false,sx,sy,ox,oy;
+  stage.addEventListener('mousedown',function(e){drag=true;sx=e.clientX;sy=e.clientY;ox=tx;oy=ty;e.preventDefault();});
+  document.addEventListener('mousemove',function(e){if(!drag)return;tx=ox+(e.clientX-sx);ty=oy+(e.clientY-sy);apply();});
+  document.addEventListener('mouseup',function(){drag=false;});
+  stage.addEventListener('dblclick',reset);
+  if(toolbar){toolbar.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var a=b.getAttribute('data-act');if(a==='in'){scale=Math.min(MAX,scale+0.2);apply();}else if(a==='out'){scale=Math.max(MIN,scale-0.2);apply();}else if(a==='reset'){reset();}});}
+}
+initReportMermaid();
+</script>
+""" % _codes_json
 
     html = (
         '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n'
@@ -473,20 +641,24 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         '<title>' + title.replace("<", "&lt;").replace(">", "&gt;") + '</title>\n'
         '<style>' + _HTML_REPORT_CSS + '</style>\n'
+        '</head>\n<body>\n'
     )
-    if mermaid_js:
-        html += '<script>' + mermaid_js + '</script>\n'
-        html += '<script>' + init_script + '</script>\n'
-    html += '</head>\n<body>\n'
+    html += tipbar + '\n'
     html += processed_content
-    html += '\n</body>\n</html>\n'
+    # mermaid.min.js 放 body 末尾（content 之后）：
+    # 若放 head，mermaid 库会在解析到 .mermaid 元素时自动移除它们（即使 startOnLoad:false）
+    # 放 body 末尾 + initReportMermaid 紧随其后，元素先存在再被我们手动渲染
+    if mermaid_js:
+        html += '\n<script>' + mermaid_js + '</script>\n'
+    html += '\n' + (interact_js if mermaid_js else "") + '\n'
+    html += '</body>\n</html>\n'
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
 
     file_size = os.path.getsize(output_path)
-    log.info("[DOC] .html 报告生成完成: %s (%d bytes, mermaid=%s)",
-             os.path.basename(output_path), file_size, "yes" if mermaid_js else "no")
+    log.info("[DOC] .html 报告生成完成: %s (%d bytes, mermaid=%s, frames=%d)",
+             os.path.basename(output_path), file_size, "yes" if mermaid_js else "no", _frame_counter[0])
 
 
 def _generate_docx_manual(content: str, output_path: str, title: str = "文档"):
