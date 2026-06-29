@@ -525,6 +525,122 @@ body.vibrant blockquote { background: linear-gradient(135deg, #eff6ff, #fdf4ff);
 """
 
 
+def _convert_markdown_in_html(content):
+    """轻量 Markdown→HTML 转换（兜底，当 LLM 在 HTML body 里混用 Markdown 时）
+
+    只处理最常见的：标题(#/##/###/####)、表格(|...|)、引用(>)、粗体(**)、
+    无序列表(-/*)、有序列表(1.)、分隔线(---)。
+    已是 HTML 标签的行原样保留（检测 < 开头）。
+    ```mermaid``` 围栏保护，不转换。
+    """
+    # 先保护 mermaid 围栏块（占位符，后面还原）
+    placeholders = []
+    def _protect(m):
+        placeholders.append(m.group(0))
+        return "\x00MERMAID%d\x00" % (len(placeholders) - 1)
+    content = re.sub(r"```mermaid\s*\n.*?```", _protect, content, flags=re.DOTALL)
+
+    # 保护已有 HTML 块标签（<div <table <h1 <ul 等），整行以 < 开头的不转
+    lines = content.split("\n")
+    out = []
+    in_table = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        # 还原 mermaid 占位符（单独成行时）
+        if stripped.startswith("\x00MERMAID") and stripped.endswith("\x00"):
+            idx = int(stripped[8:-1])
+            out.append(placeholders[idx])
+            i += 1
+            continue
+
+        # 已是 HTML 标签开头 → 原样保留（含 <div <h1 <p <table <section 等）
+        if re.match(r"\s*<\w", line):
+            out.append(line)
+            i += 1
+            continue
+
+        # 空行
+        if not stripped:
+            if in_table:
+                out.append("</tbody></table>")
+                in_table = False
+            out.append("")
+            i += 1
+            continue
+
+        # 分隔线 ---
+        if re.match(r"^-{3,}$", stripped):
+            out.append("<hr>")
+            i += 1
+            continue
+
+        # 标题 #/##/###/####
+        m = re.match(r"^(#{1,4})\s+(.+)$", stripped)
+        if m:
+            level = len(m.group(1))
+            out.append("<h%d>%s</h%d>" % (level, _md_inline(m.group(2)), level))
+            i += 1
+            continue
+
+        # 引用 >
+        if stripped.startswith(">"):
+            quote_text = _md_inline(stripped[1:].strip())
+            out.append("<blockquote>%s</blockquote>" % quote_text)
+            i += 1
+            continue
+
+        # 表格 | ... |
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            # 分隔行 |---|---|
+            if all(re.match(r"^[-:]+$", c) for c in cells if c):
+                i += 1
+                continue
+            if not in_table:
+                out.append("<table><thead><tr>" + "".join("<th>%s</th>" % _md_inline(c) for c in cells) + "</tr></thead><tbody>")
+                in_table = True
+            else:
+                out.append("<tr>" + "".join("<td>%s</td>" % _md_inline(c) for c in cells) + "</tr>")
+            i += 1
+            continue
+
+        # 无序列表 - /*
+        if re.match(r"^[-*]\s+", stripped):
+            out.append("<li>%s</li>" % _md_inline(re.sub(r"^[-*]\s+", "", stripped)))
+            i += 1
+            continue
+
+        # 有序列表 1.
+        m = re.match(r"^\d+\.\s+(.+)$", stripped)
+        if m:
+            out.append("<li>%s</li>" % _md_inline(m.group(1)))
+            i += 1
+            continue
+
+        # 普通段落
+        out.append("<p>%s</p>" % _md_inline(stripped))
+        i += 1
+
+    if in_table:
+        out.append("</tbody></table>")
+
+    result = "\n".join(out)
+    # 还原行内的 mermaid 占位符
+    for idx, original in enumerate(placeholders):
+        result = result.replace("\x00MERMAID%d\x00" % idx, original)
+    return result
+
+
+def _md_inline(text):
+    """行内 Markdown 转换：**粗体** → <strong>，`代码` → <code>"""
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+    return text
+
+
 def generate_html_report(content: str, output_path: str, title: str = "报告"):
     """生成自包含的 HTML 可视化报告（内联 mermaid.js + 交互，单文件可独立打开）
 
@@ -541,6 +657,10 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     mermaid_js = _load_mermaid_js()
+
+    # P7: 轻量 Markdown→HTML 兜底转换
+    # LLM 经常在 HTML body 里混用 Markdown 语法（#/##/|表格|/>引用），不转换会原样显示
+    content = _convert_markdown_in_html(content)
 
     # 把 ```mermaid ... ``` 围栏转成空占位 div，源码收集进 JS 数组注入。
     # 不在 DOM 放任何 mermaid 文本/class/data（mermaid.min.js 的 MutationObserver

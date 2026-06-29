@@ -534,12 +534,34 @@ class AgentLoop:
                 messages[0]["content"] += "\n\n[上下文摘要]\n" + context_cache
 
         # 添加历史（只保留 user/assistant 角色，过滤 tool 消息保持简洁）
+        # P7 修复上下文爆炸：从最新往回加，超 token 预算就停（不再无脑取 20 条）
+        # 用户场景：第一轮写了超长 HTML 报告，第二轮对话时整篇报告进 messages → 400
+        HISTORY_TOKEN_BUDGET = 120000  # 历史最多 ~12 万 token（约 18 万字符）
         if history:
-            for item in history[-20:]:  # 最多 20 条历史
+            recent = []
+            used_chars = 0
+            # 从最新往回取，超预算就停
+            for item in reversed(history):
                 role = item.get("role", "")
                 content = item.get("content", "")
-                if role in ("user", "assistant") and content:
-                    messages.append({"role": role, "content": content})
+                if role not in ("user", "assistant") or not content:
+                    continue
+                item_chars = len(content)
+                if used_chars + item_chars > HISTORY_TOKEN_BUDGET * 3:  # ×3: token≈字符/3 粗估
+                    # 这条太长，如果是很久以前的就跳过；如果是最近的就截断保留头部
+                    if not recent:
+                        # 最近一条就超预算（第一轮回答极长），截断保留
+                        truncated = content[:HISTORY_TOKEN_BUDGET * 3]
+                        recent.insert(0, {"role": role, "content": truncated + "\n...(内容过长已截断)"})
+                        used_chars += len(truncated)
+                    break
+                recent.insert(0, {"role": role, "content": content})
+                used_chars += item_chars
+                if len(recent) >= 20:  # 最多 20 条
+                    break
+            messages.extend(recent)
+            if used_chars > HISTORY_TOKEN_BUDGET * 2:
+                log.info("[AGENT] 历史压缩: 保留 %d 条, %d 字符(预算 %d)", len(recent), used_chars, HISTORY_TOKEN_BUDGET * 3)
 
         # 当前用户消息
         messages.append({"role": "user", "content": message})

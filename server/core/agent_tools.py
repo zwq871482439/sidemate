@@ -59,6 +59,7 @@ _AGENT_BASE_PROMPT = (
     "适用：用户说\"文档/doc/Word\"、纯文字报告、总结。docx 不支持图表，需要流程时用文字/表格描述\n\n"
     "### HTML 可视化报告（.html）—— 含图表时用\n"
     "1. 用 write_workspace 写 HTML 文件（如 \"架构报告.html\"），只写 body 内容（系统自动包装 html/head/样式）\n"
+    "   重要：必须用 HTML 标签写内容（<h1>/<h2>/<p>/<table>/<ul>/<blockquote>），禁止用 Markdown 语法（#/|/>/```)。系统会兜底转换但效果不如直接写 HTML\n"
     "2. HTML 里用 ```mermaid``` 围栏画图（flowchart/sequenceDiagram/mindmap/gantt 等），系统自动注入渲染引擎 + 缩放拖拽交互\n"
     "3. 调 set_doc_status(\"文件名.html\", \"completed\") 生成自包含报告（单文件含全部样式和脚本）\n"
     "4. 用户用浏览器打开即可看到渲染后的可交互图表\n"
