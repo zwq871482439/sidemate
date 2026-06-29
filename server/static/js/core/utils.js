@@ -403,13 +403,31 @@ function _downloadMermaidSvg(svg, name) {
 // Issue2.1: mermaid 渲染失败 → 自动触发修复（最多 3 次，双位置提示）
 function _triggerMermaidFix(container, failedCode, errorMsg, attempt) {
   if (!container) return;
+  // 关键：用 ID 重新定位当前 DOM 里的容器（renderMessages 重建后旧引用可能脱离 DOM）
+  var containerId = container.id;
+  var liveContainer = containerId ? document.getElementById(containerId) : container;
+  if (!liveContainer || !document.body.contains(liveContainer)) {
+    // 容器已不在 DOM（被重建覆盖），停止修复
+    _updateMermaidFixBanner();
+    return;
+  }
+  container = liveContainer;
   attempt = attempt || 1;
   if (attempt > 3) {
-    // 超过 3 次：转为手动按钮
-    container.innerHTML = '<div class="mermaid-fix-fail">⚠️ 自动修复未成功 <button type="button" class="mf-retry" onclick="this.parentNode.parentNode._manualFix()">再试一次</button></div>';
-    container._manualFix = function() {
+    // 超过 3 次：显示失败兜底（确保容器永远有可见内容，不能空）
+    container.setAttribute('data-fix-status', 'failed-final');
+    container.innerHTML = '<div class="mermaid-fix-fail">⚠️ 图表语法复杂，AI 未能自动修复 ' +
+      '<button type="button" class="mf-retry">再试一次</button>' +
+      '<button type="button" class="mf-src">查看源码</button></div>';
+    var retryBtn = container.querySelector('.mf-retry');
+    var srcBtn = container.querySelector('.mf-src');
+    if (retryBtn) retryBtn.onclick = function() {
       container.innerHTML = '<div class="mermaid-fixing"><span class="mf-dot"></span>AI 正在重新修复...</div>';
+      container.setAttribute('data-fix-status', 'failed');
       _triggerMermaidFix(container, failedCode, errorMsg, 1);
+    };
+    if (srcBtn) srcBtn.onclick = function() {
+      container.innerHTML = '<pre style="font-size:11px;white-space:pre-wrap;word-break:break-all;background:var(--bg-secondary);padding:10px;border-radius:6px;overflow:auto;max-height:200px">' + esc(failedCode) + '</pre>';
     };
     _updateMermaidFixBanner();
     return;
@@ -456,7 +474,7 @@ function _triggerMermaidFix(container, failedCode, errorMsg, attempt) {
       reader.read().then(function(_ref) {
         var done = _ref.done, value = _ref.value;
         if (done) {
-          _finishFix(container, failedCode, errorMsg, attempt, fixedCode);
+          _finishFix(containerId, failedCode, errorMsg, attempt, fixedCode);
           return;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -479,17 +497,23 @@ function _triggerMermaidFix(container, failedCode, errorMsg, attempt) {
         pump();
       }).catch(function(e) {
         console.warn('[mermaid-fix] 流读取失败:', e);
-        _finishFix(container, failedCode, errorMsg, attempt, '');
+        _finishFix(containerId, failedCode, errorMsg, attempt, '');
       });
     }
     pump();
   }).catch(function(e) {
     console.warn('[mermaid-fix] 请求失败:', e);
-    _finishFix(container, failedCode, errorMsg, attempt, '');
+    _finishFix(containerId, failedCode, errorMsg, attempt, '');
   });
 }
 
-function _finishFix(container, failedCode, errorMsg, attempt, fixedCode) {
+function _finishFix(containerId, failedCode, errorMsg, attempt, fixedCode) {
+  // 重新定位容器（可能被 renderMessages 重建）
+  var container = document.getElementById(containerId);
+  if (!container || !document.body.contains(container)) {
+    _updateMermaidFixBanner();
+    return;  // 容器不在了，停止
+  }
   if (!fixedCode || !fixedCode.trim()) {
     // 修复无产出，重试
     _triggerMermaidFix(container, failedCode, errorMsg, attempt + 1);
@@ -507,7 +531,7 @@ function _finishFix(container, failedCode, errorMsg, attempt, fixedCode) {
       _enhanceMermaid(container, fixedCode);
       _updateMermaidFixBanner();
     }).catch(function(e) {
-      // 修复后仍失败，重试
+      // 修复后仍失败，重试（用新错误信息）
       _triggerMermaidFix(container, fixedCode, String(e.message || e).slice(0, 300), attempt + 1);
     });
   } catch(e) {
@@ -535,8 +559,10 @@ function _updateMermaidFixBanner() {
     var a = parseInt(c.getAttribute('data-fix-attempt') || '1', 10);
     if (a > maxAttempt) maxAttempt = a;
   });
-  banner.innerHTML = '<span class="mfb-icon">🔄</span> 正在自动修复 ' + failed.length + ' 张图表（第 ' + maxAttempt + ' 次尝试）';
-  // 点击跳转到第一个失败图
+  // 参照 tokenBar 的 tag 胶囊风格
+  banner.innerHTML = '<span class="mfb-icon">🔄</span>' +
+    '<span class="mfb-tag">修复中</span>' +
+    '<span>正在自动修复 ' + failed.length + ' 张图表（第 ' + maxAttempt + ' 次）</span>';
   banner.onclick = function() {
     if (failed.length) failed[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
