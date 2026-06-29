@@ -397,9 +397,29 @@ def _load_mermaid_js() -> str:
                 return _mermaid_js_cache
             except Exception as e:
                 log.warning("[DOC] 读取 mermaid.min.js 失败: %s", e)
-    log.warning("[DOC] 未找到 mermaid.min.js，HTML 报告将无法渲染图表")
-    _mermaid_js_cache = ""  # 空字符串兜底，避免反复读盘
+    log.warning("[DOC] 未找到 mermaid.min.js，HTML 报告图表将无法渲染")
+    _mermaid_js_cache = ""
     return _mermaid_js_cache
+
+
+_marked_js_cache = None
+
+
+def _load_marked_js() -> str:
+    """读取 marked.min.js 全文（带缓存）——用于报告内前端解析 LLM 混用的 Markdown 语法"""
+    global _marked_js_cache
+    if _marked_js_cache is not None:
+        return _marked_js_cache
+    _here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    p = os.path.join(_here, "static", "vendor", "marked.min.js")
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            _marked_js_cache = f.read()
+        log.info("[DOC] marked.min.js 已加载 (%d bytes)", len(_marked_js_cache))
+    except Exception as e:
+        log.warning("[DOC] 读取 marked.min.js 失败: %s", e)
+        _marked_js_cache = ""
+    return _marked_js_cache
 
 
 # HTML 报告 CSS：专业报告排版（参考高端数据报告设计）+ mermaid 交互 + 打印优化
@@ -695,14 +715,9 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     mermaid_js = _load_mermaid_js()
+    marked_js = _load_marked_js()
 
-    # P7: 轻量 Markdown→HTML 兜底转换
-    # LLM 经常在 HTML body 里混用 Markdown 语法（#/##/|表格|/>引用），不转换会原样显示
-    content = _convert_markdown_in_html(content)
-
-    # 把 ```mermaid ... ``` 围栏转成空占位 div，源码收集进 JS 数组注入。
-    # 不在 DOM 放任何 mermaid 文本/class/data（mermaid.min.js 的 MutationObserver
-    # 会扫描并移除它认得的元素），源码全靠 JS 注入。
+    # P7: mermaid 围栏用占位符保护（marked 会把 ``` 围栏转成 <pre><code>，必须先抽离）
     import json as _json
     _mermaid_codes = []
     _frame_counter = [0]
@@ -727,12 +742,24 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
             '</div>'
         )
 
-    processed_content = re.sub(
-        r"```mermaid\s*\n(.*?)```",
+    content = re.sub(
+        r"```mermaid\s*\n.*?```",
         _fence_to_frame,
         content,
         flags=re.DOTALL,
     )
+
+    # P7: marked 在前端处理 LLM 混用的 Markdown 语法。
+    # 把 LLM 内容（已抽取 mermaid）JSON 序列化塞进 body，前端 marked 解析。
+    # marked 对已是 HTML 的内容原样保留（不重解析），只把 Markdown 转 HTML——解决标签错乱。
+    # marked min js 39KB，与 mermaid min js 3MB 一起内联到 HTML（gzip 后总 ~1MB），可接受。
+    _md_input = _json.dumps(content, ensure_ascii=False)
+    processed_content = (
+        '<div id="md-src" data-md=' + _json.dumps(_md_input, ensure_ascii=False) + ' style="display:none"></div>'
+        '<script>setTimeout(function(){var s=document.getElementById("md-src");'
+        'if(s&&typeof marked==="function"){s.outerHTML=marked.parse(s.dataset.md);}},0);</script>'
+    )
+
     # 源码数组（JSON 序列化，安全转义）
     _codes_json = _json.dumps(_mermaid_codes, ensure_ascii=False)
 
@@ -803,9 +830,11 @@ initReportMermaid();
     )
     html += tipbar + '\n'
     html += processed_content
-    # mermaid.min.js 放 body 末尾（content 之后）：
-    # 若放 head，mermaid 库会在解析到 .mermaid 元素时自动移除它们（即使 startOnLoad:false）
-    # 放 body 末尾 + initReportMermaid 紧随其后，元素先存在再被我们手动渲染
+    # mermaid.min.js 和 marked.min.js 都放 body 末尾（content 之后）：
+    # 若放 head，库会在解析到 .mermaid/.md 元素时自动处理破坏 DOM
+    # 放 body 末尾 + 初始化脚本紧随其后，元素先存在再被我们手动处理
+    if marked_js:
+        html += '\n<script>' + marked_js + '</script>\n'
     if mermaid_js:
         html += '\n<script>' + mermaid_js + '</script>\n'
     html += '\n' + (interact_js if mermaid_js else "") + '\n'
@@ -852,54 +881,58 @@ def _load_reveal_js():
 
 # PPT slide 内的辅助样式（补充 reveal 主题，让 mermaid/表格/列表更好看）
 _PPT_SLIDE_CSS = """
-/* PPT slide 内容样式 — 专业美观，信息密度合理 */
-.reveal section { text-align: left; padding: 0.5em 1.2em; }
-.reveal h1 { font-size: 2.2em; margin-bottom: 0.2em; line-height: 1.2; }
-.reveal h2 { font-size: 1.55em; margin-top: 0.1em; margin-bottom: 0.3em; line-height: 1.25; }
-.reveal h3 { font-size: 1.15em; color: #a8b2d1; margin-bottom: 0.25em; }
-.reveal p { font-size: 0.82em; line-height: 1.55; margin: 0.35em 0; }
-.reveal ul, .reveal ol { font-size: 0.78em; line-height: 1.6; margin-left: 1.2em; }
-.reveal li { margin: 0.18em 0; }
+/* PPT slide 内容样式 — 专业美观，信息密度合理
+   关键：所有字号用 rem（不随 reveal 基础字号 42px 放大），rem 根 = 16px 可控
+   之前用 em 在 reveal 里被放大约 2.6 倍 → 字号爆炸溢出
+   reveal slide 尺寸 ~960×700（16:9），内容要排得下 */
+:root { font-size: 16px; }  /* 显式锁住 rem 根 */
+.reveal section { text-align: left; padding: 0.4rem 1rem; font-size: 1rem; }  /* 16px 不放大 */
+.reveal h1 { font-size: 2.2rem; line-height: 1.2; margin-bottom: 0.3rem; }
+.reveal h2 { font-size: 1.5rem; line-height: 1.25; margin: 0.4rem 0 0.3rem; }
+.reveal h3 { font-size: 1.1rem; color: #a8b2d1; margin-bottom: 0.25rem; }
+.reveal p { font-size: 0.9rem; line-height: 1.5; margin: 0.3rem 0; }
+.reveal ul, .reveal ol { font-size: 0.85rem; line-height: 1.5; margin-left: 1.2rem; }
+.reveal li { margin: 0.15rem 0; }
 .reveal strong { color: #64ffda; }
 
-/* 表格：清晰对比 */
-.reveal table { font-size: 0.68em; border-collapse: collapse; margin: 0.4em auto; width: 92%; }
-.reveal th { background: rgba(100,255,218,.12); border-bottom: 2px solid #64ffda; padding: 6px 12px; font-weight: 600; }
-.reveal td { border-bottom: 1px solid #333; padding: 5px 12px; }
+/* 表格 */
+.reveal table { font-size: 0.75rem; border-collapse: collapse; margin: 0.4rem auto; width: 92%; }
+.reveal th { background: rgba(100,255,218,.12); border-bottom: 2px solid #64ffda; padding: 5px 10px; font-weight: 600; }
+.reveal td { border-bottom: 1px solid #333; padding: 4px 10px; }
 .reveal tr:nth-child(even) { background: rgba(255,255,255,.03); }
 
 /* 代码 */
-.reveal pre { font-size: 0.55em; margin: 0.4em auto; width: 92%; }
-.reveal code { font-size: 0.9em; }
+.reveal pre { font-size: 0.65rem; margin: 0.3rem auto; width: 92%; }
+.reveal code { font-size: 0.95em; }
 
-/* 卡片：幻灯片内紧凑卡片 */
-.reveal .card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 12px 14px; margin: 0.3em 0; }
-.reveal .card-title { font-size: 0.85em; font-weight: 600; color: #64ffda; margin-bottom: 4px; }
+/* 卡片 */
+.reveal .card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 10px 12px; margin: 0.3em 0; }
+.reveal .card-title { font-size: 0.95rem; font-weight: 600; color: #64ffda; margin-bottom: 4px; }
 
-/* 网格：幻灯片内多列布局 */
-.reveal .grid-2, .reveal .grid-3 { gap: 12px; margin: 0.4em 0; }
+/* 网格 */
+.reveal .grid-2, .reveal .grid-3 { gap: 10px; margin: 0.3em 0; }
 .reveal .grid-2 { display: grid; grid-template-columns: 1fr 1fr; }
 .reveal .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); }
 
-/* 数据统计块：大数字突出 */
-.reveal .stats { display: flex; gap: 14px; margin: 0.5em 0; justify-content: center; }
-.reveal .stat { flex: 1; text-align: center; padding: 10px; }
-.reveal .stat-num { font-size: 2em; font-weight: 700; color: #64ffda; line-height: 1.1; }
-.reveal .stat-label { font-size: 0.6em; color: #8892b0; margin-top: 2px; }
+/* 数据统计块 */
+.reveal .stats { display: flex; gap: 14px; margin: 0.4rem 0; justify-content: center; }
+.reveal .stat { flex: 1; text-align: center; padding: 8px; }
+.reveal .stat-num { font-size: 1.6rem; font-weight: 700; color: #64ffda; line-height: 1.1; }
+.reveal .stat-label { font-size: 0.7rem; color: #8892b0; margin-top: 2px; }
 
 /* 标签 */
-.reveal .badge { font-size: 0.6em; padding: 2px 8px; border-radius: 999px; background: rgba(100,255,218,.15); color: #64ffda; }
+.reveal .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; background: rgba(100,255,218,.15); color: #64ffda; }
 .reveal .badge.green { background: rgba(5,150,105,.2); color: #6ee7b7; }
 .reveal .badge.orange { background: rgba(245,158,11,.2); color: #fcd34d; }
 
-/* mermaid 图：白底卡片（深色幻灯片上看清） */
+/* mermaid 图 */
 .reveal .chart-frame { background: #fff; color: #333; border-radius: 10px; margin: 0.4em auto; padding: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.3); }
 .reveal .chart-stage { padding: 8px; min-height: 60px; text-align: center; }
 .reveal .chart-stage svg { max-width: 88% !important; height: auto !important; }
 .reveal .cf-hint, .reveal .chart-toolbar { display: none; }
 
 /* 引用 */
-.reveal blockquote { font-size: 0.75em; border-left: 3px solid #64ffda; padding: 8px 16px; margin: 0.4em 0; background: rgba(100,255,218,.05); font-style: italic; }
+.reveal blockquote { font-size: 0.85rem; border-left: 3px solid #64ffda; padding: 8px 14px; margin: 0.3rem 0; background: rgba(100,255,218,.05); font-style: italic; }
 
 /* 高亮 */
 .reveal .highlight { background: rgba(100,255,218,.25); padding: 0 4px; border-radius: 3px; }

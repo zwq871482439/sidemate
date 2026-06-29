@@ -321,7 +321,7 @@ function _enhanceMermaid(container, code) {
     '<span class="mt-zoom">100%</span>' +
     '<button type="button" class="mt-btn" data-act="zoomin" title="放大">+</button>' +
     '<button type="button" class="mt-btn" data-act="reset" title="复位">⟲</button>' +
-    '<button type="button" class="mt-btn mt-dl" data-act="download" title="下载 PNG">⬇</button>';
+    '<button type="button" class="mt-btn mt-dl" data-act="download" title="下载 SVG（用浏览器打开查看）">⬇</button>';
   container.appendChild(toolbar);
 
   // 包裹 svg 为可变换的视口
@@ -381,78 +381,29 @@ function _enhanceMermaid(container, code) {
   viewport.style.cursor = 'grab';
 }
 
-// 下载 mermaid 图为 PNG（白底，所有软件可打开）；taint 时降级 SVG（加白底）
+// 下载 mermaid 图为 SVG（加白底 rect，避免某些查看器显示成黑底）
 function _downloadMermaidSvg(svg, name) {
-  // 1. 克隆 svg，补 xmlns + 显式 width/height
-  var clone = svg.cloneNode(true);
-  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-  // 从 viewBox 或属性获取尺寸
-  var vb = clone.getAttribute('viewBox');
-  var w = parseFloat(clone.getAttribute('width')) || (vb ? parseFloat(vb.split(/\s+/)[2]) : 800);
-  var h = parseFloat(clone.getAttribute('height')) || (vb ? parseFloat(vb.split(/\s+/)[3]) : 600);
-  clone.setAttribute('width', w);
-  clone.setAttribute('height', h);
-
-  var svgStr = new XMLSerializer().serializeToString(clone);
-
-  // 2. 尝试 PNG（canvas 光栅化 + 白底）
   try {
-    var blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-    var url = URL.createObjectURL(blob);
-    var img = new Image();
-    img.onload = function() {
-      try {
-        var scale = 2;  // 2x 高清
-        var canvas = document.createElement('canvas');
-        canvas.width = w * scale;
-        canvas.height = h * scale;
-        var ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';  // 白底
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        // toBlob 可能因 taint 抛 SecurityError
-        canvas.toBlob(function(pngBlob) {
-          if (pngBlob) {
-            _triggerDownload(pngBlob, name + '.png');
-            URL.revokeObjectURL(url);
-          } else {
-            // toBlob 返回 null（taint），降级 SVG
-            _downloadSvgWithBg(svgStr, name, w, h);
-            URL.revokeObjectURL(url);
-          }
-        }, 'image/png');
-      } catch(e) {
-        // SecurityError (taint)，降级 SVG
-        console.warn('[mermaid] PNG 失败(taint)，降级 SVG:', e.message);
-        _downloadSvgWithBg(svgStr, name, w, h);
-        URL.revokeObjectURL(url);
-      }
-    };
-    img.onerror = function() {
-      // SVG 加载失败，降级直接下载 SVG
-      _downloadSvgWithBg(svgStr, name, w, h);
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
-  } catch(e) {
-    console.warn('[mermaid] 下载失败:', e);
-    _downloadSvgWithBg(svgStr, name, w, h);
-  }
-}
-
-// 降级：下载 SVG（加白底 rect，浏览器可正常查看）
-function _downloadSvgWithBg(svgStr, name, w, h) {
-  try {
-    // 在 svg 开头插入白底 rect
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    // 显式补 width/height（mermaid SVG 可能只有 viewBox）
+    var vb = clone.getAttribute('viewBox');
+    var w = parseFloat(clone.getAttribute('width')) || (vb ? parseFloat(vb.split(/\s+/)[2]) : 800);
+    var h = parseFloat(clone.getAttribute('height')) || (vb ? parseFloat(vb.split(/\s+/)[3]) : 600);
+    clone.setAttribute('width', w);
+    clone.setAttribute('height', h);
+    // 在 svg 开头插入白底 rect（防 Windows 照片查看器显示黑底）
     var bgRect = '<rect width="' + w + '" height="' + h + '" fill="#ffffff"/>';
-    var withBg = svgStr.replace(/(<svg[^>]*>)/, '$1' + bgRect);
-    var blob = new Blob([withBg], { type: 'image/svg+xml;charset=utf-8' });
+    var svgStr = new XMLSerializer().serializeToString(clone).replace(/(<svg[^>]*>)/, '$1' + bgRect);
+    var blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
     _triggerDownload(blob, name + '.svg');
   } catch(e) {
-    console.warn('[mermaid] SVG 降级也失败:', e);
+    console.warn('[mermaid] 下载失败:', e);
   }
 }
 
+
+// _triggerDownload：触发浏览器下载
 function _triggerDownload(blob, filename) {
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
