@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.69">
+<link rel="stylesheet" href="/static/css/main.css?v=2.70">
 </head>
 <body>
 
@@ -444,7 +444,7 @@
           <!-- 分组3：扩展与功能 -->
           <div class="card">
             <h4>扩展与功能</h4>
-            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">上传 .sidemate 官方扩展包</div>
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">安装 .sidemate 官方扩展包</div>
             <div style="display:flex;gap:8px">
               <input type="file" id="extZipInput" accept=".sidemate" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:8px;font-size:13px;background:var(--bg-primary);color:var(--text-primary)" onchange="onExtFilePicked(event)">
               <button class="btn btn-primary" id="extInstallBtn" onclick="document.getElementById('extZipInput').click()">安装扩展</button>
@@ -830,10 +830,10 @@ window.addEventListener('load', function() {
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
 <script src="/static/js/core/api.js?v=2.40"></script>
-<script src="/static/js/core/utils.js?v=2.40"></script>
+<script src="/static/js/core/utils.js?v=2.43"></script>
 <script src="/static/js/core/errors.js?v=2.40"></script>
 <script src="/static/js/stream_renderer.js?v=2.40"></script>
-<script src="/static/js/settings.js?v=2.69"></script>
+<script src="/static/js/settings.js?v=2.70"></script>
 <script src="/static/js/qa.js?v=2.70"></script>
 <script src="/static/js/kb-batch.js?v=2.69"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->

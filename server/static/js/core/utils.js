@@ -254,7 +254,6 @@ function _renderMermaid(el) {
       var nextSibling = container.nextSibling;
       mermaid.render(id, code).then(function(result) {
         container.setAttribute('data-rendered', '1');
-        container.innerHTML = result.svg;
         // 兜底：若 mermaid 库在测量过程中让容器脱离了原位，放回去
         if (!container.parentElement) {
           if (nextSibling && nextSibling.parentElement === parent) {
@@ -263,6 +262,9 @@ function _renderMermaid(el) {
             parent.appendChild(container);
           }
         }
+        // Issue2.2/4: 渲染成功后挂载工具栏(下载SVG) + 缩放拖拽交互
+        container.innerHTML = result.svg;
+        _enhanceMermaid(container, code);
       }).catch(function(err) {
         container.setAttribute('data-rendered', '1');
         container.innerHTML = '<pre style="color:var(--error-color);font-size:11px">mermaid 渲染失败: ' + esc(String(err.message || err).slice(0, 100)) + '</pre>';
@@ -290,6 +292,101 @@ function _renderMermaid(el) {
   });
 }
 window._renderMermaid = _renderMermaid;
+
+// Issue2.2 + Issue4: mermaid 容器增强——下载 SVG + 缩放拖拽
+function _enhanceMermaid(container, code) {
+  if (!container || container.querySelector('.mermaid-toolbar')) return;  // 防重复挂载
+  var svg = container.querySelector('svg');
+  if (!svg) return;
+
+  // --- 工具栏（下载 SVG + 缩放百分比 + 复位）---
+  var toolbar = document.createElement('div');
+  toolbar.className = 'mermaid-toolbar';
+  toolbar.innerHTML =
+    '<button type="button" class="mt-btn" data-act="zoomout" title="缩小">−</button>' +
+    '<span class="mt-zoom">100%</span>' +
+    '<button type="button" class="mt-btn" data-act="zoomin" title="放大">+</button>' +
+    '<button type="button" class="mt-btn" data-act="reset" title="复位">⟲</button>' +
+    '<button type="button" class="mt-btn mt-dl" data-act="download" title="下载 SVG">⬇</button>';
+  container.appendChild(toolbar);
+
+  // 包裹 svg 为可变换的视口
+  var viewport = document.createElement('div');
+  viewport.className = 'mermaid-viewport';
+  svg.parentNode.insertBefore(viewport, svg);
+  viewport.appendChild(svg);
+
+  var scale = 1, tx = 0, ty = 0;
+  var MIN_S = 0.3, MAX_S = 3;
+
+  function apply() {
+    viewport.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
+    var zp = toolbar.querySelector('.mt-zoom');
+    if (zp) zp.textContent = Math.round(scale * 100) + '%';
+  }
+  function reset() { scale = 1; tx = 0; ty = 0; apply(); }
+
+  // 工具栏按钮
+  toolbar.addEventListener('click', function(e) {
+    var btn = e.target.closest('.mt-btn');
+    if (!btn) return;
+    var act = btn.getAttribute('data-act');
+    if (act === 'zoomin') { scale = Math.min(MAX_S, scale + 0.2); apply(); }
+    else if (act === 'zoomout') { scale = Math.max(MIN_S, scale - 0.2); apply(); }
+    else if (act === 'reset') { reset(); }
+    else if (act === 'download') { _downloadMermaidSvg(svg, container.id || 'mermaid'); }
+  });
+
+  // 滚轮缩放（在容器内滚动 = 缩放，避免和页面滚动冲突用 preventDefault）
+  container.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var delta = e.deltaY < 0 ? 0.1 : -0.1;
+    scale = Math.max(MIN_S, Math.min(MAX_S, scale + delta));
+    apply();
+  }, { passive: false });
+
+  // 拖拽平移
+  var dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  viewport.addEventListener('mousedown', function(e) {
+    dragging = true; sx = e.clientX; sy = e.clientY; ox = tx; oy = ty;
+    viewport.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    tx = ox + (e.clientX - sx);
+    ty = oy + (e.clientY - sy);
+    apply();
+  });
+  document.addEventListener('mouseup', function() {
+    if (dragging) { dragging = false; viewport.style.cursor = 'grab'; }
+  });
+
+  // 双击复位
+  viewport.addEventListener('dblclick', reset);
+  viewport.style.cursor = 'grab';
+}
+
+// 下载 mermaid SVG
+function _downloadMermaidSvg(svg, name) {
+  try {
+    // 克隆 svg 并补 xmlns，确保独立可用
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    var data = new XMLSerializer().serializeToString(clone);
+    var blob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name + '.svg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+  } catch(e) {
+    console.warn('[mermaid] 下载失败:', e);
+  }
+}
 
 // P6: HTML 预览——iframe 沙箱渲染
 function _renderHtmlPreview(el) {

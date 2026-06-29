@@ -772,7 +772,7 @@ async function refreshExtensions() {
     var data = await resp.json();
     var exts = data.extensions || [];
     if (exts.length === 0) {
-      listEl.innerHTML = '<span style="color:var(--text-muted)">暂无已安装扩展。上传 .sidemate 官方包安装模型、知识库、语音等扩展。</span>';
+      listEl.innerHTML = '<span style="color:var(--text-muted)">暂无已安装扩展。点击上方按钮安装 .sidemate 官方包，添加模型、知识库、语音等扩展。</span>';
       return;
     }
     var html = '';
@@ -805,7 +805,7 @@ async function installExtension(file) {
   var progressBar = document.getElementById('extProgressBar');
   var progressFill = document.getElementById('extProgressFill');
   var progressText = document.getElementById('extProgressText');
-  if (btn) { btn.disabled = true; btn.textContent = '上传中...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '安装中...'; }
   if (resultEl) resultEl.textContent = '';
   if (progressBar) progressBar.style.display = 'block';
   if (progressFill) {
@@ -814,7 +814,7 @@ async function installExtension(file) {
     void progressFill.offsetWidth;
     progressFill.style.animation = 'indeterminateProgress 1.5s ease-in-out infinite';
   }
-  if (progressText) progressText.textContent = '准备上传...';
+  if (progressText) progressText.textContent = '准备安装...';
 
   if (typeof pauseHeartbeat === 'function') pauseHeartbeat();
 
@@ -841,7 +841,7 @@ async function installExtension(file) {
       return;
     }
 
-    if (progressText) progressText.textContent = '上传完成，等待安装...';
+    if (progressText) progressText.textContent = '解压完成，正在安装...';
 
     var es = new EventSource(_apiBase + '/api/extensions/install-progress/' + taskId);
     var done = false;

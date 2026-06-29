@@ -49,6 +49,8 @@
   --tag-text: #534AB7;
   --timeline-bg: var(--bg-secondary);
   --timeline-border: var(--border-color);
+  /* Issue1: 用户消息浅蓝背景（区分 AI 回复，科技感） */
+  --user-msg-bg: #EFF6FF;
 
   /* 字号体系 */
   --font-xs: 11px;
@@ -89,6 +91,8 @@
   --msg-ai-bg: #1e293b;
   --msg-ai-border: #334155;
   --code-bg: #0f172a;
+  /* Issue1: 用户消息浅蓝背景（暗色：深蓝调，区分 AI 但不过亮） */
+  --user-msg-bg: #1E3A5F;
   --code-text: #e2e8f0;
   --error-color: #f87171;
   --success-color: #34d399;
@@ -451,16 +455,24 @@ details>div{color:var(--text-muted);font-size:.85em;margin-top:4px;line-height:1
 .model-tag-inline{font-size:10px;padding:1px 8px;border-radius:9px;font-weight:500;white-space:nowrap;flex-shrink:0;margin-left:auto;max-width:260px;overflow:hidden;text-overflow:ellipsis}
 .model-tag-inline.none{background:transparent;color:var(--text-muted)}
 /* P6: Mermaid 图表容器 */
-.mermaid-container{margin:8px 0;text-align:center;overflow-x:auto}
-/* svg 不压缩：用原始尺寸，超出容器宽度时由 .mermaid-container 的 overflow-x:auto 横向滚动。
-   之前 max-width:100% 会把大图压扁，导致节点框缩小但文字（foreignObject HTML）不缩，
-   文字溢出框外不可读。 */
+/* Issue4: overflow:hidden + position:relative，缩放平移用 transform，不再用滚动条 */
+.mermaid-container{margin:8px 0;text-align:center;overflow:hidden;position:relative;border:0.5px solid var(--border-color);border-radius:8px;background:var(--bg-primary);max-height:70vh}
+/* svg 不压缩：用原始尺寸，缩放由 .mermaid-viewport 的 transform 控制 */
 .mermaid-container svg{max-width:none;height:auto}
 /* mermaid 节点内文字行高收紧：库默认按 24px/行算框尺寸，但中文+emoji 实际行高约 27px
    （继承 body 的 line-height:1.7），多行（4行+）节点文字会溢出框。
    强制 line-height:1.2 让 4 行文字（4×19.2=77）塞进框（84）内。 */
 .mermaid-container .nodeLabel,.mermaid-container .edgeLabel,
 .mermaid-container .node foreignObject div{line-height:1.2 !important}
+/* Issue4: 可变换视口（包住 svg，接收 transform） */
+.mermaid-viewport{transform-origin:center center;transition:none;user-select:none;-webkit-user-select:none}
+/* Issue2.2/4: 工具栏（右下角：缩小|百分比|放大|复位|下载） */
+.mermaid-toolbar{position:absolute;right:6px;bottom:6px;display:flex;align-items:center;gap:2px;background:var(--bg-secondary);border:0.5px solid var(--border-color);border-radius:6px;padding:2px 4px;font-size:11px;z-index:5;opacity:0;transition:opacity .15s}
+.mermaid-container:hover .mermaid-toolbar{opacity:1}
+.mermaid-toolbar .mt-btn{border:none;background:transparent;color:var(--text-secondary);cursor:pointer;width:22px;height:22px;border-radius:4px;font-size:13px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center}
+.mermaid-toolbar .mt-btn:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.mermaid-toolbar .mt-zoom{color:var(--text-muted);min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
+.mermaid-toolbar .mt-dl{margin-left:2px;border-left:0.5px solid var(--border-color);border-radius:0 4px 4px 0;padding-left:2px}
 .mermaid-loading{color:var(--text-muted);font-size:12px;padding:20px;text-align:center}
 /* P6: HTML 预览容器 */
 .html-preview-wrap{margin:8px 0;border:0.5px solid var(--border-color);border-radius:8px;overflow:hidden}
@@ -1345,6 +1357,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 }
 #messages.msg-bubble-mode .msg.user {
   border-radius: 12px 12px 4px 12px !important;
+  background: var(--user-msg-bg) !important;  /* Issue1: 用户消息浅蓝背景 */
 }
 #messages.msg-bubble-mode .msg.ai {
   border-radius: 12px 12px 12px 4px !important;
@@ -1384,6 +1397,10 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   border: 0.5px solid var(--border-color);
   border-radius: 8px;
   padding: 8px 12px;
+}
+/* Issue1: 用户消息卡片用浅蓝背景，区分 AI 回复 */
+#messages.msg-list-mode .msg.user .msg-copy-wrap {
+  background: var(--user-msg-bg);
 }
 
 /* Token 显示状态 */
