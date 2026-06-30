@@ -61,7 +61,9 @@ assert(importResult.includes('IMPORT_OK'), '所有后端模块可导入');
 const promptSrc = await import('fs').then(fs => fs.readFileSync('server/core/agent_tools.py','utf-8'));
 assert(promptSrc.includes('.ppt.html') && promptSrc.includes('幻灯片'), 'prompt 含 PPT 规则');
 assert(promptSrc.includes('.html') && promptSrc.includes('可视化报告'), 'prompt 含 HTML 报告规则');
-assert(promptSrc.includes('vibrant') && promptSrc.includes('note'), 'prompt 含组件库指引');
+// 组件库：vibrant 必含（现代风格），callout 或 note 二选一（提示框，v0.9.7 起推荐 callout）
+assert(promptSrc.includes('vibrant'), 'prompt 含 vibrant 风格指引');
+assert(promptSrc.includes('callout') || promptSrc.includes('note'), 'prompt 含提示框指引(callout/note)');
 
 // ========== B. HTML 报告生成 + 渲染 ==========
 console.log('\n[B] HTML 可视化报告');
