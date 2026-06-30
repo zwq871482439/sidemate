@@ -596,7 +596,7 @@ def _convert_markdown_in_html(content):
     def _protect(m):
         placeholders.append(m.group(0))
         return "\x00MERMAID%d\x00" % (len(placeholders) - 1)
-    content = re.sub(r"```mermaid\s*\n.*?```", _protect, content, flags=re.DOTALL)
+    content = re.sub(r"```mermaid\s*\n(.*?)```", _protect, content, flags=re.DOTALL)
 
     # 保护已有 HTML 块标签（<div <table <h1 <ul 等），整行以 < 开头的不转
     lines = content.split("\n")
@@ -743,21 +743,32 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
         )
 
     content = re.sub(
-        r"```mermaid\s*\n.*?```",
+        r"```mermaid\s*\n(.*?)```",
         _fence_to_frame,
         content,
         flags=re.DOTALL,
     )
 
     # P7: marked 在前端处理 LLM 混用的 Markdown 语法。
-    # 把 LLM 内容（已抽取 mermaid）JSON 序列化塞进 body，前端 marked 解析。
-    # marked 对已是 HTML 的内容原样保留（不重解析），只把 Markdown 转 HTML——解决标签错乱。
-    # marked min js 39KB，与 mermaid min js 3MB 一起内联到 HTML（gzip 后总 ~1MB），可接受。
+    # 把 LLM 内容（已抽取 mermaid）JSON 序列化后塞进 <script type="application/json">，
+    # JSON 原样保留（不经过 HTML attribute 转义，\n 不会被解成真换行）。
+    # marked v15 在浏览器里挂 globalThis.marked={parse,...} 对象（不是函数），
+    # 所以检测 typeof=="function" 会失效，改用检测 .parse 属性是否存在。
     _md_input = _json.dumps(content, ensure_ascii=False)
+    # 防 </script> 提前终止 JSON script 标签（HTML 解析器特性）
+    _md_input = _md_input.replace("</", "<\\/")
     processed_content = (
-        '<div id="md-src" data-md=' + _json.dumps(_md_input, ensure_ascii=False) + ' style="display:none"></div>'
-        '<script>setTimeout(function(){var s=document.getElementById("md-src");'
-        'if(s&&typeof marked==="function"){s.outerHTML=marked.parse(s.dataset.md);}},0);</script>'
+        '<script type="application/json" id="md-src">' + _md_input + '</script>'
+        '<script>(function(){'
+        'var s=document.getElementById("md-src");if(!s)return;'
+        'function tryRender(){var m=(typeof marked!=="undefined")?marked:window.marked;'
+        'if(m&&typeof m.parse==="function"){'
+        'var txt;try{txt=JSON.parse(s.textContent);}catch(e){txt=s.textContent;}'
+        'try{var r=document.createElement("div");r.innerHTML=m.parse(txt);'
+        'while(r.firstChild)s.parentNode.insertBefore(r.firstChild,s);s.parentNode.removeChild(s);'
+        '}catch(e){console.error("[report] marked parse failed:",e);}'
+        '}else{setTimeout(tryRender,30);}};'
+        'tryRender();})();</script>'
     )
 
     # 源码数组（JSON 序列化，安全转义）
@@ -792,7 +803,8 @@ function initReportMermaid(){
       slot.className='chart-rendered';
       enhanceMermaidStage(slot.closest('[data-stage]'));
     }).catch(function(e){
-      slot.innerHTML='<pre style="color:#dc2626;font-size:12px">图表渲染失败: '+String(e.message||e).slice(0,150)+'</pre>';
+      // 渲染失败：显示友好错误 + 原始源码（让用户/LLM 看到问题）
+      slot.innerHTML='<div style="padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#991b1b;font-size:12px;line-height:1.5"><b>图表渲染失败</b>：'+String(e.message||e).slice(0,200)+'<details style="margin-top:6px"><summary style="cursor:pointer;color:#666">查看源码</summary><pre style="margin-top:4px;background:#fff;padding:6px;border-radius:4px;white-space:pre-wrap;font-size:11px">'+code.replace(/</g,'&lt;')+'</pre></details></div>';
       enhanceMermaidStage(slot.closest('[data-stage]'));
     });
   });
@@ -834,7 +846,9 @@ initReportMermaid();
     # 若放 head，库会在解析到 .mermaid/.md 元素时自动处理破坏 DOM
     # 放 body 末尾 + 初始化脚本紧随其后，元素先存在再被我们手动处理
     if marked_js:
-        html += '\n<script>' + marked_js + '</script>\n'
+        # 包一层 IIFE：UMD 在浏览器里挂 globalThis.marked={parse:fn,...}，外层再补一份 window.marked 别名
+        # 兜底避免某些环境下 marked 挂不上的边角问题
+        html += '\n<script>(function(){' + marked_js + '\nif(typeof marked!=="undefined"&&typeof window.marked==="undefined"){window.marked=marked;}})();</script>\n'
     if mermaid_js:
         html += '\n<script>' + mermaid_js + '</script>\n'
     html += '\n' + (interact_js if mermaid_js else "") + '\n'
