@@ -1405,7 +1405,9 @@ class AgentLoop:
         args = args or {}
         from core.agent_tools import get_status_event
         if not result.get("success"):
-            return {"status": "error", "tool": tool_name}
+            # 把 result 里的具体错误原因透传给前端（之前一律显示"操作异常"）
+            _reason = result.get("error") or result.get("message") or ""
+            return {"status": "error", "tool": tool_name, "reason": _reason, "filename": args.get("filename") or args.get("path") or ""}
 
         data = result.get("data", {})
         if tool_name == "search_web":

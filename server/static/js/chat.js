@@ -38,6 +38,11 @@ function _buildFileTag(m) {
   return '<div class="msg-file-tag">' + ftIcon + esc(ft.name) + '</div>';
 }
 
+// 把 'xxx.ppt.html' 显示成 'xxxPPT.html'，但 download 属性保持原文件名
+function _pptDisplayName(fn) {
+  return fn.replace(/\.ppt\.html$/i, 'PPT.html');
+}
+
 function _buildDocDownload(m) {
   if (!m.doc_url || m.role === 'user') return '';
   var _fn = m.doc_filename || 'document.docx';
@@ -46,7 +51,9 @@ function _buildDocDownload(m) {
   if (_isHtml && _url.indexOf('fmt=') < 0) {
     _url += (_url.indexOf('?') >= 0 ? '&' : '?') + 'fmt=html';
   }
-  var _label = _isHtml ? ('下载 HTML 报告 ' + esc(_fn)) : ('下载 ' + esc(_fn));
+  // 显示用文件名转换（'xxx.ppt.html' → 'xxxPPT.html'）
+  var _displayFn = _pptDisplayName(_fn);
+  var _label = _isHtml ? ('下载 HTML 报告 ' + esc(_displayFn)) : ('下载 ' + esc(_displayFn));
   return '<div class="doc-download-bar"><a href="' + esc(_url) + '" download="' + esc(_fn) + '" class="doc-download-btn" target="_blank"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M8 2v8M5 6.5L8 4l3 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11.5" width="12" height="2" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>' + _label + '</a></div>';
 }
 
@@ -315,7 +322,7 @@ function _renderSingleMsg(m, idx) {
       if (_aIsHtml && _dlUrl.indexOf('fmt=') < 0) {
         _dlUrl += (_dlUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=html';
       }
-      var _aLabel = _aIsHtml ? ('下载 HTML 报告 ' + esc(_fn)) : ('下载 ' + esc(_fn));
+      var _aLabel = _aIsHtml ? ('下载 HTML 报告 ' + esc(_pptDisplayName(_fn))) : ('下载 ' + esc(_fn));
       _tags.push('<a href="' + esc(_dlUrl) + '" download="' + esc(_fn) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' ' + _aLabel + '</a>');
     }
     docBarHtml = '<div class="doc-download-bar" data-doc-complete="1">' + _tags.join('') + '</div>';
@@ -1478,7 +1485,7 @@ async function sendMessage() {
             if (_isHtml && downloadUrl.indexOf('fmt=') < 0) {
               downloadUrl += (downloadUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=html';
             }
-            var _dlLabel = _isHtml ? ('下载 HTML 报告 ' + esc(_dlFilename)) : ('下载 ' + esc(_dlFilename));
+            var _dlLabel = _isHtml ? ('下载 HTML 报告 ' + esc(_pptDisplayName(_dlFilename))) : ('下载 ' + esc(_dlFilename));
             // 保存下载信息到变量，用于 renderMessages 后恢复
             window._docDownloadInfo = { url: downloadUrl, filename: _dlFilename };
             // 在当前流式消息末尾追加下载按钮
@@ -1518,7 +1525,7 @@ async function sendMessage() {
               var _docDlBar = document.createElement('div');
               _docDlBar.className = 'doc-download-bar';
               _docDlBar.setAttribute('data-doc-complete', '1');
-              var _dcLabel = _dcIsHtml ? ('下载 HTML 报告 ' + esc(_dcFilename)) : ('下载 ' + esc(_dcFilename));
+              var _dcLabel = _dcIsHtml ? ('下载 HTML 报告 ' + esc(_pptDisplayName(_dcFilename))) : ('下载 ' + esc(_dcFilename));
               _docDlBar.innerHTML = '<a href="' + esc((typeof API !== 'undefined' ? API : '') + _dcDocUrl) + '" download="' + esc(_dcFilename) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' ' + _dcLabel + '</a>';
               _streamElDl.appendChild(_docDlBar);
             }
@@ -3210,9 +3217,18 @@ var CardRenderer = (function() {
     if (status === 'format_converting') return '转换格式：' + _esc(d.source || '') + ' → ' + _esc(d.target || '');
     if (status === 'table_operating') return (d.action === 'write' ? '生成表格：' : '读取表格：') + _esc(d.filename || '');
     if (status === 'error') {
-      // error 显示原因而非裸 "error"
+      // error 显示具体原因（来自后端 _make_done_status 的 reason 字段）
       var reason = d.reason || d.message || '';
-      return reason ? '操作受限：' + _esc(reason) : '操作异常';
+      // 友好文案映射（reason 是后端 raw 错误，转成中文用户能懂的）
+      var friendly = '';
+      if (reason.indexOf('文件不存在') >= 0) {
+        friendly = '文件不存在：' + (d.filename || '') + '（文件可能在远程而非工作区）';
+      } else if (reason.indexOf('path_violation') >= 0) {
+        friendly = '路径不安全，已拒绝';
+      } else if (reason) {
+        friendly = '操作受限：' + reason;
+      }
+      return friendly || '操作异常';
     }
     // P6 #7/#4-c: 工具达上限的友好提示(替代每轮报 limit_exceeded)
     if (status === 'tool_limit_reached') {
