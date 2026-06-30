@@ -163,6 +163,19 @@ def _safe_math_eval(expression: str):
 MAX_ROUNDS = 20
 MAX_TOOL_HISTORY_CHARS = 60000  # 工具历史最大字符数（约 40000 token）
 
+# Cheap 工具：本地、不消耗 token 预算，**不计入 MAX_ROUNDS**（Patch4 v3.1 BUG#28 修复）
+# 理由：read_workspace/list_workspace 是 1-2s 本地操作，1 轮里调 10 次也不"贵"
+#      之前计入导致 LLM 反复读同一文件 19 次就触发 20 轮上限
+CHEEP_TOOLS = {
+    "read_workspace", "read_workspace_chunk",
+    "list_workspace", "list_docs",
+    "summarize_history",  # 上下文压缩，本地不调模型
+    "get_current_time",   # 本地时间
+    "calculator",          # 本地算术
+    "format_convert",      # 本地文件读取转换
+    "table_ops",           # 本地表格读写
+}
+
 # Patch4 修复 3：子类硬限制（防死循环 + 防 token 爆炸）
 # 未列出的工具（set_doc_status / list_docs / workspace 工具）不限制
 TOOL_LIMITS = {
@@ -280,8 +293,10 @@ class AgentLoop:
             return
 
         while rounds < MAX_ROUNDS:
-            rounds += 1
-            log.info("[AGENT] === 第 %d 轮 === tools=%d", rounds, len(messages))
+            # 注意：rounds 不在这里 +=1。改为：本轮工具是 expensive 才 +1，cheap 不计
+            # 这样 read_workspace 连读 19 次也不会触发 20 轮上限
+            _round_incremented = False
+            log.info("[AGENT] === 第 %d 轮 === tools=%d", rounds + 1, len(messages))
 
             # P6 #6: 检测用户终止。cloud/agent 路径原来不响应 /api/stop，
             # 用户点终止后后端继续跑完，空回复触发"Agent未能生成回复"兜底。
@@ -460,6 +475,14 @@ class AgentLoop:
                 # Patch4 修复 3：累计工具调用次数（用于子类硬限制）
                 tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
 
+                # Patch4 v3.1 BUG#28 修复：cheap 工具不计 MAX_ROUNDS 预算
+                # 多个 cheap 工具在同一轮只计 1 次（避免一次返回里调 5 个 read 算 5 轮）
+                if not _round_incremented and tool_name not in CHEEP_TOOLS:
+                    rounds += 1
+                    _round_incremented = True
+                elif tool_name in CHEEP_TOOLS:
+                    log.info("[AGENT] cheap 工具 %s 不计轮数 (当前轮数 %d)", tool_name, rounds)
+
                 # Patch4 修复 3：剩 N 轮时注入预警 hint
                 # （通过 result 的 hint 字段附加到 tool_result 消息内容）
                 rounds_left = MAX_ROUNDS - rounds
@@ -490,10 +513,49 @@ class AgentLoop:
                 self._compress_tool_history(messages)
                 yield ("agent_status", {"status": "budget_exceeded"})
 
-        # ===== 5. 轮次用完 =====
+        # ===== 5. 轮次用完 → 强制收尾 =====
+        # Patch4 v3.1 BUG#28 修复：达 MAX_ROUNDS 后不再静默退出，
+        # 注入"必须直接回答"指令后追加一轮纯对话调用（不带 tools），让 LLM 总结
         if rounds >= MAX_ROUNDS:
-            log.warning("[AGENT] 达到最大轮次 %d", MAX_ROUNDS)
+            log.warning("[AGENT] 达到最大轮次 %d，强制收尾生成总结", MAX_ROUNDS)
             yield ("agent_status", {"status": "budget_exceeded"})
+            # 仅当用户没收到任何回答时才调 LLM 收尾（避免重复）
+            if not final_text.strip():
+                try:
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "你已用完工具调用预算。**禁止再调用任何工具**。"
+                            "请基于已有信息直接给用户完整回答（不要再读文档、不要再搜）。"
+                            "如果信息不足，明确告诉用户缺什么、建议如何继续。"
+                        ),
+                    })
+                    _final_text = ""
+                    # 不传 tools，CloudEngine 走纯对话分支（不触发 FC）
+                    for phase, content in self.cloud_engine.run_with_tools(
+                        messages, tools=None,
+                    ):
+                        if phase == "text":
+                            _final_text += content
+                            yield ("text", content)
+                        elif phase == "think_token":
+                            yield ("agent_think", {"content": content})
+                        elif phase == "think_end":
+                            yield ("agent_think", {"content": ""})
+                        elif phase == "error":
+                            # API 拒绝时（tool_calls 历史的兼容性问题），降级为"已尽力"
+                            log.warning("[AGENT] 收尾调用失败: %s", str(content)[:200])
+                            break
+                    if _final_text:
+                        final_text += _final_text
+                    else:
+                        # 收尾失败时的兜底文案（避免用户看到空消息）
+                        yield ("text", "\n\n⚠️ 工具调用已用完预算（%d 轮），无法继续。\n\n"
+                                       "建议：\n- 在新消息里直接问你想知道的\n"
+                                       "- 或切换到「文档模式」生成完整报告" % MAX_ROUNDS)
+                except Exception as e:
+                    log.error("[AGENT] 收尾生成失败: %s", str(e)[:200])
+                    yield ("text", "\n\n⚠️ 达到最大轮次 %d，生成结束。" % MAX_ROUNDS)
 
         # ===== 6. 发送统计摘要 =====
         elapsed = int(time.time() - stats["start_time"])
