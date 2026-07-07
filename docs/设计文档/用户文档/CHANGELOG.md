@@ -90,6 +90,67 @@
 | ClearBox 明盒设计 | `docs/设计文档/架构与设计/v0.9.6-ClearBox明盒设计.md` |
 | step_model 设计 | `docs/设计文档/架构与设计/v0.9.6-step_model设计.md` |
 
+### 📦 v0.9.6-final 终版补丁（main 分支累积）
+
+> 0.9.6 tag 后的累积补丁，作为 v0.9.6 终版（tag = `v0.9.6-final`）发布。
+
+#### 🆕 新功能（main 分支累积）
+
+| 功能 | 说明 |
+|------|------|
+| **HTML 可视化报告** | 自包含 HTML 单文件（内联 marked.js + mermaid.js），浏览器打开即可看完整图文排版 + 可缩放拖拽图表 |
+| **PPT 演示文稿** | 自包含 HTML 单文件（内联 reveal.js），方向键翻页 / F 全屏 / `?print-pdf` 导出 PDF |
+| **mermaid 渲染失败自动修复** | `fix-mermaid` 流式接口 + 修复提示条；前端双位置提示 |
+| **上下文管理优化** | 工具调用上限分层：search_web 3 次 / search_kb 5 次 / fetch_url 5 次；进度条 + 章节指示器 |
+| **actionBar 加报告按钮** | AI 回答下方一键「生成可视化报告 / 生成 PPT」 |
+
+#### 🔧 改进（main 分支累积）
+
+| 改进 | 说明 |
+|------|------|
+| **marked 替换 regex 解析** | HTML 报告改用 marked.js v15 解析 LLM 内容；之前正则方案会把已有 HTML 标签错乱 |
+| **mermaid 缩放交互** | 滚轮缩放（0.3x~3x）/ 鼠标拖拽 / 双击复位 / 工具栏按钮 |
+| **mermaid 下载回退到 SVG** | PNG 下载有黑底+白边问题，统一回退到 SVG（XMLSerializer 序列化） |
+| **HTML 报告 CSS 升级** | 暖灰背景 + 衬线标题 + 卡片/网格/统计/标签/进度条/时间线等组件库 |
+| **PPT 字体修复** | reveal.js base font-size 42px → 用 `rem` 锁定 16px 避免 `em` 放大溢出 |
+| **滚动条改 #BFDBFE** | 与用户消息背景同色系，更协调 |
+| **引导词更白话** | 设置页引导文案重写，减少技术黑话 |
+
+#### 🐛 关键修复（main 分支累积）
+
+| Bug | 修复 |
+|-----|------|
+| HTML 报告 markdown 未渲染 | marked 集成 + `<script type="application/json">` 装 JSON + `</` 转义防 script 提前终止 |
+| HTML 报告 `IndexError: no such group` | mermaid 围栏 regex 加 `()` 捕获组 |
+| HTML 报告 mermaid 渲染失败 | 友好错误框（含源码），不自动修正（让 LLM 意识到语法错） |
+| PPT 字体过大溢出页面 | reveal.js 用 `rem` 替代 `em` + `:root { font-size: 16px }` 锁定 |
+| 上下文爆炸 400 | 历史 token 预算 12 万，从最新往回加，超预算停止 |
+| AI 反复读同一文件触发 20 轮 | cheap 工具（read_workspace 等本地操作）不计 MAX_ROUNDS |
+| AI 达 20 轮静默退出 | 强制收尾：注入「必须直接回答」指令 + 追加一轮纯对话 + 兜底文案 |
+| 错误一律显示「操作异常」 | 后端 `_make_done_status` 透传 reason，前端按 reason 分类显示（文件不存在/路径不安全/操作受限） |
+| PPT 下载文件名 `xxx.ppt.html` 难懂 | 显示成 `xxxPPT.html`（download 属性保留原文件名） |
+| chat.js 缓存导致修复不生效 | 版本号 2.73 → 2.74 强制刷前端 |
+
+#### 📚 新增文档（v0.9.6-final）
+
+| 文档 | 路径 |
+|------|------|
+| 可视化报告使用指南 | `docs/设计文档/用户文档/v0.9.6-可视化报告使用指南.md` |
+| PPT 演示文稿使用指南 | `docs/设计文档/用户文档/v0.9.6-PPT演示文稿使用指南.md` |
+| 上下文管理与工具调用 | `docs/设计文档/用户文档/v0.9.6-上下文管理与工具调用.md` |
+| HTML 报告与 PPT 架构 | `docs/设计文档/架构与设计/v0.9.6-架构-HTML报告与PPT.md` |
+| Agent 循环设计 | `docs/设计文档/架构与设计/v0.9.6-Agent循环设计.md` |
+| 常见问题 FAQ 更新（HTML 报告 / mermaid / 20 轮） | `docs/设计文档/用户文档/常见问题-FAQ.md` |
+| 故障排查更新（图表渲染失败 / 上下文爆炸） | `docs/设计文档/用户文档/故障排查.md` |
+| 用户手册更新（链接新文档） | `docs/设计文档/用户文档/用户手册.md` |
+
+#### 🔄 测试（v0.9.6-final）
+
+| 测试 | 路径 | 覆盖 |
+|------|------|------|
+| 24 项回归测试（d8fad96 之后） | `tests/test_regression_d8fad96.mjs` | HTML 报告 / PPT / mermaid / 工具硬限制 |
+| 10 项边界测试（HTML 报告生成 + 浏览器渲染） | `tests/_self_test.mjs` + `tests/_gen_selftest.py` | 空内容 / 多 mermaid / `</script>` 字面 / 表格 / 代码块 / 50KB 长内容 / LLM class |
+
 > 完整日志见 [CHANGELOG.md](../../../CHANGELOG.md)
 
 
