@@ -25,10 +25,10 @@ type cmdRebuilder func() (*exec.Cmd, context.CancelFunc)
 
 // 看门狗常量
 const (
-	wdCheckInterval = 10 * time.Second // 健康检查间隔（Patch5 P0：30s→10s，更敏感）
-	wdHTTPTimeout   = 5 * time.Second  // HTTP 健康检查超时（Patch5 P0：15s→5s，快速失败）
-	wdFailThreshold = 2                // 连续失败次数阈值（Patch5 P0：3→2，20s 触发重启）
-	wdMaxRestarts   = 3                // 每小时最大重启次数
+	wdCheckInterval = 30 * time.Second // 健康检查间隔（P7-4：10s→30s，减少推理期间的误报）
+	wdHTTPTimeout   = 10 * time.Second // HTTP 健康检查超时（P7-4：5s→10s，给模型推理留余量）
+	wdFailThreshold = 2                // 连续失败次数阈值
+	wdMaxRestarts   = 3                // 每小时最大重启次数（仅 Python 后端，模型服务由 Python 自管）
 	wdRestartWindow = 1 * time.Hour    // 滑动窗口大小
 	wdRestartDelay  = 2 * time.Second  // 重启前等待（让端口释放）
 )
@@ -133,29 +133,28 @@ func (wd *Watchdog) runCheckCycle() {
 	}
 
 	// ---- 检查 llama-server（P7-4: /api/tags → /v1/models）----
-	// 注意：llama-server 由 Python 后端管理，Go watchdog 只做健康监测不重启
+	// P7-4 架构：llama-server 由 Python 后端管理（ollamaProc=nil），
+	// Go watchdog 只做被动健康监测——不重启、不计数、不刷屏。
+	// 模型服务的自动恢复由 Python 侧 LlamaCppManager.watchdog 负责。
 	ollamaURL := fmt.Sprintf("http://%s:%d/v1/models", wd.cfg.OllamaHost, wd.cfg.OllamaPort)
 	ollamaOK, ollamaDetail := wd.healthCheckDeep(ollamaURL, "llama-server")
 
 	if ollamaOK {
-		if wd.ollamaFailCnt > 0 {
-			wd.log("INFO", "WATCHDOG", fmt.Sprintf("Ollama 健康恢复（清除 %d 次失败计数）", wd.ollamaFailCnt))
-		}
 		wd.ollamaFailCnt = 0
-		// 周期性心跳日志（与 Python 心跳合并，60s 一次）
-		if time.Now().Unix()%60 < 10 {
-			wd.log("INFO", "WATCHDOG", fmt.Sprintf("[心跳] Ollama=OK(%s)", ollamaDetail))
-		}
 	} else {
-		wd.ollamaFailCnt++
-		wd.log("WARN", "WATCHDOG", fmt.Sprintf("Ollama 健康检查失败 %d/%d (%s)", wd.ollamaFailCnt, wdFailThreshold, ollamaDetail))
-
-		if wd.ollamaFailCnt >= wdFailThreshold {
-			if wd.canRestart() {
-				// P7-4: llama-server 由 Python 后端管理，Go 不重启（ollamaProc=nil）
-				if wd.ollamaProc == nil {
-					wd.log("WARN", "WATCHDOG", "llama-server 由 Python 后端管理，Go 不重启（等待 Python 自动恢复）")
-				} else {
+		if wd.ollamaProc == nil {
+			// P7-4：模型服务由 Python 管理，Go 只记录不处理（避免刷屏）
+			wd.ollamaFailCnt++
+			if wd.ollamaFailCnt >= wdFailThreshold {
+				wd.log("INFO", "WATCHDOG", "模型服务暂时不可用（Python 后端管理，等待自动恢复）")
+				wd.ollamaFailCnt = 0
+			}
+		} else {
+			// 非 P7-4 架构（ollamaProc 不为空）：原有的重启逻辑
+			wd.ollamaFailCnt++
+			wd.log("WARN", "WATCHDOG", fmt.Sprintf("Ollama 健康检查失败 %d/%d (%s)", wd.ollamaFailCnt, wdFailThreshold, ollamaDetail))
+			if wd.ollamaFailCnt >= wdFailThreshold {
+				if wd.canRestart() {
 					wd.log("ERROR", "WATCHDOG", fmt.Sprintf("Ollama 连续失败 %d 次，触发重启", wd.ollamaFailCnt))
 					err := wd.restartProcess("Ollama", wd.ollamaProc, wd.newOllamaCmd)
 					if err != nil {
@@ -164,11 +163,11 @@ func (wd *Watchdog) runCheckCycle() {
 						wd.log("INFO", "WATCHDOG", "Ollama 重启成功")
 						wd.recordRestart()
 					}
+				} else {
+					wd.log("WARN", "WATCHDOG", fmt.Sprintf("Ollama 重启次数已达上限 %d 次/小时，跳过重启", wdMaxRestarts))
 				}
-			} else {
-				wd.log("WARN", "WATCHDOG", fmt.Sprintf("Ollama 重启次数已达上限 %d 次/小时，跳过重启", wdMaxRestarts))
+				wd.ollamaFailCnt = 0
 			}
-			wd.ollamaFailCnt = 0
 		}
 	}
 }
