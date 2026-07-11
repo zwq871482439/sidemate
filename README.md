@@ -95,17 +95,6 @@ server/
 launcher/                   ← Go Launcher
 ```
 
-### 🗺 路线图
-
-| 版本 | 状态 | 重点 |
-|------|------|------|
-| **v0.9.7** | ✅ 当前 | llama.cpp 底座 + 模型下载 + KB 引擎可选 + Apache-2.0 开源 |
-| v0.9.6 | ✅ | 三模式定型 + 知识库 + 报告/PPT |
-| v1.0.0 | 📋 计划 | 正式发布 + GitHub 仓库公开 |
-| v1.x | 📋 计划 | 桌伴云（开箱即用 API 服务） |
-
-详见 [ROADMAP](docs/ROADMAP.md)。
-
 ---
 
 <div id="english"></div>
