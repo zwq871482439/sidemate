@@ -287,12 +287,12 @@ func panelPaint(hWnd syscall.Handle) {
 
 	// === 服务状态 ===
 	sy += sc(16)
-	sy += panelDrawServiceRow(hdc, "Ollama 引擎",
+	sy += panelDrawServiceRow(hdc, "模型服务",
 		fmt.Sprintf("127.0.0.1:%d", panelState.ollamaPort),
 		panelState.ollamaAlive, sc(20), sy, pw, d)
 
 	sy += sc(12)
-	sy += panelDrawServiceRow(hdc, "FastAPI 服务",
+	sy += panelDrawServiceRow(hdc, "基础服务",
 		fmt.Sprintf("127.0.0.1:%d", panelState.serverPort),
 		panelState.serverAlive, sc(20), sy, pw, d)
 
