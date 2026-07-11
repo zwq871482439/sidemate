@@ -160,10 +160,19 @@ Core code is licensed under **Apache-2.0**. See [LICENSE](LICENSE) and [THIRD-PA
 
 ---
 
+### 🔗 Links
+
+- **Website**: [desk.deskware.cn](https://desk.deskware.cn)
+- **Wiki**: [desk.deskware.cn/wiki](https://desk.deskware.cn/wiki/) — 产品介绍、模式详解、使用场景、FAQ
+- **GitHub**: [github.com/zwq871482439/sidemate](https://github.com/zwq871482439/sidemate)
+- **Contact**: sidemate@deskware.cn
+
+---
+
 <div align="center">
 
 **桌伴 Sidemate** · 本地优先 · 隐私可控 · Apache-2.0 开源
 
-Website: [desk.deskware.cn](https://desk.deskware.cn) · Contact: sidemate@deskware.cn
+[官网](https://desk.deskware.cn) · [Wiki](https://desk.deskware.cn/wiki/) · [GitHub](https://github.com/zwq871482439/sidemate)
 
 </div>
