@@ -2391,7 +2391,9 @@ var CardRenderer = (function() {
 
     // kb_sources 事件（检索来源）
     if (t === 'kb_sources') {
-      _setSourcesOutput('search', d.sources);
+      if (typeof CardRenderer !== 'undefined' && CardRenderer.setSourcesOutput) {
+        CardRenderer.setSourcesOutput('search', d.sources);
+      }
       return;
     }
 
@@ -2408,7 +2410,9 @@ var CardRenderer = (function() {
     }
     if (t === 'sources' && d.channel) {
       // 并行模式的检索来源（channel=local）
-      _setSourcesOutput('retrieve', d.sources);
+      if (typeof CardRenderer !== 'undefined' && CardRenderer.setSourcesOutput) {
+        CardRenderer.setSourcesOutput('retrieve', d.sources);
+      }
       _handleParallelEvent('sources', d);
       return;
     }
@@ -3363,7 +3367,9 @@ var CardRenderer = (function() {
         return;
       }
       _materializeCurrentUnit();
-    }
+    },
+    // P7: 暴露 _setSourcesOutput 供全局 SSE handler 调用（kb_sources 事件渲染检索来源）
+    setSourcesOutput: _setSourcesOutput
   };
 })();
 
