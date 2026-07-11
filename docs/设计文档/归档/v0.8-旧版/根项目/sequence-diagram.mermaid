@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant Frontend as 前端
+    participant ChatRouter as chat.py
+    participant ModelMgr as ModelManager
+    participant StreamEng as StreamEngine
+    participant PromptBld as PromptBuilder
+    participant Ollama as Ollama API
+
+    Frontend->>ChatRouter: POST /api/chat/stream {message, history, ...}
+    ChatRouter->>ModelMgr: chat_stream(message, model, ...)
+    
+    ModelMgr->>StreamEng: run(message, model, max_tokens, history, ...)
+    
+    StreamEng->>StreamEng: 任务分类 (task_classifier)
+    StreamEng-->>ChatRouter: yield ("task_type", (tt, conf))
+    
+    StreamEng->>PromptBld: build(message, history, ...)
+    PromptBld-->>StreamEng: messages = [{role, content}, ...]
+    
+    StreamEng->>StreamEng: generate_queue.submit(priority="high")
+    
+    StreamEng->>Ollama: POST /v1/chat/completions (stream=true)
+    Note right of StreamEng: httpx.stream("POST", url, json=body)
+    
+    loop SSE lines
+        alt reasoning token
+            Ollama-->>StreamEng: delta: {reasoning_content: "思考中..."}
+            StreamEng->>StreamEng: 累积 reasoning_buffer
+            Note over StreamEng: 不 yield，等待思考结束
+        else 首次正文 token
+            Ollama-->>StreamEng: delta: {content: "你好"}
+            StreamEng-->>ChatRouter: yield ("fold", reasoning_buffer)
+            StreamEng-->>ChatRouter: yield ("text", "你好")
+            ChatRouter-->>Frontend: data: {"type": "fold", "think_len": 1234}
+            ChatRouter-->>Frontend: data: {"type": "token", "content": "你好"}
+        else 后续正文 token
+            Ollama-->>StreamEng: delta: {content: "世界！"}
+            StreamEng-->>ChatRouter: yield ("text", "世界！")
+            ChatRouter-->>Frontend: data: {"type": "token", "content": "世界！"}
+        end
+    end
+    
+    Ollama-->>StreamEng: finish_reason: "stop"
+    StreamEng->>StreamEng: generate_queue.release(ticket)
+    
+    ChatRouter->>ChatRouter: 保存对话到 chat 文件
+    ChatRouter-->>Frontend: data: {"type": "done", "model": "qwen3.5-4b", ...}
+    ChatRouter-->>Frontend: data: [DONE]

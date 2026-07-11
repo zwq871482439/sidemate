@@ -1,0 +1,261 @@
+                    桌伴 Sidemate — 第三方组件声明
+                    Third-Party Notices
+
+本文件列出了桌伴（Sidemate）中使用的第三方开源组件及其许可协议。
+各组件的著作权归其各自作者所有。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MIT License 组件
+
+以下组件使用 MIT License 发布。版权声明按要求保留。
+
+  - FastAPI (Sebastián Ramírez)
+  - Uvicorn
+  - Starlette
+  - Pydantic
+  - Jinja2
+  - Click
+  - itsdangerous
+  - MarkupSafe
+  - httpcore
+  - sniffio
+  - anyio
+  - h11
+  - jieba
+  - openpyxl
+  - python-docx
+  - python-pptx
+  - Pillow (MIT-CMU License)
+  - python-multipart
+  - watchfiles
+  - typing_extensions
+  - annotated-types
+  - pdfplumber
+  - beautifulsoup4
+  - pydot
+  - onnxruntime (Microsoft Corporation)
+  - ctranslate2 (OpenNMT)
+  - charset-normalizer
+  - PyYAML
+  - Rich
+  - six
+  - idna
+  - striprtf (MIT License, 用于 RTF 文档解析)
+  - curl_cffi (lexiforest, MIT License, 捆绑 libcurl 实现浏览器 TLS 指纹伪装，用于搜索引擎反爬)
+
+MIT License 原文：
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Apache License 2.0 组件
+
+以下组件使用 Apache License 2.0 发布。
+
+  - transformers (Hugging Face)
+  - sentence-transformers (UKPLab)
+  - huggingface-hub
+  - accelerate
+  - safetensors
+  - tokenizers
+  - optimum
+  - optimum-intel (Intel Corporation)
+  - rank_bm25
+  - flatbuffers (Google)
+  - requests
+  - tzdata
+  - FlagEmbedding (BAAI, Apache License 2.0, 用于 BGE-M3 向量模型推理)
+  - bge-reranker-v2-m3 / bge-reranker-large (BAAI, Apache License 2.0, 用于知识库检索精排)
+  - aiofiles (Apache License 2.0, 用于知识库上传的流式文件写入)
+
+Apache License 2.0 通知要求：
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BSD License 组件
+
+以下组件使用 BSD 许可协议发布。
+
+  BSD-3-Clause:
+  - NumPy
+  - scikit-learn
+  - scipy
+  - pandas
+  - torch (Meta Platforms, Inc.)
+  - httpx (Encode OSS Ltd)
+  - lxml
+  - protobuf (Google)
+  - psutil
+  - protobuf
+  - threadpoolctl
+  - mpmath
+  - sympy
+  - python-dotenv
+  - pypdfium2
+
+  BSD-2-Clause:
+  - regex
+  - mammoth
+  - XlsxWriter
+  - et_xmlfile
+
+BSD 3-Clause License 原文：
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+  3. Neither the name of the copyright holder nor the names of its contributors
+     may be used to endorse or promote products derived from this software
+     without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MPL-2.0 / 双许可组件
+
+以下组件使用 Mozilla Public License 2.0 发布。
+
+  - certifi (Mozilla CA Certificate Bundle) — MPL-2.0
+  - tqdm — MPL-2.0 AND MIT（双许可，本软件按 MIT 条款使用）
+
+MPL-2.0 说明：
+  本软件以未修改的原版形式分发上述组件。根据 MPL-2.0 的条款，
+  使用未修改版本的二进制分发不触发源代码公开义务。
+  tqdm 为双许可组件（MPL-2.0 AND MIT），本软件选择按 MIT 条款使用。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PSF License 组件
+
+  - pip
+  - setuptools
+  - wheel
+  - pywin32
+
+Python Software Foundation License 属于 permissive license，
+允许商业使用和分发。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+其他 Permissive License 组件
+
+  - python-dateutil — Dual License (BSD / Apache)
+  - sse-starlette — BSD
+  - pluggy — MIT
+  - colorama — BSD
+  - pycparser — BSD
+  - cffi — MIT
+  - av — BSD
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+模型组件
+
+  - Qwen3.5-4B / Qwen3.5-8B (通义千问)
+    版权所有：阿里巴巴集团
+    许可协议：Apache License 2.0（纯 Apache-2.0，无附加限制条款）
+    来源：https://huggingface.co/Qwen
+    商用：允许（含商业分发、私有化部署、模型微调再分发）
+    商标注意：Apache-2.0 不授予 "Qwen" / "通义千问" 商标使用权。
+              本软件在功能层面使用模型，但不得在产品名称/宣传中暗示
+              阿里巴巴官方背书或商标授权。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+非 Python 组件
+
+  - Ollama
+    版权所有：Ollama, Inc.
+    许可协议：MIT License
+    来源：https://github.com/ollama/ollama
+
+  - Go Launcher (Sidemate.exe)
+    版权所有：Sidemate Team
+    许可协议：本 EULA 管辖
+    说明：自研组件，非第三方。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Copyleft 许可组件（GPL / AGPL / MPL）
+
+⚠️ 重要法律提示：以下组件使用强 Copyleft 许可，具有传染性。使用、修改或再分发
+   这些组件（或与之链接）时，必须遵守相应许可的开源要求。详见各许可原文。
+
+  - orjson (MPL-2.0 AND (Apache-2.0 OR MIT), JSON 高性能序列化)
+    许可协议：Mozilla Public License 2.0
+    特别要求：MPL 为文件级弱传染——修改 MPL 文件需开源修改部分。
+    来源：https://github.com/ijl/orjson
+    状态：间接依赖（某传递依赖拉入），项目代码无直接 import。
+
+  - tqdm (MPL-2.0 AND MIT, 进度条显示)
+    许可协议：Mozilla Public License 2.0 / MIT (双许可)
+    来源：https://github.com/tqdm/tqdm
+
+  - certifi (Mozilla Public License 2.0, Mozilla CA 证书包)
+    许可协议：MPL-2.0（仅证书数据部分，非代码）
+
+  - CairoSVG (LGPL-3.0-or-later, SVG → PNG 渲染)
+    许可协议：GNU Lesser General Public License v3 or later
+    来源：https://github.com/Kozea/CairoSVG
+    状态：原 installer/generate_icons.py 用作 SVG fallback。
+    2026-06-28 许可证审计：installer/ 改强制 logo.jpg 路径，已移除 cairosvg import。
+    本组件不再进入构建期或运行时依赖。
+
+  - paramiko (LGPL-2.1, SSH 客户端)
+    许可协议：GNU Lesser General Public License v2.1
+    来源：https://github.com/paramiko/paramiko
+    状态：requirements.txt 未声明；site-packages 仅作为其他包传递依赖存在。
+    项目代码无直接 import。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+本声明最后更新：2026年6月28日（0.9.6 首发重发 — 218 commit 累积）
+
+如需获取任何第三方组件的完整许可协议文本或源代码，请联系：
+sidemate@deskware.cn

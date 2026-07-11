@@ -1,0 +1,164 @@
+classDiagram
+    direction TB
+
+    %% ── 上下文数据类 ──
+    class StreamContext {
+        +str message
+        +str model_name
+        +Optional~int~ max_tokens
+        +str chat_file
+        +List~dict~ history_raw
+        +str action_mode
+        +Optional~str~ file_path
+        +str ai_mode
+        +object mgr
+        +object kb
+        +str prompt
+        +Optional~List~dict~~ llm_history
+        +Optional~str~ context_cache
+        +str model_choice
+        +dict body
+        +bool is_kb_compare
+        +List~dict~ memory_local
+        +float _pipeline_t0
+    }
+
+    class EngineResult {
+        +str raw_text
+        +str response_text
+        +str think_content
+        +bool think_folded
+        +str saved_task_type
+        +dict token_stats
+    }
+
+    %% ── 管道接口 ──
+    class PipelineFactory {
+        +create_pipeline(ctx) Generator
+    }
+
+    class LocalPipeline {
+        +run_local_pipeline(ctx) Generator
+    }
+    class CloudPipeline {
+        +run_cloud_pipeline(ctx) Generator
+    }
+    class ComparePipeline {
+        +run_compare_pipeline(ctx) Generator
+    }
+    class ParallelPipeline {
+        +run_parallel_pipeline(ctx) Generator
+        -_run_local_column(ctx, query, q, model, local_history) void
+        -_run_cloud_column(ctx, question, cloud_history, q) void
+        -_build_local_history(kb_history) List
+        -_build_cloud_history(kb_history) List
+        -_sse_channel_event(channel, type, data) str
+        -_sse_progress(step_id, status) str
+    }
+
+    %% ── 配置与 Prompt ──
+    class Prompts {
+        +PARALLEL_SYSTEM_PROMPT: str
+        +MERGE_FUSION_PROMPT: str
+        +KB_USER_PROMPT_TEMPLATE: str
+        +KB_SYSTEM_PROMPT_TEMPLATE: str
+        +CLOUD_KB_SYSTEM_PROMPT: str
+        +get_module_info() dict
+    }
+
+    class SettingsSystemRouter {
+        +GET /api/parallel/config
+        +POST /api/parallel/config
+        +GET /api/resource-info
+    }
+
+    class KbRouter {
+        +GET /api/kb/documents
+        +POST /api/kb/upload
+        +DELETE /api/kb/documents/{id}
+        +GET /api/kb/tags
+        +POST /api/kb/tags/update
+        +POST /api/kb/search
+    }
+
+    class ChatRouter {
+        +POST /api/chat/stream
+        +GET /api/chats
+        +POST /api/chats/new
+        +DELETE /api/chats/{name}
+    }
+
+    %% ── 前端核心对象 ──
+    class SidemateApp {
+        -str _currentMode
+        -str _currentAction
+        -object _agentTimelineEl
+        -List _agentTimelineSteps
+        +switchMode(mode) void
+        +showModeConfirmModal(mode, callback) void
+        +renderAgentTimeline(steps) void
+        +updateTokenBar(round, history, total, limit) void
+        +updatePlaceholder(mode, action) str
+    }
+
+    class ModeSelector {
+        -str activeMode
+        +onModeClick(mode) void
+        +updateButtonStates() void
+        +render() void
+    }
+
+    class AgentTimeline {
+        -HTMLElement containerEl
+        -List steps
+        +addStep(step) void
+        +updateStep(id, status) void
+        +expandStep(id) void
+        +renderFromHistory(timelineData) void
+    }
+
+    class TokenBar {
+        -int roundTokens
+        -int historyTokens
+        -int totalLimit
+        -str status
+        +update(round, history, limit, status) void
+        +render() void
+    }
+
+    class KnowledgeBaseView {
+        -HTMLElement tagTreeEl
+        -HTMLElement cardGridEl
+        -HTMLElement overviewPanelEl
+        +loadTagTree() void
+        +filterByTag(tagId) void
+        +renderCards(docs) void
+        +showOverview() void
+    }
+
+    class SettingsView {
+        -str activeTab
+        +switchTab(tabId) void
+        +renderGeneralTab() void
+        +renderCloudTab() void
+        +renderKbTab() void
+        +renderPrivacyTab() void
+        +renderAboutTab() void
+    }
+
+    %% ── 关系 ──
+    PipelineFactory --> LocalPipeline : ai_mode="local"
+    PipelineFactory --> CloudPipeline : ai_mode="cloud"
+    PipelineFactory --> ComparePipeline : is_kb_compare=true
+    PipelineFactory --> ParallelPipeline : ai_mode="parallel"
+    PipelineFactory ..> StreamContext : 使用
+    LocalPipeline ..> StreamContext : 使用
+    CloudPipeline ..> StreamContext : 使用
+    ParallelPipeline ..> StreamContext : 使用
+    ParallelPipeline ..> Prompts : 引用
+    LocalPipeline ..> Prompts : 引用
+    SidemateApp *-- ModeSelector
+    SidemateApp *-- AgentTimeline
+    SidemateApp *-- TokenBar
+    SidemateApp *-- KnowledgeBaseView
+    SidemateApp *-- SettingsView

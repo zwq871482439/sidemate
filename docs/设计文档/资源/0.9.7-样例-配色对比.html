@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>0.9.7 配色方案对比</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #2a2a2a;
+    color: #1f2937;
+    padding: 24px;
+  }
+  h1 { color:#fff; font-size: 22px; margin-bottom: 4px; }
+  .sub { color:#9ca3af; font-size: 13px; margin-bottom: 24px; }
+
+  .scheme-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+
+  .scheme {
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  }
+  .scheme-header {
+    padding: 16px 20px;
+    color: #fff;
+  }
+  .scheme-header h2 { font-size: 16px; margin-bottom: 2px; }
+  .scheme-header .desc { font-size: 12px; opacity: .8; }
+  .scheme-header .tag {
+    display:inline-block; font-size:10px;
+    padding:2px 8px; border-radius:10px;
+    background:rgba(255,255,255,.2); margin-top:6px;
+  }
+
+  /* ===== 方案 A: 深蓝主调（现状） ===== */
+  .scheme-a .scheme-header { background: linear-gradient(135deg, #1e3a5f, #2d4a6f); }
+  .scheme-a .phone { background: #faf9f6; }
+
+  /* ===== 方案 B: 琥珀主调 ===== */
+  .scheme-b .scheme-header { background: linear-gradient(135deg, #8a5a2f, #c9976c); }
+  .scheme-b .phone { background: #faf9f6; }
+
+  /* ===== 模拟手机界面 ===== */
+  .phone {
+    padding: 16px;
+    min-height: 460px;
+  }
+  .phone-header {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 12px; border-bottom: 1px solid #e8e7e2;
+    margin-bottom: 12px;
+  }
+  .phone-logo {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: bold; color: #fff;
+  }
+  .phone-title { font-size: 14px; font-weight: 600; }
+  .phone-sub { font-size: 11px; color: #6b7280; }
+
+  .msg { margin-bottom: 10px; max-width: 80%; }
+  .msg-user {
+    margin-left: auto;
+    padding: 8px 12px; border-radius: 12px 12px 2px 12px;
+    font-size: 13px;
+  }
+  .msg-ai {
+    padding: 8px 12px; border-radius: 12px 12px 12px 2px;
+    font-size: 13px; background: #f3f2ed;
+  }
+
+  .chip {
+    display:inline-block; font-size:10px; padding:2px 8px;
+    border-radius:10px; margin-right:4px; font-weight:500;
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 8px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    margin: 4px 4px 0 0;
+  }
+  .btn-primary { color: #fff; }
+  .btn-ghost {
+    background: #fff; border: 1px solid #d9d9d3; color: #4b5563;
+  }
+
+  /* 方案 A 配色 */
+  .scheme-a .phone-logo { background: #2d4a6f; }
+  .scheme-a .msg-user { background: #EFF6FF; color: #1e3a5f; }
+  .scheme-a .btn-primary { background: #2d4a6f; }
+  .scheme-a .btn-primary:hover { background: #1e3a5f; }
+  .scheme-a .chip-reasoning { background:#dbeafe; color:#1e40af; }
+  .scheme-a .accent-bar { background: #2d4a6f; }
+
+  /* 方案 B 配色 */
+  .scheme-b .phone-logo { background: #c9976c; }
+  .scheme-b .msg-user { background: #fdf6ec; color: #6b4423; }
+  .scheme-b .btn-primary { background: #c9976c; }
+  .scheme-b .btn-primary:hover { background: #b88553; }
+  .scheme-b .chip-reasoning { background:#fef3c7; color:#92400e; }
+  .scheme-b .accent-bar { background: #c9976c; }
+
+  /* ===== 色卡 ===== */
+  .palette {
+    padding: 12px 16px 16px;
+    background: #fff;
+  }
+  .palette h3 { font-size: 12px; color: #6b7280; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; }
+  .swatch-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .swatch {
+    flex: 1; min-width: 60px;
+    border-radius: 6px; padding: 8px;
+    font-size: 10px; color: #fff;
+    text-align: center;
+  }
+  .swatch .name { font-weight: 600; font-size: 11px; }
+  .swatch .hex { opacity: .85; }
+
+  /* ===== 暗色模式预览 ===== */
+  .dark-demo {
+    background: #1a1a1a;
+    color: #e5e7eb;
+    padding: 16px;
+    border-radius: 8px;
+    margin-top: 12px;
+  }
+  .dark-demo h4 { font-size: 11px; color:#9ca3af; margin-bottom:8px; text-transform: uppercase;}
+  .scheme-a .dark-demo .msg-user-dark { background:#1e3a5f; color:#c5d0e0; padding:8px 12px; border-radius:8px; font-size:12px; max-width:80%; margin-left:auto; margin-bottom:6px;}
+  .scheme-a .dark-demo .msg-ai-dark { background:#2a2a2a; color:#d1d5db; padding:8px 12px; border-radius:8px; font-size:12px; max-width:80%; margin-bottom:6px;}
+  .scheme-b .dark-demo .msg-user-dark { background:#6b4423; color:#f5ebe0; padding:8px 12px; border-radius:8px; font-size:12px; max-width:80%; margin-left:auto; margin-bottom:6px;}
+  .scheme-b .dark-demo .msg-ai-dark { background:#2a2a2a; color:#d1d5db; padding:8px 12px; border-radius:8px; font-size:12px; max-width:80%; margin-bottom:6px;}
+
+  /* ===== 优劣对比表 ===== */
+  .compare-table {
+    background:#fff; border-radius:12px; padding:24px;
+    margin-top:8px;
+  }
+  .compare-table h3 { font-size: 15px; margin-bottom: 12px; }
+  .compare-table table { width:100%; border-collapse:collapse; font-size:12px;}
+  .compare-table th { background:#f3f2ed; padding:8px; text-align:left; border:1px solid #e8e7e2;}
+  .compare-table td { padding:8px; border:1px solid #e8e7e2; vertical-align:top;}
+  .compare-table .pa { color:#1e3a5f; font-weight:600;}
+  .compare-table .pb { color:#8a5a2f; font-weight:600;}
+
+</style>
+</head>
+<body>
+
+<h1>0.9.7 配色方案对比</h1>
+<p class="sub">深蓝主调（现状）vs 琥珀主调（Design-Tokens 文档定义）—— 看看真实 UI 里哪个更顺眼</p>
+
+<div class="scheme-row">
+
+  <!-- ===== 方案 A: 深蓝主调 ===== -->
+  <div class="scheme scheme-a">
+    <div class="scheme-header">
+      <h2>方案 A · 深蓝主调 <span class="tag">现状</span></h2>
+      <div class="desc">代码现状：--accent-color = #2d4a6f（深蓝）。冷色、科技、专业</div>
+    </div>
+    <div class="phone">
+      <div class="phone-header">
+        <div class="phone-logo">桌</div>
+        <div>
+          <div class="phone-title">桌伴 Sidemate</div>
+          <div class="phone-sub">在线 · GPT-4o</div>
+        </div>
+      </div>
+
+      <div class="msg msg-user">帮我总结这份合同的重点</div>
+      <div class="msg msg-ai">
+        <div style="margin-bottom:4px;">
+          <span class="chip chip-reasoning">思考</span>
+          <span class="chip" style="background:#dcfce7;color:#166534;">文档</span>
+        </div>
+        我读完了这份 12 页的租赁合同，以下是 5 个关键条款...
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary">导出报告</button>
+        <button class="btn btn-ghost">复制</button>
+      </div>
+
+      <div class="accent-bar" style="height:3px; border-radius:2px; margin-top:16px;"></div>
+    </div>
+
+    <div class="palette">
+      <h3>主色板</h3>
+      <div class="swatch-row">
+        <div class="swatch" style="background:#1e3a5f;"><div class="name">深蓝 900</div><div class="hex">#1e3a5f</div></div>
+        <div class="swatch" style="background:#2d4a6f;"><div class="name">深蓝 700</div><div class="hex">#2d4a6f</div></div>
+        <div class="swatch" style="background:#4a6a8f;"><div class="name">深蓝 500</div><div class="hex">#4a6a8f</div></div>
+        <div class="swatch" style="background:#c5d0e0;color:#1f2937;"><div class="name">浅蓝 200</div><div class="hex">#c5d0e0</div></div>
+      </div>
+      <h3>状态色</h3>
+      <div class="swatch-row">
+        <div class="swatch" style="background:#059669;"><div class="name">成功</div><div class="hex">#059669</div></div>
+        <div class="swatch" style="background:#d97706;"><div class="name">警告</div><div class="hex">#d97706</div></div>
+        <div class="swatch" style="background:#b91c1c;"><div class="name">错误</div><div class="hex">#b91c1c</div></div>
+        <div class="swatch" style="background:#4a6a8f;"><div class="name">信息</div><div class="hex">#4a6a8f</div></div>
+      </div>
+    </div>
+
+    <div class="dark-demo">
+      <h4>暗色模式预览</h4>
+      <div class="msg-user-dark">用户消息长啥样</div>
+      <div class="msg-ai-dark">AI 回复长啥样</div>
+    </div>
+  </div>
+
+  <!-- ===== 方案 B: 琥珀主调 ===== -->
+  <div class="scheme scheme-b">
+    <div class="scheme-header">
+      <h2>方案 B · 琥珀主调 <span class="tag">文档定义</span></h2>
+      <div class="desc">Design-Tokens.md 定义：--accent-default = #c9976c（琥珀）。暖色、亲和、有温度</div>
+    </div>
+    <div class="phone">
+      <div class="phone-header">
+        <div class="phone-logo">桌</div>
+        <div>
+          <div class="phone-title">桌伴 Sidemate</div>
+          <div class="phone-sub">在线 · GPT-4o</div>
+        </div>
+      </div>
+
+      <div class="msg msg-user">帮我总结这份合同的重点</div>
+      <div class="msg msg-ai">
+        <div style="margin-bottom:4px;">
+          <span class="chip chip-reasoning">思考</span>
+          <span class="chip" style="background:#dcfce7;color:#166534;">文档</span>
+        </div>
+        我读完了这份 12 页的租赁合同，以下是 5 个关键条款...
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary">导出报告</button>
+        <button class="btn btn-ghost">复制</button>
+      </div>
+
+      <div class="accent-bar" style="height:3px; border-radius:2px; margin-top:16px;"></div>
+    </div>
+
+    <div class="palette">
+      <h3>主色板</h3>
+      <div class="swatch-row">
+        <div class="swatch" style="background:#6b4423;"><div class="name">深棕 900</div><div class="hex">#6b4423</div></div>
+        <div class="swatch" style="background:#8a5a2f;"><div class="name">琥珀 700</div><div class="hex">#8a5a2f</div></div>
+        <div class="swatch" style="background:#c9976c;"><div class="name">琥珀 600</div><div class="hex">#c9976c</div></div>
+        <div class="swatch" style="background:#deb893;color:#1f2937;"><div class="name">浅琥珀</div><div class="hex">#deb893</div></div>
+      </div>
+      <h3>状态色</h3>
+      <div class="swatch-row">
+        <div class="swatch" style="background:#059669;"><div class="name">成功</div><div class="hex">#059669</div></div>
+        <div class="swatch" style="background:#d97706;"><div class="name">警告</div><div class="hex">#d97706</div></div>
+        <div class="swatch" style="background:#b91c1c;"><div class="name">错误</div><div class="hex">#b91c1c</div></div>
+        <div class="swatch" style="background:#c9976c;"><div class="name">信息</div><div class="hex">#c9976c</div></div>
+      </div>
+    </div>
+
+    <div class="dark-demo">
+      <h4>暗色模式预览</h4>
+      <div class="msg-user-dark">用户消息长啥样</div>
+      <div class="msg-ai-dark">AI 回复长啥样</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== 对比表 ===== -->
+<div class="compare-table">
+  <h3>📊 深蓝 vs 琥珀 — 怎么选？</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:18%;">对比维度</th>
+        <th style="width:41%;" class="pa">方案 A · 深蓝（现状）</th>
+        <th style="width:41%;" class="pb">方案 B · 琥珀（文档定义）</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>气质</td>
+        <td>冷色 · 科技感 · 专业 · 工具感<br><span style="color:#6b7280;">像 Linear、Notion、VS Code</span></td>
+        <td>暖色 · 亲和 · 有温度 · 陪伴感<br><span style="color:#6b7280;">像 Stripe、Headspace、Calm</span></td>
+      </tr>
+      <tr>
+        <td>与"桌伴"定位</td>
+        <td>偏"工具"——用户觉得是高效 AI 助手</td>
+        <td>偏"陪伴"——用户觉得是有温度的助手</td>
+      </tr>
+      <tr>
+        <td>当前 Logo 匹配</td>
+        <td>⚠️ Logo 是暖色调（橙黄米白），主色冷蓝 → <b>有点割裂</b></td>
+        <td>✅ Logo 暖色调与琥珀主色 → <b>视觉统一</b></td>
+      </tr>
+      <tr>
+        <td>代码改动量</td>
+        <td><b>零改动</b>（现状就是深蓝）</td>
+        <td>需改 --accent-color、按钮、链接、chip 等约 15-20 处 CSS 变量</td>
+      </tr>
+      <tr>
+        <td>暗色模式适配</td>
+        <td>深蓝在暗色背景下对比度天然好</td>
+        <td>琥珀在暗色背景下需调亮（已验证 #c9976c → #deb893 可行）</td>
+      </tr>
+      <tr>
+        <td>文档一致性</td>
+        <td>⚠️ 需改 Design-Tokens.md（文档说琥珀是主色）</td>
+        <td>✅ 跟 Design-Tokens.md 一致</td>
+      </tr>
+      <tr>
+        <td>长期风险</td>
+        <td>深蓝科技感，但市面上太多同类产品用蓝（同质化）</td>
+        <td>琥珀较独特，辨识度高，但暖色易显"廉价"需小心调</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top:20px; padding:16px; background:#f3f2ed; border-radius:8px; font-size:13px;">
+    <b>💡 第三种可能 · 双色并存</b><br>
+    其实你现在的色系已经是"深蓝(主) + 琥珀(强调)"并存。问题不是"选哪个当主色"，而是
+    <b>把琥珀真正用起来</b>——让 CTA 按钮（导出/生成）用琥珀，让导航和文字链保持深蓝。
+    这样既有科技感（蓝），又有温度（琥珀点缀），还跟 Logo 统一。这种"主蓝 + 点缀琥珀"方案，
+    代码改动比"全换琥珀"小得多。
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,70 @@
+# ====================================================================
+# Sidemate .gitignore — 源码进 git，运行时资产排除
+# ====================================================================
+
+# ====== 运行时资产（~5GB，固定一份不进 git）======
+python/
+models/
+lib/
+ollama.exe
+Sidemate.exe
+
+# ====== 用户数据（运行时生成）======
+# 统一数据目录（D1 重构后，所有用户数据在项目根 data/ 下）
+data/
+
+# ====== Python 缓存 ======
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# ====== Go 编译产物 ======
+launcher/*.exe
+
+# ====== 打包输出 ======
+output/
+dist/
+
+# ====== IDE / 编辑器 ======
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ====== 系统文件 ======
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ====== IDE / 工具工作文件 ======
+.codebuddy/
+.claude/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ====== 临时文件 ======
+*.tmp
+*.bak
+*.log
+
+# ====== Node 依赖（测试用，不入库）======
+node_modules/
+
+# ====== 测试产物（截图/探针脚本/响应日志，运行时生成）======
+tests/screenshots/
+tests/_probe.mjs
+tests/response_log.md
+tests/test_v2_import.py
+
+# ====== IDE/工具记忆文件（非项目代码）======
+.codebuddy/
+.claude/
+tests/_selftest_out/
+.zcode/

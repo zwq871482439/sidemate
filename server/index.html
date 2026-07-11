@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>桌伴 Sidemate</title>
+<link rel="icon" type="image/x-icon" href="/static/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/img/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/img/icon-16.png">
+<link rel="apple-touch-icon" sizes="256x256" href="/static/img/icon-256.png">
+<!-- KaTeX：轻量 LaTeX 公式渲染 -->
+<link rel="stylesheet" href="/static/vendor/katex.min.css" onerror="this.remove()">
+<script src="/static/vendor/katex.min.js" onerror="console.warn('[KaTeX] 本地文件未找到，LaTeX 公式将以源码显示')"></script>
+<!-- highlight.js 代码高亮 -->
+<link rel="stylesheet" href="/static/vendor/highlight.min.css" id="hljsTheme">
+<script src="/static/vendor/highlight.min.js"></script>
+<!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/mermaid.min.js"></script>
+<link rel="stylesheet" href="/static/css/main.css?v=2.79">
+</head>
+<body>
+
+<!-- 离线横幅 -->
+<div id="offlineBanner" class="offline-banner">
+  <span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M7 2L1 12h12L7 2z" stroke="currentColor" stroke-width="1.2"/><path d="M7 6v2M7 10h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>️ 无法连接到后端服务，请确认服务已启动</span>
+  <button class="retry-btn" onclick="retryConnect()">重试连接</button>
+  <button class="dismiss-btn" onclick="dismissOfflineBanner()"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+</div>
+<!-- Toast 容器 -->
+<div id="toastContainer" class="toast-container"></div>
+
+<div id="app">
+  <!-- 标题 + Tab导航 + 模式 合并为一行 -->
+  <div class="header header-merged">
+    <img src="/static/img/logo.jpg" alt="Logo" style="height:26px;width:26px;border-radius:6px;margin-right:8px;object-fit:cover">
+    <h1>桌伴 · Sidemate</h1>
+    <!-- Tab 导航（紧挨标题，连体胶囊）-->
+    <div class="tabs-nav tabs-nav-inline">
+      <button class="active" onclick="switchTab('chat',this)">对话</button>
+      <button onclick="switchTab('qa',this)">知识库</button>
+      <button onclick="switchTab('settings',this)">设置</button>
+    </div>
+    <span style="flex:1"></span>
+    <!-- 三段模式按钮组（右侧）-->
+    <div class="mode" id="chatMode">
+      <button class="sel" data-mode="offline">离线</button>
+      <button data-mode="online">在线</button>
+      <button data-mode="parallel">并行</button>
+    </div>
+  </div>
+
+  <!-- 对话 Tab -->
+  <div id="tab-chat" class="tab-content active" style="position:relative">
+    <!-- 模型未加载遮罩（覆盖对话区域含 input 栏） -->
+    <!-- 两种状态：首次启动→三步引导 / 非首次无模型→锁屏 -->
+    <div id="chatModelOverlay" class="overlay-card-wrapper" style="display:none">
+      <!-- 首次启动引导 -->
+      <div class="chat-overlay-welcome" id="chatOverlayWelcome" style="display:none">
+        <div style="text-align:center;margin-bottom:18px">
+          <img src="/static/img/logo.jpg" alt="桌伴" style="width:52px;height:52px;border-radius:14px;margin-bottom:6px">
+          <h2 style="font-size:1.15em;font-weight:600;margin:0 0 4px 0;color:var(--text-primary)">欢迎使用桌伴</h2>
+          <p style="font-size:.82em;color:var(--text-secondary);margin:0;line-height:1.5">纯本地的 AI 智能助手，三步开始使用</p>
+        </div>
+        <div style="max-width:380px;width:100%">
+          <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--accent-color);color:var(--text-on-accent, #fff);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">1</div>
+            <div style="flex:1">
+              <div style="font-size:.85em;font-weight:600;color:var(--text-primary);margin-bottom:2px">启动 AI</div>
+              <div style="font-size:.75em;color:var(--text-secondary);line-height:1.5">前往设置页面，点击「启动模型」开始使用。</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg-tertiary);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;border:1px solid var(--border-color)">2</div>
+            <div style="flex:1">
+              <div style="font-size:.85em;font-weight:600;color:var(--text-primary);margin-bottom:2px">开始对话</div>
+              <div style="font-size:.75em;color:var(--text-secondary);line-height:1.5">模型就绪后回到这里，输入问题即可获得 AI 回答。</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--bg-tertiary);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;border:1px solid var(--border-color)">3</div>
+            <div style="flex:1">
+              <div style="font-size:.85em;font-weight:600;color:var(--text-primary);margin-bottom:2px">可选：配置云端 AI</div>
+              <div style="font-size:.75em;color:var(--text-secondary);line-height:1.5">在「设置」页面填入云端 API 地址和密钥，解锁更多云端模型能力。</div>
+            </div>
+          </div>
+        </div>
+        <button onclick="switchTab('settings', this)" style="margin-top:18px;padding:7px 24px;border:1px solid var(--accent-color);border-radius:6px;background:var(--accent-color);color:var(--text-on-accent, #fff);cursor:pointer;font-size:.88em;font-weight:600">前往设置 →</button>
+      </div>
+      <!-- 非首次锁屏：Linear 卡片 -->
+      <div class="chat-overlay-lock" id="chatOverlayLock" style="display:none">
+        <div class="overlay-card">
+          <div class="overlay-card-illustration">
+            <svg viewBox="0 0 64 64" fill="none"><rect x="6" y="12" width="52" height="36" rx="6" stroke="#1e3a5f" stroke-width="2"/><rect x="18" y="18" width="28" height="24" rx="3" stroke="#1e3a5f" stroke-width="1.5"/><path d="M22 28h20M22 33h16" stroke="#1e3a5f" stroke-width="1.5" stroke-linecap="round"/><circle cx="43" cy="40" r="5" stroke="#c9976c" stroke-width="1.5"/><path d="M46 43l5 5" stroke="#c9976c" stroke-width="1.5" stroke-linecap="round"/><path d="M10 6l4-4M54 6l-4-4" stroke="rgba(30,58,95,.15)" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <p class="overlay-card-title">模型未预热</p>
+          <p class="overlay-card-desc">AI 模型已安装但未加载到内存，需手动预热后才能对话。</p>
+          <button class="overlay-card-btn" onclick="switchTab('settings', this)">前往模型管理</button>
+        </div>
+      </div>
+    </div>
+    <!-- Patch2 PlanB: 侧边会话面板 + 合并工具栏 -->
+    <div class="chat-layout">
+      <!-- 侧边会话面板 -->
+      <div class="chat-sidebar" id="chatSidebar">
+        <div class="chat-sidebar-header">
+          <span class="chat-sidebar-title">会话</span>
+          <button onclick="toggleChatSidebar()" title="折叠侧边栏" class="chat-sidebar-collapse-btn"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+        <button onclick="newChat()" title="新建对话" class="chat-sidebar-new-btn">＋ 新建会话</button>
+        <div class="chat-sidebar-list" id="chatSidebarList">
+          <div class="chat-sidebar-empty">暂无会话</div>
+        </div>
+  <div class="chat-sidebar-footer">
+    <button onclick="exportChatTxt()" title="导出当前对话为文本" class="chat-sidebar-export-btn"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:3px"><path d="M7 1.5v8M3.5 6L7 9.5 10.5 6M2 12h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>导出当前会话</button>
+  </div>
+      </div>
+      <!-- 主对话区 -->
+      <div class="chat-main">
+        <!-- 侧边栏折叠后的展开按钮（默认隐藏）-->
+        <button id="chatSidebarExpand" onclick="toggleChatSidebar()" title="展开会话列表" class="chat-sidebar-expand-btn"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px"><path d="M5 2l5 5-5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <!-- 顶部工具栏已移除：action按钮+模型名融入输入框，气泡切换浮在右上角 -->
+        <!-- 气泡/列表切换：浮动在消息区右上角 -->
+        <button id="msgStyleToggle" onclick="toggleMode()" title="切换消息样式（卡片/列表）" class="float-style-toggle">列表</button>
+        <div id="messages" style="position:relative"></div>
+        <!-- 跳到最新按钮：钉在 chat-main 视口（不随内容滚动），浮在输入框上方 -->
+        <button id="scrollBottomBtn" onclick="scrollToBottom()" title="跳到最新">↓</button>
+    <!-- P6: KB处理中锁定已移除 — 知识库 Tab 不再包含对话功能 -->
+    <div class="input-area">
+      <input type="file" id="unifiedInput" multiple accept=".txt,.md,.csv,.json,.docx,.doc,.xlsx,.xls,.pdf,.pptx,.ppt,.zip,.rar,.7z,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,.log,.rtf" style="display:none" onchange="onUnifiedPicked(event)">
+      <select id="kbFilePickerSelect" style="display:none;position:absolute;left:-9999px"></select>
+      <div class="input-area-inner">
+        <div id="fileIndicatorBar" class="file-indicator-bar" style="display:none"></div>
+        <!-- P6: 上下文空间进度条（双条：已用历史 + 本轮预判） -->
+        <div class="token-bar" id="tokenBar">
+          <div class="tb-main">
+            <div class="tb-track">
+              <div class="tb-fill tb-used" id="tbUsed"></div>
+              <div class="tb-fill tb-cur" id="tbCur"></div>
+            </div>
+            <div class="tb-labels">
+              <span class="tb-lbl-left"><span class="tb-tag tb-tag-status status-ok" id="tokenStatus">空间充足</span><span class="tb-tag tb-tag-used">已用 <span id="tokenHist">0.0K</span></span><span class="tb-tag tb-tag-cur">本轮 <span id="tokenCur">0.0K</span></span></span>
+              <span class="tb-lbl-right">剩余 <span class="tb-remain" id="tokenRemain">8.2K词元</span> <span class="tb-limit">/ 总计 <span id="tokenLimit">8.2K词元</span></span></span>
+            </div>
+          </div>
+        </div>
+        <div class="input-capsule">
+          <div class="quick-chips-row">
+            <div id="actionBar" class="action-bar-inline"></div>
+            <span class="model-tag model-tag-inline" id="modelTag">加载中</span>
+          </div>
+          <div class="input-row input-row-inner">
+          <textarea id="msgInput" placeholder="说点什么，或点击下方添加附件 / 引用文档" rows="1" onkeydown="onInputKey(event)" oninput="autoResize(this); if(typeof _syncPromptChip==='function') _syncPromptChip();" onfocus="onInputFocus()" onblur="onInputBlur()"></textarea>
+          <div style="position:relative;width:42px;flex-shrink:0;height:38px">
+            <button class="btn-send btn-capsule-send" id="sendBtn" onclick="sendMessage()" style="width:100%;height:100%"></button>
+            <button class="btn-stop btn-capsule-stop" id="stopBtn" onclick="stopGeneration()" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%"></button>
+          </div>
+          </div><!-- /input-row-inner -->
+          <!-- 0.9.7: 底部附件操作栏（聚焦时浮出） -->
+          <div id="attachToolbar" class="attach-toolbar">
+            <button class="attach-toolbar-btn" onclick="doAttachUpload()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
+              附加文档到聊天
+            </button>
+            <button class="attach-toolbar-btn" id="kbRefBtn" onclick="doAttachKb()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.04C10.41 4.62 8.3 3.75 6 3.75c-1.05 0-2.06.18-3 .51V18.5c.94-.33 1.95-.51 3-.51 2.3 0 4.41.87 6 2.29M12 6.04c1.59-1.42 3.7-2.29 6-2.29 1.05 0 2.06.18 3 .51V18.5c-.94-.33-1.95-.51-3-.51-2.3 0-4.41.87-6 2.29M12 6.04V20.3"/></svg>
+              附加知识库文档到聊天
+            </button>
+          </div>
+          <!-- 兼容旧 JS：保留 attachBtn/attachMenu 隐藏引用 -->
+          <div id="attachMenu" style="display:none"></div>
+          <button id="attachBtn" style="display:none" onclick="toggleAttachMenu()"></button>
+        </div><!-- /input-capsule -->
+        <!-- P6: Token 条已移到输入框上方，这里不再需要 tokenDisplay -->
+      </div>
+    </div>
+      </div><!-- /chat-main -->
+    </div><!-- /chat-layout -->
+  </div>
+
+  <!-- P6: 知识库 Tab — 标签侧栏 + 卡片网格 + AI 概览 -->
+  <div id="tab-qa" class="tab-content">
+    <!-- Loading 动画 -->
+    <div id="kbLoading" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:12px">
+      <div class="kb-spinner"></div>
+      <div style="font-size:.85em;color:var(--text-muted)">正在检测知识库状态…</div>
+    </div>
+    <!-- State 1: 未安装 → 引导去下载页 -->
+    <div id="kbOnboarding" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:40px 20px">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><rect x="6" y="4" width="16" height="16" rx="2.5" stroke="var(--text-primary)" stroke-width="1.8"/><rect x="26" y="4" width="16" height="16" rx="2.5" stroke="var(--text-primary)" stroke-width="1.8"/><rect x="6" y="24" width="16" height="16" rx="2.5" stroke="var(--accent-color)" stroke-width="1.8"/><rect x="26" y="24" width="16" height="16" rx="2.5" stroke="var(--text-primary)" stroke-width="1.8"/><path d="M10 12h8M10 18h12" stroke="var(--text-primary)" stroke-width="1" stroke-linecap="round" opacity=".25"/></svg>
+      <h2 style="margin:0;font-size:1.3em;color:var(--text-primary)">知识库模块</h2>
+      <p style="color:var(--text-secondary);font-size:.9em;text-align:center;max-width:400px;line-height:1.6">
+        上传文档，让 AI 基于你的资料精准回答。<br>
+        首次使用需要先下载知识库检索模型。
+      </p>
+      <button class="btn btn-primary" style="padding:8px 24px;font-size:.95em" onclick="switchTab('settings');setTimeout(function(){switchSettingsTab('download',document.querySelector('.settings-nav-item[data-stab=download]'))},100)">
+        前往下载知识库模型
+      </button>
+      <div style="color:var(--text-muted);font-size:.75em;text-align:center;line-height:1.6;margin-top:8px">
+        · 模型大小：约 4.5GB（向量化 + 重排序）<br>
+        · 下载完成后自动安装，即可使用知识库
+      </div>
+    </div>
+
+    <!-- State 3: 已激活 → 完整 KB 界面 -->
+    <div id="kbFullInterface" class="kb-page" style="display:none;position:relative;flex:1;flex-direction:column;min-height:0"
+         ondragover="kbHandleDragOver(event)" ondragleave="kbHandleDragLeave(event)" ondrop="kbHandleDrop(event)">
+
+    <!-- 模型未加载遮罩 -->
+    <div id="kbModelOverlay" class="kb-model-overlay" style="display:none">
+      <div class="overlay-card">
+        <div class="overlay-card-illustration">
+          <svg viewBox="0 0 64 64" fill="none"><rect x="8" y="6" width="20" height="20" rx="3" stroke="#1e3a5f" stroke-width="2"/><rect x="36" y="6" width="20" height="20" rx="3" stroke="#1e3a5f" stroke-width="2"/><rect x="8" y="34" width="20" height="20" rx="3" stroke="#1e3a5f" stroke-width="2"/><rect x="36" y="34" width="20" height="20" rx="3" stroke="#c9976c" stroke-width="2"/><path d="M14 14h8M14 20h12M42 14h8M42 20h12" stroke="rgba(30,58,95,.25)" stroke-width="1" stroke-linecap="round"/><path d="M14 42h8M14 48h12" stroke="rgba(30,58,95,.25)" stroke-width="1" stroke-linecap="round"/><path d="M42 44l4 4 8-8" stroke="#c9976c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <p id="kbOverlayTitle" class="overlay-card-title">需要预热模型</p>
+        <p id="kbOverlayDesc" class="overlay-card-desc">知识库功能依赖本地模型进行文档理解和检索，请先预热模型。</p>
+        <button id="kbOverlayBtn" class="overlay-card-btn" onclick="kbOverlayAction()">前往扩展管理</button>
+        <button id="kbOverlayBtn2" class="overlay-card-btn" style="display:none;margin-top:8px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color)" onclick="kbOverlayAction2()">重试加载</button>
+        <div class="overlay-card-link" onclick="showKbInfo()">了解知识库功能 →</div>
+      </div>
+    </div>
+
+    <!-- P6: 新布局 — 左侧标签树 + 右侧卡片网格 -->
+    <div class="kb-layout">
+      <!-- 左侧：标签筛选侧栏 -->
+      <div class="kb-sidebar" id="kbSidebar">
+        <details class="kb-sidebar-filter-wrap" id="kbSidebarFilterWrap" open>
+          <summary class="kb-sidebar-hdr kb-sidebar-filter-hdr">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:4px"><path d="M4.5 1L2 5.5V12a1 1 0 001 1h8a1 1 0 001-1V5.5L9.5 1H4.5z" stroke="currentColor" stroke-width="1.2"/></svg>
+            AI 智能筛选
+          </summary>
+          <div class="kb-sidebar-list" id="kbSidebarList">
+            <div class="kb-tag all sel" data-tag="__all__"><span class="dot"></span>全部文档<span class="cnt">0</span></div>
+          </div>
+        </details>
+        <!-- P6: 私密文档清单（无私密文档时隐藏，由 JS 控制显隐） -->
+        <details class="kb-sidebar-tokens-wrap" id="kbSidebarPrivateWrap" style="display:none">
+          <summary class="kb-sidebar-tokens-hdr">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:3px"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>
+            <span id="kbSidebarPrivateHdr">私密文档</span>
+          </summary>
+          <div class="kb-sidebar-tokens" id="kbSidebarPrivate">
+            <div class="kb-token-empty">暂无私密文档</div>
+          </div>
+        </details>
+        <div class="kb-sidebar-ft" id="kbSidebarFt">0篇 · 0标签</div>
+      </div>
+
+      <!-- 右侧：主区域 -->
+      <div class="kb-main">
+        <!-- 工具栏 -->
+        <div class="kb-toolbar" id="kbToolbar">
+          <button class="btn" onclick="document.getElementById('kbFileInput').click()">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 8l4-6 4 6v4a1 1 0 01-1 1H4a1 1 0 01-1-1V8z" stroke="currentColor" stroke-width="1.2"/><path d="M5 10l2-2 2 2" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            上传文档
+          </button>
+          <span style="flex:1"></span>
+          <!-- P6: 视图切换（卡片/列表） -->
+          <div class="kb-view-toggle" id="kbViewToggle">
+            <button class="kb-view-btn sel" data-view="card" onclick="kbSwitchView('card',this)" title="卡片视图">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/><rect x="8.5" y="1.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/><rect x="1.5" y="8.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/><rect x="8.5" y="8.5" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1"/></svg>
+            </button>
+            <button class="kb-view-btn" data-view="list" onclick="kbSwitchView('list',this)" title="列表视图">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4 3.5h8M4 7h8M4 10.5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="2" cy="3.5" r="0.5" fill="currentColor"/><circle cx="2" cy="7" r="0.5" fill="currentColor"/><circle cx="2" cy="10.5" r="0.5" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <button class="btn" id="kbDiagBtn" title="检索健康度诊断">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.1"/><path d="M4 5h6M6 3v4" stroke="currentColor" stroke-width="0.8" stroke-linecap="round"/></svg>
+            诊断
+          </button>
+          <input class="search-inp" id="kbSearchInput" placeholder="搜索文件名..." oninput="kbFilterByName(this.value)">
+        </div>
+        <input type="file" id="kbFileInput" accept=".txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx,.pdf,.pptx,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,.log,.rtf,.epub,.srt,.htm" multiple style="display:none" onchange="kbOnFilePicked(event)">
+
+        <!-- 主内容区 -->
+        <div class="kb-main-body" id="kbMainBody">
+          <!-- Patch5 B1: 批量操作工具栏 -->
+          <div id="kbBatchToolbar" class="kb-batch-toolbar" style="display:none">
+            <span style="font-size:.78em;color:var(--text-secondary)">已选 <b id="kbBatchCount">0</b> 个</span>
+            <button class="kb-batch-btn" onclick="kbBatchDelete()" title="批量删除" style="color:var(--error-color)">删除</button>
+            <button class="kb-batch-btn" onclick="kbBatchRetag()" title="批量重标">重标</button>
+            <button class="kb-batch-btn" onclick="kbBatchPrivacy(true)" title="批量设为私密">私密</button>
+            <button class="kb-batch-btn" onclick="kbBatchPrivacy(false)" title="批量取消私密">公开</button>
+            <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbSelectAll()" title="全选">全选</button>
+            <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbSelectInvert()">反选</button>
+            <button class="kb-batch-btn kb-batch-btn-sub" onclick="kbClearSelection()">清除</button>
+          </div>
+
+          <!-- AI 洞察面板 -->
+          <div class="kb-summary" id="kbAIOverview">
+            <div class="kb-summary-topbar"></div>
+            <div class="s-hdr">
+              <div class="s-title">
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v4M7 9.5h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                AI 洞察
+                <span class="kb-insight-badge">结构报告</span>
+              </div>
+              <button class="s-refresh" onclick="kbRefreshOverviewLLM()" id="kbRefreshBtn">
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                整理
+              </button>
+            </div>
+            <div class="s-body" id="kbOverviewBody"></div>
+            <div class="s-meta"><span id="kbOverviewSource"></span><span class="dot"></span><span id="kbOverviewDocCount"></span><span class="dot"></span><span id="kbOverviewUpdated"></span></div>
+          </div>
+
+          <!-- 文档网格过渡标头 (v2) -->
+          <div class="kb-grid-section-hdr" id="kbGridSectionHdr">
+            <span class="kb-grid-section-hdr-text">文档档案</span>
+            <span class="kb-grid-section-hdr-line"></span>
+            <span class="kb-grid-section-tip" id="kbGridSectionTip"></span>
+          </div>
+          <!-- 文档卡片网格 -->
+          <div class="kb-grid" id="kbDocGrid"></div>
+
+          <!-- P6 打磨 #7：文档统计 -->
+          <div id="kbStats" style="display:none;padding:8px 0;font-size:11px;color:var(--text-muted);border-top:0.5px solid var(--border-color);margin-top:4px"></div>
+
+          <!-- 空状态 -->
+          <div id="kbEmpty" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;padding:40px">
+            <div style="font-size:2em;margin-bottom:8px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="vertical-align:-4px"><path d="M3 8l9-5 9 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z" stroke="currentColor" stroke-width="1.5"/><path d="M7 13l3.5 3.5L17 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div style="color:var(--text-primary);font-size:.95em;margin-bottom:4px">还未上传文档</div>
+            <div style="color:var(--text-muted);font-size:.82em">拖拽文件到此处或点击上方「上传文档」按钮</div>
+          </div>
+          <!-- Fix C: 浮动处理底栏 -->
+          <div id="kbFloatBar" class="kb-float-bar" style="display:none">
+            <span id="kbFloatText">处理中 0 项</span>
+            <div id="kbFloatList" class="kb-float-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+  <!-- P6: 设置 Tab — 左侧竖排导航 + 右侧内容区 -->
+  <div id="tab-settings" class="tab-content">
+
+    <div class="settings-layout">
+      <!-- 左侧竖排导航 -->
+      <div class="settings-nav" id="settingsNav">
+        <div class="settings-nav-item sel" data-stab="general" onclick="switchSettingsTab('general',this)">
+          <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.59356 3.94014C9.68397 3.39768 10.1533 3.00009 10.7033 3.00009H13.2972C13.8472 3.00009 14.3165 3.39768 14.4069 3.94014L14.6204 5.22119C14.6828 5.59523 14.9327 5.9068 15.2645 6.09045C15.3387 6.13151 15.412 6.17393 15.4844 6.21766C15.8095 6.41393 16.2048 6.47495 16.5604 6.34175L17.7772 5.88587C18.2922 5.69293 18.8712 5.9006 19.1462 6.37687L20.4432 8.6233C20.7181 9.09957 20.6085 9.70482 20.1839 10.0544L19.1795 10.8812C18.887 11.122 18.742 11.4938 18.7491 11.8726C18.7498 11.915 18.7502 11.9575 18.7502 12.0001C18.7502 12.0427 18.7498 12.0852 18.7491 12.1275C18.742 12.5064 18.887 12.8782 19.1795 13.119L20.1839 13.9458C20.6085 14.2953 20.7181 14.9006 20.4432 15.3769L19.1462 17.6233C18.8712 18.0996 18.2922 18.3072 17.7772 18.1143L16.5604 17.6584C16.2048 17.5252 15.8095 17.5862 15.4844 17.7825C15.412 17.8263 15.3387 17.8687 15.2645 17.9097C14.9327 18.0934 14.6828 18.4049 14.6204 18.779L14.4069 20.06C14.3165 20.6025 13.8472 21.0001 13.2972 21.0001H10.7033C10.1533 21.0001 9.68397 20.6025 9.59356 20.06L9.38005 18.779C9.31771 18.4049 9.06774 18.0934 8.73597 17.9097C8.66179 17.8687 8.58847 17.8263 8.51604 17.7825C8.19101 17.5863 7.79568 17.5252 7.44011 17.6584L6.22325 18.1143C5.70826 18.3072 5.12926 18.0996 4.85429 17.6233L3.55731 15.3769C3.28234 14.9006 3.39199 14.2954 3.81657 13.9458L4.82092 13.119C5.11343 12.8782 5.25843 12.5064 5.25141 12.1276C5.25063 12.0852 5.25023 12.0427 5.25023 12.0001C5.25023 11.9575 5.25063 11.915 5.25141 11.8726C5.25843 11.4938 5.11343 11.122 4.82092 10.8812L3.81657 10.0544C3.39199 9.70484 3.28234 9.09958 3.55731 8.62332L4.85429 6.37688C5.12926 5.90061 5.70825 5.69295 6.22325 5.88588L7.4401 6.34176C7.79566 6.47496 8.19099 6.41394 8.51603 6.21767C8.58846 6.17393 8.66179 6.13151 8.73597 6.09045C9.06774 5.9068 9.31771 5.59523 9.38005 5.22119L9.59356 3.94014Z"/><path d="M15 12C15 13.6569 13.6569 15 12 15C10.3431 15 9 13.6569 9 12C9 10.3432 10.3431 9.00001 12 9.00001C13.6569 9.00001 15 10.3432 15 12Z"/></svg></span>常规
+        </div>
+        <div class="settings-nav-item" data-stab="cloud" onclick="switchSettingsTab('cloud',this)">
+          <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.25 15C2.25 17.4853 4.26472 19.5 6.75 19.5H18C20.0711 19.5 21.75 17.8211 21.75 15.75C21.75 14.1479 20.7453 12.7805 19.3316 12.2433C19.4407 11.9324 19.5 11.5981 19.5 11.25C19.5 9.59315 18.1569 8.25 16.5 8.25C16.1767 8.25 15.8654 8.30113 15.5737 8.39575C14.9765 6.1526 12.9312 4.5 10.5 4.5C7.6005 4.5 5.25 6.85051 5.25 9.75C5.25 10.0832 5.28105 10.4092 5.3404 10.7252C3.54555 11.3167 2.25 13.0071 2.25 15Z"/></svg></span>云端 AI
+        </div>
+        <div class="settings-nav-item" data-stab="knowledge" onclick="switchSettingsTab('knowledge',this)">
+          <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.04168C10.4077 4.61656 8.30506 3.75 6 3.75C4.94809 3.75 3.93834 3.93046 3 4.26212V18.5121C3.93834 18.1805 4.94809 18 6 18C8.30506 18 10.4077 18.8666 12 20.2917M12 6.04168C13.5923 4.61656 15.6949 3.75 18 3.75C19.0519 3.75 20.0617 3.93046 21 4.26212V18.5121C20.0617 18.1805 19.0519 18 18 18C15.6949 18 13.5923 18.8666 12 20.2917M12 6.04168V20.2917"/></svg></span>知识库
+        </div>
+        <div class="settings-nav-item" data-stab="privacy" onclick="switchSettingsTab('privacy',this)">
+          <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10.5V6.75C16.5 4.26472 14.4853 2.25 12 2.25C9.51472 2.25 7.5 4.26472 7.5 6.75V10.5M6.75 21.75H17.25C18.4926 21.75 19.5 20.7426 19.5 19.5V12.75C19.5 11.5074 18.4926 10.5 17.25 10.5H6.75C5.50736 10.5 4.5 11.5074 4.5 12.75V19.5C4.5 20.7426 5.50736 21.75 6.75 21.75Z"/></svg></span>隐私安全
+        </div>
+        <div class="settings-nav-item" data-stab="download" onclick="switchSettingsTab('download',this)">
+          <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>模型下载
+        </div>
+        <div class="settings-nav-item" data-stab="about" onclick="switchSettingsTab('about',this)">
+          <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12.75L11.25 15L15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>关于
+        </div>
+      </div>
+
+      <!-- 右侧内容区 -->
+      <div class="settings-content" id="settingsContent">
+
+        <!-- ===== Tab: 常规 ===== -->
+        <div id="stab-general" class="settings-stab" style="display:block">
+          <!-- 分组1：外观与状态 -->
+          <div class="card">
+            <h4>外观与状态</h4>
+            <div class="row">
+              <span class="lbl">深色模式</span>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode(this.checked)" style="width:15px;height:15px">
+              </label>
+            </div>
+            <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border-color)">
+              <div class="row"><span class="lbl">当前模型</span><span id="settingsModelTag" class="val muted">未加载</span></div>
+              <div class="row"><span class="lbl">最大输入 <span title="模型单次能接收的最大输入 token 数" style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span></span><span class="val" id="settingsTokenBudget" style="font-size:12px">--</span></div>
+              <div class="row"><span class="lbl">最大输出 <span title="模型单次能生成的最大 token 数" style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span></span><span class="val" id="settingsTokenOutput" style="font-size:12px">--</span></div>
+              <div class="row"><span class="lbl">知识库</span><span class="val muted" id="settingsKBStatus">检测中...</span></div>
+            </div>
+          </div>
+
+          <!-- 分组2：模型与资源 -->
+          <div class="card">
+            <h4>模型与资源</h4>
+            <div id="modelManageContent">
+              <!-- 0.9.7: 极简模型管理（下拉 + 智能主按钮 + 卸载） -->
+              <div id="modelInfoRow" class="model-info-row" style="display:none;flex-direction:column">
+                <div style="display:flex;gap:8px;align-items:center;width:100%">
+                  <select id="modelSelector" class="model-selector" onchange="onModelSelectorChange()" style="flex:1;padding:8px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);font-size:13px;cursor:pointer">
+                    <option value="">加载中...</option>
+                  </select>
+                  <button id="modelSwitchBtn" class="btn btn-primary" style="white-space:nowrap" disabled onclick="switchModel()">切换</button>
+                  <button id="modelActionBtn" class="btn btn-ghost" style="white-space:nowrap;font-size:.85em;display:none"></button>
+                </div>
+                <!-- 隐藏的模型名/标签（兼容旧 JS 逻辑，不显示） -->
+                <span id="modelNameDisplay" style="display:none"></span>
+                <span id="modelQuantTag" style="display:none"></span>
+                <div id="modelSwitchHint" style="font-size:11px;color:var(--text-muted);margin-top:6px;min-height:16px"></div>
+              </div>
+              <div id="noModelHint" style="display:none;padding:10px 14px;background:var(--bg-secondary);border-radius:8px;font-size:12px;color:var(--text-muted)">暂未安装模型。请导入 .sidemate 模型包，或点击「扫描模型」检测已有模型。</div>
+            </div>
+            <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border-color)">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary)">
+                <input type="checkbox" id="autoWarmupChk" onchange="saveAutoWarmup(this.checked)" style="width:15px;height:15px">
+                启动时自动加载模型（推荐）
+              </label>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:4px;padding-left:23px">勾选后启动器会在启动阶段自动加载 LLM，省去首次问答的等待</div>
+            </div>
+            <!-- Reranker 常驻 / 空闲卸载设置 -->
+            <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border-color)">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary)">
+                <input type="checkbox" id="rerankerResidentChk" onchange="saveRerankerResident(this.checked)" style="width:15px;height:15px">
+                Reranker 常驻内存
+              </label>
+              <div id="rerankerIdleWrap" style="font-size:12px;color:var(--text-muted);margin-top:6px;padding-left:23px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                闲置
+                <input type="number" id="rerankerIdleInput" min="1" max="1440" step="1" style="width:60px;padding:2px 6px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px" onchange="saveRerankerIdle(this.value)">
+                分钟后自动卸载（节省内存，下次使用知识库时重新加载）
+              </div>
+            </div>
+            <!-- 资源占用（合并进来）-->
+            <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border-color)">
+              <div class="row"><span class="lbl">系统内存</span><span class="val" id="resMemLabel">--</span></div>
+              <div class="row"><span class="lbl">可用内存</span><span class="val" id="resAvail">--</span></div>
+              <div id="resModules" style="display:flex;gap:8px;font-size:var(--font-xs);color:var(--text-muted);margin-top:4px;flex-wrap:wrap"></div>
+            </div>
+            <pre id="statusText" style="display:none"></pre>
+          </div>
+
+          <!-- 分组3：数据维护 -->
+          <div class="card">
+            <h4>数据维护</h4>
+            <!-- 缓存管理 -->
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">查看和清理上传的文件缓存、录音文件等</div>
+            <div id="cacheSummary" style="display:none;font-size:12px;color:var(--text-secondary);margin-bottom:8px"></div>
+            <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+              <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" id="cacheSelectAll" onchange="toggleCacheSelectAll()" style="accent-color:var(--accent-color)"> 全选</label>
+              <button class="btn btn-ghost" onclick="refreshCacheFiles()">刷新</button>
+              <button class="btn btn-danger" onclick="batchDeleteCache()">批量删除</button>
+              <button class="btn btn-danger" onclick="clearAllCache()">清空全部</button>
+            </div>
+            <div id="cacheFileList" style="max-height:240px;overflow-y:auto;font-size:12px"><span style="color:var(--text-muted)">点击刷新查看缓存文件</span></div>
+            <div id="cachePagination" style="display:none;margin-top:8px;gap:6px;align-items:center;justify-content:center;font-size:12px"></div>
+            <!-- 备份与恢复（合并进来）-->
+            <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border-color)">
+              <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">导出所有对话、设置和知识库元数据到 ZIP 文件</div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" onclick="exportBackup()">导出备份</button>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input type="file" id="backupFileInput" accept=".zip" style="padding:6px 8px;border:0.5px solid var(--border-color);border-radius:8px;font-size:13px">
+                  <button class="btn btn-ghost" onclick="importBackup()">恢复</button>
+                </div>
+              </div>
+              <div id="backupResult" style="margin-top:6px;font-size:.82em"></div>
+            </div>
+          </div>
+
+          <!-- 分组5：反馈 -->
+          <div class="card">
+            <h4>反馈渠道</h4>
+            <div class="row"><span class="lbl">问题反馈</span><span class="val" style="color:var(--text-muted)">提交反馈<span style="font-size:10px;color:var(--text-muted);margin-left:4px;padding:1px 5px;background:var(--bg-secondary);border-radius:3px">暂不可用</span></span></div>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-top:8px">
+              遇到问题或有建议？
+              <a href="mailto:sidemate@deskware.cn" style="color:var(--accent-color);text-decoration:none;margin-left:6px">sidemate@deskware.cn</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Tab: 云端 AI ===== -->
+        <div id="stab-cloud" class="settings-stab" style="display:none">
+          <div class="card">
+            <h4>云端 AI 模型配置</h4>
+              <form onsubmit="return false" style="margin:0">
+              <div class="row"><span class="lbl">API 地址</span><input type="text" id="cloudBaseUrl" placeholder="请输入 API 地址" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
+              <div class="row"><span class="lbl">API Key</span><input type="password" id="cloudApiKey" placeholder="请输入 API Key" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><button class="btn btn-ghost btn-sm" onclick="toggleApiKeyVisibility()">显示</button></div>
+              <div class="row"><span class="lbl">模型名称</span><input type="text" id="cloudModel" placeholder="请输入模型名称" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
+              </form>
+              <div class="row"><span class="lbl">模型能力</span><span id="cloudCapsDisplay" style="font-size:var(--font-sm);color:var(--text-muted)">输入模型名称后自动匹配</span></div>
+              <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" onclick="testCloudConnection()">测试连接</button><button class="btn btn-primary" onclick="saveCloudConfig()">保存配置</button></div>
+              <div id="cloudTestResult" style="margin-top:6px;font-size:.82em"></div>
+            </div>
+
+            <div class="card">
+              <h4>云端AI权限与数据策略</h4>
+              <!-- 数据发送策略（放上方）-->
+              <div class="sec-title">数据发送策略</div>
+              <div class="sec-desc">控制发送到云端 AI 的对话内容范围</div>
+              <label class="policy-option"><input type="radio" name="contextPolicy" value="full" checked> 完整发送（默认）</label>
+              <label class="policy-option"><input type="radio" name="contextPolicy" value="current_only"> 仅发送当前消息</label>
+              <label class="policy-option"><input type="radio" name="contextPolicy" value="slim_history"> 精简历史 — 仅保留最近 <input type="number" id="slimHistoryRounds" value="6" min="1" max="50" style="width:42px;text-align:center;padding:2px 4px;border:0.5px solid var(--border-color);border-radius:3px"> 轮</label>
+              <div class="sec-hint">引用的知识库文档内容始终会随对话发送</div>
+              <!-- 工具权限（不折叠，放下方，排版与上方一致）-->
+              <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border-color)">
+                <div class="sec-title">工具权限</div>
+                <div class="sec-desc">控制云端 Agent 可使用的工具</div>
+                <div id="permissionToolsList"><span style="color:var(--text-muted);font-size:11px">加载中...</span></div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary" onclick="saveCloudConfig()">保存策略</button></div>
+            </div>
+
+            <div class="card">
+              <h4>用量统计</h4>
+              <div id="cloudUsagePanel" style="font-size:13px;color:var(--text-muted)">加载中...</div>
+            </div>
+        </div>
+
+        <!-- ===== Tab: 知识库 ===== -->
+        <div id="stab-knowledge" class="settings-stab" style="display:none">
+          <div class="card">
+            <h4>文档统计</h4>
+            <div id="kbSettingsStats" style="font-size:13px">
+              <div class="row"><span class="lbl">文档总数</span><span class="val" id="kbStatTotal">--</span></div>
+              <div class="row"><span class="lbl">就绪文档</span><span class="val ok" id="kbStatReady">--</span></div>
+              <div class="row"><span class="lbl">处理中文档</span><span class="val warn" id="kbStatProcessing">--</span></div>
+              <div class="row"><span class="lbl">失败文档</span><span class="val warn" id="kbStatError">--</span></div>
+              <div class="row"><span class="lbl">磁盘占用</span><span class="val" id="kbStatDisk">--</span></div>
+            </div>
+            <div style="margin-top:8px">
+              <button class="btn btn-ghost" onclick="kbRefreshDocs()">刷新统计</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h4>问答引擎</h4>
+            <div class="sec-hint">选择知识库问答使用的 AI 引擎（独立于全局离线/在线模式）</div>
+            <div style="display:flex;gap:16px;margin-top:10px;font-size:13px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="kbAiMode" value="local" id="kbAiModeLocal" onchange="saveKbAiMode('local')" style="width:15px;height:15px">
+                <span>本地 LLM（隐私优先）</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="kbAiMode" value="cloud" id="kbAiModeCloud" onchange="saveKbAiMode('cloud')" style="width:15px;height:15px">
+                <span>云端 LLM（质量优先）</span>
+              </label>
+            </div>
+            <div id="kbAiModeHint" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+          </div>
+
+          <div class="card">
+            <h4>审计日志管理</h4>
+            <div class="sec-hint">每次检索知识库时会记录访问明细（时间/访问者/查询词/命中片段），每篇文档最多保留 200 条。</div>
+            <div id="auditLogStats" style="font-size:13px;margin-top:8px">
+              <div class="row"><span class="lbl">日志条数</span><span class="val" id="auditStatEntries">--</span></div>
+              <div class="row"><span class="lbl">涉及文档</span><span class="val" id="auditStatFiles">--</span></div>
+              <div class="row"><span class="lbl">磁盘占用</span><span class="val" id="auditStatSize">--</span></div>
+            </div>
+            <div style="margin-top:8px">
+              <button class="btn btn-ghost" onclick="refreshAuditLogStats()">刷新</button>
+              <button class="btn btn-danger" onclick="clearAllAuditLogs()">清空全部审计日志</button>
+            </div>
+          </div>
+
+          <div class="card kb-danger-card">
+            <h4>重置知识库</h4>
+            <div class="sec-hint">清空所有已导入的文档、文本片段和向量索引。此操作不可撤销，重置后需重新导入文档。</div>
+            <div class="sec-hint" style="margin-top:4px;color:var(--text-muted)">仅清除导入的数据，知识库功能本身不受影响。</div>
+            <button class="btn btn-danger" onclick="kbResetKnowledgeBase()" style="margin-top:10px">重置知识库</button>
+          </div>
+        </div>
+
+        <!-- ===== Tab: 隐私安全 ===== -->
+        <div id="stab-privacy" class="settings-stab" style="display:none">
+          <div class="card">
+            <h4>数据存储位置</h4>
+            <div class="row"><span class="lbl">存储位置</span><span class="val" style="font-size:11px" id="privacyDataDir">--</span></div>
+            <div class="row"><span class="lbl">数据占用</span><span class="val" id="privacyDiskUsage">--</span></div>
+            <div class="sec-hint">对话、文档、模型、设置等所有数据均存储在本地。云端 AI 模式下，对话内容会发送到你配置的云端 API（详见下方隐私声明）</div>
+          </div>
+
+          <div class="card">
+            <h4>隐私声明</h4>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.8;margin-bottom:8px">
+              <div><b>数据本地存储</b>：对话、文档、设置默认 100% 存储在本地。</div>
+              <div><b>云端 AI 通信</b>：使用云端/并行模式时，对话内容会发送到你配置的云端 API（如 DeepSeek）。数据不经过第三方。</div>
+              <div><b>网页搜索</b>：Agent 启用联网搜索时，会向搜索引擎发送查询关键词。</div>
+              <div><b>知识库权限保护</b>：文档受三级令牌授权保护。</div>
+              <div><b>随时可清除</b>：删除安装目录即可彻底卸载。</div>
+            </div>
+            <div id="privacyContent" style="display:none;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border-color)"></div>
+            <button class="btn btn-ghost" onclick="togglePrivacyDetail()" id="privacyDetailBtn" style="margin-top:8px">查看完整隐私声明</button>
+          </div>
+
+          <div class="card">
+            <h4>开发调试</h4>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:10px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="corsStrictToggle" onchange="toggleCorsStrict(this.checked)" style="width:15px;height:15px">
+                <label for="corsStrictToggle" style="cursor:pointer">允许第三方页面访问本机 API</label>
+              </div>
+              <div class="sec-hint" style="margin-top:6px">默认关闭（推荐）。开启后取消本机 API 的来源限制，便于用第三方前端工具调试。存在本机恶意网页静默读取数据的风险，调试完成后请关闭。<b>修改后需重启服务生效。</b></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h4>数据导出</h4>
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">导出所有对话数据为可读格式</div>
+            <button class="btn btn-primary" onclick="exportBackup()">导出备份</button>
+            <button class="btn btn-ghost" onclick="exportDiagnostics()" style="margin-left:6px">导出诊断报告</button>
+            <pre id="diagOutput" style="display:none;margin-top:8px;font-size:11px;background:var(--gray-100);padding:8px;border-radius:4px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all"></pre>
+          </div>
+        </div>
+
+        <!-- ===== Tab: 模型下载 ===== -->
+        <div id="stab-download" class="settings-stab" style="display:none">
+          <input type="file" id="dlLocalInput" accept=".sidemate" style="display:none" onchange="onDlLocalPicked(event)">
+          <!-- 下载源选择 -->
+          <div class="card">
+            <h4>下载设置</h4>
+            <div style="display:flex;align-items:center;gap:10px;font-size:13px">
+              <span style="color:var(--text-secondary)">下载源</span>
+              <select id="dlSource" onchange="onDlSourceChange(this)" style="padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;cursor:pointer">
+                <option value="modelscope">魔搭 ModelScope（国内推荐，速度快）</option>
+                <option value="huggingface">HuggingFace（国际源，需代理）</option>
+              </select>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px">大文件下载，建议保持网络稳定。支持断点续传，中断后重新点击下载可继续。</div>
+          </div>
+
+          <!-- 下载进度条 -->
+          <div id="dlProgressBar" class="card" style="display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <h4 style="margin:0">下载进度</h4>
+              <button id="dlCancelBtn" class="btn btn-danger" style="font-size:.78em;padding:3px 12px" onclick="cancelDownload()">取消</button>
+            </div>
+            <div style="background:var(--bg-secondary);border-radius:6px;overflow:hidden;height:10px;position:relative">
+              <div id="dlProgressFill" style="height:100%;background:var(--accent-color,#4f46e5);border-radius:6px;transition:width .3s ease;width:0%"></div>
+            </div>
+            <div id="dlProgressText" style="font-size:12px;color:var(--text-secondary);margin-top:6px">准备中...</div>
+          </div>
+
+          <!-- LLM 模型 -->
+          <div class="card">
+            <h4>对话模型（LLM）</h4>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">本地运行的 AI 对话模型，越大能力越强但占用内存越多。按需下载。</div>
+            <div id="dlLlmList"><span style="color:var(--text-muted)">加载中...</span></div>
+          </div>
+
+          <!-- KB 模型 -->
+          <div class="card">
+            <h4>知识库模型</h4>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">知识库检索所需的向量化与重排序模型，使用知识库功能前需安装。</div>
+            <div id="dlKbCard"><span style="color:var(--text-muted)">加载中...</span></div>
+          </div>
+
+          <!-- 从本地安装 -->
+          <div class="card">
+            <h4>从本地安装</h4>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">选择 .sidemate 离线包安装，自动识别 LLM 模型或知识库模型</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost" style="flex:1;font-size:13px;padding:7px 10px;border:0.5px dashed var(--border-color)" onclick="document.getElementById('dlLocalInput').click()">选择 .sidemate 文件…</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Tab: 关于 ===== -->
+        <div id="stab-about" class="settings-stab" style="display:none">
+          <div class="card">
+            <h4>程序版本</h4>
+            <div class="row"><span class="lbl">桌伴 Sidemate</span><span class="val" id="versionDisplay" style="color:var(--accent-color);font-weight:600">加载中...</span></div>
+            <div style="margin-top:14px">
+              <button type="button" class="btn-ghost" onclick="resetOnboarding()"
+                      style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;border:0.5px solid var(--border-color);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;transition:all 0.15s"
+                      onmouseover="this.style.background='var(--bg-primary)';this.style.borderColor='var(--accent-color)';this.style.color='var(--accent-color)'"
+                      onmouseout="this.style.background='var(--bg-secondary)';this.style.borderColor='var(--border-color)';this.style.color='var(--text-secondary)'">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                重新查看新手指引
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h4>运行状态</h4>
+            <!-- 组件状态（带状态点）-->
+            <div class="sec-title">组件状态</div>
+            <div id="diagComponents" style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">
+              <span style="color:var(--text-muted);font-size:11px">加载中...</span>
+            </div>
+            <!-- 系统资源 -->
+            <div class="sec-title">系统资源</div>
+            <div class="row"><span class="lbl">总内存</span><span class="val" id="diagTotalMem">--</span></div>
+            <div class="row"><span class="lbl">显存</span><span class="val" id="diagVram" style="font-size:12px">--</span></div>
+            <div class="row"><span class="lbl">GPU</span><span class="val" id="diagGpu" style="font-size:12px">--</span></div>
+            <!-- 环境信息 -->
+            <div class="sec-title" style="margin-top:12px">环境信息</div>
+            <div class="row"><span class="lbl">Python</span><span class="val" id="diagPython">--</span></div>
+            <div class="row"><span class="lbl">操作系统</span><span class="val" id="diagOs" style="font-size:12px">--</span></div>
+            <button class="btn btn-ghost" onclick="exportDiagnostics()" style="margin-top:8px">导出诊断报告</button>
+          </div>
+
+          <div class="card">
+            <h4>产品描述</h4>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.8">
+              桌伴 Sidemate 是一款本地优先的 AI 办公助手。<br>
+              所有数据存储在你的电脑上，云端模式下对话仅发送到你配置的 API。<br>
+              支持离线智能对话、文档生成、知识库问答，让你的工作既有 AI 加持，又不用担心隐私泄露。
+            </div>
+          </div>
+
+          <div class="card">
+            <h4>团队信息</h4>
+            <div style="display:flex;flex-wrap:wrap;gap:4px 20px;font-size:12px">
+              <div><span style="color:var(--text-primary);font-weight:500">slow</span> <span style="color:var(--text-muted)">项目负责人</span></div>
+              <div><span style="color:var(--text-primary);font-weight:500">高见远</span> <span style="color:var(--text-muted)">AI 架构师</span></div>
+              <div><span style="color:var(--text-primary);font-weight:500">寇豆码</span> <span style="color:var(--text-muted)">AI 工程师</span></div>
+              <div><span style="color:var(--text-primary);font-weight:500">许清楚</span> <span style="color:var(--text-muted)">AI 产品经理</span></div>
+              <div><span style="color:var(--text-primary);font-weight:500">严过关</span> <span style="color:var(--text-muted)">AI QA</span></div>
+              <div><span style="color:var(--text-primary);font-weight:500">小虾</span> <span style="color:var(--text-muted)">AI 开发助手</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h4>法律信息</h4>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">
+              <div>© 2026 Sidemate Team. All rights reserved.</div>
+              <div style="margin-top:4px">
+                <a href="javascript:void(0)" onclick="showLicenseFile('LICENSE')" style="color:var(--accent-color);text-decoration:none;font-size:12px">开源协议 (Apache-2.0)</a>
+                <span style="margin:0 6px;color:var(--border-color)">|</span>
+                <a href="javascript:void(0)" onclick="showLicenseFile('THIRD-PARTY-NOTICES')" style="color:var(--accent-color);text-decoration:none;font-size:12px">第三方许可声明</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /settings-content -->
+    </div><!-- /settings-layout -->
+
+  </div>
+</div>
+
+<!-- 模块加载覆层（预热/纪要/文库 异步加载时显示） -->
+<div class="module-loading-overlay" id="moduleLoadingOverlay" style="display:none">
+  <div class="module-loading-card">
+    <div class="module-loading-icon" id="moduleLoadingIcon"></div>
+    <div class="module-loading-title" id="moduleLoadingTitle">加载中</div>
+    <div class="module-loading-shimmer"></div>
+    <div class="module-loading-hint" id="moduleLoadingHint">首次加载约需 10-30 秒</div>
+  </div>
+</div>
+
+<!-- 加载遮罩 -->
+<div class="loading-overlay" id="loadingOverlay" style="display:flex">
+  <div class="spinner"></div>
+  <div class="text" id="loadingText">正在连接桌伴...</div>
+  <div class="progress-bar" id="loadingProgress" style="display:none"><div class="fill"></div></div>
+</div>
+
+<!-- ===== 首次使用引导遮罩 ===== -->
+<div id="welcomeOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center">
+  <div id="welcomeCard" style="background:var(--bg-primary);border-radius:16px;padding:36px 32px 24px;max-width:460px;width:92%;box-shadow:0 12px 48px rgba(0,0,0,0.25);text-align:center;position:relative"></div>
+</div>
+
+<!-- ===== 交互式引导高亮组件 ===== -->
+<div id="tourOverlay" style="display:none;position:fixed;inset:0;z-index:9998;pointer-events:none">
+  <div id="tourSpotlight" style="position:absolute;inset:0;transition:clip-path .35s cubic-bezier(.4,0,.2,1);pointer-events:none"></div>
+</div>
+<div id="tourCard" style="display:none;position:fixed;z-index:9999;background:var(--bg-primary);border-radius:12px;padding:18px 20px;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.22);transition:all .35s cubic-bezier(.4,0,.2,1)">
+  <div id="tourCardTitle" style="font-weight:600;font-size:.92em;color:var(--text-primary);margin-bottom:6px"></div>
+  <div id="tourCardDesc" style="font-size:.82em;color:var(--text-secondary);line-height:1.6;margin-bottom:12px"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div id="tourDots" style="display:flex;gap:4px"></div>
+    <div style="display:flex;gap:8px">
+      <button id="tourSkipBtn" style="padding:4px 10px;border:none;background:transparent;color:var(--text-muted);font-size:.78em;cursor:pointer" onclick="endTour()">跳过</button>
+      <button id="tourPrevBtn" style="padding:4px 10px;border:none;background:transparent;color:var(--text-muted);font-size:.78em;cursor:pointer;visibility:hidden" onclick="prevTourStep()">上一步</button>
+      <button id="tourNextBtn" style="padding:4px 14px;border:none;background:var(--accent-color);color:#fff;font-size:.78em;border-radius:6px;cursor:pointer;font-weight:500" onclick="nextTourStep()">下一步</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 全局状态变量（必须先于功能模块加载） ===== -->
+<script>
+// ===== 全局状态 =====
+let currentMessages = [];
+let currentChatFile = null;
+let generating = false;
+let abortCtrl = null;
+// (pendingImageFile 已移除 — 图片上传功能已归档)
+let currentActionMode = 'chat';  // 当前 Action: chat|kb|doc
+let _refFilePath = null;      // 引用文件路径
+let _maxPromptTokens = 0;     // 当前模型的 prompt token 上限（从 /api/models 获取）
+let _lastMsgCount = 0;  // 上次检测到的消息数
+let _sessionPollTimer = null;
+let pendingFile = null;
+
+// ===== 前端版本（独立于后端） =====
+const __HTML_VERSION__ = 'v2.7';
+
+const API = '';
+</script>
+
+<!-- ===== 阶段1: 欢迎弹窗 + 阶段2: 交互式引导 ===== -->
+<script src="static/js/welcome-tour.js?v=2.79"></script>
+
+<script>
+// ===== Toast 覆盖层 =====
+function showToast(msg, type) {
+  var existing = document.getElementById('htmlToast');
+  if (existing) existing.remove();
+  var el = document.createElement('div');
+  el.id = 'htmlToast';
+  el.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);padding:8px 20px;border-radius:20px;color:#fff;font-size:.82em;z-index:5000;white-space:nowrap;animation:fadeIn .2s ease';
+  if (type === 'error') el.style.background = '#EF4444';
+  else if (type === 'warning') el.style.background = '#F59E0B';
+  else el.style.background = '#1E3A5F';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function() { if (el.parentNode) el.remove(); }, 3000);
+}
+window._activeToast = null;
+window.showToast = showToast;
+
+async function showLicenseFile(filename) {
+  try {
+    var resp = await fetch('/api/license?file=' + encodeURIComponent(filename));
+    var data = await resp.json();
+    if (data.content) {
+      _showTextModal(filename === 'LICENSE' ? '开源协议 (Apache-2.0)' : '第三方许可声明', data.content);
+    } else {
+      _showTextModal('提示', data.error || '无法加载文件');
+    }
+  } catch (e) {
+    _showTextModal('提示', '加载失败: ' + e.message);
+  }
+}
+
+function _showTextModal(title, content) {
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000';
+  overlay.innerHTML = '<div style="background:var(--bg-primary);border-radius:12px;padding:24px;max-width:640px;width:90%;max-height:80vh;display:flex;flex-direction:column">' +
+    '<div style="font-weight:600;font-size:14px;margin-bottom:12px;color:var(--text-primary)">' + title + '</div>' +
+    '<pre style="flex:1;overflow:auto;font-size:12px;line-height:1.5;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;margin:0;padding:12px;background:var(--bg-secondary);border-radius:8px">' +
+    content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>' +
+    '<button onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:12px;padding:8px 20px;border:none;border-radius:8px;background:var(--accent-color);color:#fff;font-size:13px;cursor:pointer;align-self:flex-end">关闭</button>' +
+    '</div>';
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+window.showLicenseFile = showLicenseFile;
+
+function _loadVersionDisplay() {
+  var el = document.getElementById('versionDisplay');
+  if (el) { el.textContent = 'v0.9.7'; }
+}
+function _loadSystemEnv() {
+  try {
+    var envEl = document.getElementById('systemEnvInfo');
+    if (!envEl) return;
+    fetch('/api/env/check').then(function(r) { return r.json(); }).then(function(data) {
+      var parts = [];
+      if (data.os) parts.push(data.os);
+      if (data.os_version) parts.push(data.os_version);
+      if (data.python) parts.push('Python ' + data.python);
+      envEl.textContent = parts.join(' · ');
+    }).catch(function() { envEl.textContent = ''; });
+  } catch(e) {}
+}
+window._loadVersionDisplay = _loadVersionDisplay;
+window._loadSystemEnv = _loadSystemEnv;
+
+window.addEventListener('load', function() {
+  _loadVersionDisplay();
+  _loadSystemEnv();
+  if (!localStorage.getItem('sidemate_welcomed')) {
+    try { showWelcome(); } catch(e) { console.warn('[welcome] failed:', e); }
+  }
+});
+</script>
+
+<!-- ===== 第三方库 ===== -->
+<script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
+<!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
+<script src="/static/js/core/api.js?v=2.79"></script>
+<script src="/static/js/core/utils.js?v=2.79"></script>
+<script src="/static/js/core/errors.js?v=2.79"></script>
+<script src="/static/js/stream_renderer.js?v=2.79"></script>
+<script src="/static/js/settings.js?v=2.79"></script>
+<script src="/static/js/qa.js?v=2.79"></script>
+<script src="/static/js/kb-batch.js?v=2.79"></script>
+<!-- P6: 纪要模块归档，minutes.js 已移除 -->
+<!-- Patch2 D1: chat.js 拆分为子模块 -->
+<script src="/static/js/chat-session.js?v=2.79"></script>
+<script src="/static/js/chat-actions.js?v=2.79"></script>
+<script src="/static/js/chat-files.js?v=2.79"></script>
+<script src="/static/js/chat-export.js?v=2.79"></script>
+<script src="/static/js/chat-ui.js?v=2.79"></script>
+<script src="/static/js/chat.js?v=2.79"></script>
+<!-- Patch5 C7: 前端体验增强模块 -->
+<script src="/static/js/token-estimator.js?v=2.79"></script>
+<!-- P6: skeleton.js 已移除（去骨架屏） -->
+<script src="/static/js/ui-enhance.js?v=2.79"></script>
+<script src="/static/js/download.js?v=2.79"></script>
+
+<script>
+// ===== 拖拽上传 + 滚动检测 =====
+function switchTab(name, btn) {
+  document.querySelectorAll('.tabs-nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  localStorage.setItem('_activeTab', name);  // 记住当前 Tab
+  if (name === 'settings') { refreshStatus(); loadAutoWarmupSetting(); loadRerankerResidentSetting(); refreshResourcePanel(); loadCloudConfig(); loadPermissionTools(); switchSettingsTab('general', document.querySelector('.settings-nav-item[data-stab="general"]')); }
+  if (name === 'qa') kbRouteState();  // Patch 7: 三级状态路由（安装/激活/就绪）
+  // P6: minutes tab 已移除
+  if (name === 'chat') updateChatOverlay();  // 切换到对话 Tab 时同步模型锁状态
+  // P6 审计修复 M5：切出 KB Tab 时停轮询
+  if (name !== 'qa' && typeof _kbStopPolling === 'function') _kbStopPolling();
+}
+
+// 滚动检测（事件绑定，保留在内联）
+document.addEventListener('DOMContentLoaded', () => {
+  const msgEl = document.getElementById('messages');
+  if (msgEl) msgEl.addEventListener('scroll', checkScrollBtn);
+});
+
+// ===== 初始化入口 =====
+async function init() {
+  await initModeSelector();  // P6: 初始化三段模式按钮选择器
+  // P6: 初始化消息样式切换（确保按钮文案正确）
+  if (typeof initMsgStyleToggle === 'function') initMsgStyleToggle();
+  // 并行阶段：无依赖的请求同时发起
+  var results = await Promise.allSettled([
+    refreshStatus()
+  ]);
+
+  // 检查是否全部失败 → 等 2s 重试一次
+  if (results.every(r => r.status === 'rejected')) {
+    await new Promise(function(r) { setTimeout(r, 2000); });
+    results = await Promise.allSettled([refreshStatus()]);
+  }
+
+  if (results.every(r => r.status === 'rejected')) {
+    showOfflineBanner();
+    hideLoading();
+    startHeartbeat();
+    return;
+  }
+
+  // 串行阶段：依赖状态数据的请求
+  try {
+    await loadChatList();
+    const resp = await fetch(API + '/api/chats');
+    const data = await resp.json();
+    // 后端 current 可能因重启丢失（内存状态），此时 fallback 到列表第一个会话，
+    // 避免 currentChatFile 为空导致"会话未就绪"无法发送。
+    var _initChat = data.current || (data.chats && data.chats.length > 0 ? data.chats[0].path : null);
+    if (_initChat) {
+      currentChatFile = _initChat;
+      const name = currentChatFile.split(/[\\/]/).pop().replace('.json','');
+      const msgs = await fetch(API + '/api/chats/' + encodeURIComponent(name) + '/messages').then(r=>r.json());
+      currentMessages = msgs.messages || [];
+      renderMessages();
+    }
+  } catch(e) {
+    console.warn('[init] 加载对话失败:', e.message);
+  }
+  _lastMsgCount = currentMessages.length;
+  startSessionPoll();
+  console.log('[Init] 启动心跳...');
+  startHeartbeat();
+
+  // Tab 恢复由底部 IIFE 处理（在 updateTabVisibility 之后，且检查 Tab 可见性）
+
+  // Patch10: 初始化扩展列表和 Tab 显隐
+  try { if (typeof refreshExtensions === 'function') refreshExtensions(); } catch(e) {}
+  try { if (typeof updateTabVisibility === 'function') updateTabVisibility(); } catch(e) {}
+  // 初始化按钮图标
+  var _sendBtn = document.getElementById('sendBtn');
+  var _stopBtn = document.getElementById('stopBtn');
+  if (_sendBtn) _sendBtn.innerHTML = iconSvg('send','14');
+  if (_stopBtn) _stopBtn.innerHTML = iconSvg('stop','14');
+  // 初始化 KB 按钮图标
+  var _kbBtnEl = document.getElementById('kbInput');
+  if (_kbBtnEl && _kbBtnEl.nextElementSibling) _kbBtnEl.nextElementSibling.innerHTML = iconSvg('send','14');
+  hideLoading();
+}
+
+// ===== 启动 =====
+// 启动时初始化全局版本号（单一来源：/api/system/info 从 config.py 的 DEFAULTS["version"] 读）
+window.APP_VERSION = '';
+document.title = '桌伴 Sidemate';
+fetch((typeof API !== 'undefined' ? API : '') + '/api/system/info')
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.version) {
+      window.APP_VERSION = d.version;
+      document.title = '桌伴 Sidemate v' + d.version;
+      // 同步刷新所有版本号显示
+      var vDisplays = document.querySelectorAll('[data-app-version]');
+      for (var i = 0; i < vDisplays.length; i++) {
+        vDisplays[i].textContent = 'v' + d.version;
+      }
+    }
+  })
+  .catch(function() {}); // 静默失败，不影响主流程
+init();
+updateChatOverlay();
+  // 恢复上次选中的 Tab（刷新后不跳回对话）
+(function restoreTab() {
+  const saved = localStorage.getItem('_activeTab');
+  if (saved && saved !== 'chat') {
+    const btns = document.querySelectorAll('.tabs-nav button');
+    for (const btn of btns) {
+      if (btn.textContent.trim() === {chat:'对话',qa:'知识库',settings:'设置'}[saved]) {
+        // 只切换到可见的 tab
+        if (btn.style.display !== 'none') {
+          btn.click();
+          return;
+        }
+      }
+    }
+  }
+})();
+
+// ===== 深色模式 =====
+(function initTheme() {
+  var saved = localStorage.getItem('theme');
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var isDark = saved === 'dark' || (!saved && prefersDark);
+  if (isDark) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    var toggle = document.getElementById('darkModeToggle');
+    if (toggle) toggle.checked = true;
+    var hljsTheme = document.getElementById('hljsTheme');
+    if (hljsTheme) hljsTheme.href = '/static/vendor/highlight-dark.min.css';
+  }
+})();
+
+function toggleDarkMode(enabled) {
+  if (enabled) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem('theme', 'dark');
+    var hljsTheme = document.getElementById('hljsTheme');
+    if (hljsTheme) hljsTheme.href = '/static/vendor/highlight-dark.min.css';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'light');
+    var hljsTheme = document.getElementById('hljsTheme');
+    if (hljsTheme) hljsTheme.href = '/static/vendor/highlight.min.css';
+  }
+}
+
+// ===== 代码高亮（在消息渲染后调用） =====
+function applyCodeHighlight(root) {
+  if (typeof hljs !== 'undefined') {
+    var blocks = (root || document).querySelectorAll('pre code[class*="language-"]');
+    blocks.forEach(function(block) {
+      // P6 修复：hljs 要求先清除 data-highlighted 再高亮，避免控制台警告
+      if (block.dataset.highlighted === 'yes') {
+        delete block.dataset.highlighted;
+      }
+      try { hljs.highlightElement(block); } catch(e) {}
+    });
+  }
+}
+
+window.toggleDarkMode = toggleDarkMode;
+window.applyCodeHighlight = applyCodeHighlight;
+</script>
+</body>
+</html>
