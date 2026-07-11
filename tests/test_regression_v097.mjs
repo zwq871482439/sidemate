@@ -238,15 +238,15 @@ assert(goSrc.includes('AppVersion = "v0.9.7"'), 'Go 版本号 v0.9.7');
 const wdSrc = readFile('launcher/watchdog.go');
 assert(wdSrc.includes('/v1/models'), 'watchdog 健康检查用 /v1/models');
 
-// ========== O. 打包脚本 ==========
+// ========== O. 打包脚本（已移至 docs/归档/发版资产/）==========
 console.log('\n[O] 打包脚本');
-const buildSrc = readFile('installer/build_extensions.py');
+const buildSrc = readFile('docs/归档/发版资产/installer/build_extensions.py');
 assert(buildSrc.includes('Q4_K_M'), 'build_extensions 含 Q4 模型');
 assert(buildSrc.includes('meta.json'), 'build_extensions 写 meta.json');
 // 实际打包逻辑不操作 blobs 目录（注释里提到历史不算）
 assert(!buildSrc.match(/['"].*blobs['"]/) || !buildSrc.includes('_write_dir_to_zip(zf, "models/blobs"') , 'build_extensions 不打包 blobs 目录');
 // setup.iss 删了 ollama.exe
-const issSrc = readFile('setup.iss');
+const issSrc = readFile('docs/归档/发版资产/setup.iss');
 assert(!issSrc.includes('Source: "ollama.exe"'), 'setup.iss 不含 ollama.exe');
 
 // ========== P. pipeline 归属标签 ==========
