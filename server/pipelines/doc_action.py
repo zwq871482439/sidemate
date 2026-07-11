@@ -948,7 +948,7 @@ _PPT_SLIDE_CSS = """
 /* mermaid 图 */
 .reveal .chart-frame { background: #fff; color: #333; border-radius: 10px; margin: 0.4em auto; padding: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.3); }
 .reveal .chart-stage { padding: 8px; min-height: 60px; text-align: center; }
-.reveal .chart-stage svg { max-width: 88% !important; height: auto !important; }
+.reveal .chart-stage svg { max-width: 88% !important; max-height: 65vh !important; height: auto !important; }
 .reveal .cf-hint, .reveal .chart-toolbar { display: none; }
 
 /* 引用 */
