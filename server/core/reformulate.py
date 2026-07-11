@@ -22,6 +22,11 @@ def reformulate_query(query: str, history: list, mgr) -> str:
     Returns:
         reformulated query string（失败时返回原 query）
     """
+    # P7: 简短闲聊/问候不需要 reformulate（小模型容易乱改写）
+    _query_stripped = query.strip()
+    if len(_query_stripped) <= 4 and not history:
+        return query
+
     from prompts import REFORMULATE_PROMPT, REFORMULATE_NO_HISTORY_PROMPT
 
     # 有 history 才拼摘要（最近2轮的Q+A摘要，限制500字）；summary 为空时退化为无历史分支
@@ -72,6 +77,27 @@ def reformulate_query(query: str, history: list, mgr) -> str:
         return query
 
 
+def _strip_prompt_echo(text: str, original: str) -> str:
+    """去除小模型把 prompt 指令原样输出的情况。
+
+    典型案例：模型输出"根据对话历史，将用户的消息改写为一个完整的独立搜索查询为：什么是刮五指？"
+    实际只需要冒号后面的"什么是刮五指？"
+    """
+    # prompt 指令残留特征词
+    _PROMPT_ECHO_MARKERS = [
+        '改写为', '改写后', '搜索查询为', '独立查询', '搜索关键词为',
+        '关键词为', '查询为', '改写：', '补全为',
+    ]
+    for marker in _PROMPT_ECHO_MARKERS:
+        if marker in text:
+            # 取 marker 后面的内容
+            idx = text.index(marker) + len(marker)
+            after = text[idx:].strip().strip('"').strip("'").strip("\u201c").strip("\u201d").strip('：: ')
+            if after and len(after) >= 2:
+                return after
+    return text
+
+
 def _clean_reformulate_output(response: str, original: str) -> str:
     """清洗 LLM 的 reformulate 输出，去除元分析/编号列表等啰嗦内容
 
@@ -82,7 +108,11 @@ def _clean_reformulate_output(response: str, original: str) -> str:
 
     # 策略1：如果只有一行，直接用（去引号）
     if len(lines) == 1:
-        return lines[0].strip('"').strip("'").strip("\u201c").strip("\u201d")
+        result = lines[0].strip('"').strip("'").strip("\u201c").strip("\u201d")
+        # P7: 小模型可能把 prompt 指令原样输出（如"根据对话历史，...改写为：XXX"）
+        # 提取冒号后面的实际内容
+        result = _strip_prompt_echo(result, original)
+        return result
 
     # 策略2：过滤掉编号列表/元分析行，找真正的关键词行
     # 元分析特征：以数字编号开头、包含"判断/分析/策略/关联/属于/可以"等分析词
@@ -106,11 +136,11 @@ def _clean_reformulate_output(response: str, original: str) -> str:
 
     if candidates:
         # 取第一个候选（通常是最相关的关键词）
-        return candidates[0]
+        return _strip_prompt_echo(candidates[0], original)
 
     # 策略3：全部被过滤了，退回取第一行去编号
     first = re.sub(r'^[\d]+[.、):]\s*', '', lines[0])
-    return first.strip('"').strip("'").strip("\u201c").strip("\u201d")
+    return _strip_prompt_echo(first.strip('"').strip("'").strip("\u201c").strip("\u201d"), original)
 
 
 def _check_keyword_preservation(original: str, reformulated: str, history: list) -> bool:
