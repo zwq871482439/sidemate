@@ -1429,13 +1429,16 @@ class AgentLoop:
                                     detail=data.get("title", ""),
                                     summary=_summary)
         elif tool_name == "search_kb":
-            # P6: 带检索结果摘要（来源标题列表）
+            # P7: 带完整检索结果列表（来源标题+摘要），供前端展开查看
             _sources = data.get("sources", [])
             _detail = ""
             if _sources:
                 _detail = "\n".join(["· " + (s.get("label", "?")[:40]) for s in _sources[:5]])
+            _sources_for_ui = [{"title": s.get("label", "?")[:80],
+                                "snippet": (s.get("snippet", "") or "")[:120]}
+                               for s in _sources[:5]]
             return get_status_event(tool_name, "done", count=data.get("count", 0),
-                                    detail=_detail)
+                                    detail=_detail, results=_sources_for_ui)
         elif tool_name == "set_doc_status":
             # Patch4 v3：携带 filename / docx_path（pipeline 据此派生 doc_complete 事件）
             return get_status_event(tool_name, "done",
