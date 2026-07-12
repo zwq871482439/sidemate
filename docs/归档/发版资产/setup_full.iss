@@ -24,7 +24,7 @@
 ; ====================================================================
 
 #define MyAppName "桌伴 Sidemate"
-#define MyAppVersion "0.9.5.0"
+#define MyAppVersion "0.9.7.0"
 #define MyAppPublisher "Sidemate Team"
 #define MyAppURL "https://sidemate.app"
 #define MyAppExeName "Sidemate.exe"
@@ -34,7 +34,7 @@
 AppId={{B7E3F2A1-8C9D-4E5F-A6B0-1D2E3F4A5B6C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName=Sidemate v0.9 Patch 5 (Full)
+AppVerName=Sidemate v0.9.7 (Full)
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}

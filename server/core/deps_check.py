@@ -42,8 +42,7 @@ REQUIRED_DEPS: List[Tuple[str, str, str]] = [
     ("sklearn", "scikit_learn", "kb"),
     ("faiss", "faiss_cpu", "kb"),
     # Patch5: rank_bm25 + jieba 已移除（bge-m3 sparse 替代）
-    # ── 纪要依赖 ──
-    ("faster_whisper", "faster_whisper", "recorder"),
+    # P7: faster_whisper/ctranslate2/onnxruntime 已移除（recorder 归档）
 ]
 
 # 可选依赖：缺失不阻断启动，仅提示（功能降级而非不可用）

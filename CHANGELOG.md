@@ -16,7 +16,11 @@
 
 ---
 
-## [Unreleased] - v0.9.7 开发中
+## [0.9.7] - 2026-07-12 — llama.cpp 底座 + 模型下载页 + 开源
+
+> **v0.9.7 正式发版**。详细发布说明见 [docs/设计文档/用户文档/CHANGELOG.md](docs/设计文档/用户文档/CHANGELOG.md)
+>
+> 核心变更：llama.cpp 替换 Ollama 底座 / 模型下载页（LLM 三档 + KB 组合）/ KB 问答引擎可选 / 动态 num_ctx / Apache-2.0 开源 / 文档全面更新 / recorder 归档
 
 > **下版本代号**：v0.9.7（Patch 7）。规划见 [docs/ROADMAP.md](docs/ROADMAP.md)「Patch 7」一节。
 >
