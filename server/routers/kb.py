@@ -1153,6 +1153,14 @@ async def api_kb_ask(request: Request):
         except Exception:
             kb_ai_mode = "local"
 
+        # P7: 本地 KB 模式前置检查——llama-server 未就绪时给友好提示
+        if kb_ai_mode == "local":
+            from server import ollama_manager
+            if not ollama_manager.is_healthy():
+                yield 'data: {"type":"token","content":"模型服务正在启动中，请稍候几秒后再试。"}\n\n'
+                yield 'data: [DONE]\n\n'
+                return
+
         max_prompt_tokens = mgr._get_device_token_limit()
         budget = mgr.calc_kb_context_budget()
         safe_chars = budget["safe_chars"]

@@ -235,6 +235,17 @@ async def api_chat_stream(request: Request):
         _ai_mode))
     mgr.stop_requested = False
 
+    # P7: 本地模式前置检查——llama-server 未就绪时给友好提示（不等 Connection error）
+    _needs_local = (_ai_mode in ("local", "parallel") or
+                    (action_mode == "kb" and _cfg_get("kb_ai_mode", "local") == "local"))
+    if _needs_local:
+        from server import ollama_manager
+        if not ollama_manager.is_healthy():
+            def _not_ready_gen():
+                yield 'data: {"type": "error", "content": "模型服务正在启动中，请稍候几秒后再试。如果长时间未就绪，请到「设置→模型下载」确认模型已安装并加载。"}\n\n'
+                yield 'data: [DONE]\n\n'
+            return StreamingResponse(_not_ready_gen(), media_type="text/event-stream")
+
     # (OCR 图片处理已移除 — OCR 已归档)
 
     prompt = message
