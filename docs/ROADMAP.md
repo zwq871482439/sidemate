@@ -110,7 +110,8 @@ P7 两大主线：**底层能力升级** + **品牌视觉精修**。
 - 修复方向：system prompt 增加「不要评价用户的提问方式，直接执行」约束
 - 关联代码：`prompts.py`（在线 agent system prompt）
 
-#### P7-4e: 工具与 action 模式拆分（架构清理）
+#### P7-4e: 工具与 action 模式拆分（架构清理）✅ 已完成
+> ✅ **0.9.7 已完成**：TOOL_REGISTRY 统一管理所有工具，action_router 独立管理 action，两者通过 mode 参数解耦。
 
 > 来源：0.9.6 后期 HTML报告/PPT 功能开发时发现的架构耦合（2026-06-30）
 
@@ -348,7 +349,7 @@ action 层（决定交互流程）：
 
 **关联代码**：`core/access_token.py`、`routers/kb.py:1595+`、`KBDocument.is_private`
 
-#### KB 文档详情全文预览（S3 深度版）
+#### KB 文档详情全文预览（S3 深度版）❌ 不做
 
 > 来源：0.9.6 KB 审查遗留（2026-06-27，会话决策：0.9.6 仅做摘要预览，全文放 0.9.7）
 
@@ -361,7 +362,7 @@ action 层（决定交互流程）：
 
 **关联代码**：`knowledge/ops.py:_load_text`、`routers/kb.py`、`qa.js:kbShowDocDetail`
 
-#### KB 文档列表虚拟滚动（分页方案 A）
+#### KB 文档列表虚拟滚动（分页方案 A）⏸ 推迟到 0.9.8
 
 > 来源：0.9.6 KB 审查遗留（2026-06-27，会话决策：当前文档量小优先级低，放 0.9.7）
 
