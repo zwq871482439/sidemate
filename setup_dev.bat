@@ -70,7 +70,7 @@ if %ERRORLEVEL% neq 0 (
     ) else (
         echo   编译 Sidemate.exe...
         cd launcher
-        go build -o ..\Sidemate.exe .
+        go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.7" -o ..\Sidemate.exe .
         cd ..
         if exist "Sidemate.exe" (
             echo   ✅ Sidemate.exe 编译成功

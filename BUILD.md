@@ -45,8 +45,10 @@ llama-server 是 llama.cpp 的推理服务，负责加载 GGUF 模型。
 
 ```bash
 cd launcher
-go build -o ..\Sidemate.exe .
+go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.7" -o ..\Sidemate.exe .
 ```
+
+> `-H windowsgui` 必须加，否则双击 exe 会弹出 CMD 黑窗口。
 
 如果不编译 Launcher，可以直接用 `python server/server.py` 启动后端。
 
