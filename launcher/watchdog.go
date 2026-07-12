@@ -77,7 +77,7 @@ func startWatchdog(
 		newOllamaCmd:  ollamaRebuilder,
 	}
 
-	wd.log("INFO", "WATCHDOG", "看门狗已启动（间隔10s, 阈值2次, 上限3次/小时）")
+	wd.log("INFO", "WATCHDOG", fmt.Sprintf("看门狗已启动（间隔%v, 阈值%d次, 上限%d次/小时）", wdCheckInterval, wdFailThreshold, wdMaxRestarts))
 
 	ticker := time.NewTicker(wdCheckInterval)
 	defer ticker.Stop()
