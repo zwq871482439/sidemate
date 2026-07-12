@@ -222,17 +222,19 @@ def _bg_init_worker():
     """后台初始化线程：在 HTTP 监听后执行所有重活。
 
     每个步骤独立 try/except，失败只 _add_bg_error 不中断。
-    最外层 finally 保证 ready 最终置 True。
+    最外层 finally 保证 ready 最终置 True（但 load_error 会传递给 Go launcher）。
     """
+    _llm_started_ok = False  # P7: 追踪模型是否真正启动成功
     try:
         # ---- 步骤1：Ollama 检查（幂等：Go 已起则秒返回）----
         _set_bg_phase("ollama")
         if _cfg_get("ollama_auto_start", True):
             try:
-                _report_startup("ollama_start", 70, "启动 Ollama 推理引擎...")
+                _report_startup("ollama_start", 70, "启动推理引擎...")
                 result = ollama_manager.start()
                 if result.get("status") in ("started", "already_running"):
-                    log.info("[BG-INIT] Ollama 就绪: %s" % result.get("status"))
+                    log.info("[BG-INIT] 模型引擎就绪: %s" % result.get("status"))
+                    _llm_started_ok = True
                     # S3: 标记实际加载的模型为 loaded（从启动结果取 model_id）
                     _loaded_model_path = result.get("model", "")
                     if _loaded_model_path:
@@ -243,11 +245,11 @@ def _bg_init_worker():
                                 mgr._loaded[_m.model_id] = True
                                 break
                 else:
-                    _add_bg_error("Ollama 启动失败: %s" % result.get("error", "unknown"))
+                    _add_bg_error("模型引擎启动失败: %s" % result.get("error", "unknown"))
             except Exception as e:
-                _add_bg_error("Ollama 异常: %s" % str(e)[:100])
+                _add_bg_error("模型引擎异常: %s" % str(e)[:100])
         else:
-            log.info("[BG-INIT] ollama_auto_start=False，跳过 Ollama 启动")
+            log.info("[BG-INIT] ollama_auto_start=False，跳过推理引擎启动")
 
         # ---- 步骤2：LLM 预热（受 auto_warmup_llm 控制）----
         _set_bg_phase("warmup")
@@ -364,7 +366,15 @@ def _bg_init_worker():
     except Exception as e:
         _add_bg_error("后台初始化未捕获异常: %s" % str(e)[:200])
     finally:
-        _set_bg_ready()
+        # P7: 如果模型引擎启动失败，把错误传递给 Go launcher（段2 会检查 load_error）
+        if not _llm_started_ok and _cfg_get("ollama_auto_start", True):
+            _existing_errors = _bg_init_state.get("load_error", "")
+            _model_error = "模型引擎未就绪，请到「设置→模型下载」确认模型已安装"
+            if _existing_errors:
+                _model_error = _existing_errors + "；" + _model_error
+            _set_bg_ready(_model_error)
+        else:
+            _set_bg_ready()
         _report_startup("ready", 85, "后台初始化完成")
 
 

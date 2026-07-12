@@ -1009,16 +1009,22 @@ func main() {
 	SetSplashSegmentText(splash, "正在加载模型引擎")
 	stageStart = time.Now()
 
-	// 真轮询后台加载状态（60s 超时）
-	ready, loadError := waitForReadyWithProgress("127.0.0.1", cfg.ServerPort, 60*time.Second)
+	// 真轮询后台加载状态（120s 超时——大模型首次加载到 GPU 可能需要较久）
+	ready, loadError := waitForReadyWithProgress("127.0.0.1", cfg.ServerPort, 120*time.Second)
 	if ready {
 		elapsed := time.Since(stageStart).Seconds()
-		log.Printf("[Launcher] ✅ 模型引擎就绪 (%.1fs)", elapsed)
-		if loadError != "" {
-			log.Printf("[Launcher] ⚠ 模型引擎加载有错误（不阻塞）: %s", loadError)
+		if loadError != "" && strings.Contains(loadError, "模型引擎未就绪") {
+			// P7: 模型引擎启动失败——不阻塞但明确告知用户
+			log.Printf("[Launcher] ⚠ 模型引擎未就绪: %s（用户需到设置页加载模型）", loadError)
+			SetSplashSegmentText(splash, "⚠ 模型引擎未就绪，请到设置页加载模型")
+		} else {
+			log.Printf("[Launcher] ✅ 模型引擎就绪 (%.1fs)", elapsed)
+			if loadError != "" {
+				log.Printf("[Launcher] ⚠ 模型引擎加载有非严重错误: %s", loadError)
+			}
 		}
 	} else {
-		log.Println("[Launcher] ⚠ 段2 超时(60s)，强制推进")
+		log.Println("[Launcher] ⚠ 段2 超时(120s)，强制推进")
 	}
 	// 确保至少 3s 最低停留
 	stageMinDelay(stageStart, 3*time.Second)
