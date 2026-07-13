@@ -20,7 +20,7 @@
 
 - 🔒 **数据不出本机**：对话、文件、知识库全部存储在你的电脑上，默认不传任何服务器
 - 🔌 **断网照用**：本地模式（llama.cpp + Qwen3.5）完全离线运行，坐飞机也能用
-- ☁️ **云端按需**：需要更强模型时，可配置云端 API（DeepSeek、GPT、通义千问等），你来选
+- ☁️ **云端按需**：需要更强模型时，可配置主流云端模型 API，你来选
 - 📚 **本地知识库**：上传 PDF/Word/笔记，AI 基于你的资料回答，向量化+重排序全在本地
 - 📊 **报告/PPT 生成**：一键生成 Word 文档、HTML 可视化报告、PPT 演示文稿
 - 🛠️ **AI Agent**：自主联网搜索、读网页、查知识库、写文档，多步任务自动完成
@@ -29,12 +29,12 @@
 
 | 功能 | 说明 |
 |------|------|
-| **三种模式** | 离线（100%本地）/ 在线（云端大模型）/ 并行（本地检索+云端推理） |
+| **三种模式** | 离线（完全本地）/ 在线（云端大模型）/ 并行（本地检索+云端推理） |
 | **本地知识库** | bge-m3 向量化 + bge-reranker-v2-m3 精排，dense+sparse 双路检索 |
 | **KB 问答引擎可选** | 知识库问答独立选择本地/云端 LLM，不受全局模式影响 |
 | **文档生成** | 提纲确认→两阶段生成，支持 .docx / .html（可视化报告）/ .ppt.html（演示文稿） |
 | **AI Agent** | 联网搜索、读网页、深度阅读、知识库检索、文件读写、计算器、格式转换等工具链 |
-| **模型下载** | 内置下载页，从魔搭 ModelScope 一键下载 LLM（三档）和知识库模型，支持断点续传 |
+| **模型下载** | 提供下载页，从魔搭 ModelScope 一键下载 LLM（三档）和知识库模型，支持断点续传 |
 | **审计日志** | 知识库每次检索记录访问明细（时间/访问者/查询词/命中片段/相关性评分） |
 | **深色模式** | 完整的深色/浅色主题 |
 
@@ -105,7 +105,7 @@ launcher/                   ← Go Launcher
 
 - 🔒 **Your data never leaves your machine**: Conversations, files, and knowledge base are stored locally — nothing is uploaded by default
 - 🔌 **Works offline**: Local mode (llama.cpp + Qwen3.5) runs entirely offline — use it on a plane
-- ☁️ **Cloud on your terms**: Connect cloud APIs (DeepSeek, GPT, Qwen) when you need more power — you choose
+- ☁️ **Cloud on your terms**: Connect mainstream cloud model APIs when you need more power — you choose
 - 📚 **Local knowledge base**: Upload PDFs/Word/notes, AI answers from your documents with vector search + reranking, all local
 - 📊 **Report & PPT generation**: Generate Word docs, HTML visual reports, and presentation slides in one click
 - 🛠️ **AI Agent**: Autonomous web search, page reading, knowledge base lookup, file operations — multi-step tasks done automatically
@@ -114,7 +114,7 @@ launcher/                   ← Go Launcher
 
 | Feature | Description |
 |---------|-------------|
-| **Three modes** | Offline (100% local) / Online (cloud LLM) / Parallel (local retrieval + cloud reasoning) |
+| **Three modes** | Offline (fully local) / Online (cloud LLM) / Parallel (local retrieval + cloud reasoning) |
 | **Local knowledge base** | bge-m3 embedding + bge-reranker-v2-m3, dense+sparse dual retrieval |
 | **KB engine selection** | KB Q&A independently chooses local/cloud LLM, separate from global mode |
 | **Document generation** | Outline confirmation → two-phase generation (.docx / .html / .ppt.html) |

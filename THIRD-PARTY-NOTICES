@@ -210,14 +210,45 @@ Python Software Foundation License 属于 permissive license，
 
 非 Python 组件
 
-  - Ollama
-    版权所有：Ollama, Inc.
+  - llama.cpp
+    版权所有：Georgi Gerganov
     许可协议：MIT License
-    来源：https://github.com/ollama/ollama
+    来源：https://github.com/ggml-org/llama.cpp
+    用途：本地 GGUF 模型推理引擎（llama-server）
+
+  - FAISS
+    版权所有：Facebook, Inc.
+    许可协议：MIT License
+    来源：https://github.com/facebookresearch/faiss
+    用途：知识库向量索引
+
+  - mermaid.js
+    版权所有：Mermaid.js contributors
+    许可协议：MIT License
+    来源：https://github.com/mermaid-js/mermaid
+    用途：流程图 / 思维导图 / 架构图渲染
+
+  - marked.js
+    版权所有：Christopher Jeffrey
+    许可协议：MIT License
+    来源：https://github.com/markedjs/marked
+    用途：Markdown 解析渲染
+
+  - highlight.js
+    版权所有：Ivan Sagalaev
+    许可协议：BSD 3-Clause License
+    来源：https://github.com/highlightjs/highlight.js
+    用途：代码语法高亮
+
+  - reveal.js
+    版权所有：Hakim El Hattab
+    许可协议：MIT License
+    来源：https://github.com/hakimel/reveal.js
+    用途：PPT 演示文稿引擎
 
   - Go Launcher (Sidemate.exe)
     版权所有：Sidemate Team
-    许可协议：本 EULA 管辖
+    许可协议：Apache-2.0（本项目 LICENSE 管辖）
     说明：自研组件，非第三方。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
