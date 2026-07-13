@@ -17,6 +17,11 @@ data/
 docs/
 tests/
 
+# 开发文档和脚本已迁移到 sidemate-dev（本地保留但不跟踪）
+BUILD.md
+requirements_gen.txt
+setup_dev.bat
+
 # ====== Python 缓存 ======
 __pycache__/
 *.pyc
