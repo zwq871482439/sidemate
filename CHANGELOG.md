@@ -2,8 +2,6 @@
 
 > 所有版本改动记录。遵循 [keepachangelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。日期格式：YYYY-MM-DD
 
-> 详细条目见 [docs/设计文档/用户文档/CHANGELOG.md](docs/设计文档/用户文档/CHANGELOG.md)
-
 ---
 
 ## [0.9.6] - 2026-06-28 — 0.9.6 首发重发（含 v0.9.6 之后 218 个 commit 的累积变更）
@@ -18,13 +16,9 @@
 
 ## [0.9.7] - 2026-07-12 — llama.cpp 底座 + 模型下载页 + 开源
 
-> **v0.9.7 正式发版**。详细发布说明见 [docs/设计文档/用户文档/CHANGELOG.md](docs/设计文档/用户文档/CHANGELOG.md)
+> **v0.9.7 正式发版**。
 >
 > 核心变更：llama.cpp 替换 Ollama 底座 / 模型下载页（LLM 三档 + KB 组合）/ KB 问答引擎可选 / 动态 num_ctx / Apache-2.0 开源 / 文档全面更新 / recorder 归档
-
-> **下版本代号**：v0.9.7（Patch 7）。规划见 [docs/ROADMAP.md](docs/ROADMAP.md)「Patch 7」一节。
->
-> **本节按"做到哪"实时更新**（最后更新 2026-07-09）。
 
 ### 已完成
 
@@ -37,7 +31,7 @@
 
 - [x] **P7-4 底座替换（Ollama → llama.cpp）技术验证**（2026-07-09，`feature/p7-4-llama-cpp-spike` 分支）
   - 7 项验证全部通过：llama-server 启动 / OpenAI 兼容流式 / 多模型切换 / num_ctx 启动参数可控 / think 模式 / 工具调用 / 多轮上下文
-  - 详细报告：`docs/验证报告.md`（4 个分支提交 7 项验证数据）
+  - 详细报告：7 项验证数据（4 个分支提交）
   - **未做**：主仓实际合并 / 替换 stream_engine.py（v0.9.7 主分支实施时做）
 
 - [x] **发布页搭建**（2026-07-09）
@@ -62,9 +56,9 @@
 
 ---
 
-> **下版本代号**：v0.9.7（Patch 7：动态 num_ctx / ModelScope 下载 / llama.cpp 底座 / 视觉精修 / KB 全文预览 S3）。规划见 [docs/ROADMAP.md](docs/ROADMAP.md)「Patch 7」一节。
+> **下版本代号**：v0.9.7（Patch 7：动态 num_ctx / ModelScope 下载 / llama.cpp 底座 / 视觉精修 / KB 全文预览 S3）。
 >
-> **0.9.6 已知问题**（不阻塞本次发版，留待 0.9.7 修复）：并行模式答非所问 / 文档提纲确认栏时序竞态 / 云端模型"多嘴"吐槽用户。详见 [ROADMAP.md P7-4c](docs/ROADMAP.md)。
+> **0.9.6 已知问题**（不阻塞本次发版，留待 0.9.7 修复）：并行模式答非所问 / 文档提纲确认栏时序竞态 / 云端模型"多嘴"吐槽用户。
 
 ### 0.9.6 首发版新增（main 分支 0.9.6 tag → HEAD，218 commit 累积）
 

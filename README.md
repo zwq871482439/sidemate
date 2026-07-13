@@ -42,7 +42,7 @@
 
 **普通用户**：下载安装包 → 一键安装 → 模型下载页选模型 → 开始使用
 
-**开发者**：clone 源码后运行 `setup_dev.bat` 一键部署，详见 [BUILD.md](BUILD.md)
+**开发者**：clone 源码后运行 `python envsetup.py` 一键部署（自动下载嵌入式 Python、pip 依赖、llama-server、编译 Launcher）
 
 1. 下载安装包或 clone 源码
 2. 启动后进入 **设置 → 模型下载**
@@ -53,15 +53,9 @@
 
 ### 📖 文档
 
-完整文档位于 `docs/设计文档/用户文档/`：
+完整使用文档位于官网 Wiki：**[desk.deskware.cn/wiki](https://desk.deskware.cn/wiki/)**
 
-- [用户手册](docs/设计文档/用户文档/v0.9.7-用户手册.md) — 产品总入口
-- [新手指引](docs/设计文档/用户文档/v0.9.7-新手指引.md) — 5 分钟上手
-- [三模式使用指南](docs/设计文档/用户文档/v0.9.7-三模式使用指南.md) — 离线/在线/并行
-- [知识库使用指南](docs/设计文档/用户文档/v0.9.7-知识库使用指南.md)
-- [工具调用使用指南](docs/设计文档/用户文档/v0.9.7-工具调用使用指南.md)
-- [设置页使用手册](docs/设计文档/用户文档/v0.9.7-设置页使用手册.md)
-- [CHANGELOG](docs/设计文档/用户文档/CHANGELOG.md)
+- 产品介绍 · 三模式详解 · 使用场景 · FAQ · 隐私政策
 
 ### 🛠 技术栈
 
@@ -78,6 +72,8 @@
 ### 📦 项目结构
 
 ```
+envsetup.py                 ← 一键环境部署（嵌入式 Python + 依赖 + llama-server + Launcher 编译）
+requirements.txt            ← Python 依赖清单
 server/
 ├── core/
 │   ├── llamacpp_backend/   ← llama.cpp 推理引擎
