@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.82">
+<link rel="stylesheet" href="/static/css/main.css?v=2.83">
 </head>
 <body>
 
@@ -63,7 +63,7 @@
         <div style="text-align:center;margin-bottom:18px">
           <img src="/static/img/logo.jpg" alt="桌伴" style="width:52px;height:52px;border-radius:14px;margin-bottom:6px">
           <h2 style="font-size:1.15em;font-weight:600;margin:0 0 4px 0;color:var(--text-primary)">欢迎使用桌伴</h2>
-          <p style="font-size:.82em;color:var(--text-secondary);margin:0;line-height:1.5">纯本地的 AI 智能助手，三步开始使用</p>
+          <p style="font-size:.82em;color:var(--text-secondary);margin:0;line-height:1.5">纯本地的 AI 桌面应用，三步开始使用</p>
         </div>
         <div style="max-width:380px;width:100%">
           <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
@@ -698,9 +698,9 @@
           <div class="card">
             <h4>产品描述</h4>
             <div style="font-size:13px;color:var(--text-secondary);line-height:1.8">
-              桌伴 Sidemate 是一款本地优先的 AI 办公助手。<br>
-              所有数据存储在你的电脑上，云端模式下对话仅发送到你配置的 API。<br>
-              支持离线智能对话、文档生成、知识库问答，让你的工作既有 AI 加持，又不用担心隐私泄露。
+              桌伴 Sidemate 是一款本地优先的 AI 桌面应用。<br>
+              AI 能力来自你选择的开源模型（本地）或云端 API，Sidemate 提供模型运行、知识库、工具链和文档生成的完整工作环境。<br>
+              本地模式下数据完全留在你的电脑上；云端模式下对话仅发送到你配置的 API，不经过第三方。
             </div>
           </div>
 
@@ -803,7 +803,7 @@ const API = '';
 </script>
 
 <!-- ===== 阶段1: 欢迎弹窗 + 阶段2: 交互式引导 ===== -->
-<script src="static/js/welcome-tour.js?v=2.82"></script>
+<script src="static/js/welcome-tour.js?v=2.83"></script>
 
 <script>
 // ===== Toast 覆盖层 =====
@@ -884,26 +884,26 @@ window.addEventListener('load', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.82"></script>
-<script src="/static/js/core/utils.js?v=2.82"></script>
-<script src="/static/js/core/errors.js?v=2.82"></script>
-<script src="/static/js/stream_renderer.js?v=2.82"></script>
-<script src="/static/js/settings.js?v=2.82"></script>
-<script src="/static/js/qa.js?v=2.82"></script>
-<script src="/static/js/kb-batch.js?v=2.82"></script>
+<script src="/static/js/core/api.js?v=2.83"></script>
+<script src="/static/js/core/utils.js?v=2.83"></script>
+<script src="/static/js/core/errors.js?v=2.83"></script>
+<script src="/static/js/stream_renderer.js?v=2.83"></script>
+<script src="/static/js/settings.js?v=2.83"></script>
+<script src="/static/js/qa.js?v=2.83"></script>
+<script src="/static/js/kb-batch.js?v=2.83"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
-<script src="/static/js/chat-session.js?v=2.82"></script>
-<script src="/static/js/chat-actions.js?v=2.82"></script>
-<script src="/static/js/chat-files.js?v=2.82"></script>
-<script src="/static/js/chat-export.js?v=2.82"></script>
-<script src="/static/js/chat-ui.js?v=2.82"></script>
-<script src="/static/js/chat.js?v=2.82"></script>
+<script src="/static/js/chat-session.js?v=2.83"></script>
+<script src="/static/js/chat-actions.js?v=2.83"></script>
+<script src="/static/js/chat-files.js?v=2.83"></script>
+<script src="/static/js/chat-export.js?v=2.83"></script>
+<script src="/static/js/chat-ui.js?v=2.83"></script>
+<script src="/static/js/chat.js?v=2.83"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.82"></script>
+<script src="/static/js/token-estimator.js?v=2.83"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->
-<script src="/static/js/ui-enhance.js?v=2.82"></script>
-<script src="/static/js/download.js?v=2.82"></script>
+<script src="/static/js/ui-enhance.js?v=2.83"></script>
+<script src="/static/js/download.js?v=2.83"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====

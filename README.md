@@ -2,9 +2,9 @@
 
 # 桌伴 Sidemate
 
-**不上传你的数据，也能用 AI。**
+**在你的电脑上运行 AI——数据由你掌控，模型由你选择。**
 
-本地 AI 桌面助手 — 对话、知识库、文档生成，数据全部留在你的电脑上。
+本地优先的 AI 桌面应用 — 对话、知识库、文档生成，数据全部留在你的电脑上。
 
 [功能](#-核心功能) · [快速开始](#-快速开始) · [文档](#-文档) · [技术栈](#-技术栈) · [路线图](#-路线图)
 
@@ -16,11 +16,11 @@
 
 ## 中文
 
-桌伴 Sidemate 是一款 **Windows 桌面 AI 助手**，核心理念是 **本地优先、隐私可控**：
+桌伴 Sidemate 是一款 **本地优先的 AI 桌面应用**。它提供模型运行、知识库管理、工具链和文档生成的完整工作环境——AI 能力来自你选择的开源模型（本地）或云端 API，Sidemate 负责编排一切，数据由你掌控。
 
-- 🔒 **数据不出本机**：对话、文件、知识库全部存储在你的电脑上，默认不传任何服务器
+- 🔒 **数据不出本机**：Sidemate 本身不收集、不上传你的数据。对话、文件、知识库全部存储在你的电脑上
 - 🔌 **断网照用**：本地模式（llama.cpp + Qwen3.5）完全离线运行，坐飞机也能用
-- ☁️ **云端按需**：需要更强模型时，可配置主流云端模型 API，你来选
+- ☁️ **云端按需**：需要更强模型时，可配置云端模型 API（OpenAI 兼容协议），数据直接发给你选的服务商，不经第三方
 - 📚 **本地知识库**：上传 PDF/Word/笔记，AI 基于你的资料回答，向量化+重排序全在本地
 - 📊 **报告/PPT 生成**：一键生成 Word 文档、HTML 可视化报告、PPT 演示文稿
 - 🛠️ **AI Agent**：自主联网搜索、读网页、查知识库、写文档，多步任务自动完成
@@ -97,11 +97,11 @@ launcher/                   ← Go Launcher
 
 ## English
 
-**Sidemate** is a **Windows desktop AI assistant** built on the principle of **local-first, privacy by design**:
+**Sidemate** is a **privacy-first AI desktop app**. It provides a complete workspace for running models, managing knowledge bases, chaining tools, and generating documents — AI capabilities come from open-source models (local) or cloud APIs (your choice), Sidemate orchestrates everything, and your data stays in your hands.
 
-- 🔒 **Your data never leaves your machine**: Conversations, files, and knowledge base are stored locally — nothing is uploaded by default
+- 🔒 **Your data stays local**: Sidemate itself doesn't collect or upload your data. Conversations, files, and knowledge base are stored on your machine
 - 🔌 **Works offline**: Local mode (llama.cpp + Qwen3.5) runs entirely offline — use it on a plane
-- ☁️ **Cloud on your terms**: Connect mainstream cloud model APIs when you need more power — you choose
+- ☁️ **Cloud on your terms**: Connect cloud model APIs (OpenAI-compatible) when you need more power — data goes directly to your chosen provider, no middleman
 - 📚 **Local knowledge base**: Upload PDFs/Word/notes, AI answers from your documents with vector search + reranking, all local
 - 📊 **Report & PPT generation**: Generate Word docs, HTML visual reports, and presentation slides in one click
 - 🛠️ **AI Agent**: Autonomous web search, page reading, knowledge base lookup, file operations — multi-step tasks done automatically
