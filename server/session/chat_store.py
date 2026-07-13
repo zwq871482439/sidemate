@@ -23,6 +23,7 @@ import shutil
 from datetime import datetime
 
 from config import CHAT_DIR
+from common.utils import atomic_write_json
 from routers.deps import (
     get_current_chat_file,
     get_current_chat,
@@ -255,12 +256,7 @@ def _save_folder_session(folder_path, messages, context_cache=None):
         "version": 3,
         "messages": messages,
     }
-    tmp_path = msgs_path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(msgs_data, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, msgs_path)
+    atomic_write_json(msgs_path, msgs_data)
 
     # 更新 meta.json
     meta_path = os.path.join(folder_path, "meta.json")
@@ -273,22 +269,12 @@ def _save_folder_session(folder_path, messages, context_cache=None):
             pass
     meta["message_count"] = len(messages)
     meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    tmp_meta = meta_path + ".tmp"
-    with open(tmp_meta, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_meta, meta_path)
+    atomic_write_json(meta_path, meta)
 
     # 保存 context_cache
     if context_cache is not None:
         cache_path = os.path.join(folder_path, "context_cache.json")
-        tmp_cache = cache_path + ".tmp"
-        with open(tmp_cache, "w", encoding="utf-8") as f:
-            json.dump(context_cache, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_cache, cache_path)
+        atomic_write_json(cache_path, context_cache)
 
 
 def _save_json_session(filepath, messages, context_cache=None):
@@ -325,12 +311,7 @@ def _save_json_session(filepath, messages, context_cache=None):
         "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "messages": messages,
     }
-    tmp_path = filepath + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, filepath)
+    atomic_write_json(filepath, data)
 
 
 def load_chat(filepath):

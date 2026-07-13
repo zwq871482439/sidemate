@@ -751,8 +751,11 @@ def api_system_info():
     try:
         # 检查 llama-server 进程是否在运行（用 /v1/models 探活）
         import httpx
+        from config import get as _cfg_get
+        _host = _cfg_get("ollama_host", "127.0.0.1")
+        _port = _cfg_get("ollama_port", 11434)
         try:
-            resp = httpx.get("http://127.0.0.1:11434/v1/models", timeout=3, trust_env=False)
+            resp = httpx.get("http://%s:%d/v1/models" % (_host, _port), timeout=3, trust_env=False)
             if resp.status_code == 200:
                 ollama_status = "running"
                 ollama_ver = "llama-server"

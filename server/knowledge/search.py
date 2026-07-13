@@ -14,6 +14,8 @@ import logging
 import numpy as np
 from typing import List, Dict, Tuple
 
+from common.utils import atomic_write_json
+
 log = logging.getLogger(__name__)
 
 
@@ -503,11 +505,8 @@ class _KBSearchMixin:
                 _existing.append(_entry)
                 if len(_existing) > self._AUDIT_LOG_MAX:
                     _existing = _existing[-self._AUDIT_LOG_MAX:]
-                # 写盘（原子写：先写临时文件再 rename）
-                _tmp = _fpath + ".tmp"
-                with open(_tmp, "w", encoding="utf-8") as _f:
-                    json.dump(_existing, _f, ensure_ascii=False, indent=2)
-                os.replace(_tmp, _fpath)
+                # 写盘（原子写）
+                atomic_write_json(_fpath, _existing)
             except Exception as e:
                 log.warning("[KB-AUDIT] 写审计日志失败 doc=%s: %s", _doc_id, str(e)[:80])
 

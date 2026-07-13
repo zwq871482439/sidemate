@@ -108,8 +108,8 @@ var _tourLastTab = '';
 var _tourSteps = [
   { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 本地模型，数据不出本机，无需联网<br><b>在线</b> — 云端大模型，联网搜索 + Agent 推理<br><b>并行</b> — 本地知识库 + 云端融合回答<br><br>在线 / 并行需先在设置配置 API Key', pos: 'bottom' },
   { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '输入问题，按 <b>Enter</b> 发送。<br><br>不仅能聊天，还能让 AI 直接生成 Word 文档、引用知识库回答、上传文件辅助提问。<br>顶部 Token 条显示剩余可用长度。', pos: 'top' },
-  { id: 'kb1',      tab: 'qa',   targetSel: '#kbToolbar button',   title: '上传你的文档',         desc: '上传文档后，<b>本地 AI</b> 会自动通读全文，<br>生成摘要、打上标签并归类——<br>全程在本机完成，<b>文档内容绝不外传</b>。', pos: 'bottom' },
-  { id: 'kb2',      tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: 'AI 洞察',             desc: '点击 <b>「整理」</b>，<b>本地 AI</b> 会通读你的整个文库，<br>给出主题归类、适用场景和建议追问。<br><br>同样全部在本机运行，<b>数据不出本机</b>。', pos: 'bottom' },
+  { id: 'kb1',      tab: 'qa',   targetSel: '#kbToolbar button',   title: '上传你的文档',         desc: '上传文档后，<b>本地 AI</b> 会自动通读全文，<br>生成摘要、打上标签并归类。<br><br>离线 / 并行模式下文档内容仅在本地处理；<br>在线模式下 Agent 调用知识库检索时，检索结果会发送到云端。', pos: 'bottom' },
+  { id: 'kb2',      tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: 'AI 洞察',             desc: '点击 <b>「整理」</b>，<b>本地 AI</b> 会通读你的整个文库，<br>给出主题归类、适用场景和建议追问。', pos: 'bottom' },
   { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '配置云端 API Key、安装扩展包、管理本地模型……<br>都在设置 Tab 里完成。<br><br>这就是桌伴的全部，开始使用吧！', pos: 'bottom' }
 ];
 

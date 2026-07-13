@@ -9,8 +9,10 @@ session/context_cache.py — 上下文缓存与历史清理
 """
 import re
 import os
+import json
 import logging
 
+from common.utils import atomic_write_json
 from routers.deps import get_mgr
 from session.chat_store import load_chat_cache
 
@@ -268,17 +270,11 @@ def clear_session_cache(filepath: str):
     if not filepath or not os.path.exists(filepath):
         return
     try:
-        import json
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict) and data.get("context_cache"):
             data["context_cache"] = None
-            tmp_path = filepath + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, filepath)
+            atomic_write_json(filepath, data)
             log.info("[CACHE] 已清理 %s 的 context_cache" % os.path.basename(filepath))
     except Exception as e:
         log.warning("[CACHE] 清理缓存失败: %s" % str(e)[:80])

@@ -26,6 +26,7 @@ from fastapi import APIRouter, UploadFile, File, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from common.utils import atomic_write_json
 from routers.deps import (
     get_mgr, get_kb,
     get_current_chat_file, get_current_chat, set_current_chat, get_default_llm,
@@ -603,12 +604,7 @@ async def api_chats_append(chat_name: str, request: Request):
                     if _ev is not None:
                         msg[_ek] = _ev
                 data["messages"].append(msg)
-                tmp_path = msgs_path + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, msgs_path)
+                atomic_write_json(msgs_path, data)
                 # 更新 meta.json
                 meta_path = os.path.join(filepath, "meta.json")
                 meta = {}
@@ -620,12 +616,7 @@ async def api_chats_append(chat_name: str, request: Request):
                         pass
                 meta["message_count"] = len(data["messages"])
                 meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                tmp_meta = meta_path + ".tmp"
-                with open(tmp_meta, "w", encoding="utf-8") as f:
-                    json.dump(meta, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_meta, meta_path)
+                atomic_write_json(meta_path, meta)
                 return {"ok": True, "msg_count": len(data["messages"])}
             else:
                 # 旧 .json 格式
@@ -650,12 +641,7 @@ async def api_chats_append(chat_name: str, request: Request):
                         msg[_ek] = _ev
                 data["messages"].append(msg)
                 data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                tmp_path = filepath + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, filepath)
+                atomic_write_json(filepath, data)
                 return {"ok": True, "msg_count": len(data["messages"])}
         return {"ok": True, "msg_count": len(data["messages"])}
     except Exception as e:
@@ -728,20 +714,10 @@ async def api_chats_enrich(chat_name: str, request: Request):
             # 原子写入
             if os.path.isdir(filepath):
                 data["messages"] = messages
-                tmp_path = msgs_path + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, msgs_path)
+                atomic_write_json(msgs_path, data)
             else:
                 data["messages"] = messages
-                tmp_path = filepath + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, filepath)
+                atomic_write_json(filepath, data)
 
         return {"ok": True, "updated": True, "fields": list(enrich_fields.keys())}
     except Exception as e:

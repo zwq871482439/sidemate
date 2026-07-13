@@ -24,8 +24,8 @@ set VERSION=%RAW:"=%
 set VERSION=%VERSION: =%
 
 if "%VERSION%"=="" (
-    echo [WARN] Failed to extract version from config.py, fallback to v0.9.6
-    set VERSION=0.9.6
+    echo [WARN] Failed to extract version from config.py, fallback to v0.9.7
+    set VERSION=0.9.7
 )
 
 echo [INFO] Building Sidemate.exe v%VERSION%

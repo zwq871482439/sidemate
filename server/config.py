@@ -27,11 +27,8 @@ log = logging.getLogger(__name__)
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))           # C:\Sidemate\server
 PROJECT_ROOT = os.path.dirname(ROOT_DIR)                         # C:\Sidemate\（项目根）
 
-# .sidemate 包签名密钥（HMAC-SHA256）
-# 【安全级别说明】当前 HMAC 仅用作包完整性校验（防传输损坏），非安全签名。
-# 密钥硬编码在源码中，不具备防伪造能力。如需安全签名，应升级为非对称方案（Ed25519）。
-# 可通过环境变量 SIDEMATE_HMAC_KEY 覆盖默认密钥。
-_SIDEMATE_HMAC_KEY_DEFAULT = "zhuoban-sidemate-default-key-v1"
+# .sidemate 包完整性校验：已从 HMAC 迁移到纯 SHA256 hash 验证（见 sidemate_validator.py）
+# HMAC 密钥配置已废弃，保留空兼容字段避免旧 settings.json 报错
 
 # ===== 运行时目录（统一管理，避免散落各处） =====
 # D1 重构：DATA_DIR 从 server/data 提升到项目根 data/
@@ -81,17 +78,18 @@ DEFAULTS = {
     "extensions_dir": "",                 # 空=DATA_DIR/extensions（D1 重构后）
     "models_dir": "",                     # 空=ROOT_DIR/models（运行时解析）
 
-    # ----- 文件操作限制 -----
-    "max_read_size_mb": 10,
-    "max_write_size_mb": 5,
+    # ----- 文件操作限制（已废弃，代码内未引用） -----
+    # "max_read_size_mb": 10,
+    # "max_write_size_mb": 5,
 
-    # ----- Agent 设置 -----
-    "agent_max_iterations": 8,
-    "agent_timeout": 120,           # 秒
-    "agent_result_max_chars": 800,  # 工具结果自动压缩阈值
-    "agent_max_rounds": 10,         # Agent Loop 最大工具调用轮次
-    "agent_tool_timeout": 20,       # 单次工具调用超时（秒）
-    "agent_total_timeout": 300,     # Agent 总任务超时（秒）
+    # ----- Agent 设置（已废弃：实际由 agent_loop.py 硬编码常量控制）-----
+    # 真实生效值：MAX_ROUNDS=20, MAX_TOOL_HISTORY_CHARS=60000 等
+    # "agent_max_iterations": 8,
+    # "agent_timeout": 120,
+    # "agent_result_max_chars": 800,
+    # "agent_max_rounds": 10,
+    # "agent_tool_timeout": 20,
+    # "agent_total_timeout": 300,
 
     # ----- 会话缓存 -----
     "cache_keep_ratio": 0.4,          # 保留最近 40% 的原始消息
@@ -106,14 +104,11 @@ DEFAULTS = {
     # 保留旧名兼容（ollama_* 仍可读，但实际指向 llama-server）
     "ollama_host": "127.0.0.1",          # llama-server 服务地址
     "ollama_port": 11434,                # llama-server 服务端口
-    "ollama_model": "qwen3-5-4b",       # 默认模型（model_id）
+    "ollama_model": "qwen3.5-4b-q4",     # 默认模型 model_id（实际由 last_loaded_model 优先）
     "last_loaded_model": "",             # 用户上次加载的模型 ID（启动时优先；空则按硬件推荐）
     "ollama_auto_start": True,           # 是否自动启动 llama-server 进程
     "auto_warmup_llm": True,             # 启动时是否预热（llama-server 启动即加载，预热可选）
-    "ollama_health_interval": 30,        # 健康检查间隔（秒）
-    "ollama_connect_timeout": 30,        # 连接超时（秒）
-    "ollama_read_timeout": 120,          # 读取超时（秒）
-    "ollama_max_concurrent": 1,          # 最大并发请求数
+    # ollama_health_interval / connect/read_timeout / max_concurrent 已废弃（P7-4 换 llama.cpp 后遗留，代码内未引用）
     # P7-4 新增 llama.cpp 专属配置
     "llamacpp_ctx_size": 8192,           # 上下文窗口大小（--ctx-size 启动参数）
     "llamacpp_gpu_layers": 99,           # GPU offload 层数（-ngl，0=纯CPU）
@@ -132,10 +127,10 @@ DEFAULTS = {
     # ----- 联网研究（Patch 2）-----
     # 搜索引擎零配置：本机直搜 Bing，无需 API Key
 
-    # ----- 蒸馏（对话摘要）-----
-    "distill_summary_max_chars": 100,    # 摘要最大字符数
-    "distill_question_max_chars": 200,   # 问题最大字符数
-    "distill_answer_max_chars": 500,     # 回答最大字符数
+    # ----- 蒸馏（对话摘要，已废弃：代码内未引用，早期功能遗留）-----
+    # "distill_summary_max_chars": 100,
+    # "distill_question_max_chars": 200,
+    # "distill_answer_max_chars": 500,
 
     # ----- 上下文压缩器 -----
     "compress_max_code_chars": 600,      # 压缩后代码超过此长度时截断
@@ -143,13 +138,14 @@ DEFAULTS = {
     "offline_compress_timeout": 30,      # 离线压缩超时（秒）
     "offline_compress_max_tokens": 512,  # 离线压缩最大生成 token 数
 
-    # ----- 长文本分段处理 -----
-    "chunk_threshold_chars": 8000,       # 超过此值触发分段
-    "chunk_max_chars": 2500,             # 每段目标字数
-    "chunk_overlap_chars": 200,          # 段间重叠
-    "chunk_memory_max_chars": 800,       # 滚动记忆上限
-    "chunk_max_chunks": 30,              # 安全上限（最多分段数）
-    "chunk_per_chunk_timeout": 30,       # 每段处理超时（秒）
+    # ----- 长文本分段处理（已废弃：实际由 agent_loop.py 内硬编码控制）-----
+    # 真实生效值：chunk_size=3000, deep_read 截断 15000 等
+    # "chunk_threshold_chars": 8000,
+    # "chunk_max_chars": 2500,
+    # "chunk_overlap_chars": 200,
+    # "chunk_memory_max_chars": 800,
+    # "chunk_max_chunks": 30,
+    # "chunk_per_chunk_timeout": 30,
 
     # ----- 知识库权限（Patch 3）-----
     "kb_permission": "full",              # "full" | "search-only" | "disabled"
@@ -189,7 +185,7 @@ DEFAULTS = {
     # ----- Whisper（Patch 6 扩展包，P6-10+ 实现）-----
     "whisper_model": "small",            # D21: small/medium（安装时锁定）
     "whisper_language": "zh",            # D42: 默认中文
-    "whisper_device": "cpu",             # D19: 固定 CPU
+    # whisper_device 已废弃（固定 CPU，代码内未引用）
     "whisper_keep_loaded": True,         # 模型常驻内存
     "whisper_enable_refine": True,       # D20: 启用 8B 辅助纠错
     "whisper_realtime_chunk_sec": 10,    # D25: 实时转写每 chunk 秒数
@@ -216,8 +212,8 @@ DEFAULTS = {
     "kb_search_top_k_local": 3,           # 本地模式 top-k（少而精，适配 4B 模型 16K 上下文）
     "kb_search_top_k_cloud": 5,           # 云端模式 top-k（多而广，云端 1M 上下文随便吃）
 
-    # ----- .sidemate 包签名 -----
-    "sidemate_hmac_key": os.environ.get("SIDEMATE_HMAC_KEY", _SIDEMATE_HMAC_KEY_DEFAULT),
+    # ----- .sidemate 包完整性（已废弃 HMAC，纯 SHA256 hash 校验）-----
+    # "sidemate_hmac_key": "",  # 已废弃，validator 不再使用
 
     # ===== Patch5: 线程池 + 任务队列 + 令牌系统 =====
     # 线程池大小（同步阻塞操作如文件解析、embedding 计算在此执行，避免卡死 FastAPI 事件循环）
@@ -237,9 +233,6 @@ DEFAULTS = {
 # ===== 本地模型统一 Token 限制（所有本地 LLM 调用共用）=====
 MAX_INPUT_TOKENS = 8192     # num_ctx，上下文窗口大小（P6 统一 8K，P7 改为动态读取）
 MAX_OUTPUT_TOKENS = 4096    # num_predict，最大输出 token 数
-
-# 导出顶层常量（供 validators/sidemate_validator.py 等模块使用）
-SIDEMATE_HMAC_KEY = DEFAULTS["sidemate_hmac_key"]
 
 # 模块版本号：向后兼容别名，始终等于 DEFAULTS["version"]（唯一权威源）
 __version__ = DEFAULTS["version"]

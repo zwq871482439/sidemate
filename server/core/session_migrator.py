@@ -16,6 +16,8 @@ import os
 import json
 import logging
 
+from common.utils import atomic_write_json
+
 log = logging.getLogger(__name__)
 
 
@@ -130,7 +132,7 @@ def _migrate_one(json_path, folder_path):
         "version": 3,
     }
     meta_path = os.path.join(folder_path, "meta.json")
-    _atomic_write_json(meta_path, meta)
+    atomic_write_json(meta_path, meta)
 
     # 4. 写 messages.json
     msgs_data = {
@@ -138,22 +140,12 @@ def _migrate_one(json_path, folder_path):
         "messages": messages,
     }
     msgs_path = os.path.join(folder_path, "messages.json")
-    _atomic_write_json(msgs_path, msgs_data)
+    atomic_write_json(msgs_path, msgs_data)
 
     # 5. 写 context_cache.json（如果有）
     if context_cache:
         cache_path = os.path.join(folder_path, "context_cache.json")
-        _atomic_write_json(cache_path, context_cache)
+        atomic_write_json(cache_path, context_cache)
 
     # 6. 删除旧文件（迁移成功才删）
     os.remove(json_path)
-
-
-def _atomic_write_json(path, data):
-    """原子写入 JSON 文件（先写 .tmp 再 rename）"""
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, path)

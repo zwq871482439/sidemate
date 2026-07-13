@@ -5,7 +5,10 @@
   - common/cancellation.py — 通用取消信号
   - common/text_utils.py   — 共用文本处理工具函数
 """
+import os
 import re
+import json
+import time
 import threading
 import logging
 from collections import Counter
@@ -105,3 +108,82 @@ def extract_keywords(text: str, top_n: int = 5) -> Set[str]:
         return set()
     counter = Counter(words)
     return set(w for w, _ in counter.most_common(top_n))
+
+
+# =====================================================================
+# 文件 I/O 工具函数
+# =====================================================================
+
+def atomic_write_json(path: str, data) -> None:
+    """原子写入 JSON 文件（写 .tmp → flush → fsync → os.replace）
+
+    统一替代散落在 6+ 个文件里的内联原子写代码。
+    保证崩溃安全：写入过程中断不会损坏原文件。
+
+    Args:
+        path: 目标文件路径
+        data: 可被 json.dump 序列化的对象
+    """
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass  # Windows 某些文件系统不支持 fsync
+    os.replace(tmp_path, path)
+
+
+def cleanup_old_files(
+    directory: str,
+    max_age_days: int,
+    recursive: bool = False,
+    label: str = None,
+) -> int:
+    """删除目录下超过 max_age_days 天的文件。
+
+    统一替代 cache_cleanup.py 和 log_cleanup.py 的内联清理逻辑。
+
+    Args:
+        directory: 目标目录
+        max_age_days: 文件保留天数，超过则删除
+        recursive: True 则递归子目录（os.walk），False 仅扫描顶层（os.listdir）
+        label: 日志标签（如 "LOG-CLEANUP"），不为 None 时逐文件打日志；
+               为 None 时静默（仅汇总）
+
+    Returns:
+        删除的文件数
+    """
+    if not os.path.isdir(directory):
+        return 0
+    cutoff = time.time() - max_age_days * 86400
+    cleaned = 0
+
+    if recursive:
+        walker = (
+            os.path.join(root, f)
+            for root, _dirs, files in os.walk(directory)
+            for f in files
+        )
+    else:
+        walker = (
+            os.path.join(directory, f)
+            for f in os.listdir(directory)
+            if os.path.isfile(os.path.join(directory, f))
+        )
+
+    for fpath in walker:
+        try:
+            if os.path.getmtime(fpath) < cutoff:
+                os.remove(fpath)
+                cleaned += 1
+                if label:
+                    log.info("[%s] deleted: %s (%d days)" % (label, os.path.basename(fpath), max_age_days))
+        except OSError as e:
+            if label:
+                log.warning("[%s] delete failed: %s — %s" % (label, os.path.basename(fpath), str(e)[:80]))
+
+    if cleaned and label:
+        log.info("[%s] %d file(s) cleaned" % (label, cleaned))
+    return cleaned

@@ -31,6 +31,7 @@ import logging
 import threading
 
 from config import CHAT_DIR
+from common.utils import atomic_write_json
 
 log = logging.getLogger(__name__)
 
@@ -342,15 +343,7 @@ def _save_completed(chat_id, data):
     if not os.path.isdir(docs_dir):
         os.makedirs(docs_dir, exist_ok=True)
     path = _completed_json_path(chat_id)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.flush()
-        try:
-            os.fsync(f.fileno())
-        except OSError:
-            pass
-    os.replace(tmp, path)
+    atomic_write_json(path, data)
 
 
 def mark_doc_completed(chat_id, filename):

@@ -18,7 +18,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import asdict
 from datetime import datetime
 
-from common.utils import TaskCancelledError, CancellationToken
+from common.utils import TaskCancelledError, CancellationToken, atomic_write_json
 from knowledge.models import KBDocument, KBChunk
 from knowledge.tags import normalize_tag
 from knowledge.embedding_engine import EmbeddingEngine
@@ -614,21 +614,12 @@ class _KBOpsMixin:
             "tag_groups": self.tag_groups,
         }
         try:
-            # Patch5 修复 Errno 22 + Errno 2：不用 mkstemp，用固定临时文件名 + os.replace
-            # 关键：写入前确保目录存在（之前 ensure_dirs 没建导致 Errno 2）
+            # Patch5 修复 Errno 22 + Errno 2：写入前确保目录存在
             _meta_dir = os.path.dirname(self.meta_path)
             os.makedirs(_meta_dir, exist_ok=True)
-            tmp_path = os.path.join(_meta_dir, "kb_meta_writing.json")
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, self.meta_path)
+            atomic_write_json(self.meta_path, data)
         except Exception as e:
             log.error("[KB] 保存元数据失败: %s", str(e))
-            try:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-            except OSError:
-                pass
 
     # ===== 标签分组 =====
 
