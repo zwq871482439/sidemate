@@ -13,6 +13,9 @@ Sidemate.exe
 # 统一数据目录（D1 重构后，所有用户数据在项目根 data/ 下）
 data/
 
+# 会话残留文件（格式 YYYY-MM-DD_NNN，可能被旧格式写到根目录）
+20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9]*
+
 # docs/ 和 tests/ 已迁移到 sidemate-dev 私有仓库（本地保留但不跟踪）
 docs/
 tests/
