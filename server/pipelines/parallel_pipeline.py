@@ -414,11 +414,15 @@ def _run_cloud_column(ctx, question: str, cloud_history: list, q: queue.Queue):
     q.put(("done", None))
 
 
-def _extract_cloud_keywords(ctx, question: str) -> str:
+def _extract_cloud_keywords(ctx, question: str, cloud_history: list = None) -> str:
     """云端关键词提取（非流式，只取输出）
 
     当 parallel_options.allow_cloud_keywords 开启时，
     调用云端 API 将问题拆解为 3-5 个关键词，用于增强本地 KB 检索。
+    传入 cloud_history 让云端模型理解追问上下文（如"那是谁发明的"→"刮五指 发明者"）。
+
+    隐私安全：cloud_history 只含用户问题 + 云端自己的回答，不含本地 KB 内容。
+
     返回关键词字符串，失败时返回原始 question。
     """
     mgr = ctx.mgr
@@ -436,7 +440,7 @@ def _extract_cloud_keywords(ctx, question: str) -> str:
         keywords_parts = []
         for phase, content in cloud_engine.run(
             keyword_prompt,
-            history=[],
+            history=cloud_history or [],
             context_cache=None,
             override_task_type="text",
             _skip_queue=True,
@@ -500,7 +504,7 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     local_query = message
     if allow_cloud_keywords:
         log.info("[PARALLEL] 云端关键词提取已启用")
-        local_query = _extract_cloud_keywords(ctx, message)
+        local_query = _extract_cloud_keywords(ctx, message, cloud_history)
         # P6 #15: 把提取的关键词回传前端展示，让用户知道辅助生效了什么
         if local_query and local_query != message:
             yield 'data: %s\n\n' % json.dumps({

@@ -122,6 +122,8 @@ else:
         _still_missing.extend(_cat_items)
     if _still_missing:
         log.warning("[STARTUP] 依赖缺失（部分功能不可用）: %s" % ", ".join(_still_missing))
+        # 存储到状态机供前端检测
+        _bg_init_state["deps_missing"] = _still_missing
 
 # ===== 依赖安全网（manifest + SHA256 抽检）=====
 from core.deps_check import (
@@ -178,6 +180,7 @@ _bg_init_state = {
     "ready": False,        # false=后台加载进行中；true=加载流程已结束（无论成败）
     "load_error": None,    # null=无错误；非空字符串=累积的失败原因
     "bg_phase": "pending", # pending→ollama→warmup→kb→schedulers→done
+    "deps_missing": None,  # null=依赖正常；非空=list of missing (import_name, pip_name, category)
 }
 _bg_init_lock = _threading.Lock()
 _bg_init_thread = None

@@ -154,11 +154,13 @@ def api_status():
             result["ready"] = _main_state["ready"]
             result["load_error"] = _main_state.get("load_error")
             result["bg_phase"] = _main_state.get("bg_phase", "done")
+            result["deps_missing"] = _main_state.get("deps_missing")
         else:
             with _svr._bg_init_lock:
                 result["ready"] = _svr._bg_init_state["ready"]
                 result["load_error"] = _svr._bg_init_state["load_error"]
                 result["bg_phase"] = _svr._bg_init_state["bg_phase"]
+                result["deps_missing"] = _svr._bg_init_state.get("deps_missing")
     except Exception:
         # fallback：读取失败时默认 ready（不应发生）
         result["ready"] = True
@@ -339,6 +341,200 @@ def api_env_check():
     """返回完整环境报告"""
     mgr = get_mgr()
     return mgr.get_env_report()
+
+
+# ============================================================
+#  运行环境诊断 + 修复
+# ============================================================
+
+@router.get("/api/env/diagnose")
+def api_env_diagnose():
+    """统一环境检查：聚合依赖检查 + 核心包完整性 + 引擎状态"""
+    import sys
+    import os
+    from core.deps_check import REQUIRED_DEPS, OPTIONAL_DEPS, _import_check, check_optional
+
+    result = {"all_ok": True}
+
+    # 1. Python 环境
+    result["python"] = {
+        "ok": True,
+        "version": "%d.%d.%d" % sys.version_info[:3],
+        "path": sys.executable,
+    }
+
+    # 2. llama-server
+    from config import ROOT_DIR
+    _llama_path = os.path.join(ROOT_DIR, "..", "lib", "ollama", "llama-server.exe")
+    _llama_exists = os.path.isfile(_llama_path)
+    result["llama_server"] = {"ok": _llama_exists, "path": _llama_path}
+
+    # 3. 依赖检查（按分类）
+    deps = {}
+    has_missing = False
+    for import_name, pip_name, category in REQUIRED_DEPS:
+        ok = _import_check(import_name)
+        deps.setdefault(category, []).append({
+            "name": import_name, "pip": pip_name, "ok": ok,
+        })
+        if not ok:
+            has_missing = True
+    result["deps"] = deps
+
+    # 4. 可选依赖
+    result["optional_missing"] = check_optional()
+    if result["optional_missing"]:
+        result["all_ok"] = False  # 可选缺失不算 all_ok=False，但提示
+
+    # 5. 模型状态
+    from server import ollama_manager
+    mgr = get_mgr()
+    _current_model = ""
+    try:
+        _loaded = ollama_manager.list_available_models()
+        for m in _loaded:
+            if m.get("current"):
+                _current_model = m.get("model_id", "")
+                break
+    except Exception:
+        pass
+    result["models"] = {
+        "llm_loaded": bool(_current_model),
+        "llm_name": _current_model,
+    }
+
+    # KB 模型状态
+    try:
+        from routers.deps import get_kb
+        kb = get_kb()
+        if kb:
+            result["models"]["kb_loaded"] = bool(getattr(kb, '_embedder_loaded', False))
+            result["models"]["kb_reranker"] = bool(getattr(kb.reranker, 'available', False))
+        else:
+            result["models"]["kb_loaded"] = False
+    except Exception:
+        result["models"]["kb_loaded"] = False
+
+    if not _current_model or has_missing or not _llama_exists:
+        result["all_ok"] = False
+
+    return result
+
+
+# 环境修复任务管理（复用 extensions 的异步范式）
+_env_repair_tasks = {}
+_env_repair_lock = None
+
+def _get_env_repair_lock():
+    global _env_repair_lock
+    if _env_repair_lock is None:
+        import threading
+        _env_repair_lock = threading.Lock()
+    return _env_repair_lock
+
+
+@router.post("/api/env/repair")
+async def api_env_repair(request: Request):
+    """用 pip 联网安装缺失依赖"""
+    import sys
+    import uuid
+    import queue
+    import threading
+    import subprocess
+
+    body = await request.json()
+    packages = body.get("packages", [])
+    if not packages:
+        return JSONResponse({"error": "请指定要修复的包"}, status_code=400)
+
+    # 排除大包（torch/faiss/transformers 等 KB 依赖走 Launcher 硬链接恢复）
+    _BIG_PKGS = {"torch", "transformers", "sentence_transformers", "scipy", "scikit_learn", "faiss", "faiss_cpu"}
+    safe_packages = [p for p in packages if p not in _BIG_PKGS]
+    skipped = [p for p in packages if p in _BIG_PKGS]
+
+    if not safe_packages:
+        return JSONResponse({"error": "指定的包属于大体积依赖，请通过重启应用由启动器自动恢复", "skipped": skipped}, status_code=400)
+
+    task_id = uuid.uuid4().hex[:12]
+    progress_queue = queue.Queue()
+
+    def _repair_worker():
+        try:
+            total = len(safe_packages)
+            progress_queue.put({"type": "progress", "stage": "开始安装 %d 个依赖" % total, "percent": 0, "current": 0, "total": total})
+
+            installed = []
+            failed = []
+            import importlib
+            # import_name 映射表（pip 名 → import 名）
+            _IMPORT_MAP = {
+                "python_docx": "docx", "openai": "openai", "psutil": "psutil",
+                "pypandoc_binary": "pypandoc", "curl_cffi": "curl_cffi",
+            }
+
+            for i, pkg in enumerate(safe_packages):
+                pct = int((i / total) * 100)
+                progress_queue.put({"type": "progress", "stage": "正在安装 %d/%d: %s" % (i + 1, total, pkg),
+                                    "percent": pct, "current": i + 1, "total": total})
+
+                pip_cmd = [sys.executable, "-m", "pip", "install", pkg]
+                result = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=120)
+
+                if result.returncode == 0:
+                    installed.append(pkg)
+                else:
+                    failed.append(pkg)
+                    log.warning("[ENV-REPAIR] pip install %s 失败: %s", pkg, result.stderr[-200:] if result.stderr else "")
+
+            final_pct = 100
+            progress_queue.put({"type": "progress", "stage": "安装完成", "percent": final_pct, "current": total, "total": total})
+            progress_queue.put({"type": "done", "installed": installed, "failed": failed, "skipped": skipped})
+        except subprocess.TimeoutExpired:
+            progress_queue.put({"type": "error", "error": "安装超时（单个包超过 2 分钟）"})
+        except Exception as e:
+            progress_queue.put({"type": "error", "error": str(e)[:200]})
+
+    with _get_env_repair_lock():
+        _env_repair_tasks[task_id] = progress_queue
+
+    thread = threading.Thread(target=_repair_worker, daemon=True)
+    thread.start()
+
+    return {"task_id": task_id, "packages": safe_packages, "skipped": skipped}
+
+
+@router.get("/api/env/repair/progress/{task_id}")
+async def api_env_repair_progress(task_id: str):
+    """SSE 端点：环境修复进度"""
+    import asyncio
+    from sse_starlette.sse import EventSourceResponse
+
+    progress_queue = _env_repair_tasks.get(task_id)
+    if not progress_queue:
+        return JSONResponse({"error": "任务不存在"}, status_code=404)
+
+    async def _stream():
+        import json
+        import time
+        _start = time.time()
+        while True:
+            try:
+                item = progress_queue.get_nowait()
+                yield {"data": json.dumps(item, ensure_ascii=False)}
+                if item.get("type") in ("done", "error"):
+                    # 清理任务
+                    with _get_env_repair_lock():
+                        _env_repair_tasks.pop(task_id, None)
+                    break
+            except Exception:
+                # 队列空，发心跳
+                yield {"data": ": heartbeat"}
+                if time.time() - _start > 300:
+                    yield {"data": json.dumps({"type": "error", "error": "超时"}, ensure_ascii=False)}
+                    break
+            await asyncio.sleep(0.5)
+
+    return EventSourceResponse(_stream())
 
 
 # ============================================================

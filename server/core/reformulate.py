@@ -12,7 +12,10 @@ log = logging.getLogger(__name__)
 
 
 def reformulate_query(query: str, history: list, mgr) -> str:
-    """改写查询：有历史时补全上下文，无历史时提取搜索关键词
+    """提取搜索关键词：让本地 LLM 从用户消息中提取检索关键词
+
+    有历史时 LLM 会补全追问上下文（如"那是谁发明的"→"刮五指是谁发明的"）。
+    无历史时 LLM 提取核心搜索词（如"什么是刮五指"→"刮五指"）。
 
     Args:
         query: 用户当前消息
@@ -22,27 +25,10 @@ def reformulate_query(query: str, history: list, mgr) -> str:
     Returns:
         reformulated query string（失败时返回原 query）
     """
-    # P7: 简短闲聊/问候不需要 reformulate（小模型容易乱改写）
+    # 太短的直接用原文（不需要提取）
     _query_stripped = query.strip()
-    if len(_query_stripped) <= 4 and not history:
+    if len(_query_stripped) <= 3:
         return query
-
-    # 规则前置：如果没有历史（无追问/指代），先尝试规则提取关键词
-    # 规则有信心就不调 LLM（省时间 + 避免小模型乱改）
-    if not history:
-        rule_result = _rule_extract_keywords(_query_stripped)
-        if rule_result:
-            log.info("[REFORMULATE] 规则提取（跳过 LLM）: '%s' → '%s'", query[:50], rule_result[:50])
-            return rule_result
-
-    # 有历史时检测是否需要 LLM 补全（追问/指代词）
-    _needs_llm = bool(history) and _has_anaphora(_query_stripped)
-    if history and not _needs_llm:
-        # 有历史但不是追问（没有指代词），也用规则提取
-        rule_result = _rule_extract_keywords(_query_stripped)
-        if rule_result:
-            log.info("[REFORMULATE] 规则提取（非追问）: '%s' → '%s'", query[:50], rule_result[:50])
-            return rule_result
 
     from prompts import REFORMULATE_PROMPT, REFORMULATE_NO_HISTORY_PROMPT
 
@@ -97,7 +83,7 @@ def reformulate_query(query: str, history: list, mgr) -> str:
 # 追问/指代词（需要 LLM 补全上下文的信号）
 # 注意：只列真正需要历史上下文的指代词，不含 "哪些/怎么/如何"（这些在完整问题里也常见）
 _ANAPHORA_PATTERNS = re.compile(
-    r'那个|这个|它|他|她|它们|还有|另外|上面|前面|刚才|继续说|详细说说|具体说说'
+    r'那个|这个|那是|这是|它|他|她|它们|还有|另外|上面|前面|刚才|继续说|详细说说|具体说说|那谁|这谁'
 )
 
 # 停用词（提取关键词时过滤）

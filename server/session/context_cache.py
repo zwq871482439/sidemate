@@ -202,61 +202,16 @@ def update_session_cache(chat_file, messages, model_name=None):
     if not old_messages:
         return load_chat_cache(chat_file), False
 
-    try:
-        from common.context_compressor import _compress_text, _is_code_block, _compress_code
-    except ImportError:
-        return load_chat_cache(chat_file), False
-
+    # 本地模式：简单丢弃旧消息，不做摘要压缩（小模型摘要质量不可靠）
+    # 只记录一条标记，前端据此显示"历史已省略"提示
+    _dropped_count = len(old_messages)
     existing_cache = load_chat_cache(chat_file) or ""
-    cache_parts = []
     if existing_cache:
-        cache_parts.append(existing_cache)
+        new_cache = existing_cache  # 保留已有的 cache（可能之前的压缩标记）
+    else:
+        new_cache = "[较早的 %d 条对话已省略，只保留最近对话]" % _dropped_count
 
-    current_round_parts = []
-    for m in old_messages:
-        role = m.get("role", "user")
-        content = m.get("content", "")
-        if not content:
-            continue
-        content = re.sub(r'</?(?:details|think|summary|think_details)[^>]*>', '', content)
-        content = re.sub(r'`\d+字`\s*`[\d.]+s`\s*`[\d.]+字/s`', '', content)
-        content = content.strip()
-        if not content:
-            continue
-        if role == "user":
-            if current_round_parts:
-                cache_parts.append(" | ".join(current_round_parts))
-                current_round_parts = []
-            current_round_parts.append("用户: " + content[:_CACHE_ENTRY_MAX_CHARS])
-        elif role == "assistant":
-            if _is_code_block(content):
-                compressed = _compress_code(content)
-            else:
-                compressed = _compress_text(content)
-            current_round_parts.append("助手: " + compressed[:_CACHE_ENTRY_MAX_CHARS])
-
-    if current_round_parts:
-        cache_parts.append(" | ".join(current_round_parts))
-
-    new_cache = "\n".join(cache_parts)
-    if len(new_cache) > _CACHE_MAX_TOTAL_CHARS:
-        new_cache = new_cache[-_CACHE_MAX_TOTAL_CHARS:]
-        first_newline = new_cache.find("\n")
-        if first_newline > 0:
-            new_cache = new_cache[first_newline + 1:]
-
-    log.info("[CACHE] 压缩完成: %d条旧消息 -> %d字 cache" % (len(old_messages), len(new_cache)))
-
-    # 离线模型增强压缩
-    if len(new_cache) > 300:
-        try:
-            from common.context_compressor import offline_compress_with_model
-            model_summary = offline_compress_with_model(old_messages, model_manager=mgr)
-            if model_summary and len(model_summary) > 20:
-                log.info("[CACHE] 离线模型摘要替换: %d字 -> %d字" % (len(new_cache), len(model_summary)))
-                new_cache = "[AI摘要] " + model_summary
-        except Exception as e:
-            log.warning("[CACHE] 离线模型压缩失败: %s" % str(e)[:80])
+    log.info("[CACHE] 简单丢弃: %d条旧消息已省略，保留最近 %d 条" % (_dropped_count, len(new_messages)))
 
     return new_cache, True
 

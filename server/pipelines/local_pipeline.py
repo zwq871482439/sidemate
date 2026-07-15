@@ -657,7 +657,7 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             ]
             new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
             if did_compress:
-                yield sse_event("compress", {"msg": "正在压缩旧对话..."})
+                yield sse_event("compress", {"msg": "较早的对话已省略，只保留最近对话"})
             save_chat(chat_file, messages, context_cache=new_cache)
             _saved = True
         else:

@@ -581,3 +581,155 @@ window.uninstallKb = uninstallKb;
 window.onDlSourceChange = onDlSourceChange;
 window.cancelDownload = cancelDownload;
 window.quickStart = quickStart;
+window.runEnvCheck = runEnvCheck;
+
+// ===== 运行环境检查 + 修复 =====
+
+async function runEnvCheck() {
+  var list = document.getElementById('envCheckList');
+  if (!list) return;
+  list.innerHTML = '<span style="color:var(--text-muted)">检查中...</span>';
+
+  try {
+    var resp = await fetch((typeof _apiBase !== 'undefined' ? _apiBase : '') + '/api/env/diagnose');
+    var data = await resp.json();
+    _renderEnvCheck(data);
+  } catch(e) {
+    list.innerHTML = '<span style="color:var(--error-color)">检查失败: ' + esc(e.message) + '</span>';
+  }
+}
+
+function _renderEnvCheck(data) {
+  var list = document.getElementById('envCheckList');
+  if (!list) return;
+
+  var html = '';
+  var _okIcon = '<span style="color:var(--dot-ok,#16a34a)">&check;</span>';
+  var _badIcon = '<span style="color:var(--error-color)">&times;</span>';
+  var _warnIcon = '<span style="color:var(--warning-color,#d97706)">&excl;</span>';
+
+  var _rowStyle = 'display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px';
+
+  // Python
+  if (data.python) {
+    html += '<div style="' + _rowStyle + '">' + _okIcon + '<span>Python ' + esc(data.python.version || '') + '</span></div>';
+  }
+
+  // llama-server
+  if (data.llama_server) {
+    var lsIcon = data.llama_server.ok ? _okIcon : _badIcon;
+    html += '<div style="' + _rowStyle + '">' + lsIcon + '<span>llama-server ' + (data.llama_server.ok ? '已就绪' : '未找到') + '</span></div>';
+  }
+
+  // 依赖
+  var deps = data.deps || {};
+  var categoryLabels = { base: '基础', cloud: '云端', kb: '知识库' };
+  var missingPkgs = [];
+
+  for (var cat of ['base', 'cloud', 'kb']) {
+    var items = deps[cat] || [];
+    for (var i = 0; i < items.length; i++) {
+      var dep = items[i];
+      var icon = dep.ok ? _okIcon : _badIcon;
+      var badge = '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">[' + (categoryLabels[cat] || cat) + ']</span>';
+      var repairBtn = '';
+      if (!dep.ok) {
+        missingPkgs.push(dep.pip);
+        repairBtn = ' <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="repairDeps([\'' + esc(dep.pip) + '\'])">修复</button>';
+      }
+      html += '<div style="' + _rowStyle + '">' + icon + '<span>' + esc(dep.pip) + badge + '</span>' + repairBtn + '</div>';
+    }
+  }
+
+  // 可选依赖
+  if (data.optional_missing && data.optional_missing.length > 0) {
+    for (var j = 0; j < data.optional_missing.length; j++) {
+      var opt = data.optional_missing[j];
+      html += '<div style="' + _rowStyle + '">' + _warnIcon + '<span>' + esc(opt) + ' <span style="color:var(--text-muted);font-size:11px">(可选，缺失时功能降级)</span></span></div>';
+    }
+  }
+
+  // 模型状态
+  if (data.models) {
+    html += '<div style="margin-top:8px;padding-top:6px;border-top:0.5px solid var(--border-color)"></div>';
+    if (data.models.llm_loaded) {
+      html += '<div style="' + _rowStyle + '">' + _okIcon + '<span>LLM 模型已加载 (' + esc(data.models.llm_name || '') + ')</span></div>';
+    } else {
+      html += '<div style="' + _rowStyle + '">' + _badIcon + '<span>LLM 模型未加载</span></div>';
+    }
+    if (data.models.kb_loaded !== undefined) {
+      html += '<div style="' + _rowStyle + '">' + (data.models.kb_loaded ? _okIcon : _badIcon) + '<span>知识库模型 ' + (data.models.kb_loaded ? '已加载' : '未加载') + '</span></div>';
+    }
+  }
+
+  // 一键修复（有缺失时）
+  if (missingPkgs.length > 0) {
+    var pkgList = missingPkgs.map(function(p) { return "'" + p + "'"; }).join(',');
+    html += '<div style="margin-top:8px"><button class="btn btn-primary" style="font-size:13px" onclick="repairDeps([' + pkgList + '])">一键修复 ' + missingPkgs.length + ' 个缺失</button></div>';
+  }
+
+  list.innerHTML = html;
+}
+
+async function repairDeps(packages) {
+  if (!packages || !packages.length) return;
+  var progress = document.getElementById('envRepairProgress');
+  if (progress) {
+    progress.style.display = '';
+    progress.innerHTML =
+      '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">正在安装依赖...</div>' +
+      '<div style="background:var(--bg-secondary);border-radius:6px;overflow:hidden;height:8px"><div id="envRepairFill" style="height:100%;background:var(--accent-color,#4f46e5);border-radius:6px;transition:width .3s;width:0%"></div></div>' +
+      '<div id="envRepairText" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>';
+  }
+
+  try {
+    var resp = await fetch((typeof _apiBase !== 'undefined' ? _apiBase : '') + '/api/env/repair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ packages: packages })
+    });
+    var data = await resp.json();
+
+    if (data.error) {
+      if (typeof showToast === 'function') showToast(data.error, 'error');
+      if (progress) progress.innerHTML = '';
+      return;
+    }
+
+    // 监听 SSE 进度
+    var es = new EventSource((typeof _apiBase !== 'undefined' ? _apiBase : '') + '/api/env/repair/progress/' + data.task_id);
+    es.onmessage = function(ev) {
+      var d;
+      try { d = JSON.parse(ev.data); } catch(_) { return; }
+      var fill = document.getElementById('envRepairFill');
+      var text = document.getElementById('envRepairText');
+      if (d.type === 'progress') {
+        if (fill) fill.style.width = (d.percent || 0) + '%';
+        if (text) text.textContent = d.stage || '安装中...';
+      } else if (d.type === 'done') {
+        es.close();
+        var installed = d.installed || [];
+        var failed = d.failed || [];
+        if (fill) fill.style.width = '100%';
+        if (failed.length > 0) {
+          if (text) text.textContent = '';
+          if (typeof showToast === 'function') showToast('已安装 ' + installed.length + ' 个，' + failed.length + ' 个失败: ' + failed.join(', '), 'warning');
+        } else {
+          if (text) text.textContent = '';
+          if (typeof showToast === 'function') showToast('安装完成: ' + installed.join(', '), 'success');
+        }
+        setTimeout(function() { if (progress) progress.style.display = 'none'; runEnvCheck(); }, 1500);
+      } else if (d.type === 'error') {
+        es.close();
+        if (progress) progress.innerHTML = '';
+        if (typeof showToast === 'function') showToast('修复失败: ' + (d.error || '').slice(0, 100), 'error');
+      }
+    };
+    es.onerror = function() { es.close(); if (progress) progress.innerHTML = ''; };
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('修复请求失败: ' + e.message, 'error');
+    if (progress) progress.innerHTML = '';
+  }
+}
+
+window.repairDeps = repairDeps;

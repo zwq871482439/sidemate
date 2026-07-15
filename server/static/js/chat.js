@@ -1278,14 +1278,20 @@ async function sendMessage() {
             if (typeof _showCompressProgress === 'function' && d.phase) {
               _showCompressProgress(d.phase, d.progress, d.msg, d.before, d.after);
             } else {
-              // fallback: 简单文字通知
+              // 本地模式：显示"历史已省略"提示（持久，不自动消失）
               var streamEl3b = document.getElementById('stream-msg');
               if (streamEl3b) {
                 var compDiv = document.createElement('div');
                 compDiv.className = 'compress-notice';
-                compDiv.innerHTML = iconSvg('doc','14') + ' ' + esc(d.msg || '正在压缩旧对话...');
-                streamEl3b.appendChild(compDiv);
-                setTimeout(function() { if (compDiv.parentNode) compDiv.remove(); }, 3000);
+                compDiv.style.cssText = 'font-size:11px;color:var(--text-muted);text-align:center;padding:6px 0;border-top:0.5px solid var(--border-color);border-bottom:0.5px solid var(--border-color);margin:4px 0';
+                compDiv.textContent = d.msg || '较早的对话已省略';
+                // 插入到 stream-msg 的最前面（card-area 之后）
+                var cardArea = streamEl3b.querySelector('.card-area');
+                if (cardArea) {
+                  cardArea.insertBefore(compDiv, cardArea.firstChild);
+                } else {
+                  streamEl3b.insertBefore(compDiv, streamEl3b.firstChild);
+                }
               }
             }
           } else if (d.type === 'filter') {
@@ -1520,6 +1526,9 @@ async function sendMessage() {
               docBar.className = 'doc-download-bar';
               docBar.innerHTML = '<a href="' + esc(downloadUrl) + '" download="' + esc(_dlFilename) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' ' + _dlLabel + '</a>';
               streamEl.appendChild(docBar);
+              // 下载栏新增后内容变高，自动滚动到底部
+              var _msgEl5 = document.getElementById('messages');
+              if (_msgEl5 && _lastScrollBottom) _msgEl5.scrollTop = _msgEl5.scrollHeight;
             }
             showToast('文档撰写完成', 'success');
           // ===== Patch4 v3: 文档完成事件（doc_started / section_done 已废弃）=====
@@ -1553,6 +1562,9 @@ async function sendMessage() {
               var _dcLabel = _dcIsHtml ? ('下载 HTML 报告 ' + esc(_pptDisplayName(_dcFilename))) : ('下载 ' + esc(_dcFilename));
               _docDlBar.innerHTML = '<a href="' + esc((typeof API !== 'undefined' ? API : '') + _dcDocUrl) + '" download="' + esc(_dcFilename) + '" class="doc-download-btn" target="_blank">' + iconSvg('doc','14') + ' ' + _dcLabel + '</a>';
               _streamElDl.appendChild(_docDlBar);
+              // 下载栏新增后自动滚动到底部
+              var _msgEl6 = document.getElementById('messages');
+              if (_msgEl6 && _lastScrollBottom) _msgEl6.scrollTop = _msgEl6.scrollHeight;
             }
             showToast('文档撰写完成', 'success');
           }
@@ -1979,7 +1991,7 @@ function _createDocConfirmBar(outlineText) {
   bar.className = 'doc-confirm-bar';
   bar.id = 'docConfirmBar';
   bar.innerHTML =
-    '<details class="doc-outline-edit-wrap" open><summary>' + iconSvg('doc','14') + ' 文档提纲已生成 — 点击查看，可编辑章节后确认</summary>' +
+    '<details class="doc-outline-edit-wrap"><summary>' + iconSvg('doc','14') + ' 文档提纲已生成 — 点击查看，可编辑章节</summary>' +
     '<div class="doc-outline-hint">默认显示结构预览；点击「编辑」可修改章节，修改后切回「预览」查看效果</div>' +
     '<div class="doc-outline-toolbar"><button class="doc-outline-toggle-btn" id="docOutlineEditBtn" onclick="toggleOutlinePreview(false)">编辑</button><button class="doc-outline-toggle-btn active" id="docOutlinePreviewBtn" onclick="toggleOutlinePreview(true)">预览</button></div>' +
     '<textarea class="doc-outline-editor" id="docOutlineEditor" style="display:none">' + esc(outlineText || '') + '</textarea>' +
@@ -2809,8 +2821,7 @@ var CardRenderer = (function() {
       var hl = output.changed ? ' hl' : '';
       return '<div class="cb-output"><div class="cb-transform">' +
         '<div class="cb-tf-row"><span class="cb-tf-key">原问题</span><span class="cb-tf-val">' + _esc(output.original) + '</span></div>' +
-        '<div class="cb-tf-row"><span class="cb-tf-key">改写为</span><span class="cb-tf-val' + hl + '">' + _esc(output.result) + '</span></div>' +
-      '</div></div>';
+        '<div class="cb-tf-row"><span class="cb-tf-key">提取检索词</span><span class="cb-tf-val' + hl + '">' + _esc(output.result) + '</span></div>' +      '</div></div>';
     }
     if (output.type === 'sources' && output.sources && output.sources.length) {
       var items = '';
@@ -2854,8 +2865,7 @@ var CardRenderer = (function() {
     var hlCls = changed ? ' hl' : '';
     out.innerHTML = '<div class="cb-transform">' +
       '<div class="cb-tf-row"><span class="cb-tf-key">原问题</span><span class="cb-tf-val">' + _esc(original) + '</span></div>' +
-      '<div class="cb-tf-row"><span class="cb-tf-key">改写为</span><span class="cb-tf-val' + hlCls + '">' + _esc(result) + '</span></div>' +
-    '</div>';
+      '<div class="cb-tf-row"><span class="cb-tf-key">提取检索词</span><span class="cb-tf-val' + hlCls + '">' + _esc(result) + '</span></div>' +    '</div>';
   }
 
   // sources 产出（检索来源列表）

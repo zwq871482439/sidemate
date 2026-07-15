@@ -633,14 +633,26 @@ func waitForServer(host string, port int, timeout time.Duration) bool {
 func openBrowser(url string) {
 	switch runtime.GOOS {
 	case "windows":
-		// 用 ShellExecute 而非 rundll32，避免进程被 Job Object 管控导致退出时杀浏览器
-		syscall.NewLazyDLL("shell32.dll").NewProc("ShellExecuteW").Call(
-			0,
-			uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("open"))),
-			uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(url))),
-			0, 0, 1, // SW_SHOWNORMAL
-		)
-		log.Printf("[Launcher] 浏览器已打开: %s", url)
+		// 用 ShellExecuteW 打开默认浏览器（不走进程树，不被 Job Object 管控）
+		shell32 := syscall.NewLazyDLL("shell32.dll")
+		procShellExecuteW := shell32.NewProc("ShellExecuteW")
+		hwnd := uintptr(0)
+		verb := uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("open")))
+		file := uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(url)))
+		ret, _, _ := procShellExecuteW.Call(hwnd, verb, file, 0, 0, 1) // SW_SHOWNORMAL
+		if ret <= 32 {
+			// ShellExecuteW 返回值 <=32 表示错误，fallback 到 exec.Command
+			log.Printf("[Launcher] ShellExecuteW 失败 (ret=%d)，尝试 exec.Command", ret)
+			cmd := exec.Command("cmd", "/c", "start", "", url)
+			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			if err := cmd.Start(); err != nil {
+				log.Printf("[Launcher] 打开浏览器失败: %v", err)
+			} else {
+				log.Printf("[Launcher] 浏览器已打开 (fallback): %s", url)
+			}
+		} else {
+			log.Printf("[Launcher] 浏览器已打开: %s", url)
+		}
 	default:
 		var cmd *exec.Cmd
 		if runtime.GOOS == "darwin" {
@@ -1169,10 +1181,10 @@ func checkAndRepairEnv(appDir string, splash *SplashState) {
 	// 3. 快速校验：核心包 SHA256（P5 优化：跳过全量文件遍历，39043 文件太慢）
 	// 之前用 countSitePackages 遍历全部文件做数量/大小比对，启动卡 10+ 秒
 	// 现在直接走核心包 SHA256 校验（5 个包，前 1MB，毫秒级）
-	// 如果核心包校验通过，说明环境基本完整；失败才走 restoreFromSnapshot
-	log.Printf("[ENV-CHECK] 跳过全量遍历，直接核心包 SHA256 校验（期望: %d 文件, %d 字节）...",
+	// 如果核心包校验通过，说明环境基本完整；失败才走恢复
+	log.Printf("[ENV-CHECK] 核心包 SHA256 校验（期望: %d 文件, %d 字节）...",
 		fp.TotalFiles, fp.TotalBytes)
-	allMatch := true
+	brokenPkgs := []string{}
 	for pkg, expectedHash := range fp.CoreHashes {
 		if expectedHash == "" {
 			continue
@@ -1181,13 +1193,20 @@ func checkAndRepairEnv(appDir string, splash *SplashState) {
 		actualHash := sha256FileGo(initFile)
 		if actualHash != expectedHash {
 			log.Printf("[ENV-CHECK] ⚠ 核心包 %s SHA256 不匹配 (期望: %s, 实际: %s)", pkg, expectedHash[:12], actualHash[:12])
-			allMatch = false
-			break
+			brokenPkgs = append(brokenPkgs, pkg)
 		}
 	}
 
-	if !allMatch {
-		restoreFromSnapshot(appDir, splash, snapshotPath, sitePackagesDir, pythonDir)
+	if len(brokenPkgs) > 0 {
+		// 优先从硬链接备份恢复（零磁盘开销，快）
+		log.Printf("[ENV-CHECK] 尝试从硬链接备份恢复 %d 个损坏包: %v", len(brokenPkgs), brokenPkgs)
+		if err := verifyAndRepair(sitePackagesDir, brokenPkgs); err != nil {
+			log.Printf("[ENV-CHECK] 硬链接恢复失败: %v，尝试 snapshot 恢复", err)
+			// 降级到 snapshot 恢复
+			restoreFromSnapshot(appDir, splash, snapshotPath, sitePackagesDir, pythonDir)
+		} else {
+			log.Printf("[ENV-CHECK] ✅ 硬链接恢复完成")
+		}
 		return
 	}
 

@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.93">
+<link rel="stylesheet" href="/static/css/main.css?v=3.00">
 </head>
 <body>
 
@@ -356,6 +356,9 @@
         <div class="settings-nav-item" data-stab="download" onclick="switchSettingsTab('download',this)">
           <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>模型下载
         </div>
+        <div class="settings-nav-item" data-stab="envcheck" onclick="switchSettingsTab('envcheck',this)">
+          <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12.75L11.25 15L15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>环境检查
+        </div>
         <div class="settings-nav-item" data-stab="about" onclick="switchSettingsTab('about',this)">
           <span class="ni"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12.75L11.25 15L15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>关于
         </div>
@@ -676,6 +679,19 @@
           </div>
         </div>
 
+        <!-- ===== Tab: 环境检查 ===== -->
+        <div id="stab-envcheck" class="settings-stab" style="display:none">
+          <div class="card">
+            <h4>运行环境检查</h4>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">检查 Python 运行时、推理引擎、依赖包和模型加载状态。发现问题可一键修复。</div>
+            <div id="envCheckList" style="font-size:13px;min-height:20px">
+              <span style="color:var(--text-muted)">点击下方按钮检查运行环境</span>
+            </div>
+            <button class="btn btn-ghost" style="margin-top:10px;font-size:13px" onclick="runEnvCheck()">检查运行环境</button>
+            <div id="envRepairProgress" style="display:none;margin-top:10px"></div>
+          </div>
+        </div>
+
         <!-- ===== Tab: 关于 ===== -->
         <div id="stab-about" class="settings-stab" style="display:none">
           <div class="card">
@@ -805,13 +821,13 @@ let _sessionPollTimer = null;
 let pendingFile = null;
 
 // ===== 前端版本（独立于后端） =====
-const __HTML_VERSION__ = 'v2.12';
+const __HTML_VERSION__ = 'v2.14';
 
 const API = '';
 </script>
 
 <!-- ===== 阶段1: 欢迎弹窗 + 阶段2: 交互式引导 ===== -->
-<script src="static/js/welcome-tour.js?v=2.93"></script>
+<script src="static/js/welcome-tour.js?v=3.00"></script>
 
 <script>
 // ===== Toast 覆盖层 =====
@@ -892,26 +908,26 @@ window.addEventListener('load', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.93"></script>
-<script src="/static/js/core/utils.js?v=2.93"></script>
-<script src="/static/js/core/errors.js?v=2.93"></script>
-<script src="/static/js/stream_renderer.js?v=2.93"></script>
-<script src="/static/js/settings.js?v=2.93"></script>
-<script src="/static/js/qa.js?v=2.93"></script>
-<script src="/static/js/kb-batch.js?v=2.93"></script>
+<script src="/static/js/core/api.js?v=3.00"></script>
+<script src="/static/js/core/utils.js?v=3.00"></script>
+<script src="/static/js/core/errors.js?v=3.00"></script>
+<script src="/static/js/stream_renderer.js?v=3.00"></script>
+<script src="/static/js/settings.js?v=3.00"></script>
+<script src="/static/js/qa.js?v=3.00"></script>
+<script src="/static/js/kb-batch.js?v=3.00"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
-<script src="/static/js/chat-session.js?v=2.93"></script>
-<script src="/static/js/chat-actions.js?v=2.93"></script>
-<script src="/static/js/chat-files.js?v=2.93"></script>
-<script src="/static/js/chat-export.js?v=2.93"></script>
-<script src="/static/js/chat-ui.js?v=2.93"></script>
-<script src="/static/js/chat.js?v=2.93"></script>
+<script src="/static/js/chat-session.js?v=3.00"></script>
+<script src="/static/js/chat-actions.js?v=3.00"></script>
+<script src="/static/js/chat-files.js?v=3.00"></script>
+<script src="/static/js/chat-export.js?v=3.00"></script>
+<script src="/static/js/chat-ui.js?v=3.00"></script>
+<script src="/static/js/chat.js?v=3.00"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.93"></script>
+<script src="/static/js/token-estimator.js?v=3.00"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->
-<script src="/static/js/ui-enhance.js?v=2.93"></script>
-<script src="/static/js/download.js?v=2.93"></script>
+<script src="/static/js/ui-enhance.js?v=3.00"></script>
+<script src="/static/js/download.js?v=3.00"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====
@@ -995,6 +1011,25 @@ async function init() {
   var _kbBtnEl = document.getElementById('kbInput');
   if (_kbBtnEl && _kbBtnEl.nextElementSibling) _kbBtnEl.nextElementSibling.innerHTML = iconSvg('send','14');
   hideLoading();
+
+  // 环境检查：启动后检测依赖缺失 → 强制引导到环境检查页
+  try {
+    var statusResp = await fetch(API + '/api/status');
+    var statusData = await statusResp.json();
+    if (statusData.deps_missing && statusData.deps_missing.length > 0) {
+      console.warn('[Init] 依赖缺失:', statusData.deps_missing);
+      // 切到设置→环境检查，并自动运行检查
+      switchTab('settings', document.querySelector('.tabs-nav button'));
+      setTimeout(function() {
+        var envNav = document.querySelector('.settings-nav-item[data-stab="envcheck"]');
+        if (envNav) switchSettingsTab('envcheck', envNav);
+        if (typeof runEnvCheck === 'function') runEnvCheck();
+        if (typeof showToast === 'function') showToast('检测到 ' + statusData.deps_missing.length + ' 个依赖缺失，请修复后使用完整功能', 'warning');
+      }, 800);
+    }
+  } catch(e) {
+    console.warn('[Init] 环境检查跳转失败:', e.message);
+  }
 }
 
 // ===== 启动 =====
