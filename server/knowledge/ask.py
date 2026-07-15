@@ -74,7 +74,6 @@ class _KBAskMixin:
                     history=chat_history,     # 会话内上下文（KB 专用，非全局记忆）
                     context_cache=None,       # 不注入压缩摘要
                     override_task_type="text", # 文本类型，跳过分类器
-                    kb_mode=True,              # KB 模式：极简 system，省出 token 给参考资料
                 ):
                     if chunk_type in ("text", "raw"):
                         response_chunks.append(chunk_text)

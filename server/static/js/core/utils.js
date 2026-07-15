@@ -579,7 +579,7 @@ function _updateMermaidFixBanner() {
     if (a > maxAttempt) maxAttempt = a;
   });
   // 参照 tokenBar 的 tag 胶囊风格
-  banner.innerHTML = '<span class="mfb-icon">🔄</span>' +
+  banner.innerHTML = '<span class="mfb-icon">' + (typeof iconSvg === 'function' ? iconSvg('spin', 12) : '') + '</span>' +
     '<span class="mfb-tag">修复中</span>' +
     '<span>正在自动修复 ' + failed.length + ' 张图表（第 ' + maxAttempt + ' 次）</span>';
   banner.onclick = function() {

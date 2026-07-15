@@ -27,6 +27,23 @@ def reformulate_query(query: str, history: list, mgr) -> str:
     if len(_query_stripped) <= 4 and not history:
         return query
 
+    # 规则前置：如果没有历史（无追问/指代），先尝试规则提取关键词
+    # 规则有信心就不调 LLM（省时间 + 避免小模型乱改）
+    if not history:
+        rule_result = _rule_extract_keywords(_query_stripped)
+        if rule_result:
+            log.info("[REFORMULATE] 规则提取（跳过 LLM）: '%s' → '%s'", query[:50], rule_result[:50])
+            return rule_result
+
+    # 有历史时检测是否需要 LLM 补全（追问/指代词）
+    _needs_llm = bool(history) and _has_anaphora(_query_stripped)
+    if history and not _needs_llm:
+        # 有历史但不是追问（没有指代词），也用规则提取
+        rule_result = _rule_extract_keywords(_query_stripped)
+        if rule_result:
+            log.info("[REFORMULATE] 规则提取（非追问）: '%s' → '%s'", query[:50], rule_result[:50])
+            return rule_result
+
     from prompts import REFORMULATE_PROMPT, REFORMULATE_NO_HISTORY_PROMPT
 
     # 有 history 才拼摘要（最近2轮的Q+A摘要，限制500字）；summary 为空时退化为无历史分支
@@ -77,25 +94,141 @@ def reformulate_query(query: str, history: list, mgr) -> str:
         return query
 
 
+# 追问/指代词（需要 LLM 补全上下文的信号）
+# 注意：只列真正需要历史上下文的指代词，不含 "哪些/怎么/如何"（这些在完整问题里也常见）
+_ANAPHORA_PATTERNS = re.compile(
+    r'那个|这个|它|他|她|它们|还有|另外|上面|前面|刚才|继续说|详细说说|具体说说'
+)
+
+# 停用词（提取关键词时过滤）
+_STOP_WORDS = {
+    # 中文停用词
+    '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个',
+    '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好',
+    '自己', '这', '那', '些', '什么', '怎么', '为什么', '如何', '可以', '能', '请',
+    '帮', '帮我', '一下', '吗', '呢', '吧', '啊', '哦', '嗯',
+    # 英文停用词
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'to', 'of',
+    'in', 'on', 'at', 'by', 'for', 'with', 'about', 'as', 'into', 'like',
+    'through', 'after', 'over', 'between', 'out', 'against', 'during',
+    'without', 'before', 'under', 'around', 'among',
+    'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all',
+    'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some',
+    'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
+    'too', 'very', 'just', 'should', 'now',
+}
+
+
+def _has_anaphora(query: str) -> bool:
+    """检测查询是否包含追问/指代词（需要 LLM 补全上下文的信号）"""
+    return bool(_ANAPHORA_PATTERNS.search(query))
+
+
+def _rule_extract_keywords(query: str) -> str:
+    """规则提取搜索关键词（不调 LLM）
+
+    策略：
+    1. 去掉常见问句前缀（"请问"、"帮我"、"我想了解"等）
+    2. 提取中文 2+ 字词和英文 2+ 字母词
+    3. 过滤停用词
+    4. 如果剩余词 >= 2 个，用空格拼接返回；否则返回 None（规则无信心）
+
+    Returns:
+        关键词字符串（如 "中医 流派"），或 None（规则无信心，需 fallback 到 LLM）
+    """
+    text = query.strip()
+
+    # 去掉常见问句前缀/后缀
+    _PREFIXES = [
+        '请问', '请帮我', '帮我', '请告诉我', '告诉我', '我想了解', '我想知道',
+        '想知道', '了解一下', '请教', '问一下', '请问一下',
+        'can you', 'could you', 'please', 'help me', 'i want to', 'tell me',
+    ]
+    # 疑问词前缀（这些词后面跟的才是真正要搜的内容）
+    _QUESTION_PREFIXES = [
+        '什么是', '什么叫', '怎么', '如何', '为什么',
+        '有哪些', '哪种', '哪个', '哪些', '谁', '哪里', '何时',
+        '请问说', '请说', '说下', '说说', '介绍一下', '介绍下',
+        '请帮我', '帮我', '请给我', '给我',
+        'what is', 'what are', 'how to', 'how do', 'how does', 'why',
+        'who is', 'who are', 'where is', 'where are', 'when is',
+    ]
+    # 疑问词后缀（在句尾的）
+    _QUESTION_SUFFIXES = ['是什么', '是什么意思', '是什么意思？', '是什么？',
+                          '有哪些', '有哪些？', '是什么的呢',
+                          '吗？', '呢？', '吧？', '啊？',
+                          '吗', '呢', '吧', '啊', '？', '?', '。', '.', '的呢', '的说']
+    _SUFFIXES = _QUESTION_SUFFIXES
+    for p in _PREFIXES:
+        if text.lower().startswith(p.lower()):
+            text = text[len(p):].strip()
+    for p in _QUESTION_PREFIXES:
+        if text.lower().startswith(p.lower()):
+            text = text[len(p):].strip()
+            break
+    for s in _SUFFIXES:
+        if text.endswith(s):
+            text = text[:-len(s)].strip()
+
+    # 内部疑问词断句（去掉句子中间的 "有哪些"、"是什么" 等，保留两侧实词）
+    _INTERNAL_Q = ['有哪些', '是什么', '有几种', '有几种类型', '包括哪些', '包含哪些']
+    for q in _INTERNAL_Q:
+        if q in text:
+            text = text.replace(q, ' ')
+
+    # 提取中文 2+ 字连续词
+    cn_words = re.findall(r'[\u4e00-\u9fff]{2,}', text)
+    # 提取英文 2+ 字母词
+    en_words = re.findall(r'[a-zA-Z]{2,}', text)
+
+    # 合并 + 过滤停用词
+    keywords = []
+    for w in cn_words + en_words:
+        if w.lower() not in _STOP_WORDS and len(w) >= 2:
+            keywords.append(w)
+
+    # 去重（保持顺序）
+    seen = set()
+    unique = []
+    for w in keywords:
+        if w not in seen:
+            seen.add(w)
+            unique.append(w)
+
+    # 规则有信心的条件：至少 1 个关键词（单个核心词也值得搜）
+    if len(unique) >= 1:
+        return ' '.join(unique[:8])  # 最多 8 个
+
+    # 没提取到任何词 — 规则无信心
+    return None
+
+
 def _strip_prompt_echo(text: str, original: str) -> str:
     """去除小模型把 prompt 指令原样输出的情况。
 
     典型案例：模型输出"根据对话历史，将用户的消息改写为一个完整的独立搜索查询为：什么是刮五指？"
     实际只需要冒号后面的"什么是刮五指？"
     """
-    # prompt 指令残留特征词
+    # prompt 指令残留特征词（按长度降序排列，最精确的优先匹配）
     _PROMPT_ECHO_MARKERS = [
-        '改写为', '改写后', '搜索查询为', '独立查询', '搜索关键词为',
-        '关键词为', '查询为', '改写：', '补全为',
+        '搜索关键词为', '独立搜索查询为', '搜索查询为',
+        '独立查询', '改写后的', '改写为',
+        '关键词为', '查询为', '改写后',
+        '改写：', '补全为',
     ]
+    result = text
     for marker in _PROMPT_ECHO_MARKERS:
-        if marker in text:
+        if marker in result:
             # 取 marker 后面的内容
-            idx = text.index(marker) + len(marker)
-            after = text[idx:].strip().strip('"').strip("'").strip("\u201c").strip("\u201d").strip('：: ')
+            idx = result.index(marker) + len(marker)
+            after = result[idx:].strip().strip('"').strip("'").strip("\u201c").strip("\u201d").strip('：: ')
             if after and len(after) >= 2:
-                return after
-    return text
+                result = after
+                # 继续检查是否有更多 marker（处理"改写后的查询为..."级联情况）
+                continue
+    return result
 
 
 def _clean_reformulate_output(response: str, original: str) -> str:

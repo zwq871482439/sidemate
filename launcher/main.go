@@ -631,23 +631,28 @@ func waitForServer(host string, port int, timeout time.Duration) bool {
 // ===== 浏览器 =====
 
 func openBrowser(url string) {
-	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			HideWindow:    true,
-			CreationFlags: 0x08000000, // CREATE_NO_WINDOW
-		}
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	if err := cmd.Start(); err != nil {
-		log.Printf("[Launcher] 打开浏览器失败: %v", err)
-	} else {
+		// 用 ShellExecute 而非 rundll32，避免进程被 Job Object 管控导致退出时杀浏览器
+		syscall.NewLazyDLL("shell32.dll").NewProc("ShellExecuteW").Call(
+			0,
+			uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("open"))),
+			uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(url))),
+			0, 0, 1, // SW_SHOWNORMAL
+		)
 		log.Printf("[Launcher] 浏览器已打开: %s", url)
+	default:
+		var cmd *exec.Cmd
+		if runtime.GOOS == "darwin" {
+			cmd = exec.Command("open", url)
+		} else {
+			cmd = exec.Command("xdg-open", url)
+		}
+		if err := cmd.Start(); err != nil {
+			log.Printf("[Launcher] 打开浏览器失败: %v", err)
+		} else {
+			log.Printf("[Launcher] 浏览器已打开: %s", url)
+		}
 	}
 }
 

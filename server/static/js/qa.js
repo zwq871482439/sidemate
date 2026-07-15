@@ -852,7 +852,7 @@ function _kbRenderInsightDashboard(data) {
     '</div>' +
     asksHtml;
 
-  if (sourceEl) sourceEl.textContent = '本地 AI 整理';
+  if (sourceEl) sourceEl.textContent = (data.engine_label || '本地 AI') + ' 整理';
   if (countEl) countEl.textContent = docCount + ' 篇';
   if (updatedEl) {
     var now = new Date();
@@ -1408,9 +1408,9 @@ async function kbShowAuditLog(docId, filename) {
       return;
     }
     // actor 图标映射
-    var actorIcon = { local: '🖥', cloud: '☁', user: '✋' };
+    var actorIcon = { local: iconSvg('home', 12), cloud: iconSvg('cloud', 12), user: iconSvg('chat', 12) };
     var actorLabel = { local: '本地', cloud: '在线', user: '手动' };
-    var typeLabel = { kb_search: '知识库检索', agent_read: 'Agent 读取', manual_cite: '手动引用' };
+    var typeLabel = { kb_search: '知识库检索', agent_read: '自动检索', manual_cite: '手动引用' };
     var html = '';
     for (var i = 0; i < logs.length; i++) {
       var l = logs[i];

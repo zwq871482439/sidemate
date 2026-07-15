@@ -25,7 +25,7 @@ async function showWelcome() {
           optionCard('home', '本地 AI', '安装 LLM 模型包，数据不出本机', 'var(--accent-color)') +
           optionCard('cloud', '云端 AI', '填入 API Key，无需本地模型', '#7F77DD') +
         '</div>' +
-        '<button onclick="dismissWelcome();switchTab(\'settings\',document.querySelector(\'.tabs-nav button\'))" class="welcome-btn">前往设置</button>';
+        '<button onclick="dismissWelcome();switchTab(\'settings\',document.querySelector(\'.tabs-nav button\'));setTimeout(function(){var dn=document.querySelector(\'.settings-nav-item[data-stab=download]\');if(dn)switchSettingsTab(\'download\',dn);if(typeof loadModelCatalog===\'function\')loadModelCatalog();},500)" class="welcome-btn">前往下载模型</button>';
     } else if (!hasKB) {
       routeIcon = 'chat';
       routeTitle = 'AI 已就绪！';

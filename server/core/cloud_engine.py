@@ -745,12 +745,12 @@ class CloudEngine:
                             log_scan.info("[CLOUD-WT] 用户停止，中断流式读取")
                             break
 
-                        if not chunk.choices:
-                            continue
-
-                        # 提取 usage
+                        # 提取 usage（即使 choices 为空，最后一个 chunk 可能只含 usage）
                         if hasattr(chunk, 'usage') and chunk.usage:
                             _last_usage_wt = chunk.usage
+
+                        if not chunk.choices:
+                            continue
 
                         choice = chunk.choices[0]
                         delta = choice.delta

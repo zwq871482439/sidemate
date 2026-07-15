@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=2.83">
+<link rel="stylesheet" href="/static/css/main.css?v=2.93">
 </head>
 <body>
 
@@ -410,17 +410,16 @@
               </label>
               <div style="font-size:12px;color:var(--text-muted);margin-top:4px;padding-left:23px">勾选后启动器会在启动阶段自动加载 LLM，省去首次问答的等待</div>
             </div>
-            <!-- Reranker 常驻 / 空闲卸载设置 -->
+            <!-- 推理设备选择 -->
             <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border-color)">
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary)">
-                <input type="checkbox" id="rerankerResidentChk" onchange="saveRerankerResident(this.checked)" style="width:15px;height:15px">
-                Reranker 常驻内存
-              </label>
-              <div id="rerankerIdleWrap" style="font-size:12px;color:var(--text-muted);margin-top:6px;padding-left:23px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                闲置
-                <input type="number" id="rerankerIdleInput" min="1" max="1440" step="1" style="width:60px;padding:2px 6px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px" onchange="saveRerankerIdle(this.value)">
-                分钟后自动卸载（节省内存，下次使用知识库时重新加载）
+              <div style="display:flex;align-items:center;gap:10px;font-size:13px">
+                <span style="color:var(--text-secondary)">推理设备</span>
+                <select id="deviceSelector" onchange="switchDevice(this.value)" style="padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;cursor:pointer">
+                  <option value="gpu">GPU（Vulkan）— 有独显时推荐，速度快</option>
+                  <option value="cpu">CPU — 无独显或兼容性问题时使用</option>
+                </select>
               </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:4px;padding-left:0px">切换后自动重启模型加载。知识库模型不受影响（固定 CPU 运行）</div>
             </div>
             <!-- 资源占用（合并进来）-->
             <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border-color)">
@@ -525,8 +524,8 @@
           </div>
 
           <div class="card">
-            <h4>问答引擎</h4>
-            <div class="sec-hint">选择知识库问答使用的 AI 引擎（独立于全局离线/在线模式）</div>
+            <h4>知识库引擎</h4>
+            <div class="sec-hint">选择知识库自身功能（文档打标、AI 洞察、标签分组）使用的 AI 引擎。不影响对话——对话由顶部离线/在线/并行模式控制。</div>
             <div style="display:flex;gap:16px;margin-top:10px;font-size:13px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="radio" name="kbAiMode" value="local" id="kbAiModeLocal" onchange="saveKbAiMode('local')" style="width:15px;height:15px">
@@ -538,6 +537,22 @@
               </label>
             </div>
             <div id="kbAiModeHint" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+          </div>
+
+          <div class="card">
+            <h4>搜索引擎常驻</h4>
+            <div class="sec-hint">控制知识库重排序引擎（Reranker）的内存占用策略</div>
+            <div style="margin-top:10px">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary)">
+                <input type="checkbox" id="rerankerResidentChk" onchange="saveRerankerResident(this.checked)" style="width:15px;height:15px">
+                重排序引擎常驻内存
+              </label>
+              <div id="rerankerIdleWrap" style="font-size:12px;color:var(--text-muted);margin-top:6px;padding-left:23px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                闲置
+                <input type="number" id="rerankerIdleInput" min="1" max="1440" step="1" style="width:60px;padding:2px 6px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px" onchange="saveRerankerIdle(this.value)">
+                分钟后自动卸载（节省内存，下次使用知识库时重新加载）
+              </div>
+            </div>
           </div>
 
           <div class="card">
@@ -618,6 +633,11 @@
               </select>
             </div>
             <div style="font-size:12px;color:var(--text-muted);margin-top:6px">大文件下载，建议保持网络稳定。支持断点续传，中断后重新点击下载可继续。</div>
+          </div>
+          <!-- 快速开始 -->
+          <div class="card" id="dlQuickStart" style="display:none">
+            <h4>快速开始</h4>
+            <div id="dlQuickStartContent" style="font-size:13px;color:var(--text-secondary);line-height:1.8"></div>
           </div>
 
           <!-- 下载进度条 -->
@@ -704,22 +724,10 @@
             </div>
           </div>
 
-          <div class="card" style="border-left:3px solid var(--accent-color)">
-            <div style="font-size:13px;color:var(--text-secondary);line-height:1.7">
-              <b>AI 生成内容提示</b><br>
-              AI 生成的内容可能存在错误或偏差，重要决策（医疗、法律、财务等）请人工核对，不构成专业建议。
-            </div>
-          </div>
-
           <div class="card">
-            <h4>团队信息</h4>
-            <div style="display:flex;flex-wrap:wrap;gap:4px 20px;font-size:12px">
-              <div><span style="color:var(--text-primary);font-weight:500">slow</span> <span style="color:var(--text-muted)">项目负责人</span></div>
-              <div><span style="color:var(--text-primary);font-weight:500">高见远</span> <span style="color:var(--text-muted)">AI 架构师</span></div>
-              <div><span style="color:var(--text-primary);font-weight:500">寇豆码</span> <span style="color:var(--text-muted)">AI 工程师</span></div>
-              <div><span style="color:var(--text-primary);font-weight:500">许清楚</span> <span style="color:var(--text-muted)">AI 产品经理</span></div>
-              <div><span style="color:var(--text-primary);font-weight:500">严过关</span> <span style="color:var(--text-muted)">AI QA</span></div>
-              <div><span style="color:var(--text-primary);font-weight:500">小虾</span> <span style="color:var(--text-muted)">AI 开发助手</span></div>
+            <h4>AI 生成内容提示</h4>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.7">
+              AI 生成的内容可能存在错误或偏差，重要决策（医疗、法律、财务等）请人工核对，不构成专业建议。
             </div>
           </div>
 
@@ -797,13 +805,13 @@ let _sessionPollTimer = null;
 let pendingFile = null;
 
 // ===== 前端版本（独立于后端） =====
-const __HTML_VERSION__ = 'v2.7';
+const __HTML_VERSION__ = 'v2.12';
 
 const API = '';
 </script>
 
 <!-- ===== 阶段1: 欢迎弹窗 + 阶段2: 交互式引导 ===== -->
-<script src="static/js/welcome-tour.js?v=2.83"></script>
+<script src="static/js/welcome-tour.js?v=2.93"></script>
 
 <script>
 // ===== Toast 覆盖层 =====
@@ -884,26 +892,26 @@ window.addEventListener('load', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=2.83"></script>
-<script src="/static/js/core/utils.js?v=2.83"></script>
-<script src="/static/js/core/errors.js?v=2.83"></script>
-<script src="/static/js/stream_renderer.js?v=2.83"></script>
-<script src="/static/js/settings.js?v=2.83"></script>
-<script src="/static/js/qa.js?v=2.83"></script>
-<script src="/static/js/kb-batch.js?v=2.83"></script>
+<script src="/static/js/core/api.js?v=2.93"></script>
+<script src="/static/js/core/utils.js?v=2.93"></script>
+<script src="/static/js/core/errors.js?v=2.93"></script>
+<script src="/static/js/stream_renderer.js?v=2.93"></script>
+<script src="/static/js/settings.js?v=2.93"></script>
+<script src="/static/js/qa.js?v=2.93"></script>
+<script src="/static/js/kb-batch.js?v=2.93"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
-<script src="/static/js/chat-session.js?v=2.83"></script>
-<script src="/static/js/chat-actions.js?v=2.83"></script>
-<script src="/static/js/chat-files.js?v=2.83"></script>
-<script src="/static/js/chat-export.js?v=2.83"></script>
-<script src="/static/js/chat-ui.js?v=2.83"></script>
-<script src="/static/js/chat.js?v=2.83"></script>
+<script src="/static/js/chat-session.js?v=2.93"></script>
+<script src="/static/js/chat-actions.js?v=2.93"></script>
+<script src="/static/js/chat-files.js?v=2.93"></script>
+<script src="/static/js/chat-export.js?v=2.93"></script>
+<script src="/static/js/chat-ui.js?v=2.93"></script>
+<script src="/static/js/chat.js?v=2.93"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
-<script src="/static/js/token-estimator.js?v=2.83"></script>
+<script src="/static/js/token-estimator.js?v=2.93"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->
-<script src="/static/js/ui-enhance.js?v=2.83"></script>
-<script src="/static/js/download.js?v=2.83"></script>
+<script src="/static/js/ui-enhance.js?v=2.93"></script>
+<script src="/static/js/download.js?v=2.93"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====
@@ -913,7 +921,7 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   localStorage.setItem('_activeTab', name);  // 记住当前 Tab
-  if (name === 'settings') { refreshStatus(); loadAutoWarmupSetting(); loadRerankerResidentSetting(); refreshResourcePanel(); loadCloudConfig(); loadPermissionTools(); switchSettingsTab('general', document.querySelector('.settings-nav-item[data-stab="general"]')); }
+  if (name === 'settings') { refreshStatus(); loadAutoWarmupSetting(); loadRerankerResidentSetting(); loadDeviceSelector(); refreshResourcePanel(); loadCloudConfig(); loadPermissionTools(); switchSettingsTab('general', document.querySelector('.settings-nav-item[data-stab="general"]')); }
   if (name === 'qa') kbRouteState();  // Patch 7: 三级状态路由（安装/激活/就绪）
   // P6: minutes tab 已移除
   if (name === 'chat') updateChatOverlay();  // 切换到对话 Tab 时同步模型锁状态

@@ -544,8 +544,8 @@ async function loadModelSelector() {
     }
     for (var i = 0; i < models.length; i++) {
       var m = models[i];
-      var ramGB = m.estimated_ram_gb ? '~' + m.estimated_ram_gb + 'GB 内存' : '';
-      var label = (m.display_name || m.model_id) + (ramGB ? ' · ' + ramGB : '');
+      var ramTxt = m.min_ram_gb ? '建议 ' + m.min_ram_gb + 'GB 内存' : (m.estimated_ram_gb ? '~' + m.estimated_ram_gb + 'GB 内存' : '');
+      var label = (m.display_name || m.model_id) + (ramTxt ? ' · ' + ramTxt : '');
       html += '<option value="' + esc(m.model_id) + '">' + esc(label) + '</option>';
     }
     sel.innerHTML = html;
@@ -819,7 +819,7 @@ async function saveRerankerResident(checked) {
   }
 }
 
-// ===== KB 问答引擎选择（kb_ai_mode）=====
+// ===== KB 知识库引擎选择（kb_ai_mode）=====
 async function loadKbAiMode() {
   try {
     var resp = await fetch(_apiBase + '/api/config');
@@ -836,9 +836,9 @@ function _updateKbAiModeHint(mode) {
   var hint = document.getElementById('kbAiModeHint');
   if (!hint) return;
   if (mode === 'cloud') {
-    hint.textContent = '知识库问答将使用云端模型，回答质量更高，但需要配置云端 API 且数据会发送到云端';
+    hint.textContent = '文档打标、AI 洞察和标签分组将使用云端模型，质量更高，但需配置云端 API 且数据会发送到云端';
   } else {
-    hint.textContent = '知识库问答将使用本地模型，数据完全不出本机，隐私优先';
+    hint.textContent = '文档打标、AI 洞察和标签分组将使用本地模型，数据完全不出本机，隐私优先';
   }
 }
 
@@ -1749,6 +1749,8 @@ async function refreshAboutDiagnostics() {
     if (gpuEl) gpuEl.textContent = data.gpu_info || 'CPU';
     var totalMemEl = document.getElementById('diagTotalMem');
     if (totalMemEl) totalMemEl.textContent = data.total_mem_gb ? (data.total_mem_gb + ' GB') : '--';
+    // 缓存内存大小供快速开始推荐使用
+    if (data.total_mem_gb) window._sysTotalMem = data.total_mem_gb;
 
     // 拉取资源信息（内存占用 + 组件状态 + 显存）
     var compEl = document.getElementById('diagComponents');
@@ -1887,6 +1889,50 @@ window.handleUnload = handleUnload;
 // 配置
 window.loadAutoWarmupSetting = loadAutoWarmupSetting;
 window.saveAutoWarmup = saveAutoWarmup;
+
+// ===== 推理设备切换（GPU/CPU）=====
+async function loadDeviceSelector() {
+  var sel = document.getElementById('deviceSelector');
+  if (!sel) return;
+  try {
+    var resp = await fetch(_apiBase + '/api/devices');
+    var data = await resp.json();
+    if (data.current) sel.value = data.current;
+  } catch(e) { console.error('[settings.loadDeviceSelector]', e); }
+}
+
+async function switchDevice(device) {
+  if (!device) return;
+  if (typeof showDialog === 'function') {
+    if (!(await showDialog('切换推理设备', '确定切换到 ' + (device === 'gpu' ? 'GPU' : 'CPU') + '？\n\n切换后会自动重启模型加载。', {confirm: true, confirmLabel: '切换', cancelLabel: '取消'}))) {
+      // 用户取消，恢复下拉值
+      loadDeviceSelector();
+      return;
+    }
+  }
+  try {
+    var resp = await fetch(_apiBase + '/api/device/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device: device })
+    });
+    var data = await resp.json();
+    if (data.error) {
+      if (typeof showToast === 'function') showToast('切换失败: ' + data.error, 'error');
+      loadDeviceSelector();
+    } else {
+      if (typeof showToast === 'function') showToast(data.message || '已切换', 'success');
+      // 刷新状态
+      if (typeof refreshStatus === 'function') refreshStatus();
+    }
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('切换失败: ' + e.message, 'error');
+    loadDeviceSelector();
+  }
+}
+
+window.loadDeviceSelector = loadDeviceSelector;
+window.switchDevice = switchDevice;
 window.loadRerankerResidentSetting = loadRerankerResidentSetting;
 window.saveRerankerResident = saveRerankerResident;
 window.saveRerankerIdle = saveRerankerIdle;

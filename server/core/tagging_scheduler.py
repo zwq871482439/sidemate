@@ -180,18 +180,30 @@ class TaggingScheduler:
                  doc_id, doc.filename, len(content))
         try:
             from core.generate_queue import GenerateQueue
+            from config import get as _cfg
             response_parts = []
-            se = mgr._stream_engine
-            for chunk_type, chunk_text in se.run(
-                message=prompt,
-                model=None,  # 默认本地 LLM
-                max_tokens=400,
-                history=[],
-                context_cache=None,
-                override_task_type="text",
-                kb_mode=False,
-                _priority=GenerateQueue.LOW,  # P2 后台任务
-            ):
+            # 知识库引擎：打标使用 kb_ai_mode 配置（独立于全局 ai_mode）
+            kb_ai_mode = _cfg("kb_ai_mode", "local")
+            if kb_ai_mode == "cloud":
+                # 云端引擎
+                if not hasattr(mgr, '_cloud_engine'):
+                    from core.cloud_engine import CloudEngine
+                    mgr._cloud_engine = CloudEngine(mgr)
+                _gen = mgr._cloud_engine.run(
+                    message=prompt, model=None, max_tokens=400,
+                    history=[], context_cache=None,
+                    override_task_type="text",
+                    _priority=GenerateQueue.LOW,
+                )
+            else:
+                # 本地引擎
+                _gen = mgr._stream_engine.run(
+                    message=prompt, model=None, max_tokens=400,
+                    history=[], context_cache=None,
+                    override_task_type="text", kb_mode=False,
+                    _priority=GenerateQueue.LOW,
+                )
+            for chunk_type, chunk_text in _gen:
                 if chunk_type in ("text", "raw"):
                     response_parts.append(chunk_text)
             response = "".join(response_parts).strip()

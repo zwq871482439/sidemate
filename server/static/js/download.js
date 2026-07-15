@@ -4,6 +4,8 @@
 var _dlSource = 'modelscope';  // 'modelscope' | 'huggingface'
 var _dlCurrentTaskId = null;   // 当前下载任务 ID
 var _dlEventSource = null;     // SSE 连接
+var _quickStartQueue = null;   // 快速开始任务队列 [{type, model_id, label}, ...]
+var _quickStartTotal = 0;      // 快速开始总任务数（用于显示 1/2, 2/2）
 
 // 刷新模型下载目录
 async function loadModelCatalog() {
@@ -29,7 +31,7 @@ async function loadModelCatalog() {
       for (var i = 0; i < llmModels.length; i++) {
         var m = llmModels[i];
         var sizeGB = (m.gguf_size_bytes / 1e9).toFixed(2);
-        var ramTxt = m.min_ram_gb ? '最低 %dGB 内存'.replace('%d', m.min_ram_gb) : '';
+        var ramTxt = m.min_ram_gb ? '建议 %dGB 内存'.replace('%d', m.min_ram_gb) : '';
         html += _renderLlmCard(m, sizeGB, ramTxt);
       }
       llmBox.innerHTML = html;
@@ -41,6 +43,9 @@ async function loadModelCatalog() {
 
     // 检查是否有正在进行的下载任务
     _checkRunningTask();
+
+    // 渲染快速开始卡片
+    _renderQuickStart(data);
   } catch (e) {
     llmBox.innerHTML = '<div style="color:var(--error-color);font-size:13px">加载失败: ' + esc(e.message) + '</div>';
     kbBox.innerHTML = '';
@@ -252,9 +257,25 @@ function _attachSSE(taskId) {
       btns.forEach(function(b) { b.disabled = false; b.style.opacity = '1'; });
 
       if (d.installed) {
-        if (text) text.textContent = '✅ 安装完成';
+        if (text) text.textContent = '安装完成';
         if (fill) fill.style.width = '100%';
-        if (typeof showToast === 'function') showToast('模型下载并安装完成', 'success');
+        // 快速开始：检查队列是否还有任务
+        if (_quickStartQueue && _quickStartQueue.length > 0) {
+          if (typeof showToast === 'function') showToast('安装完成，继续下一个...', 'success');
+          setTimeout(function() { _quickStartNext(); }, 1500);
+        } else {
+          if (_quickStartTotal > 0) {
+            // 快速开始全部完成
+            if (typeof showToast === 'function') showToast('全部安装完成！可以开始使用了', 'success');
+            _quickStartTotal = 0;
+          } else {
+            if (typeof showToast === 'function') showToast('模型下载并安装完成', 'success');
+          }
+          setTimeout(function() {
+            _hideDownloadBar();
+            loadModelCatalog();
+          }, 3000);
+        }
       } else if (d.cancelled) {
         if (typeof showToast === 'function') showToast('下载已取消', 'info');
         _hideDownloadBar();
@@ -402,6 +423,155 @@ async function uninstallKb() {
   }
 }
 
+// ===== 快速开始（一键下载 LLM + KB）=====
+
+function _getRecommendedLlm(llmModels) {
+  // 根据系统内存推荐 LLM 档位
+  var ram = window._sysTotalMem || 16;
+  var recommendedId;
+  if (ram >= 32) recommendedId = 'qwen3.5-4b-q4';
+  else if (ram >= 24) recommendedId = 'qwen3.5-2b-q4';
+  else recommendedId = 'qwen3.5-0.8b-q4';
+
+  // 确保推荐的模型在 catalog 中存在
+  var found = null;
+  for (var i = 0; i < llmModels.length; i++) {
+    if (llmModels[i].model_id === recommendedId) { found = llmModels[i]; break; }
+  }
+  // 兜底：取最后一个（通常是最大的）
+  if (!found && llmModels.length > 0) found = llmModels[llmModels.length - 1];
+  return found;
+}
+
+function _renderQuickStart(data) {
+  var card = document.getElementById('dlQuickStart');
+  var content = document.getElementById('dlQuickStartContent');
+  if (!card || !content) return;
+
+  var llmModels = data.llm || [];
+  var kb = data.kb || {};
+  var llmInstalled = llmModels.some(function(m) { return m.installed; });
+  var kbInstalled = !!kb.installed;
+
+  // 全部已安装 → 显示已就绪状态
+  if (llmInstalled && kbInstalled) {
+    card.style.display = '';
+    content.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="color:var(--dot-ok, #16a34a);font-weight:600">全部模型已安装</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">如需更换模型，可在下方自行下载或删除</div>';
+    return;
+  }
+
+  // 有下载正在进行 → 隐藏快速开始（避免冲突）
+  if (_dlCurrentTaskId) {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = '';
+  var recommended = _getRecommendedLlm(llmModels);
+  var ram = window._sysTotalMem || 16;
+  var ramNote = ram < 16 ? '（⚠️ 你的内存 ' + ram + 'GB 低于建议值，可能出现卡顿）' : '';
+
+  var html = '';
+
+  if (!llmInstalled && !kbInstalled) {
+    // 都没装：一键下载推荐组合
+    var totalSize = recommended ? (recommended.gguf_size_bytes / 1e9).toFixed(1) : '2.7';
+    totalSize = parseFloat(totalSize) + 4.5; // LLM + KB
+    var llmName = recommended ? recommended.display_name : '推荐模型';
+    html =
+      '<div>检测到你的电脑有 <b>' + ram + 'GB</b> 内存' + ramNote + '</div>' +
+      '<div style="margin-top:6px">推荐方案：<b>' + esc(llmName) + '</b> + 知识库模型</div>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">总下载量约 ' + totalSize.toFixed(1) + 'GB，预计 10-30 分钟</div>' +
+      '<button class="btn btn-primary" style="margin-top:10px;font-size:14px;padding:8px 20px" onclick="quickStart()">⬇️ 一键下载推荐方案</button>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">或自行选择下方的对话模型和知识库模型</div>';
+  } else if (!kbInstalled) {
+    // 只缺 KB
+    html =
+      '<div>对话模型已安装，知识库模型尚未安装</div>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">知识库模型约 4.5GB，安装后可使用文档上传和检索功能</div>' +
+      '<button class="btn btn-primary" style="margin-top:10px;font-size:14px;padding:8px 20px" onclick="quickStart()">⬇️ 下载知识库模型</button>';
+  } else {
+    // 只缺 LLM
+    var llmName2 = recommended ? recommended.display_name : '推荐模型';
+    var llmSize = recommended ? (recommended.gguf_size_bytes / 1e9).toFixed(1) : '';
+    html =
+      '<div>知识库已安装，对话模型尚未安装</div>' +
+      '<div style="margin-top:6px">推荐：<b>' + esc(llmName2) + '</b>' + (llmSize ? '（' + llmSize + 'GB）' : '') + '</div>' +
+      '<button class="btn btn-primary" style="margin-top:10px;font-size:14px;padding:8px 20px" onclick="quickStart()">⬇️ 下载推荐对话模型</button>';
+  }
+
+  content.innerHTML = html;
+}
+
+async function quickStart() {
+  if (_dlCurrentTaskId) {
+    if (typeof showToast === 'function') showToast('已有下载任务进行中', 'error');
+    return;
+  }
+
+  // 获取当前安装状态（从 catalog 读，不靠缓存）
+  var resp = await fetch((typeof _apiBase !== 'undefined' ? _apiBase : '') + '/api/models/catalog');
+  var data = await resp.json();
+  var llmModels = data.llm || [];
+  var kb = data.kb || {};
+  var llmInstalled = llmModels.some(function(m) { return m.installed; });
+  var kbInstalled = !!kb.installed;
+
+  // 构建下载队列
+  var queue = [];
+  if (!llmInstalled) {
+    var recommended = _getRecommendedLlm(llmModels);
+    if (recommended) {
+      queue.push({ type: 'llm', model_id: recommended.model_id, label: '对话模型' });
+    }
+  }
+  if (!kbInstalled) {
+    queue.push({ type: 'kb', model_id: null, label: '知识库模型' });
+  }
+
+  if (queue.length === 0) {
+    if (typeof showToast === 'function') showToast('所有模型已安装', 'info');
+    return;
+  }
+
+  _quickStartQueue = queue;
+  _quickStartTotal = queue.length;
+
+  // 隐藏快速开始卡片（下载中）
+  var card = document.getElementById('dlQuickStart');
+  if (card) card.style.display = 'none';
+
+  _quickStartNext();
+}
+
+function _quickStartNext() {
+  if (!_quickStartQueue || _quickStartQueue.length === 0) {
+    // 队列空 = 全部完成
+    _quickStartQueue = null;
+    if (typeof showToast === 'function') showToast('全部安装完成！可以开始使用了', 'success');
+    setTimeout(function() {
+      _hideDownloadBar();
+      loadModelCatalog();
+    }, 3000);
+    return;
+  }
+
+  var task = _quickStartQueue.shift();
+  var phase = _quickStartTotal - _quickStartQueue.length; // 当前是第几个
+  var phaseLabel = _quickStartTotal > 1 ? ' (' + phase + '/' + _quickStartTotal + ')' : '';
+
+  // 显示阶段进度
+  var text = document.getElementById('dlProgressText');
+  if (text) text.textContent = '正在下载 ' + task.label + phaseLabel + '...';
+
+  // 调用现有下载逻辑
+  downloadModel(task.type, task.model_id);
+}
+
 window.loadModelCatalog = loadModelCatalog;
 window.downloadModel = downloadModel;
 window.deleteModel = deleteModel;
@@ -410,3 +580,4 @@ window.onDlLocalPicked = onDlLocalPicked;
 window.uninstallKb = uninstallKb;
 window.onDlSourceChange = onDlSourceChange;
 window.cancelDownload = cancelDownload;
+window.quickStart = quickStart;

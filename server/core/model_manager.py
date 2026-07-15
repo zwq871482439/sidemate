@@ -157,12 +157,10 @@ class ModelManager:
                     _priority: str = None):
         """LLM 流式对话生成器（根据 ai_mode 路由到本地或云端）
 
-        KB 问答（kb_mode=True）时，读 kb_ai_mode 配置独立选择引擎，不受全局 ai_mode 影响。
+        所有对话（含 KB 问答）统一由全局 ai_mode 控制引擎选择。
+        kb_mode 仅用于调整生成参数（如 context 预算），不影响引擎路由。
         """
         ai_mode = _cfg("ai_mode", "local") if _cfg else "local"
-        if kb_mode:
-            # 知识库问答专用引擎：独立于全局 ai_mode
-            ai_mode = _cfg("kb_ai_mode", "local") if _cfg else "local"
         if ai_mode == "cloud":
             if not hasattr(self, '_cloud_engine'):
                 from core.cloud_engine import CloudEngine
@@ -494,16 +492,61 @@ class ModelManager:
     # ====== 设备管理（Ollama 自动管理设备，保留接口兼容）======
 
     def get_available_devices(self):
-        """返回可用设备列表（Ollama 版：返回 ollama）"""
+        """返回可用设备列表 + 当前推理设备（GPU/CPU）"""
+        from config import get as _cfg
+        gpu_layers = _cfg("llamacpp_gpu_layers", 99)
+        current = "gpu" if gpu_layers > 0 else "cpu"
         return {
-            "devices": ["ollama"],
-            "current": "ollama",
+            "devices": ["gpu", "cpu"],
+            "current": current,
+            "gpu_layers": gpu_layers,
             "error": None,
         }
 
     def switch_device(self, new_device: str) -> dict:
-        """切换推理设备（Ollama 版：no-op）"""
-        return {"status": "same", "device": "ollama", "message": "Ollama 自动管理设备"}
+        """切换推理设备 GPU/CPU（修改 llamacpp_gpu_layers + 重启 llama-server）
+
+        Args:
+            new_device: "gpu" 或 "cpu"
+        """
+        if new_device not in ("gpu", "cpu"):
+            return {"error": "无效设备，支持: gpu, cpu"}
+
+        from config import set_value, get as _cfg
+        old_layers = _cfg("llamacpp_gpu_layers", 99)
+        new_layers = 99 if new_device == "gpu" else 0
+
+        if old_layers == new_layers:
+            return {"status": "same", "device": new_device, "message": "设备未变更"}
+
+        # 更新配置
+        set_value("llamacpp_gpu_layers", new_layers)
+
+        # 如果有已加载的模型，重启 llama-server 使新参数生效
+        from server import ollama_manager
+        if ollama_manager.is_healthy():
+            try:
+                # 停止当前 llama-server（下次加载时用新参数重启）
+                ollama_manager._do_stop()
+                log.info("[DEVICE] llama-server 已停止，下次加载模型时使用 %s", new_device.upper())
+
+                # 自动重新加载（如果有 last_loaded_model）
+                last_model = _cfg("last_loaded_model", "")
+                if last_model:
+                    import time
+                    time.sleep(1)  # 等端口释放
+                    result = ollama_manager.start(last_model)
+                    if result.get("error"):
+                        return {"status": "error", "device": new_device,
+                                "message": "设备已切换但模型重载失败: %s" % result["error"][:80]}
+                    return {"status": "ok", "device": new_device,
+                            "message": "已切换到 %s，模型已重新加载" % ("GPU (Vulkan)" if new_device == "gpu" else "CPU")}
+            except Exception as e:
+                return {"status": "error", "device": new_device,
+                        "message": "切换失败: %s" % str(e)[:80]}
+
+        return {"status": "ok", "device": new_device,
+                "message": "已切换到 %s（下次加载模型时生效）" % ("GPU (Vulkan)" if new_device == "gpu" else "CPU")}
 
     # ====== 模型大小自适应参数 ======
 

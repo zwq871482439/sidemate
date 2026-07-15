@@ -237,8 +237,7 @@ async def api_chat_stream(request: Request):
     mgr.stop_requested = False
 
     # P7: 本地模式前置检查——llama-server 未就绪时给友好提示（不等 Connection error）
-    _needs_local = (_ai_mode in ("local", "parallel") or
-                    (action_mode == "kb" and _cfg_get("kb_ai_mode", "local") == "local"))
+    _needs_local = _ai_mode in ("local", "parallel")
     if _needs_local:
         from server import ollama_manager
         if not ollama_manager.is_healthy():

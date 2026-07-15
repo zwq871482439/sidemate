@@ -1146,15 +1146,15 @@ async def api_kb_ask(request: Request):
             except Exception as e:
                 log.warning("[KB-SSE] Reformulate failed: %s, use original", str(e)[:60])
 
-        # P7: KB 问答使用独立的 kb_ai_mode（不受全局 ai_mode 影响）
+        # KB 问答引擎由全局 ai_mode 控制（与普通对话一致）
         try:
             from config import get as _cfg
-            kb_ai_mode = _cfg("kb_ai_mode", "local")
+            ai_mode = _cfg("ai_mode", "local")
         except Exception:
-            kb_ai_mode = "local"
+            ai_mode = "local"
 
-        # P7: 本地 KB 模式前置检查——llama-server 未就绪时给友好提示
-        if kb_ai_mode == "local":
+        # 本地模式前置检查——llama-server 未就绪时给友好提示
+        if ai_mode == "local":
             from server import ollama_manager
             if not ollama_manager.is_healthy():
                 yield 'data: {"type":"token","content":"模型服务正在启动中，请稍候几秒后再试。"}\n\n'
@@ -1164,12 +1164,12 @@ async def api_kb_ask(request: Request):
         max_prompt_tokens = mgr._get_device_token_limit()
         budget = mgr.calc_kb_context_budget()
         safe_chars = budget["safe_chars"]
-        log.info("[KB-SSE] context 预算: kb_ai_mode=%s, device_tokens=%d, overhead=%d, safe_tokens=%d, safe_chars=%d",
-                 kb_ai_mode, budget["max_prompt_tokens"], budget["overhead_tokens"], budget["safe_tokens"], safe_chars)
+        log.info("[KB-SSE] context 预算: ai_mode=%s, device_tokens=%d, overhead=%d, safe_tokens=%d, safe_chars=%d",
+                 ai_mode, budget["max_prompt_tokens"], budget["overhead_tokens"], budget["safe_tokens"], safe_chars)
 
         context, sources = await loop.run_in_executor(
             None, lambda: kb.get_context(search_query, max_chars=safe_chars,
-                                         ai_mode=kb_ai_mode,
+                                         ai_mode=ai_mode,
                                          actor="local", access_type="kb_search"))
         if not context:
             yield 'data: {"type":"token","content":"文库中未找到与问题相关的内容。"}\n\n'
@@ -1207,7 +1207,6 @@ async def api_kb_ask(request: Request):
                     history=chat_history,
                     context_cache=None,
                     override_task_type="text",
-                    kb_mode=True,
                 ):
                     chunk_queue.put((chunk_type, chunk_text))
             except Exception as e:
@@ -2427,9 +2426,25 @@ async def api_kb_tags_group(request: Request):
     try:
         from core.thread_pool import get_thread_pool
         import asyncio
+        from config import get as _cfg_kb
+        _kb_engine = _cfg_kb("kb_ai_mode", "local")
 
         def _call_llm():
-            return mgr.chat(prompt, max_tokens=1024, _priority="LOW")
+            # 知识库引擎：标签分组使用 kb_ai_mode（独立于全局 ai_mode）
+            if _kb_engine == "cloud":
+                if not hasattr(mgr, '_cloud_engine'):
+                    from core.cloud_engine import CloudEngine
+                    mgr._cloud_engine = CloudEngine(mgr)
+                parts = []
+                for ctype, ctext in mgr._cloud_engine.run(
+                    message=prompt, model=None, max_tokens=1024,
+                    history=[], context_cache=None, override_task_type="text",
+                ):
+                    if ctype in ("text", "raw"):
+                        parts.append(ctext)
+                return {"response": "".join(parts)}
+            else:
+                return mgr.chat(prompt, max_tokens=1024, _priority="LOW")
 
         result = await asyncio.get_event_loop().run_in_executor(
             get_thread_pool().executor, _call_llm
@@ -2565,9 +2580,25 @@ async def api_kb_tags_regroup(request: Request):
     try:
         from core.thread_pool import get_thread_pool
         import asyncio
+        from config import get as _cfg_kb2
+        _kb_engine2 = _cfg_kb2("kb_ai_mode", "local")
 
         def _call_llm():
-            return mgr.chat(prompt, max_tokens=1024, _priority="LOW")
+            # 知识库引擎：标签重新分组使用 kb_ai_mode（独立于全局 ai_mode）
+            if _kb_engine2 == "cloud":
+                if not hasattr(mgr, '_cloud_engine'):
+                    from core.cloud_engine import CloudEngine
+                    mgr._cloud_engine = CloudEngine(mgr)
+                parts = []
+                for ctype, ctext in mgr._cloud_engine.run(
+                    message=prompt, model=None, max_tokens=1024,
+                    history=[], context_cache=None, override_task_type="text",
+                ):
+                    if ctype in ("text", "raw"):
+                        parts.append(ctext)
+                return {"response": "".join(parts)}
+            else:
+                return mgr.chat(prompt, max_tokens=1024, _priority="LOW")
 
         result = await asyncio.get_event_loop().run_in_executor(
             get_thread_pool().executor, _call_llm
@@ -2665,6 +2696,15 @@ def api_kb_overview_get():
             with open(kb.insight_path, "r", encoding="utf-8") as _f:
                 cached = json.load(_f)
             cached["ok"] = True
+            # 补充引擎标签（缓存文件里没有这个字段）
+            from config import get as _cfg_cache
+            _kb_engine_cache = _cfg_cache("kb_ai_mode", "local")
+            if _kb_engine_cache == "cloud":
+                _cm = _cfg_cache("cloud_model", "")
+                cached["engine_label"] = _cm or "云端 AI"
+            else:
+                _lm = _cfg_cache("last_loaded_model", "")
+                cached["engine_label"] = _lm or "本地 AI"
             return cached
     except Exception:
         pass
@@ -2715,14 +2755,27 @@ async def api_kb_overview_refresh(request: Request):
     from core.thread_pool import get_thread_pool
     import asyncio, json
 
+    # 知识库引擎：AI 洞察使用 kb_ai_mode 配置（独立于全局 ai_mode）
+    from config import get as _cfg_kb
+    _kb_engine = _cfg_kb("kb_ai_mode", "local")
+
     def _run_llm(prompt: str, max_tokens: int = 500) -> str:
-        se = mgr._stream_engine
         parts = []
-        for ctype, ctext in se.run(
-            message=prompt, model=None, max_tokens=max_tokens,
-            history=[], context_cache=None, override_task_type="text",
-            kb_mode=False,
-        ):
+        if _kb_engine == "cloud":
+            if not hasattr(mgr, '_cloud_engine'):
+                from core.cloud_engine import CloudEngine
+                mgr._cloud_engine = CloudEngine(mgr)
+            _gen = mgr._cloud_engine.run(
+                message=prompt, model=None, max_tokens=max_tokens,
+                history=[], context_cache=None, override_task_type="text",
+            )
+        else:
+            _gen = mgr._stream_engine.run(
+                message=prompt, model=None, max_tokens=max_tokens,
+                history=[], context_cache=None, override_task_type="text",
+                kb_mode=False,
+            )
+        for ctype, ctext in _gen:
             if ctype in ("text", "raw"):
                 parts.append(ctext)
         return mgr.strip_think("".join(parts)).strip()
@@ -2885,13 +2938,16 @@ async def api_kb_overview_refresh(request: Request):
             )
             q_raw = await _run_async(questions_prompt, max_tokens=200)
             try:
-                _start = q_raw.index("[")
-                _end = q_raw.rindex("]") + 1
-                _parsed = json.loads(q_raw[_start:_end])
+                import re as _re
+                # 去掉 markdown 代码块标记
+                _cleaned = _re.sub(r'```(?:json)?\s*', '', q_raw).strip()
+                _start = _cleaned.index("[")
+                _end = _cleaned.rindex("]") + 1
+                _parsed = json.loads(_cleaned[_start:_end])
                 if isinstance(_parsed, list) and all(isinstance(q, str) for q in _parsed):
-                    suggested_questions = _parsed[:3]
+                    suggested_questions = [q.strip() for q in _parsed[:3] if q.strip()]
             except (ValueError, json.JSONDecodeError):
-                pass
+                log.warning("[KB-OVERVIEW] 追问问题解析失败: %s", str(q_raw)[:100])
 
             # Bug2 后置过滤：小模型的 prompt 约束不可靠，仍可能生成库外联想问题。
             # 用文档 tags + 标题关键片段作为"合法主题词表"，对每个问题做子串匹配，
@@ -2941,6 +2997,23 @@ async def api_kb_overview_refresh(request: Request):
     except Exception:
         pass
 
+    # 获取引擎标签
+    _engine_label = "本地 AI"
+    if _kb_engine == "cloud":
+        try:
+            from config import get as _cfg_label
+            _cloud_model = _cfg_label("cloud_model", "")
+            _engine_label = _cloud_model or "云端 AI"
+        except Exception:
+            _engine_label = "云端 AI"
+    else:
+        try:
+            _local_model = _cfg_kb("last_loaded_model", "")
+            if _local_model:
+                _engine_label = _local_model
+        except Exception:
+            pass
+
     return {
         "ok": True,
         "insight": insight,
@@ -2948,4 +3021,5 @@ async def api_kb_overview_refresh(request: Request):
         "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
         "merges_applied": merges_applied,
         "suggested_questions": suggested_questions,
+        "engine_label": _engine_label,
     }

@@ -176,6 +176,7 @@ class OllamaManager:
                     "gguf_filename": m.gguf_filename,
                     "gguf_size_bytes": m.gguf_size_bytes,
                     "estimated_ram_gb": round(m.gguf_size_bytes / 1024**3 * 1.8 + 0.6, 1),
+                    "min_ram_gb": m.min_ram_gb,
                     "gguf_path": str(m.gguf_path),
                     "current": m.model_id == _current_id,
                 }

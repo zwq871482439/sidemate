@@ -70,7 +70,14 @@ class PromptBuilder:
         # Chat 模式：通用 prompt + 场景一句话
         try:
             from prompts import SYSTEM_PROMPT_V2, STRATEGY_ENHANCEMENTS
-            parts = [SYSTEM_PROMPT_V2]
+            # 根据当前模式动态填充能力描述
+            from config import get as _cfg
+            _ai_mode = _cfg("ai_mode", "local")
+            _caps = (_ai_mode == "cloud") and \
+                "你的真实能力：对话问答、知识库检索问答、联网搜索、生成Word文档(.docx)/HTML报告/PPT演示文稿。" or \
+                "你的真实能力：对话问答、知识库检索问答、生成Word文档(.docx)。当前是离线模式，不支持联网搜索。"
+            _prompt = SYSTEM_PROMPT_V2.replace("{capabilities}", _caps)
+            parts = [_prompt]
 
             # 场景增强（一句话）
             enhancement = STRATEGY_ENHANCEMENTS.get(strategy_name, "")
