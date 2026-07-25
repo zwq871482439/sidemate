@@ -77,7 +77,7 @@ Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs
 ; 注意：实际用户数据运行时落在 {app}\server\data\ 下；
 ;       models/ 下的模型（embedding/reranker/ollama blobs）由 .sidemate 扩展包按需安装，
 ;       安装包只保留空目录占位（见下方 [Dirs]），避免把 9GB+ 模型打进安装包。
-Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests,archive,workspace,models"
+Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.pytest_cache,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests,archive,workspace,models,2026-*"
 
 ; 模型目录空壳：models 必须存在（OLLAMA_MODELS 指向此），但内容由扩展包注入。
 ; Excludes 排除了整个 models 子树，这里用 [Dirs] 重建空目录占位。
@@ -85,6 +85,8 @@ Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs
 ; LICENSE 和第三方许可
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD-PARTY-NOTICES"; DestDir: "{app}"; Flags: ignoreversion
+; 品牌图标（Splash/Tray 使用）
+Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 ; 注：make_snapshot.py（site-packages 备份）首发版本不需要——
 ; 0.9.6 是首个公开版本，无老扩展需回滚保护，自动备份会拖慢安装且占空间。
