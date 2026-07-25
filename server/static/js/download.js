@@ -55,6 +55,9 @@ async function loadModelCatalog() {
 
     // 渲染快速开始卡片
     _renderQuickStart(data);
+
+    // 刷新 KB Tab 锁徽标（下载完成后 🔒 应消失）
+    if (typeof updateKbTabLock === 'function') updateKbTabLock();
   } catch (e) {
     llmBox.innerHTML = '<div style="color:var(--error-color);font-size:13px">加载失败: ' + esc(e.message) + '</div>';
     kbBox.innerHTML = '';

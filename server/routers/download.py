@@ -201,7 +201,9 @@ def _finalize_install(task):
     LLM: 调 rescan 刷新注册表（GGUF 就位后自动识别）。
     KB:  注册 ExtensionRegistry + kb.load_models()。
     """
-    if task.status != "done":
+    # on_complete 在 worker 置 status="done" 之前调用（保证 done 事件发出时收尾已完成），
+    # 因此这里接受 running/done，只排除 error/cancelled。
+    if task.status in ("error", "cancelled"):
         return
     try:
         if task.type == "llm":

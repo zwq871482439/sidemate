@@ -41,7 +41,7 @@
     <!-- Tab 导航（紧挨标题，连体胶囊）-->
     <div class="tabs-nav tabs-nav-inline">
       <button class="active" onclick="switchTab('chat',this)">对话</button>
-      <button onclick="switchTab('qa',this)">知识库</button>
+      <button onclick="switchTab('qa',this)">知识库<span id="kbTabLock" style="display:none"> 🔒</span></button>
       <button onclick="switchTab('settings',this)">设置</button>
     </div>
     <span style="flex:1"></span>
@@ -913,7 +913,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/core/errors.js?v=3.00"></script>
 <script src="/static/js/stream_renderer.js?v=3.00"></script>
 <script src="/static/js/settings.js?v=3.01"></script>
-<script src="/static/js/qa.js?v=3.00"></script>
+<script src="/static/js/qa.js?v=3.01"></script>
 <script src="/static/js/kb-batch.js?v=3.00"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
@@ -927,7 +927,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/token-estimator.js?v=3.00"></script>
 <!-- P6: skeleton.js 已移除（去骨架屏） -->
 <script src="/static/js/ui-enhance.js?v=3.00"></script>
-<script src="/static/js/download.js?v=3.02"></script>
+<script src="/static/js/download.js?v=3.03"></script>
 
 <script>
 // ===== 拖拽上传 + 滚动检测 =====
@@ -973,6 +973,9 @@ async function init() {
     startHeartbeat();
     return;
   }
+
+  // KB Tab 锁徽标（未装知识库模型时显示 🔒，不阻塞初始化）
+  if (typeof updateKbTabLock === 'function') updateKbTabLock();
 
   // 串行阶段：依赖状态数据的请求
   try {

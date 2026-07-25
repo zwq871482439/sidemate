@@ -51,6 +51,24 @@ var _kbTagGroups = [];       // [{group, members, source}, ...]
 var _kbGroupUngrouped = [];  // 未分组的标签列表
 var _kbLastGroupTrigger = 0;  // 上次触发分组的时间戳 (ms)，用于冷却
 
+// --- KB Tab 锁徽标 ---
+// 知识库 Tab 始终展示；未安装 KB 模型时在 Tab 上显示 🔒 状态锁，
+// 点击后由 kbRouteState 路由到 kbOnboarding 引导页（即锁定态界面）。
+async function updateKbTabLock(status) {
+  var lock = document.getElementById('kbTabLock');
+  if (!lock) return;
+  try {
+    if (!status) {
+      var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/module-status');
+      status = await resp.json();
+    }
+    lock.style.display = (status && status.installed) ? 'none' : '';
+  } catch (e) {
+    lock.style.display = 'none';  // 状态未知时不显示锁，避免误导
+  }
+}
+window.updateKbTabLock = updateKbTabLock;
+
 // --- 二态状态路由 ---
 async function kbRouteState() {
   var loading = document.getElementById('kbLoading');
@@ -65,6 +83,7 @@ async function kbRouteState() {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/module-status');
     var status = await resp.json();
     _kbModuleStatus = status;
+    updateKbTabLock(status);
 
     if (!status.installed) {
       if (loading) loading.style.display = 'none';

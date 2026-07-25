@@ -92,6 +92,9 @@ class DownloadTask:
         self.downloaded_bytes = 0
         self._speed_ts = 0.0
         self._speed_bytes = 0
+        # 多文件（KB）模式的全局总量：设置后 _push_progress 忽略单文件大小，
+        # 避免出现 "累计 4.2GB / 单文件 2.3GB" 的错乱显示
+        self._multi_total = 0
 
     def cancel(self):
         self._cancel.set()
@@ -167,15 +170,17 @@ class DownloadTask:
         raise RuntimeError("所有下载源均失败: %s" % (last_err or "未知错误"))
 
     def _push_progress(self, total: int):
-        """推送进度事件（含速度 + 剩余时间）。"""
-        self.total_bytes = total
-        pct = int(self.downloaded_bytes * 100 / total) if total else 0
+        """推送进度事件（含速度 + 剩余时间）。
+        多文件模式（_multi_total>0）用全局总量，忽略单文件 total。"""
+        effective = self._multi_total or total
+        self.total_bytes = effective
+        pct = int(self.downloaded_bytes * 100 / effective) if effective else 0
         if pct > 99:
             pct = 99  # 留 1% 给安装阶段
         dl = self.downloaded_bytes
         speed = self._speed_bytes / max(1, time.time() - self._speed_ts) if self._speed_ts else 0
-        eta = (total - dl) / speed if speed > 0 else 0
-        msg = "%s / %s · %s/s" % (_fmt_size(dl), _fmt_size(total), _fmt_size(speed))
+        eta = (effective - dl) / speed if speed > 0 else 0
+        msg = "%s / %s · %s/s" % (_fmt_size(dl), _fmt_size(effective), _fmt_size(speed))
         if eta > 0 and eta < 3600:
             if eta < 1:
                 msg += " · 剩余 <1s"
@@ -266,13 +271,16 @@ def run_llm_download(task: DownloadTask, meta: dict, models_dir: str, source: st
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, ensure_ascii=False, indent=2)
 
-            task.status = "done"  # 先置状态再推事件：SSE 消费端凭 status=="done" 补推 installed
-            task._emit(100, "下载完成，正在刷新模型列表...", done=True)
+            task._emit(99, "下载完成，正在刷新模型列表...")
             if on_complete:
                 try:
                     on_complete(task)
                 except Exception as e:
                     log.error("[DL] 安装收尾失败: %s", e)
+            # 收尾完成后才推 done：SSE 消费端凭 status=="done" 补推 installed，
+            # 前端收到 installed 才刷新目录——保证刷新时模型已就绪
+            task.status = "done"
+            task._emit(100, "安装完成", done=True)
         except Exception as e:
             task.status = "error"
             task.error = str(e)
@@ -324,7 +332,7 @@ def run_kb_download(task: DownloadTask, models_dir: str, source: str, on_complet
                     total_expected += size
                     file_list.append((spec["repo_id"], fname, os.path.join(dest_dir, fname), size))
 
-            task.total_bytes = total_expected
+            task._multi_total = total_expected  # 多文件模式：进度按全局总量计算
             # 多文件下载：逐个下，进度按累计字节计算
             for idx, (repo_id, fname, dest_path, fsize) in enumerate(file_list):
                 if task._cancel.is_set():
@@ -339,13 +347,15 @@ def run_kb_download(task: DownloadTask, models_dir: str, source: str, on_complet
                 # 多文件场景：临时用子方法下载，但不让 _download_file 的进度推送覆盖全局进度
                 task._download_file(urls, dest_path, fsize)
 
-            task.status = "done"  # 先置状态再推事件：SSE 消费端凭 status=="done" 补推 installed
-            task._emit(100, "知识库模型下载完成，正在安装...", done=True)
+            task._emit(96, "下载完成，正在加载知识库模型（首次约需 10-30 秒）...")
             if on_complete:
                 try:
                     on_complete(task)
                 except Exception as e:
                     log.error("[DL] KB 安装收尾失败: %s", e)
+            # 收尾完成后才推 done（同 LLM：保证前端刷新时模型已加载）
+            task.status = "done"
+            task._emit(100, "知识库模型安装完成", done=True)
         except Exception as e:
             task.status = "error"
             task.error = str(e)
