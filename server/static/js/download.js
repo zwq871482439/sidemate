@@ -258,6 +258,13 @@ function _attachSSE(taskId) {
     if (fill) fill.style.width = (d.pct || 0) + '%';
     if (text) text.textContent = d.msg || '';
 
+    if (d.done && !d.installed && !d.cancelled && !d.error) {
+      // 裸 done = 下载完成但安装收尾中，后端随后会补推 installed 事件。
+      // 不能在这里关 SSE——否则 installed 事件丢失，快速开始队列断链（要按两次）。
+      if (text) text.textContent = d.msg || '下载完成，正在安装...';
+      return;
+    }
+
     if (d.done) {
       _dlEventSource.close();
       _dlEventSource = null;

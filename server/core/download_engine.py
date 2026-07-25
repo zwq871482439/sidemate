@@ -137,7 +137,7 @@ class DownloadTask:
 
                     mode = "ab" if resume_pos else "wb"
                     self._speed_ts = time.time()
-                    self._speed_bytes = resume_pos
+                    self._speed_bytes = 0  # 速度窗口计数（不含续传起点，否则首秒速度虚高）
 
                     with open(part_path, mode) as f:
                         for chunk in resp.iter_bytes(chunk_size=256 * 1024):
@@ -151,6 +151,7 @@ class DownloadTask:
                             if now - self._speed_ts >= 1.0:
                                 self._push_progress(total)
                                 self._speed_ts = now
+                                self._speed_bytes = 0  # 重置速度窗口，否则速度=累计下载量/1s
                     # 下载完成
                     self._push_progress(total)
                     os.rename(part_path, dest_path)
@@ -265,8 +266,8 @@ def run_llm_download(task: DownloadTask, meta: dict, models_dir: str, source: st
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, ensure_ascii=False, indent=2)
 
+            task.status = "done"  # 先置状态再推事件：SSE 消费端凭 status=="done" 补推 installed
             task._emit(100, "下载完成，正在刷新模型列表...", done=True)
-            task.status = "done"
             if on_complete:
                 try:
                     on_complete(task)
@@ -338,8 +339,8 @@ def run_kb_download(task: DownloadTask, models_dir: str, source: str, on_complet
                 # 多文件场景：临时用子方法下载，但不让 _download_file 的进度推送覆盖全局进度
                 task._download_file(urls, dest_path, fsize)
 
+            task.status = "done"  # 先置状态再推事件：SSE 消费端凭 status=="done" 补推 installed
             task._emit(100, "知识库模型下载完成，正在安装...", done=True)
-            task.status = "done"
             if on_complete:
                 try:
                     on_complete(task)
