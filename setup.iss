@@ -82,6 +82,13 @@ Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs
 ; 模型目录空壳：models 必须存在（OLLAMA_MODELS 指向此），但内容由扩展包注入。
 ; Excludes 排除了整个 models 子树，这里用 [Dirs] 重建空目录占位。
 
+; LLM 3 档默认模型的 meta.json（仅描述文件，不含 GGUF 权重）——
+; 模型下载页靠 registry.list_all() 读这些 meta.json 展示"可下载"列表，
+; 不打包会导致下载页 LLM 列表为空。GGUF 权重由用户在应用内按需下载。
+Source: "server\models\qwen3.5-0.8b-q4\meta.json"; DestDir: "{app}\server\models\qwen3.5-0.8b-q4"; Flags: ignoreversion
+Source: "server\models\qwen3.5-2b-q4\meta.json"; DestDir: "{app}\server\models\qwen3.5-2b-q4"; Flags: ignoreversion
+Source: "server\models\qwen3.5-4b-q4\meta.json"; DestDir: "{app}\server\models\qwen3.5-4b-q4"; Flags: ignoreversion
+
 ; LICENSE 和第三方许可
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD-PARTY-NOTICES"; DestDir: "{app}"; Flags: ignoreversion
