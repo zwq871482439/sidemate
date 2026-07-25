@@ -105,7 +105,11 @@ Filename: "{app}\{#MyAppExeName}"; Description: "启动 桌伴 Sidemate"; Flags:
 
 [UninstallDelete]
 ; 清理 cache 和 logs（非用户数据）
-Type: filesandordirs; Name: "{app}\server\data\cache"
-Type: filesandordirs; Name: "{app}\server\data\logs"
-Type: filesandordirs; Name: "{app}\backup"
-; 注意：不删除 {app}\server\data\chats, kb, kbsession, recordings（用户数据）
+Type: filesandordirs; Name: "{app}\data\cache"
+Type: filesandordirs; Name: "{app}\data\logs"
+Type: filesandordirs; Name: "{app}\data\backup"
+; 强制删除 Python 和 Server 代码目录（含运行时生成的 __pycache__、.fingerprint、site-packages_bak 等）
+Type: filesandordirs; Name: "{app}\python"
+Type: filesandordirs; Name: "{app}\server"
+; 注意：不删除 {app}\data\chats, kb, kbsession, recordings（用户数据）
+; 注意：{app}\server\models 会随 server 一并删除（模型可通过扩展包重新安装）
