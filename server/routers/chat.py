@@ -162,7 +162,7 @@ async def api_chat(req: ChatRequest):
     mgr = get_mgr()
     DEFAULT_LLM = get_default_llm()
     if not DEFAULT_LLM and not req.model:
-        return JSONResponse({"error": "暂无可用模型，请先启动 Ollama 并安装模型"}, status_code=503)
+        return JSONResponse({"error": "暂无可用模型，请先到「设置 → 模型下载」下载并加载模型"}, status_code=503)
     chat_file = req.chat_file or get_current_chat()
     context_cache = load_chat_cache(chat_file)
     return JSONResponse(mgr.chat(
@@ -210,7 +210,7 @@ async def api_chat_stream(request: Request):
     # 无模型防护：云模式/并行模式跳过（云端API可用），本地模式下既没有默认模型、请求也没指定模型时返回错误
     if _ai_mode not in ("cloud", "parallel") and not DEFAULT_LLM and not body.get("model"):
         async def _no_model_gen():
-            yield 'data: {"type": "error", "content": "暂无可用模型，请先启动 Ollama 并安装模型"}\n\n'
+            yield 'data: {"type": "error", "content": "暂无可用模型，请先到「设置 → 模型下载」下载并加载模型"}\n\n'
             yield 'data: [DONE]\n\n'
         return StreamingResponse(_no_model_gen(), media_type="text/event-stream")
 

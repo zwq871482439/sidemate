@@ -69,9 +69,17 @@ def set_current_chat(path: str) -> None:
 
 
 def get_default_llm():
-    """获取默认 LLM 名称"""
-    from server import DEFAULT_LLM
-    return DEFAULT_LLM
+    """获取默认 LLM 名称（实时查询模型管理器）
+
+    不能读启动期冻结的 server.DEFAULT_LLM：启动时若无模型它被置为 None，
+    用户随后下载并加载模型后，对话接口仍会误判"暂无可用模型"。
+    实时查询会命中 config.last_loaded_model（切换模型时已写入）。
+    """
+    try:
+        return get_mgr()._get_default_llm()
+    except Exception:
+        from server import DEFAULT_LLM  # 兜底：管理器未就绪时用启动值
+        return DEFAULT_LLM
 
 
 def get_log():
