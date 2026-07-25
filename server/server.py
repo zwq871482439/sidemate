@@ -14,6 +14,14 @@ Sidemate — FastAPI + llama.cpp + Qwen3.5
 所有 API 端点已拆分到 routers/ 目录下的 Router 模块。
 """
 
+# ===== Windows 编码修复（必须在所有输出之前）=====
+# 英文 Windows 默认 cp1252，print 中文会 UnicodeEncodeError
+import sys as _sys
+import io as _io
+if _sys.platform == "win32":
+    _sys.stdout = _io.TextIOWrapper(_sys.stdout.buffer, encoding='utf-8', errors='replace')
+    _sys.stderr = _io.TextIOWrapper(_sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 # ===== 离线环境保护（必须在所有导入之前）=====
 import os as _os
 
