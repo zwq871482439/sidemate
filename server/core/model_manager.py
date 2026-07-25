@@ -83,6 +83,9 @@ class ModelManager:
         self.generate_queue = GenerateQueue()
         self._gen_done = threading.Event()
         self._gen_done.set()
+        # 云端跳过队列（skip_queue）的独立完成事件，避免与本地生成共用状态
+        self._cloud_gen_done = threading.Event()
+        self._cloud_gen_done.set()
         self._last_loaded_model = None
         self._auto_reload_after_stop = False
         self._stopping = False
@@ -406,7 +409,7 @@ class ModelManager:
 
     def is_busy(self) -> bool:
         """是否有 AI 生成请求正在跑（用于判断能否切换模型）"""
-        return not self._gen_done.is_set()
+        return not (self._gen_done.is_set() and self._cloud_gen_done.is_set())
 
     def get_llm_mem_mb(self, name: str) -> int:
         """返回指定 LLM 的内存占用 MB（从 Ollama API 获取）"""

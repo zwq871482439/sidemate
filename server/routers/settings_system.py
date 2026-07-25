@@ -28,6 +28,7 @@ from routers.deps import (
     get_mgr, get_kb,
     get_log, WORKSPACE_DIR, UPLOAD_DIR,
 )
+from common.security import check_local_origin, local_origin_error
 
 router = APIRouter()
 log = logging.getLogger("settings.system")
@@ -294,6 +295,8 @@ async def api_model_unload():
 @router.delete("/api/model/delete")
 async def api_model_delete(request: Request):
     """删除已安装的 LLM 模型（从 Ollama 移除，释放磁盘空间）"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     body = await request.json()
     model_name = body.get("model", "")
     if not model_name:
@@ -320,6 +323,8 @@ def api_devices():
 @router.post("/api/device/switch")
 async def api_device_switch(request: Request):
     """切换推理设备（会卸载当前 LLM）"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     body = await request.json()
     new_device = body.get("device", "")
     if not new_device:
@@ -433,9 +438,41 @@ def _get_env_repair_lock():
     return _env_repair_lock
 
 
+def _load_allowed_packages():
+    """从 requirements.txt / requirements_gen.txt 加载允许安装的包名白名单。
+
+    只信任项目自带的需求文件，防止前端传入恶意包名。
+    """
+    import os
+    import re
+    from config import PROJECT_ROOT
+    allowed = set()
+    for req_name in ("requirements.txt", "requirements_gen.txt"):
+        req_path = os.path.join(PROJECT_ROOT, req_name)
+        if not os.path.isfile(req_path):
+            continue
+        try:
+            with open(req_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    # 提取包名：去掉版本号、 extras、环境标记
+                    # 示例：fastapi==0.136.3, openai>=1.0.0, torch==2.12.0+cpu, requests[security]>=2.0
+                    m = re.match(r"^([A-Za-z0-9_\-\.]+)", line)
+                    if m:
+                        pkg = m.group(1).lower().replace("-", "_")
+                        allowed.add(pkg)
+        except Exception:
+            continue
+    return allowed
+
+
 @router.post("/api/env/repair")
 async def api_env_repair(request: Request):
     """用 pip 联网安装缺失依赖"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     import sys
     import uuid
     import queue
@@ -447,13 +484,31 @@ async def api_env_repair(request: Request):
     if not packages:
         return JSONResponse({"error": "请指定要修复的包"}, status_code=400)
 
+    # 白名单：只安装 requirements.txt / requirements_gen.txt 中列出的包
+    _allowed = _load_allowed_packages()
     # 排除大包（torch/faiss/transformers 等 KB 依赖走 Launcher 硬链接恢复）
     _BIG_PKGS = {"torch", "transformers", "sentence_transformers", "scipy", "scikit_learn", "faiss", "faiss_cpu"}
-    safe_packages = [p for p in packages if p not in _BIG_PKGS]
-    skipped = [p for p in packages if p in _BIG_PKGS]
+    safe_packages = []
+    skipped = []
+    invalid = []
+    for p in packages:
+        pkg_norm = p.lower().replace("-", "_")
+        if pkg_norm in _BIG_PKGS:
+            skipped.append(p)
+        elif pkg_norm not in _allowed:
+            invalid.append(p)
+        else:
+            safe_packages.append(p)
+
+    if invalid:
+        log.warning("[ENV-REPAIR] 拒绝不在白名单中的包: %s", invalid)
 
     if not safe_packages:
-        return JSONResponse({"error": "指定的包属于大体积依赖，请通过重启应用由启动器自动恢复", "skipped": skipped}, status_code=400)
+        return JSONResponse({
+            "error": "没有可修复的包（大包请重启由启动器恢复，或包不在允许列表中）",
+            "skipped": skipped,
+            "invalid": invalid,
+        }, status_code=400)
 
     task_id = uuid.uuid4().hex[:12]
     progress_queue = queue.Queue()
@@ -500,7 +555,7 @@ async def api_env_repair(request: Request):
     thread = threading.Thread(target=_repair_worker, daemon=True)
     thread.start()
 
-    return {"task_id": task_id, "packages": safe_packages, "skipped": skipped}
+    return {"task_id": task_id, "packages": safe_packages, "skipped": skipped, "invalid": invalid}
 
 
 @router.get("/api/env/repair/progress/{task_id}")
@@ -705,10 +760,17 @@ def api_workspace_list():
 
 @router.get("/api/config")
 def api_config_get():
-    """获取用户配置"""
+    """获取用户配置（cloud_api_key 打码，避免完整密钥经 API 泄漏）"""
     try:
         from config import load_config, CLEANUP_OPTIONS
         cfg = load_config()
+        # 打码 API Key：只保留前后各 4 位，中间用 *** 占位
+        api_key = cfg.get("cloud_api_key", "")
+        if api_key:
+            if len(api_key) > 8:
+                cfg["cloud_api_key"] = api_key[:4] + "***" + api_key[-4:]
+            else:
+                cfg["cloud_api_key"] = "***"
         return {"status": "ok", "config": cfg, "cleanup_options": CLEANUP_OPTIONS}
     except ImportError:
         return {"status": "ok", "config": {}, "cleanup_options": {}}
@@ -717,6 +779,8 @@ def api_config_get():
 @router.post("/api/config")
 async def api_config_save(request: Request):
     """保存用户配置"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     body = await request.json()
     try:
         from config import save_config
@@ -1093,43 +1157,6 @@ async def api_parallel_config_save(request: Request):
     return {"ok": True, "keyword_gen": bool(value), "allow_cloud_keywords": bool(value)}
 
 
-# ============================================================
-#  Patch5 B3: 权限系统 API（预设 + 工具级权限）
-# ============================================================
-
-# 权限预设定义
-_PERMISSION_PRESETS = [
-    {
-        "preset_id": "trusted",
-        "name": "完全信任",
-        "description": "所有工具可用，联网/文件操作不需确认",
-        "config_overrides": {
-            "confirm_external_read": False,
-            "sandbox_cleanup": "never",
-        },
-    },
-    {
-        "preset_id": "cautious",
-        "name": "谨慎模式",
-        "description": "联网需确认，文件操作需确认，私密文档默认隔离",
-        "config_overrides": {
-            "confirm_external_read": True,
-            "sandbox_cleanup": "24h",
-        },
-    },
-    {
-        "preset_id": "offline",
-        "name": "纯离线",
-        "description": "禁止联网，仅本地操作，强制本地 AI 模式",
-        "config_overrides": {
-            "ai_mode": "local",
-            "confirm_external_read": True,
-            # 联网工具 toggle off（通过 tool_enabled_web_search=False 实现）
-            "tool_enabled_web_search": False,
-        },
-    },
-]
-
 # 工具级权限列表定义（映射到 config.py 配置项）
 # 按大类分组（category），前端渲染成分类卡片。用户只关心职能大类，不暴露细粒度工具。
 _PERMISSION_TOOLS = [
@@ -1172,48 +1199,6 @@ _PERMISSION_TOOLS = [
         "default_enabled": True,
     },
 ]
-
-
-@router.get("/api/permissions/presets")
-def api_permissions_presets():
-    """获取权限预设列表（B3）
-
-    Response: {"presets": [{preset_id, name, description, config_overrides}, ...]}
-    """
-    return {"presets": _PERMISSION_PRESETS}
-
-
-@router.post("/api/permissions/preset/apply")
-async def api_permissions_preset_apply(request: Request):
-    """应用权限预设（B3）
-
-    Body: {"preset_id": "trusted" | "cautious" | "offline"}
-    Response: {"ok": true, "applied_preset": "...", "config_changes": {...}}
-    """
-    body = await request.json()
-    preset_id = body.get("preset_id", "").strip()
-    if not preset_id:
-        return JSONResponse({"error": "preset_id 不能为空"}, status_code=400)
-
-    # 查找预设
-    preset = None
-    for p in _PERMISSION_PRESETS:
-        if p["preset_id"] == preset_id:
-            preset = p
-            break
-    if not preset:
-        return JSONResponse({"error": "未知预设: %s" % preset_id}, status_code=400)
-
-    # 写入 config
-    from config import set_value
-    config_changes = {}
-    for key, value in preset["config_overrides"].items():
-        set_value(key, value)
-        config_changes[key] = value
-
-    log.info("[PERMISSION] 应用权限预设: %s (%s), 变更: %s",
-             preset_id, preset["name"], list(config_changes.keys()))
-    return {"ok": True, "applied_preset": preset_id, "config_changes": config_changes}
 
 
 @router.get("/api/permissions/tools")

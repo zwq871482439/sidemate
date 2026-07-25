@@ -655,6 +655,31 @@ class AgentLoop:
 
             elif tool_name == "fetch_url":
                 url = args.get("url", "")
+                # 异常 URL 日志检测（不阻断，仅记录可疑外泄尝试）
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    _parsed = urlparse(url)
+                    _query = parse_qs(_parsed.query)
+                    _suspicious = False
+                    _reason = ""
+                    if len(url) > 2048:
+                        _suspicious = True
+                        _reason = "URL 过长（%d 字符）" % len(url)
+                    else:
+                        for _k, _v_list in _query.items():
+                            for _v in _v_list:
+                                # 疑似 base64 / 高熵长字符串参数
+                                if len(_v) > 256 and any(c in _v for c in "+/="):
+                                    _suspicious = True
+                                    _reason = "参数 %s 疑似编码数据（长度 %d）" % (_k, len(_v))
+                                    break
+                            if _suspicious:
+                                break
+                    if _suspicious:
+                        log.warning("[AGENT] fetch_url 可疑 URL: %s（%s）", url[:200], _reason)
+                except Exception:
+                    pass
+
                 # SSRF 防护：抓取前校验目标地址分类
                 from core.search_engine import classify_url
                 from config import get as _cfg

@@ -38,6 +38,7 @@ from fastapi import APIRouter, UploadFile, File, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from routers.deps import get_mgr, get_kb, get_log, WORKSPACE_DIR, UPLOAD_DIR
+from common.security import check_local_origin, local_origin_error
 
 router = APIRouter()
 log = get_log()
@@ -777,8 +778,10 @@ def api_kb_documents():
 
 
 @router.post("/api/kb/upload")
-async def api_kb_upload(file: UploadFile = File(...)):
+async def api_kb_upload(file: UploadFile = File(...), request: Request = None):
     """上传文件到文库（异步处理+进度）"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     ext_check = _check_knowledge_extension()
     if ext_check is not None:
         return ext_check
@@ -1062,8 +1065,10 @@ def api_kb_doc_status(doc_id: str):
 
 
 @router.delete("/api/kb/documents/{doc_id}")
-def api_kb_doc_delete(doc_id: str):
+def api_kb_doc_delete(doc_id: str, request: Request):
     """删除文库文档"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     kb = get_kb()
     result = kb.delete_document(doc_id)
     if "error" in result:
@@ -1413,7 +1418,7 @@ async def api_kb_search(request: Request):
         import traceback
         tb = traceback.format_exc()
         log.error("[KB] search 异常: %s\n%s", str(e), tb)
-        return JSONResponse({"error": "检索失败: %s" % str(e)[:120], "traceback": tb[-500:]}, status_code=500)
+        return JSONResponse({"error": "检索失败，请稍后重试"}, status_code=500)
 
 
 @router.post("/api/kb/import_text")
@@ -1455,7 +1460,7 @@ def _get_batch_queue():
 
 
 @router.post("/api/kb/upload_batch")
-async def api_kb_upload_batch(files: List[UploadFile] = File(...)):
+async def api_kb_upload_batch(files: List[UploadFile] = File(...), request: Request = None):
     """批量上传文件到文库（Patch5 T02）
 
     多文件上传 → 流式写入临时文件 → 入队 SQLite → 异步处理
@@ -1471,6 +1476,8 @@ async def api_kb_upload_batch(files: List[UploadFile] = File(...)):
             "tasks": [{"task_id": "t_xxx", "filename": "...", "status": "pending"}, ...]
         }
     """
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     ext_check = _check_knowledge_extension()
     if ext_check is not None:
         return ext_check
@@ -1675,11 +1682,13 @@ async def api_kb_generate_token(doc_id: str, request: Request):
 
 
 @router.delete("/api/kb/documents/{doc_id}/token")
-async def api_kb_revoke_token(doc_id: str):
+async def api_kb_revoke_token(doc_id: str, request: Request):
     """撤销文档的所有访问令牌（Patch5 T03）
 
     Response: {"revoked": true, "count": N}
     """
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     kb = get_kb()
     doc = kb.get_document(doc_id)
     if not doc:
@@ -1766,6 +1775,8 @@ async def api_kb_batch_delete(request: Request):
     Body: {"doc_ids": ["doc_xxx", ...]}
     Response: {"success": true, "deleted": N, "failed": [{"doc_id": "...", "error": "..."}]}
     """
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     kb = get_kb()
     body = await request.json()
     doc_ids = body.get("doc_ids", [])
@@ -1999,6 +2010,8 @@ async def api_kb_reset(request: Request):
     Body: {"confirm": true}   ← 必须显式确认，防误触
     Response: {"ok": true, "deleted_docs": N, "deleted_chunks": N}
     """
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     kb = get_kb()
     body = await request.json()
     if not body.get("confirm"):

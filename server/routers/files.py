@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 
 from routers.deps import get_log, WORKSPACE_DIR
 from config import UPLOAD_DIR, DOCS_DIR, CHAT_DIR
+from common.security import check_local_origin, local_origin_error
 
 router = APIRouter()
 log = get_log()
@@ -67,8 +68,10 @@ def list_cache_files(category: str = "all"):
 
 
 @router.delete("/api/cache/files/{filename}")
-def delete_cache_file(filename: str, category: str = "uploads"):
+def delete_cache_file(filename: str, request: Request, category: str = "uploads"):
     """删除单个缓存文件"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     # 防路径遍历
     safe_name = os.path.basename(filename)
     if safe_name != filename:
@@ -96,8 +99,10 @@ def delete_cache_file(filename: str, category: str = "uploads"):
 
 
 @router.delete("/api/cache/files")
-def clear_cache_files(category: str = "all"):
+def clear_cache_files(request: Request, category: str = "all"):
     """清空缓存文件"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     if category == "all":
         dirs = [UPLOAD_DIR, RECORDING_DIR, RECORDING_DIR_LEGACY, DOCS_DIR]
     elif category == "recordings":

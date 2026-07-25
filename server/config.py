@@ -258,20 +258,71 @@ def load_config() -> Dict[str, Any]:
     return config
 
 
+# ===== 关键配置项校验（防止异常配置导致崩溃或安全问题）=====
+# 仅校验安全/数值型关键配置，未知 key 保持原样（如 scene_skills）
+_CONFIG_VALIDATORS = {
+    "cors_strict": lambda v: isinstance(v, bool),
+    "upload_max_size": lambda v: isinstance(v, int) and 0 < v <= 100 * 1024 * 1024,
+    "llamacpp_gpu_layers": lambda v: isinstance(v, int) and 0 <= v <= 200,
+    "llamacpp_ctx_size": lambda v: isinstance(v, int) and 512 <= v <= 131072,
+    "cloud_context_window": lambda v: isinstance(v, int) and 0 <= v <= 2097152,
+    "kb_max_documents": lambda v: isinstance(v, int) and 1 <= v <= 10000,
+    "kb_max_total_chunks": lambda v: isinstance(v, int) and 1 <= v <= 100000,
+    "access_token_default_ttl": lambda v: isinstance(v, int) and 0 <= v <= 86400 * 30,
+    "thread_pool_max_workers": lambda v: isinstance(v, int) and 1 <= v <= 16,
+    "ai_mode": lambda v: v in ("local", "cloud"),
+    "kb_ai_mode": lambda v: v in ("local", "cloud"),
+    "cloud_context_policy": lambda v: v in ("full", "current_only", "slim_history"),
+    "kb_permission": lambda v: v in ("full", "search-only", "disabled"),
+    "sandbox_cleanup": lambda v: v in ("on_start", "24h", "7d", "never"),
+    "default_mode": lambda v: v in ("qa", "exec"),
+    "confirm_external_read": lambda v: isinstance(v, bool),
+    "auto_warmup_llm": lambda v: isinstance(v, bool),
+    "kb_async": lambda v: isinstance(v, bool),
+    "kb_enable_sparse": lambda v: isinstance(v, bool),
+    "reranker_resident": lambda v: isinstance(v, bool),
+    "recorder_resident": lambda v: isinstance(v, bool),
+    "tool_enabled_web_search": lambda v: isinstance(v, bool),
+    "tool_enabled_file_rw": lambda v: isinstance(v, bool),
+    "tool_enabled_code_exec": lambda v: isinstance(v, bool),
+    "tool_enabled_kb_search": lambda v: isinstance(v, bool),
+    "parallel_keyword_gen": lambda v: isinstance(v, bool),
+}
+
+
+def _validate_config_value(key: str, value: Any) -> bool:
+    """校验配置项类型/范围。未定义校验器的 key 一律放行。"""
+    validator = _CONFIG_VALIDATORS.get(key)
+    if validator is None:
+        return True
+    try:
+        return bool(validator(value))
+    except Exception:
+        return False
+
+
 def save_config(config: Dict[str, Any]) -> bool:
-    """保存配置到 settings.json（合并写入，支持非 DEFAULTS key 如 scene_skills）"""
+    """保存配置到 settings.json（原子写入，防崩溃截断）"""
+    tmp_path = _CONFIG_FILE + ".tmp"
     try:
         existing = {}
         if os.path.exists(_CONFIG_FILE):
             with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
                 existing = json.load(f)
 
-        # 合并所有 key（不限于 DEFAULTS）
+        # 校验关键配置项，非法值拒绝并记录
         for k, v in config.items():
+            if not _validate_config_value(k, v):
+                log.warning("[CONFIG] 拒绝非法配置值: %s=%r（类型或范围不符）" % (k, v))
+                return False
             existing[k] = v
 
-        with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
+        # 原子写入：先写临时文件，再替换目标文件
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, _CONFIG_FILE)
 
         # 保存后重新加载缓存
         _invalidate_cache()
@@ -279,6 +330,12 @@ def save_config(config: Dict[str, Any]) -> bool:
         return True
     except Exception as e:
         log.error("[CONFIG] 保存配置失败: %s" % str(e))
+        # 清理临时文件
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
         return False
 
 

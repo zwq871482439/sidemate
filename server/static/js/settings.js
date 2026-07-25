@@ -1465,33 +1465,6 @@ async function toggleToolPermission(toolId, enabled, toolName) {
   }
 }
 
-async function applyPermissionPreset(presetId) {
-  try {
-    var resp = await fetch(_apiBase + '/api/permissions/preset/apply', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({preset_id: presetId})
-    });
-    var data = await resp.json();
-    if (data.ok) {
-      var btns = document.querySelectorAll('.kb-preset-btn');
-      for (var i = 0; i < btns.length; i++) {
-        btns[i].classList.remove('kb-preset-active');
-        if (btns[i].getAttribute('data-preset') === presetId) {
-          btns[i].classList.add('kb-preset-active');
-        }
-      }
-      var presetNames = {trusted: '完全信任', cautious: '谨慎模式', offline: '纯离线'};
-      showToast('已应用「' + (presetNames[presetId] || presetId) + '」预设', 'success');
-      loadPermissionTools();
-    } else {
-      showToast('应用预设失败: ' + (data.error || '未知错误'), 'error');
-    }
-  } catch(e) {
-    showToast('应用预设失败: ' + e.message, 'error');
-  }
-}
-
 // ===== 缓存 / 关于 =====
 // ===== 缓存管理 =====
 var _cacheAllFiles = [];
@@ -1845,6 +1818,25 @@ async function refreshPrivacyInfo() {
 // ===== CORS 调试开关：切换严格模式（需重启服务生效）=====
 async function toggleCorsStrict(allowThirdParty) {
   // allowThirdParty=true 表示关闭严格模式（cors_strict=false）
+  // 关闭严格模式 = 允许第三方页面访问本机 API，存在安全风险，需用户确认
+  if (allowThirdParty) {
+    var confirmed = false;
+    if (typeof showDialog === 'function') {
+      confirmed = await showDialog(
+        '确认开启第三方访问？',
+        '开启后，任何网页都可能访问 Sidemate 的本地 API，包括读取配置、调用模型、修改设置、删除数据。请仅在开发调试时开启，使用完成后建议立即关闭。',
+        {type: 'danger', confirm: true, confirmLabel: '我已了解风险，继续开启', cancelLabel: '取消'}
+      );
+    } else {
+      confirmed = confirm('开启后，任何网页都可能访问 Sidemate 的本地 API，包括读取配置、调用模型、修改设置、删除数据。请仅在开发调试时开启。是否继续？');
+    }
+    if (!confirmed) {
+      // 用户取消，恢复 checkbox 到关闭状态
+      var toggle = document.getElementById('corsStrictToggle');
+      if (toggle) toggle.checked = false;
+      return;
+    }
+  }
   try {
     var resp = await fetch(_apiBase + '/api/config', {
       method: 'POST',
@@ -1864,6 +1856,7 @@ async function toggleCorsStrict(allowThirdParty) {
     }
   } catch (e) {
     if (typeof showToast === 'function') showToast('网络错误，保存失败', 'error');
+    // 回滚 checkbox
     var toggle = document.getElementById('corsStrictToggle');
     if (toggle) toggle.checked = !allowThirdParty;
   }
@@ -1954,7 +1947,6 @@ window.goCachePage = goCachePage;
 window.exportBackup = exportBackup;
 // 权限
 window.loadPermissionTools = loadPermissionTools;
-window.applyPermissionPreset = applyPermissionPreset;
 window.toggleToolPermission = toggleToolPermission;
 // 关于
 window.refreshAboutInfo = refreshAboutInfo;

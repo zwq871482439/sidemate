@@ -313,7 +313,11 @@ class CloudEngine:
         return base64.b64encode(raw.encode("utf-8")).decode("utf-8")
 
     def _lookup_capabilities(self, model: str) -> dict:
-        """查找模型能力（精确匹配 → 大小写不敏感 → 前缀包含 → _default）"""
+        """查找模型能力（精确匹配 → 大小写不敏感 → 规范化匹配 → 前缀匹配 → _default）
+
+        前缀匹配规则：只允许 model 以已知模型名开头，且下一个字符是分隔符或结束。
+        例如：允许 "gpt-4o-2024-05-13" 匹配 "gpt-4o"；不允许 "glm" 匹配 "glm-4-flash"。
+        """
         _default = self.MODEL_CAPABILITIES["_default"]
         caps = self.MODEL_CAPABILITIES.get(model)
         if caps:
@@ -323,14 +327,20 @@ class CloudEngine:
         for name, cap in self.MODEL_CAPABILITIES.items():
             if name.lower() == model_lower:
                 return self._ensure_capability_fields(cap, _default)
-        # 前缀包含（如 "glm-5.1" 匹配 "GLM-5.1"）
+        # 规范化匹配（去掉 - 和 . 后精确匹配）
         model_stripped = model_lower.replace("-", "").replace(".", "")
         for name, cap in self.MODEL_CAPABILITIES.items():
             name_stripped = name.lower().replace("-", "").replace(".", "")
             if name_stripped == model_stripped:
                 return self._ensure_capability_fields(cap, _default)
-            if name_stripped in model_stripped or model_stripped in name_stripped:
-                return self._ensure_capability_fields(cap, _default)
+        # 前缀匹配：model 以已知模型名开头，且下一个字符是分隔符或结束
+        # 用于匹配带日期/版本后缀的变体（如 gpt-4o-2024-05-13 → gpt-4o）
+        for name, cap in self.MODEL_CAPABILITIES.items():
+            name_lower = name.lower()
+            if model_lower.startswith(name_lower):
+                next_char = model_lower[len(name_lower):len(name_lower) + 1]
+                if next_char in ("", "-", ".", " "):
+                    return self._ensure_capability_fields(cap, _default)
         return dict(_default)
 
     @staticmethod
@@ -488,7 +498,11 @@ class CloudEngine:
             max_tokens = 2048
 
         # ===== 流式调用 =====
-        mm._gen_done.clear()
+        # 本地/云端分别用独立的完成事件，避免云端 skip_queue 模式误报本地生成状态
+        if _skip_queue:
+            mm._cloud_gen_done.clear()
+        else:
+            mm._gen_done.clear()
         mm.stop_requested = False
 
         t0 = time.time()
@@ -653,7 +667,10 @@ class CloudEngine:
         finally:
             if ticket is not None:
                 ticket.release()
-            mm._gen_done.set()
+            if _skip_queue:
+                mm._cloud_gen_done.set()
+            else:
+                mm._gen_done.set()
 
         elapsed = time.time() - t0
         with mm._stats_lock:

@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from common.utils import atomic_write_json
+from common.security import check_local_origin, local_origin_error
 from routers.deps import (
     get_mgr, get_kb,
     get_current_chat_file, get_current_chat, set_current_chat, get_default_llm,
@@ -454,8 +455,10 @@ async def api_chats_clear_context(request: Request):
 
 
 @router.delete("/api/chats/{chat_name}")
-def api_chats_delete(chat_name: str):
+def api_chats_delete(chat_name: str, request: Request):
     """删除对话（兼容文件夹和 .json 格式）"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     safe_name = _safe_chat_name(chat_name)
     if not safe_name:
         return JSONResponse({"error": "非法对话名称"}, status_code=400)

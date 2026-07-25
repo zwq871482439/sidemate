@@ -1361,17 +1361,6 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 /* B4 死代码已移除：kb-dup-mark/kb-dup-overlay 系（去重弹窗路径 B 已删，统一用路径 A 浮动队列栏） */
 
 
-/* B3: 权限预设按钮 */
-.kb-preset-btn{
-  padding:8px 16px !important;font-size:13px !important;
-  border-radius:8px !important;transition:all .15s ease;
-}
-.kb-preset-btn:hover{border-color:var(--accent-color) !important}
-.kb-preset-active{
-  background:var(--accent-color) !important;color:#fff !important;
-  border-color:var(--accent-color) !important;
-}
-
 /* ============================================================
    Patch5 C7 T02: 代码块增强 + 消息列表模式 + Token 显示
    ============================================================ */

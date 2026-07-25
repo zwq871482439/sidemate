@@ -39,6 +39,20 @@ log = logging.getLogger(__name__)
 # 用于 _chat_root 防路径穿越：拒绝包含 ../ 或其它非法字符的 chat_id
 _CHAT_ID_RE = re.compile(r'^\d{4}-\d{2}-\d{2}_\d{3}$')
 
+# workspace 文件写操作锁（按文件路径粒度，防止并发写同一文件）
+_workspace_file_locks: dict = {}
+_workspace_locks_lock = threading.Lock()
+
+
+def _get_workspace_file_lock(abs_path: str) -> threading.Lock:
+    """获取指定 workspace 文件的写锁。"""
+    with _workspace_locks_lock:
+        lock = _workspace_file_locks.get(abs_path)
+        if lock is None:
+            lock = threading.Lock()
+            _workspace_file_locks[abs_path] = lock
+        return lock
+
 
 # ============================================================
 #  路径安全
@@ -191,10 +205,12 @@ def write_workspace_file(chat_id, rel_path, content):
     if parent and not os.path.isdir(parent):
         os.makedirs(parent, exist_ok=True)
 
-    # 写入（文本 utf-8）
-    data = content.encode("utf-8") if isinstance(content, str) else content
-    with open(abs_path, "wb") as f:
-        f.write(data)
+    # 写入（文本 utf-8），按文件路径加锁防并发覆盖
+    lock = _get_workspace_file_lock(abs_path)
+    with lock:
+        data = content.encode("utf-8") if isinstance(content, str) else content
+        with open(abs_path, "wb") as f:
+            f.write(data)
 
     return {
         "name": rel_path,
@@ -226,17 +242,19 @@ def append_workspace_file(chat_id, rel_path, content):
         os.makedirs(parent, exist_ok=True)
 
     data = content.encode("utf-8") if isinstance(content, str) else content
-    old_size = os.path.getsize(abs_path) if os.path.exists(abs_path) else 0
 
-    # 追加（如需换行分隔：原文件非空且不以 \n 结尾时补一个）
-    with open(abs_path, "ab") as f:
-        if old_size > 0:
-            with open(abs_path, "rb") as _fchk:
-                _fchk.seek(-1, 2)
-                _last = _fchk.read(1)
-            if _last not in (b"\n", b"\r"):
-                f.write(b"\n\n")
-        f.write(data)
+    # 追加（如需换行分隔：原文件非空且不以 \n 结尾时补一个），按文件路径加锁
+    lock = _get_workspace_file_lock(abs_path)
+    with lock:
+        old_size = os.path.getsize(abs_path) if os.path.exists(abs_path) else 0
+        with open(abs_path, "ab") as f:
+            if old_size > 0:
+                with open(abs_path, "rb") as _fchk:
+                    _fchk.seek(-1, 2)
+                    _last = _fchk.read(1)
+                if _last not in (b"\n", b"\r"):
+                    f.write(b"\n\n")
+            f.write(data)
 
     new_size = os.path.getsize(abs_path)
     return {
@@ -267,21 +285,24 @@ def edit_workspace_file(chat_id, rel_path, old_text, new_text):
     if not os.path.exists(abs_path):
         raise ValueError("文件不存在: %s" % rel_path)
 
-    with open(abs_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    # 按文件路径加锁，防止并发 edit 导致内容撕裂
+    lock = _get_workspace_file_lock(abs_path)
+    with lock:
+        with open(abs_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    count = content.count(old_text)
-    if count == 0:
-        raise ValueError("未找到要替换的原文（请检查 old_text 是否精确匹配）")
-    if count > 1:
-        # 多次匹配时也替换（全部），但告知模型有多次匹配
-        pass
+        count = content.count(old_text)
+        if count == 0:
+            raise ValueError("未找到要替换的原文（请检查 old_text 是否精确匹配）")
+        if count > 1:
+            # 多次匹配时也替换（全部），但告知模型有多次匹配
+            pass
 
-    new_content = content.replace(old_text, new_text)
+        new_content = content.replace(old_text, new_text)
 
-    data = new_content.encode("utf-8")
-    with open(abs_path, "wb") as f:
-        f.write(data)
+        data = new_content.encode("utf-8")
+        with open(abs_path, "wb") as f:
+            f.write(data)
 
     return {
         "name": rel_path,

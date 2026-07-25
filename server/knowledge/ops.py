@@ -83,7 +83,7 @@ class _KBOpsMixin:
         self._load_config()
 
         # 处理状态
-        self._processing_lock = threading.Lock()
+        self._processing_lock = threading.RLock()
         # 注意：已移除 _summary_lock（GenerateQueue 已保证 GPU 互斥，无需二次串行化）
         self._cancel_flags: Dict[str, bool] = {}      # doc_id -> cancel?（兼容旧接口）
         self._cancel_tokens: Dict[str, CancellationToken] = {}  # doc_id -> CancellationToken
@@ -749,37 +749,40 @@ class _KBOpsMixin:
         deleted_docs = len(self.documents)
         deleted_chunks = len(self.chunks)
         try:
-            # 1. 删除原始数据
-            if os.path.exists(self.texts_dir):
-                shutil.rmtree(self.texts_dir, ignore_errors=True)
-            if os.path.exists(self.meta_path):
-                os.remove(self.meta_path)
-            if os.path.exists(self.vectors_path):
-                os.remove(self.vectors_path)
-            # 2. 删除派生缓存目录（含 insight）
-            if os.path.exists(self.cache_dir):
-                shutil.rmtree(self.cache_dir, ignore_errors=True)
-            # 3. 删除旧版缓存的残留位置（兼容 data_dir 根下的 kb_insight.json）
-            _legacy_insight = os.path.join(self.data_dir, "kb_insight.json")
-            if os.path.exists(_legacy_insight):
-                try: os.remove(_legacy_insight)
-                except OSError: pass
-            # 4. 清理写入中断的临时文件（兜底）
-            for _tmp in glob.glob(os.path.join(self.data_dir, "*_writing.*")):
-                try: os.remove(_tmp)
-                except OSError: pass
-            # 5. 清空内存数据
-            self.documents.clear()
-            self.chunks.clear()
-            self.chunk_order = []
-            self.vectors = None
-            if hasattr(self, '_sparse_index'):
-                self._sparse_index = {}
-            # 6. 重建空目录
-            os.makedirs(self.texts_dir, exist_ok=True)
-            os.makedirs(self.cache_dir, exist_ok=True)
-            log.info("[KB] 知识库已重置: 删除 %d 篇文档, %d 个片段", deleted_docs, deleted_chunks)
-            return {"ok": True, "deleted_docs": deleted_docs, "deleted_chunks": deleted_chunks}
+            # 先取消所有进行中的处理，避免重置时仍有线程写数据
+            self._cancel_all_processing()
+            with self._processing_lock:
+                # 1. 删除原始数据
+                if os.path.exists(self.texts_dir):
+                    shutil.rmtree(self.texts_dir, ignore_errors=True)
+                if os.path.exists(self.meta_path):
+                    os.remove(self.meta_path)
+                if os.path.exists(self.vectors_path):
+                    os.remove(self.vectors_path)
+                # 2. 删除派生缓存目录（含 insight）
+                if os.path.exists(self.cache_dir):
+                    shutil.rmtree(self.cache_dir, ignore_errors=True)
+                # 3. 删除旧版缓存的残留位置（兼容 data_dir 根下的 kb_insight.json）
+                _legacy_insight = os.path.join(self.data_dir, "kb_insight.json")
+                if os.path.exists(_legacy_insight):
+                    try: os.remove(_legacy_insight)
+                    except OSError: pass
+                # 4. 清理写入中断的临时文件（兜底）
+                for _tmp in glob.glob(os.path.join(self.data_dir, "*_writing.*")):
+                    try: os.remove(_tmp)
+                    except OSError: pass
+                # 5. 清空内存数据
+                self.documents.clear()
+                self.chunks.clear()
+                self.chunk_order = []
+                self.vectors = None
+                if hasattr(self, '_sparse_index'):
+                    self._sparse_index = {}
+                # 6. 重建空目录
+                os.makedirs(self.texts_dir, exist_ok=True)
+                os.makedirs(self.cache_dir, exist_ok=True)
+                log.info("[KB] 知识库已重置: 删除 %d 篇文档, %d 个片段", deleted_docs, deleted_chunks)
+                return {"ok": True, "deleted_docs": deleted_docs, "deleted_chunks": deleted_chunks}
         except Exception as e:
             log.error("[KB] 重置知识库失败: %s", str(e))
             return {"ok": False, "deleted_docs": deleted_docs, "deleted_chunks": deleted_chunks,
@@ -1292,18 +1295,19 @@ class _KBOpsMixin:
             log.debug("[KB] 取消 GenerateQueue LOW 请求失败: %s", str(e)[:60])
 
         # 立即更新文档状态（不等后台线程）
-        doc = self.documents.get(doc_id)
-        if doc and doc.status in ('processing', 'summarizing', 'chunking', 'indexing'):
-            doc.status = 'cancelled'
-            doc.progress = 0.0
-            self._cleanup_cancelled_chunks(doc_id)
-            self._save_meta()
-            log.info("[KB] 文档已标记取消（同步）: %s", doc_id)
-        else:
-            log.info("[KB] 取消处理: %s", doc_id)
+        with self._processing_lock:
+            doc = self.documents.get(doc_id)
+            if doc and doc.status in ('processing', 'summarizing', 'chunking', 'indexing'):
+                doc.status = 'cancelled'
+                doc.progress = 0.0
+                self._cleanup_cancelled_chunks(doc_id)
+                self._save_meta()
+                log.info("[KB] 文档已标记取消（同步）: %s", doc_id)
+            else:
+                log.info("[KB] 取消处理: %s", doc_id)
 
     def _cleanup_cancelled_chunks(self, doc_id: str):
-        """清理被取消文档的 chunks 和文本文件"""
+        """清理被取消文档的 chunks 和文本文件（调用方需持有 _processing_lock）"""
         doc_chunk_ids = [cid for cid, c in self.chunks.items() if c.doc_id == doc_id]
         for cid in doc_chunk_ids:
             self.chunks.pop(cid, None)
@@ -1315,25 +1319,26 @@ class _KBOpsMixin:
 
     def _cancel_all_processing(self):
         """取消所有进行中的文档处理（卸载时调用）"""
-        doc_ids_to_cancel = []
-        for doc_id, doc in self.documents.items():
-            if doc.status in ('processing', 'chunking', 'indexing'):
-                doc_ids_to_cancel.append(doc_id)
+        with self._processing_lock:
+            doc_ids_to_cancel = []
+            for doc_id, doc in self.documents.items():
+                if doc.status in ('processing', 'chunking', 'indexing'):
+                    doc_ids_to_cancel.append(doc_id)
 
-        for doc_id in doc_ids_to_cancel:
-            self._cancel_flags[doc_id] = True
-            # 触发 CancellationToken
-            token = self._cancel_tokens.get(doc_id)
-            if token:
-                token.cancel()
-            self.documents[doc_id].status = 'cancelled'
-            self.documents[doc_id].progress = 0.0
-            log.info("[KB] 取消处理（卸载清理）: %s", doc_id)
+            for doc_id in doc_ids_to_cancel:
+                self._cancel_flags[doc_id] = True
+                # 触发 CancellationToken
+                token = self._cancel_tokens.get(doc_id)
+                if token:
+                    token.cancel()
+                self.documents[doc_id].status = 'cancelled'
+                self.documents[doc_id].progress = 0.0
+                log.info("[KB] 取消处理（卸载清理）: %s", doc_id)
 
-        if doc_ids_to_cancel:
-            self._save_meta()
+            if doc_ids_to_cancel:
+                self._save_meta()
 
-        # 取消 GenerateQueue 中的 LOW 请求
+        # 取消 GenerateQueue 中的 LOW 请求（放在锁外，避免长时间持锁）
         try:
             mgr = getattr(self, '_model_manager', None)
             if mgr and hasattr(mgr, 'generate_queue'):

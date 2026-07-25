@@ -109,6 +109,18 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# ===== Patch5 启动重构：后台初始化状态机（线程安全）=====
+# _lifespan yield 后由后台线程执行重活（auto_start + warmup + KB + Schedulers + BatchQueue）
+# /api/status 读取此状态机，Go Launcher 段2 轮询 ready 字段判断是否推进
+_bg_init_state = {
+    "ready": False,        # false=后台加载进行中；true=加载流程已结束（无论成败）
+    "load_error": None,    # null=无错误；非空字符串=累积的失败原因
+    "bg_phase": "pending", # pending→ollama→warmup→kb→schedulers→done
+    "deps_missing": None,  # null=依赖正常；非空=list of missing (import_name, pip_name, category)
+}
+_bg_init_lock = _threading.Lock()
+_bg_init_thread = None
+
 # ===== 依赖健康检查（在加载重量级模块之前）=====
 log.info("[STARTUP] 检查依赖完整性...")
 _report_startup("deps", 5, "检查依赖完整性...")
@@ -172,18 +184,6 @@ from core.ollama_manager import OllamaManager
 ollama_manager = OllamaManager()
 
 _lifespan_entered = False
-
-# ===== Patch5 启动重构：后台初始化状态机（线程安全）=====
-# _lifespan yield 后由后台线程执行重活（auto_start + warmup + KB + Schedulers + BatchQueue）
-# /api/status 读取此状态机，Go Launcher 段2 轮询 ready 字段判断是否推进
-_bg_init_state = {
-    "ready": False,        # false=后台加载进行中；true=加载流程已结束（无论成败）
-    "load_error": None,    # null=无错误；非空字符串=累积的失败原因
-    "bg_phase": "pending", # pending→ollama→warmup→kb→schedulers→done
-    "deps_missing": None,  # null=依赖正常；非空=list of missing (import_name, pip_name, category)
-}
-_bg_init_lock = _threading.Lock()
-_bg_init_thread = None
 
 
 def _set_bg_phase(phase: str):

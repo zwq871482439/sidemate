@@ -323,9 +323,77 @@ func (mp *ManagedProcess) Stop() {
 	mp.Cancel()
 }
 
-// cleanupOllama 按名称杀所有 ollama 相关进程
-// ollama serve 会 spawn ollama_llama_server 等子进程，taskkill /T 可能杀不到
+// findPidByPort 查找占用指定 TCP 端口的 PID（Windows netstat）
+// 只返回第一个找到的 PID，没找到返回 0
+func findPidByPort(port int) int {
+	cmd := exec.Command("netstat", "-ano", "-p", "tcp")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	target := fmt.Sprintf(":%d ", port)
+	lines := splitLines(string(output))
+	for _, line := range lines {
+		if !strings.Contains(line, target) {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		// netstat 列: Proto  LocalAddress  ForeignAddress  State  PID
+		// 只处理 LISTENING 状态（占用端口的监听者）
+		if fields[3] != "LISTENING" {
+			continue
+		}
+		pidStr := fields[4]
+		pid := 0
+		for _, c := range pidStr {
+			if c >= '0' && c <= '9' {
+				pid = pid*10 + int(c-'0')
+			} else {
+				break
+			}
+		}
+		if pid > 0 {
+			return pid
+		}
+	}
+	return 0
+}
+
+// killPidByPort 按端口强杀进程（仅杀监听该端口的进程，不误杀同名进程）
+func killPidByPort(port int, reason string) bool {
+	pid := findPidByPort(port)
+	if pid <= 0 {
+		return false
+	}
+	killCmd := exec.Command("taskkill", "/PID", fmt.Sprintf("%d", pid), "/F")
+	killCmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
+	if err := killCmd.Run(); err != nil {
+		log.Printf("[Launcher] 按端口杀进程失败 (port=%d pid=%d): %v", port, pid, err)
+		return false
+	}
+	log.Printf("[Launcher] 已按端口杀进程 (port=%d pid=%d): %s", port, pid, reason)
+	return true
+}
+
+// cleanupOllama 按端口杀 llama-server / Ollama 相关进程（避免误杀其他同名进程）
+// 优先按端口（ollama_port 默认 11434）定位，无端口占用时才保留旧行为作为兜底
 func cleanupOllama() {
+	// 优先按端口杀（只杀占用 ollama_port 的进程）
+	if killPidByPort(11434, "清理 Ollama/llama-server") {
+		log.Println("[Launcher] Ollama 按端口清理完成")
+		return
+	}
+	// 兜底：无端口占用时按名称杀（旧行为，但仅作为最后手段）
 	for _, name := range []string{"ollama.exe", "ollama_llama_server.exe", "llama-server.exe"} {
 		killCmd := exec.Command("taskkill", "/IM", name, "/F")
 		killCmd.SysProcAttr = &syscall.SysProcAttr{
@@ -334,7 +402,7 @@ func cleanupOllama() {
 		}
 		_ = killCmd.Run() // 忽略错误（进程可能已退出）
 	}
-	log.Println("[Launcher] Ollama 清理完成")
+	log.Println("[Launcher] Ollama 按名称清理完成（兜底）")
 }
 
 // watchOllamaChildren 后台监控：将 ollama_llama_server.exe 绑定到 Job Object
@@ -915,21 +983,22 @@ func main() {
 				log.Printf("[Launcher] FastAPI 阶段: %s (progress=%d%%)", fileText, fileProgress)
 			}
 
-			// 4. 检测 HTTP 就绪
-			SplashPumpMessages()
-			resp, err := http.Get(url)
-			if err == nil && resp.StatusCode == 200 {
-				io.ReadAll(resp.Body)
-				resp.Body.Close()
-				return true
-			}
-			if resp != nil {
-				resp.Body.Close()
-			}
-			time.Sleep(300 * time.Millisecond)
+		// 4. 检测 HTTP 就绪（带超时，防止半开连接挂死）
+		SplashPumpMessages()
+		httpClient := &http.Client{Timeout: 15 * time.Second}
+		resp, err := httpClient.Get(url)
+		if err == nil && resp.StatusCode == 200 {
+			io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return true
 		}
-		return false
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(300 * time.Millisecond)
 	}
+	return false
+}
 
 	// waitForReadyWithProgress 轮询 /api/status 的 ready 字段
 	// 返回 (ready, loadError)：ready=true 表示后台加载流程已结束（无论成败）
@@ -940,7 +1009,8 @@ func main() {
 
 		for time.Now().Before(deadline) {
 			SplashPumpMessages()
-			resp, err := http.Get(url)
+			httpClient := &http.Client{Timeout: 15 * time.Second}
+			resp, err := httpClient.Get(url)
 			if err == nil && resp.StatusCode == 200 {
 				body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 				resp.Body.Close()
@@ -980,17 +1050,9 @@ func main() {
 		if retry < 2 {
 			log.Printf("[Launcher] ⚠ FastAPI 启动超时，自修复第 %d/3 次...", retry+2)
 			serverProc.Stop()
-			// 检测端口占用并释放
+			// 检测端口占用并释放：按端口 PID 杀，不按进程名（避免误杀其他 Python 项目）
 			if isPortOpen("127.0.0.1", cfg.ServerPort) {
-				pids := findPidsByName("python.exe")
-				for _, pid := range pids {
-					killCmd := exec.Command("taskkill", "/PID", fmt.Sprintf("%d", pid), "/F")
-					killCmd.SysProcAttr = &syscall.SysProcAttr{
-						HideWindow:    true,
-						CreationFlags: 0x08000000,
-					}
-					_ = killCmd.Run()
-				}
+				killPidByPort(cfg.ServerPort, "释放 FastAPI 端口")
 			}
 			time.Sleep(3 * time.Second)
 			// 重新创建并启动
@@ -1009,12 +1071,12 @@ func main() {
 
 	if !serverReady {
 		SetSplashFailed(splash, "FastAPI 服务启动失败，请检查日志")
-		if splash != nil {
-			for {
-				SplashPumpMessages()
-				time.Sleep(100 * time.Millisecond)
-			}
+		// 最多展示失败画面 5 秒，然后强制退出（避免 splash 无限循环）
+		for i := 0; i < 50; i++ {
+			SplashPumpMessages()
+			time.Sleep(100 * time.Millisecond)
 		}
+		terminateJob()
 		os.Exit(1)
 	}
 

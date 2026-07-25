@@ -30,6 +30,7 @@ from routers.deps import (
     get_mgr, get_kb,
     WORKSPACE_DIR,
 )
+from common.security import check_local_origin, local_origin_error
 
 router = APIRouter()
 log = logging.getLogger("settings.extensions")
@@ -365,8 +366,10 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
 
 
 @router.post("/api/extensions/upload")
-async def api_extensions_upload(file: UploadFile = File(...)):
+async def api_extensions_upload(request: Request, file: UploadFile = File(...)):
     """上传 .sidemate 扩展包 — 异步模式：返回 task_id，通过 SSE 获取进度"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
     if not file.filename:
         return JSONResponse({"error": "未选择文件"}, status_code=400)
 
