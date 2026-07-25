@@ -19,7 +19,16 @@ async function loadModelCatalog() {
   kbBox.innerHTML = '<span style="color:var(--text-muted)">加载中...</span>';
 
   try {
-    var resp = await fetch((typeof _apiBase !== 'undefined' ? _apiBase : '') + '/api/models/catalog');
+    var base = (typeof _apiBase !== 'undefined' ? _apiBase : '');
+    // 首次进入下载页时 _sysTotalMem 尚未初始化（它原本只在"关于"页设置），
+    // 推荐档位会错误地按 16GB 兜底。这里并行拉取统一硬件扫描 /api/system/info。
+    var catalogPromise = fetch(base + '/api/models/catalog');
+    var sysinfoPromise = window._sysTotalMem ? null :
+      fetch(base + '/api/system/info').then(function(r) { return r.json(); }).then(function(info) {
+        if (info && info.total_mem_gb) window._sysTotalMem = info.total_mem_gb;
+      }).catch(function() {});
+    var resp = await catalogPromise;
+    if (sysinfoPromise) await sysinfoPromise;
     var data = await resp.json();
 
     // ---- LLM 3 档卡片 ----
@@ -482,9 +491,10 @@ function _renderQuickStart(data) {
     var totalSize = recommended ? (recommended.gguf_size_bytes / 1e9).toFixed(1) : '2.7';
     totalSize = parseFloat(totalSize) + 4.5; // LLM + KB
     var llmName = recommended ? recommended.display_name : '推荐模型';
+    var llmSizeTxt = recommended ? ('（' + (recommended.gguf_size_bytes / 1e9).toFixed(1) + 'GB）') : '';
     html =
       '<div>检测到你的电脑有 <b>' + ram + 'GB</b> 内存' + ramNote + '</div>' +
-      '<div style="margin-top:6px">推荐方案：<b>' + esc(llmName) + '</b> + 知识库模型</div>' +
+      '<div style="margin-top:6px">推荐方案：<b>' + esc(llmName) + '</b>' + llmSizeTxt + ' + 知识库模型（4.5GB）</div>' +
       '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">总下载量约 ' + totalSize.toFixed(1) + 'GB，预计 10-30 分钟</div>' +
       '<button class="btn btn-primary" style="margin-top:10px;font-size:14px;padding:8px 20px" onclick="quickStart()">⬇️ 一键下载推荐方案</button>' +
       '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">或自行选择下方的对话模型和知识库模型</div>';
