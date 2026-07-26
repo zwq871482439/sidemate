@@ -20,12 +20,15 @@ async function showWelcome() {
       routeIcon = 'welcome';
       routeTitle = '欢迎使用桌伴';
       routeDesc = '需要一个 AI 引擎才能开始工作。选择一种方式：';
+      // onboard 最后一步：两个入口卡片直接可点击（本地→下载页，云端→API 配置页）
+      var _goDownload = "dismissWelcome();switchTab('settings');setTimeout(function(){var dn=document.querySelector('.settings-nav-item[data-stab=download]');if(dn)switchSettingsTab('download',dn);if(typeof loadModelCatalog==='function')loadModelCatalog();},500)";
+      var _goCloud = "dismissWelcome();switchTab('settings');setTimeout(function(){switchSettingsTab('cloud',document.querySelector('.settings-nav-item[data-stab=cloud]'));},500)";
       routeActions =
         '<div style="text-align:left;margin:16px 0">' +
-          optionCard('home', '本地 AI', '安装 LLM 模型包，数据不出本机', 'var(--accent-color)') +
-          optionCard('cloud', '云端 AI', '填入 API Key，无需本地模型', '#7F77DD') +
+          optionCard('home', '本地 AI', '安装 LLM 模型包，数据不出本机', 'var(--accent-color)', _goDownload) +
+          optionCard('cloud', '云端 AI', '填入 API Key，无需本地模型', '#7F77DD', _goCloud) +
         '</div>' +
-        '<button onclick="dismissWelcome();switchTab(\'settings\',document.querySelector(\'.tabs-nav button\'));setTimeout(function(){var dn=document.querySelector(\'.settings-nav-item[data-stab=download]\');if(dn)switchSettingsTab(\'download\',dn);if(typeof loadModelCatalog===\'function\')loadModelCatalog();},500)" class="welcome-btn">前往下载模型</button>';
+        '<div style="font-size:.72em;color:var(--text-muted);margin-top:10px;cursor:pointer" onclick="dismissWelcome()">暂不配置，先随便看看</div>';
     } else if (!hasKB) {
       routeIcon = 'chat';
       routeTitle = 'AI 已就绪！';
@@ -68,8 +71,8 @@ async function showWelcome() {
   }
 }
 
-function optionCard(icon, title, desc, color) {
-  return '<div style="padding:12px;border:1px solid var(--border-color);border-radius:10px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color .15s" onmouseenter="this.style.borderColor=\'' + color + '\'" onmouseleave="this.style.borderColor=\'var(--border-color)\'">' +
+function optionCard(icon, title, desc, color, action) {
+  return '<div style="padding:12px;border:1px solid var(--border-color);border-radius:10px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color .15s" onclick="' + (action || '') + '" onmouseenter="this.style.borderColor=\'' + color + '\'" onmouseleave="this.style.borderColor=\'var(--border-color)\'">' +
     '<div style="width:36px;height:36px;border-radius:10px;background:' + color + '15;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:' + color + '">' + iconSvg(icon, 16) + '</div>' +
     '<div><div style="font-size:.85em;font-weight:600;color:var(--text-primary)">' + title + '</div><div style="font-size:.75em;color:var(--text-secondary)">' + desc + '</div></div>' +
     '</div>';

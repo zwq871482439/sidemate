@@ -93,6 +93,13 @@ async function updateChatOverlay() {
   var overlay = document.getElementById('chatModelOverlay');
   var lock = document.getElementById('chatOverlayLock');
   if (!overlay) return;
+  // onboard 未完成时欢迎弹窗独占空状态引导（本地/云端双入口），
+  // 状态锁不显示，避免两层引导互相冲突。onboard 完成后状态锁才接管。
+  if (!localStorage.getItem('sidemate_welcomed')) {
+    overlay.style.display = 'none';
+    if (lock) lock.style.display = 'none';
+    return;
+  }
   try {
     var curMode = (typeof _currentMode !== 'undefined') ? _currentMode : 'local';
 
