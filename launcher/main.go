@@ -146,7 +146,10 @@ var (
 
 const (
 	JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE    = 0x2000
+	JOB_OBJECT_LIMIT_BREAKAWAY_OK         = 0x0800 // 允许子进程用 CREATE_BREAKAWAY_FROM_JOB 脱离 Job（浏览器用）
 	JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED     = 0x0400
+	CREATE_BREAKAWAY_FROM_JOB             = 0x01000000
+	CREATE_NO_WINDOW                      = 0x08000000
 	JobObjectExtendedLimitInformation      = 9
 	PROCESS_ALL_ACCESS                     = 0x001F0FFF
 	CTRL_C_EVENT        uintptr = 0
@@ -228,7 +231,9 @@ func initJobObject() error {
 	}
 
 	info := JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-	info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	// KILL_ON_JOB_CLOSE：主进程死亡时全杀成员（FastAPI/llama-server 不残留）
+	// BREAKAWAY_OK：允许显式声明 breakaway 的子进程脱离 Job（浏览器不应被牵连杀）
+	info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK
 
 	ret, _, err := procSetInformationJobObject.Call(
 		hJob,
@@ -701,7 +706,30 @@ func waitForServer(host string, port int, timeout time.Duration) bool {
 func openBrowser(url string) {
 	switch runtime.GOOS {
 	case "windows":
-		// 用 ShellExecuteW 打开默认浏览器（不走进程树，不被 Job Object 管控）
+		// P0 修复：浏览器必须脱离 Job Object——
+		// 浏览器未运行时 ShellExecuteW 会把浏览器进程创建为我们的子进程，
+		// 子进程默认继承 Job 成员身份，启动器退出时 KillOnClose 会连坐杀掉
+		// 整个浏览器进程树（用户看到"浏览器崩溃"）。
+		// 方案1：cmd /c start + CREATE_BREAKAWAY_FROM_JOB（显式脱离 Job）
+		cmd := exec.Command("cmd", "/c", "start", "", url)
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW,
+		}
+		if err := cmd.Start(); err == nil {
+			log.Printf("[Launcher] 浏览器已打开 (breakaway): %s", url)
+			return
+		}
+		// 方案2：explorer 中转——由系统主 explorer（不在我们 Job 内）代开浏览器
+		log.Printf("[Launcher] breakaway 打开失败，尝试 explorer 中转")
+		cmd2 := exec.Command("explorer", url)
+		cmd2.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		if err := cmd2.Start(); err == nil {
+			log.Printf("[Launcher] 浏览器已打开 (explorer): %s", url)
+			return
+		}
+		// 方案3：ShellExecuteW 兜底（旧行为，浏览器未运行时可能被 Job 牵连）
+		log.Printf("[Launcher] explorer 打开失败，尝试 ShellExecuteW")
 		shell32 := syscall.NewLazyDLL("shell32.dll")
 		procShellExecuteW := shell32.NewProc("ShellExecuteW")
 		hwnd := uintptr(0)
@@ -709,17 +737,9 @@ func openBrowser(url string) {
 		file := uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(url)))
 		ret, _, _ := procShellExecuteW.Call(hwnd, verb, file, 0, 0, 1) // SW_SHOWNORMAL
 		if ret <= 32 {
-			// ShellExecuteW 返回值 <=32 表示错误，fallback 到 exec.Command
-			log.Printf("[Launcher] ShellExecuteW 失败 (ret=%d)，尝试 exec.Command", ret)
-			cmd := exec.Command("cmd", "/c", "start", "", url)
-			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-			if err := cmd.Start(); err != nil {
-				log.Printf("[Launcher] 打开浏览器失败: %v", err)
-			} else {
-				log.Printf("[Launcher] 浏览器已打开 (fallback): %s", url)
-			}
+			log.Printf("[Launcher] 打开浏览器失败 (ShellExecuteW ret=%d)", ret)
 		} else {
-			log.Printf("[Launcher] 浏览器已打开: %s", url)
+			log.Printf("[Launcher] 浏览器已打开 (ShellExecuteW): %s", url)
 		}
 	default:
 		var cmd *exec.Cmd
