@@ -40,9 +40,9 @@
     <h1>桌伴 · Sidemate</h1>
     <!-- Tab 导航（紧挨标题，连体胶囊）-->
     <div class="tabs-nav tabs-nav-inline">
-      <button class="active" onclick="switchTab('chat',this)">对话</button>
-      <button onclick="switchTab('qa',this)">知识库<span id="kbTabLock" style="display:none"> 🔒</span></button>
-      <button onclick="switchTab('settings',this)">设置</button>
+      <button class="active" data-tab="chat" onclick="switchTab('chat',this)">对话</button>
+      <button data-tab="qa" onclick="switchTab('qa',this)">知识库<span id="kbTabLock" style="display:none"> 🔒</span></button>
+      <button data-tab="settings" onclick="switchTab('settings',this)">设置</button>
     </div>
     <span style="flex:1"></span>
     <!-- 三段模式按钮组（右侧）-->
@@ -912,7 +912,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/core/utils.js?v=3.00"></script>
 <script src="/static/js/core/errors.js?v=3.00"></script>
 <script src="/static/js/stream_renderer.js?v=3.00"></script>
-<script src="/static/js/settings.js?v=3.01"></script>
+<script src="/static/js/settings.js?v=3.02"></script>
 <script src="/static/js/qa.js?v=3.01"></script>
 <script src="/static/js/kb-batch.js?v=3.00"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
@@ -921,7 +921,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/chat-actions.js?v=3.00"></script>
 <script src="/static/js/chat-files.js?v=3.00"></script>
 <script src="/static/js/chat-export.js?v=3.00"></script>
-<script src="/static/js/chat-ui.js?v=3.00"></script>
+<script src="/static/js/chat-ui.js?v=3.01"></script>
 <script src="/static/js/chat.js?v=3.00"></script>
 <!-- Patch5 C7: 前端体验增强模块 -->
 <script src="/static/js/token-estimator.js?v=3.00"></script>
@@ -934,7 +934,9 @@ window.addEventListener('load', function() {
 function switchTab(name, btn) {
   document.querySelectorAll('.tabs-nav button').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
+  // 允许编程式调用省略 btn（如遮罩按钮 switchTab('settings')），按 data-tab 找回按钮
+  if (!btn) btn = document.querySelector('.tabs-nav button[data-tab="' + name + '"]');
+  if (btn) btn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   localStorage.setItem('_activeTab', name);  // 记住当前 Tab
   if (name === 'settings') { refreshStatus(); loadAutoWarmupSetting(); loadRerankerResidentSetting(); loadDeviceSelector(); refreshResourcePanel(); loadCloudConfig(); loadPermissionTools(); switchSettingsTab('general', document.querySelector('.settings-nav-item[data-stab="general"]')); }

@@ -142,18 +142,23 @@ async function updateChatOverlay() {
     if (lock) lock.style.display = '';
     overlay.style.display = '';
 
-    // 区分两种情况：无任何已装模型 → 引导下载；有模型但未加载 → 引导加载
+    // 区分两种情况：无任何已装模型 → 引导配置引擎（本地/云端双选）；有模型但未加载 → 引导加载
     if (!hasInstalled) {
       overlay.innerHTML =
-        '<div class="overlay-card" style="margin:auto;max-width:340px;padding:24px;text-align:center">' +
+        '<div class="overlay-card" style="margin:auto;max-width:360px;padding:24px;text-align:center">' +
           '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('brain', '32') + '</div>' +
-          '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">尚未安装本地模型</div>' +
+          '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">还没有可用的 AI 引擎</div>' +
           '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
-            '下载一个本地 AI 模型后即可离线对话，无需联网' +
+            '下载本地模型离线使用，或配置云端 API 立即开始' +
           '</div>' +
-          '<button class="btn btn-primary" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'download\',document.querySelector(\'.settings-nav-item[data-stab=download]\'))},100);" style="padding:6px 16px">' +
-            '前往下载模型' +
-          '</button>' +
+          '<div style="display:flex;gap:10px;justify-content:center">' +
+            '<button class="btn btn-primary" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'download\',document.querySelector(\'.settings-nav-item[data-stab=download]\'))},100);" style="padding:6px 16px">' +
+              '下载本地模型' +
+            '</button>' +
+            '<button class="btn" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'cloud\',document.querySelector(\'.settings-nav-item[data-stab=cloud]\'))},100);" style="padding:6px 16px">' +
+              '配置云端 API' +
+            '</button>' +
+          '</div>' +
         '</div>';
     } else {
       // 恢复 overlay 原始内容（防止被云端 API 提示覆盖后残留）

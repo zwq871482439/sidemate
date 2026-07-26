@@ -887,8 +887,7 @@ async function updateTabVisibility() {
     var exts = data.extensions || [];
     var hasKB = exts.some(function(e) { return e.type === 'knowledge'; });
 
-    var qaBtn = document.querySelector('.tabs-nav button[onclick*="qa"]');
-    if (qaBtn) qaBtn.style.display = hasKB ? '' : 'none';
+    // 知识库 Tab 常显（未安装时由 updateKbTabLock 显示 🔒 徽标 + 引导页），不再隐藏
 
     var kbRefItem = document.getElementById('kbRefMenuItem');
     if (kbRefItem) kbRefItem.style.display = hasKB ? '' : 'none';
