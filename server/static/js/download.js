@@ -296,9 +296,15 @@ function _attachSSE(taskId) {
           }, 3000);
         }
       } else if (d.cancelled) {
+        // 取消时清空快速开始队列，否则残留队列会在下次任意下载完成时误触发
+        _quickStartQueue = null;
+        _quickStartTotal = 0;
         if (typeof showToast === 'function') showToast('下载已取消', 'info');
         _hideDownloadBar();
       } else if (d.error) {
+        // 失败同样清空队列（断链，由用户重新发起）
+        _quickStartQueue = null;
+        _quickStartTotal = 0;
         if (typeof showToast === 'function') showToast('下载失败: ' + d.error, 'error');
       }
       // 刷新目录（3 秒后自动隐藏进度条）

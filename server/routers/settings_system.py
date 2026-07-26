@@ -305,6 +305,14 @@ async def api_model_delete(request: Request):
     result = mgr.delete_model(model_name)
     if result.get("ok"):
         log.info("[MODEL] 用户删除模型: %s" % model_name)
+        # 全部 LLM 删光时同步注销 llm 扩展登记（保持 is_installed("llm") 真实）
+        try:
+            if not any(cfg.get("type") == "llm" for cfg in mgr.model_configs.values()):
+                from config import EXTENSIONS_DIR
+                from core.extension_manager import ExtensionRegistry
+                ExtensionRegistry(EXTENSIONS_DIR).unregister("llm")
+        except Exception:
+            pass
         return result
     return JSONResponse(result, status_code=500)
 

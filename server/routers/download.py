@@ -210,6 +210,22 @@ def _finalize_install(task):
             mgr = get_mgr()
             mgr._scan_models()
             log.info("[DL] LLM 安装完成，已刷新模型列表")
+            # 注册 llm 扩展到 ExtensionRegistry（与 .sidemate 包安装路径一致），
+            # 否则 is_installed("llm") 永远 False，换浏览器/清缓存后
+            # 欢迎页会误判"需要一个 AI 引擎"
+            try:
+                from config import EXTENSIONS_DIR
+                from core.extension_manager import ExtensionRegistry
+                from datetime import datetime
+                ExtensionRegistry(EXTENSIONS_DIR).register("llm", {
+                    "id": "llm",
+                    "version": "auto-detected",
+                    "name": "本地 LLM 模型",
+                    "models": {"llm": "models/llm"},
+                    "installed_at": datetime.now().isoformat(),
+                })
+            except Exception as e:
+                log.warning("[DL] 注册 llm 扩展失败（不影响使用）: %s", str(e)[:80])
             # 自动加载：当前没有已加载模型时，直接启动刚下载的模型（下载即可用——
             # 否则用户会困惑"下好了为什么还提示去设置页加载"）
             try:
