@@ -139,6 +139,15 @@ class OllamaManager:
                 from config import set_value as _cfg_set
                 _cfg_set("last_loaded_model", _model_id)
                 log.info("[OLLAMA-MGR] 记忆 last_loaded_model: %s" % _model_id)
+                # P0 修复：同步 model_manager._loaded——对话接口的
+                # get_loaded_llms() 门禁读这里，不标记会误报"请先在设置页加载模型"。
+                # llama-server 是单模型常驻，先清空再标记当前模型。
+                try:
+                    from server import mgr as _mm
+                    _mm._loaded.clear()
+                    _mm._loaded[_model_id] = True
+                except Exception:
+                    pass
             except Exception as e:
                 log.warning("[OLLAMA-MGR] 记忆 last_loaded_model 失败: %s" % str(e)[:80])
         return result
