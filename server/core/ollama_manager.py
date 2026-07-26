@@ -158,16 +158,21 @@ class OllamaManager:
             models = self._registry.scan()
             # 当前加载的模型 ID（多级 fallback）
             _current_id = ""
-            # 1. config.last_loaded_model
-            try:
-                from config import get as _cfg
-                _current_id = _cfg("last_loaded_model", "")
-            except Exception:
-                pass
-            # 2. LlamaCppManager 当前加载的模型路径 → 反查 model_id
-            if not _current_id and self._impl.current_model:
+            # 1. LlamaCppManager 实际运行中的模型（最权威；
+            #    卸载后 config.last_loaded_model 残留不能作为依据）
+            if self._impl.current_model:
                 _current_id = self._model_id_from_path(self._impl.current_model)
-            # 3. model_manager 的 get_loaded_llms（扫描后标记的）
+            # 2. config 记忆 + _loaded 标记双条件（卸载后两者均已清除，不会误判）
+            if not _current_id:
+                try:
+                    from config import get as _cfg
+                    from server import mgr as _mm
+                    _last = _cfg("last_loaded_model", "")
+                    if _last and _last in _mm._loaded:
+                        _current_id = _last
+                except Exception:
+                    pass
+            # 3. model_manager 的 get_loaded_llms 兜底
             if not _current_id:
                 try:
                     from server import mgr

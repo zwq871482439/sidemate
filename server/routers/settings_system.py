@@ -217,19 +217,31 @@ def api_models():
     """返回可用 LLM 模型列表、当前状态和 profile 参数"""
     mgr = get_mgr()
     loaded = mgr.get_loaded_llms()
-    # P7-4: current 优先从 last_loaded_model 读（真正在跑的模型），
-    # 不再依赖 get_loaded_llms()[0]（扫描后多个模型都会被标记 loaded）
+    # P0 同类修复：current 以"实际运行"为准（llama-server 单模型常驻）。
+    # 卸载后 config.last_loaded_model 仍残留，若直接当 current，
+    # 前端遮罩会误判模型已加载（用户发消息才报错）。
+    current = None
     try:
-        from config import get as _cfg
-        _last = _cfg("last_loaded_model", "")
+        from server import ollama_manager
+        _cm = ollama_manager.get_status().get("current_model")
+        if _cm:
+            _cid = ollama_manager._model_id_from_path(_cm)
+            if _cid and _cid in mgr.model_configs:
+                current = _cid
     except Exception:
-        _last = ""
-    if _last and _last in mgr.model_configs:
-        current = _last
-    elif loaded:
-        current = loaded[0]
-    else:
-        current = None
+        pass
+    if not current:
+        # 兜底：config 记忆 + _loaded 标记双条件（覆盖启动初期 impl 尚未上报的窗口；
+        # 卸载后 _loaded 已清除，不会误入）
+        try:
+            from config import get as _cfg
+            _last = _cfg("last_loaded_model", "")
+        except Exception:
+            _last = ""
+        if _last and _last in mgr.model_configs and _last in mgr._loaded:
+            current = _last
+        elif loaded:
+            current = loaded[0]
     profile_info = {}
     if current:
         try:

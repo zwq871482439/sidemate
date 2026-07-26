@@ -538,7 +538,18 @@ class ModelManager:
                 if last_model:
                     import time
                     time.sleep(1)  # 等端口释放
-                    result = ollama_manager.start(last_model)
+                    # last_loaded_model 是 model_id（如 qwen3.5-2b-q4），
+                    # start/switch_model 需要 GGUF 路径——先反查，否则重载必失败
+                    _path = None
+                    for _m in ollama_manager.list_available_models():
+                        if _m["model_id"] == last_model:
+                            _path = _m["gguf_path"]
+                            break
+                    if not _path:
+                        return {"status": "error", "device": new_device,
+                                "message": "设备已切换但找不到模型文件: %s" % last_model}
+                    # 用 switch_model（统一同步 config.last_loaded_model 和 _loaded）
+                    result = ollama_manager.switch_model(_path)
                     if result.get("error"):
                         return {"status": "error", "device": new_device,
                                 "message": "设备已切换但模型重载失败: %s" % result["error"][:80]}

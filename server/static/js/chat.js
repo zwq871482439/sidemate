@@ -705,8 +705,22 @@ async function sendMessage() {
   var modelTag = document.getElementById('modelTag');
   var isLocalMode = typeof _currentMode === 'undefined' || _currentMode !== 'cloud';
   if (isLocalMode && modelTag && modelTag.classList.contains('none')) {
-    showToast('请先在「设置」页面加载模型，再开始对话', 'warning');
-    return;
+    // modelTag 的 none 类由 refreshStatus 异步刷新，可能滞后
+    // （如下载完自动加载后直接来聊天）。门禁触发时先实时问一次后端，真的没模型才拦截。
+    try {
+      var _mresp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/models');
+      var _mdata = await _mresp.json();
+      if (_mdata && _mdata.current) {
+        // 实际已加载：矫正标签并顺手全量刷新，然后放行
+        if (typeof refreshStatus === 'function') refreshStatus();
+      } else {
+        showToast('请先在「设置」页面加载模型，再开始对话', 'warning');
+        return;
+      }
+    } catch (e) {
+      showToast('请先在「设置」页面加载模型，再开始对话', 'warning');
+      return;
+    }
   }
 
   // Patch5 G：文档 token 预检 — 超过当前模型上下文窗口 95% 直接拒绝发送

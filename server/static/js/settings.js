@@ -1331,6 +1331,13 @@ async function saveCloudConfig() {
     var data = await resp.json();
     if (data.ok) {
       showToast('云端配置已保存', 'success');
+      // 同步全局标记：否则本次会话内切到在线模式，
+      // updateChatOverlay 仍按旧的 _cloudConfigured=false 显示"未配置云端 API"遮罩
+      if (body.api_key || (keyEl && keyEl.getAttribute('data-has-key') === 'true')) {
+        window._cloudConfigured = true;
+      }
+      if (modelName) window._cloudModelName = modelName;
+      if (typeof updateChatOverlay === 'function') updateChatOverlay();
       if (typeof fetchContextUsage === 'function') fetchContextUsage();
       if (data.context_window) {
         var capsEl = document.getElementById('cloudCapsDisplay');
