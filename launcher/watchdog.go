@@ -42,6 +42,7 @@ type Watchdog struct {
 	logFile       string          // 日志文件路径
 	pythonFailCnt int             // Python 连续失败计数
 	ollamaFailCnt int             // Ollama 连续失败计数
+	modelDown     bool            // 模型服务处于不可用状态（已记录日志，避免刷屏）
 	restartTimes  []time.Time     // 重启时间戳列表（滑动窗口计数）
 	newPythonCmd  cmdRebuilder    // 重建 Python 命令的闭包
 	newOllamaCmd  cmdRebuilder    // 重建 Ollama 命令的闭包
@@ -140,13 +141,22 @@ func (wd *Watchdog) runCheckCycle() {
 	ollamaOK, ollamaDetail := wd.healthCheckDeep(ollamaURL, "llama-server")
 
 	if ollamaOK {
+		if wd.modelDown {
+			// 状态变化：不可用 → 恢复，记一条
+			wd.log("INFO", "WATCHDOG", "模型服务已恢复")
+			wd.modelDown = false
+		}
 		wd.ollamaFailCnt = 0
 	} else {
 		if wd.ollamaProc == nil {
-			// P7-4：模型服务由 Python 管理，Go 只记录不处理（避免刷屏）
+			// P7-4：模型服务由 Python 管理，Go 只记录不处理。
+			// 只在状态变化（可用 → 不可用）时记一条，持续不可用不重复刷日志。
 			wd.ollamaFailCnt++
 			if wd.ollamaFailCnt >= wdFailThreshold {
-				wd.log("INFO", "WATCHDOG", "模型服务暂时不可用（Python 后端管理，等待自动恢复）")
+				if !wd.modelDown {
+					wd.log("INFO", "WATCHDOG", "模型服务暂时不可用（Python 后端管理，等待自动恢复）")
+					wd.modelDown = true
+				}
 				wd.ollamaFailCnt = 0
 			}
 		} else {
