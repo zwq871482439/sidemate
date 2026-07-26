@@ -74,7 +74,7 @@ Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs
 Source: "python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.fingerprint"
 
 ; Server 源码（排除：用户数据、缓存、日志、开发测试、本地设置、归档旧代码、用户工作区、模型）
-; 注意：实际用户数据运行时落在 {app}\server\data\ 下；
+; 注意：实际用户数据运行时落在 {app}\data\ 下（DATA_DIR=项目根\data）；
 ;       models/ 下的模型（embedding/reranker/ollama blobs）由 .sidemate 扩展包按需安装，
 ;       安装包只保留空目录占位（见下方 [Dirs]），避免把 9GB+ 模型打进安装包。
 Source: "server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs; Excludes: "__pycache__,*.pyc,.pytest_cache,data\chats,data\kb,data\kbsession,data\recordings,data\cache,data\logs,data\backup,data\deps_manifest.json,data\*.db,data\*.db-shm,data\*.db-wal,settings.json,extensions\*.json,requirements.txt,tests,archive,workspace,models,2026-*"
