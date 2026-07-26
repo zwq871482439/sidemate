@@ -210,6 +210,22 @@ def _finalize_install(task):
             mgr = get_mgr()
             mgr._scan_models()
             log.info("[DL] LLM 安装完成，已刷新模型列表")
+            # 自动加载：当前没有已加载模型时，直接启动刚下载的模型（下载即可用——
+            # 否则用户会困惑"下好了为什么还提示去设置页加载"）
+            try:
+                from server import ollama_manager
+                if not ollama_manager.get_status().get("current_model"):
+                    _mid = (getattr(task, "meta", None) or {}).get("model_id", "")
+                    _path = None
+                    for m in ollama_manager.list_available_models():
+                        if m["model_id"] == _mid:
+                            _path = m["gguf_path"]
+                            break
+                    if _path:
+                        log.info("[DL] 自动加载新下载的模型: %s", _mid)
+                        ollama_manager.switch_model(_path)
+            except Exception as e:
+                log.warning("[DL] 自动加载模型失败（可在设置页手动加载）: %s", str(e)[:120])
         elif task.type == "kb":
             from config import EXTENSIONS_DIR
             from core.extension_manager import ExtensionRegistry

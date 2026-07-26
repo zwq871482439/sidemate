@@ -251,6 +251,7 @@ def run_llm_download(task: DownloadTask, meta: dict, models_dir: str, source: st
     def _worker():
         try:
             task.status = "running"
+            task.meta = meta  # 供 on_complete 自动加载用（model_id → gguf_path）
             dl = meta.get("download", {})
             repo_id = dl.get("repo_id", "")
             filename = dl.get("filename", meta.get("gguf_filename", ""))
@@ -271,7 +272,7 @@ def run_llm_download(task: DownloadTask, meta: dict, models_dir: str, source: st
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, ensure_ascii=False, indent=2)
 
-            task._emit(99, "下载完成，正在刷新模型列表...")
+            task._emit(99, "下载完成，正在加载模型（首次约需 5-15 秒）...")
             if on_complete:
                 try:
                     on_complete(task)
