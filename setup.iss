@@ -111,12 +111,87 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 桌伴 Sidemate"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; 清理 cache 和 logs（非用户数据）
+; 清理 cache 和 logs（非用户数据，无论用户如何选择都删除）
 Type: filesandordirs; Name: "{app}\data\cache"
 Type: filesandordirs; Name: "{app}\data\logs"
 Type: filesandordirs; Name: "{app}\data\backup"
-; 强制删除 Python 和 Server 代码目录（含运行时生成的 __pycache__、.fingerprint、site-packages_bak 等）
+; 强制删除 Python 目录（含运行时生成的 __pycache__、.fingerprint、site-packages_bak 等）
 Type: filesandordirs; Name: "{app}\python"
-Type: filesandordirs; Name: "{app}\server"
-; 注意：不删除 {app}\data\chats, kb, kbsession, recordings（用户数据）
-; 注意：{app}\server\models 会随 server 一并删除（模型可通过扩展包重新安装）
+; 注意：{app}\server 不再静态删除——模型在 server\models 下，
+;       由 [Code] 卸载选项页按用户选择处理（默认保留模型）。
+; 注意：{app}\data 的个人数据（chats/kb/recordings/settings.json）
+;       同样由 [Code] 按用户选择处理（默认保留）。
+
+[Code]
+var
+  OptPage: TWizardPage;
+  chkDelModels, chkDelData: TNewCheckBox;
+
+{ 卸载选项页：让用户选择是否删除模型和个人数据（默认都保留） }
+function InitializeUninstall(): Boolean;
+var
+  lbl: TNewStaticText;
+begin
+  OptPage := CreateCustomPage(wpWelcome, '卸载选项', '请选择要一并删除的内容');
+
+  lbl := TNewStaticText.Create(OptPage);
+  lbl.Parent := OptPage.Surface;
+  lbl.Left := 0;
+  lbl.Top := 0;
+  lbl.Width := OptPage.SurfaceWidth;
+  lbl.Height := 36;
+  lbl.WordWrap := True;
+  lbl.Caption := '默认仅删除程序本体，已下载的模型和个人数据都会保留（重装后可直接使用）。如需彻底清理，请勾选：';
+
+  chkDelModels := TNewCheckBox.Create(OptPage);
+  chkDelModels.Parent := OptPage.Surface;
+  chkDelModels.Left := 0;
+  chkDelModels.Top := 48;
+  chkDelModels.Width := OptPage.SurfaceWidth;
+  chkDelModels.Caption := '删除已下载的模型（LLM + 知识库模型，约 5-10GB，删除后需重新下载）';
+  chkDelModels.Checked := False;
+
+  chkDelData := TNewCheckBox.Create(OptPage);
+  chkDelData.Parent := OptPage.Surface;
+  chkDelData.Left := 0;
+  chkDelData.Top := 72;
+  chkDelData.Width := OptPage.SurfaceWidth;
+  chkDelData.Caption := '删除个人数据（聊天记录、知识库文档、API 密钥与所有设置）';
+  chkDelData.Checked := False;
+
+  Result := True;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppDir, KeepDir: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    AppDir := ExpandConstant('{app}');
+
+    { ---- server/：按模型选择处理 ---- }
+    if chkDelModels.Checked then
+    begin
+      { 连模型一起删 }
+      DelTree(AppDir + '\server', True, True, True);
+    end
+    else
+    begin
+      { 保留模型：暂移 models → 删 server → 放回（同卷 rename，瞬时完成） }
+      KeepDir := AppDir + '\__models_keep__';
+      if DirExists(AppDir + '\server\models') then
+        RenameFile(AppDir + '\server\models', KeepDir);
+      DelTree(AppDir + '\server', True, True, True);
+      if DirExists(KeepDir) then
+      begin
+        ForceDirectories(AppDir + '\server');
+        RenameFile(KeepDir, AppDir + '\server\models');
+      end;
+    end;
+
+    { ---- data/：按个人数据选择处理（cache/logs/backup 已由静态规则清除） ---- }
+    if chkDelData.Checked then
+      DelTree(AppDir + '\data', True, True, True);
+  end;
+end;
