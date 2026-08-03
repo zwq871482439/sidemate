@@ -7,6 +7,7 @@
 ## 下版本计划（v0.9.8）
 
 - **云端 API 双接口格式**：设置页可选 OpenAI 兼容 / Anthropic 格式（v0.9.7 测试机反馈：配置页未标注格式。v0.9.7 已加"OpenAI 兼容"标注；下版本 config 新增 `cloud_api_format`，云端引擎按格式分发，Anthropic 走 `/v1/messages` + SSE 事件适配器）
+- **联网搜索链路改造**（v0.9.7 用户反馈）：① 只搜不读加护栏（search 后未 fetch 就收尾时注入一次提示）；② 次数 search_web 3→5 / fetch_url 5→15 / MAX_ROUNDS 20→26，每轮注入剩余预算快照；③ 修复 KB 空库仍误搜（注入条件加文档数>0，prompt 引导动态裁剪）；④ 在线 prompt 补搜索→阅读→回答三段式工作流、来源必须出自读过的页面
 
 ---
 
