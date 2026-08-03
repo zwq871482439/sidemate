@@ -476,8 +476,12 @@
         <div id="stab-cloud" class="settings-stab" style="display:none">
           <div class="card">
             <h4>云端 AI 模型配置</h4>
+              <div style="font-size:.8em;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+                接口格式：<span style="display:inline-block;padding:1px 8px;border-radius:4px;background:var(--accent-color);color:var(--text-on-accent,#fff);font-size:.92em">OpenAI 兼容</span>
+                <span style="color:var(--text-muted)">/v1/chat/completions · 适用 DeepSeek、OpenAI、通义、智谱等主流服务（Anthropic 格式下版本支持）</span>
+              </div>
               <form onsubmit="return false" style="margin:0">
-              <div class="row"><span class="lbl">API 地址</span><input type="text" id="cloudBaseUrl" placeholder="请输入 API 地址" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
+              <div class="row"><span class="lbl">API 地址</span><input type="text" id="cloudBaseUrl" placeholder="OpenAI 兼容格式，如 https://api.deepseek.com" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
               <div class="row"><span class="lbl">API Key</span><input type="password" id="cloudApiKey" placeholder="请输入 API Key" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><button class="btn btn-ghost btn-sm" onclick="toggleApiKeyVisibility()">显示</button></div>
               <div class="row"><span class="lbl">模型名称</span><input type="text" id="cloudModel" placeholder="请输入模型名称" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"></div>
               </form>
