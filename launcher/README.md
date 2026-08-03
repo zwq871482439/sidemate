@@ -14,7 +14,7 @@ cmd.SysProcAttr = &syscall.SysProcAttr{
 ```
 
 **适用范围**：
-- 主进程：python.exe / ollama.exe（用户不应该看到 cmd 窗口）
+- 主进程：python.exe（用户不应该看到 cmd 窗口）；P7-4 起推理引擎改为 llama-server.exe，由 Python 后端拉起，同样隐藏窗口
 - 后台调用：wmic / PowerShell / mklink / kill 命令
 - **所有** exec.Cmd 创建处（无一例外）
 
@@ -27,14 +27,14 @@ cmd.SysProcAttr = &syscall.SysProcAttr{
 **编译命令**必须用 ldflags 注入版本号 + windowsgui 子系统：
 
 ```bash
-go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.5" -o Sidemate.exe .
+go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.7" -o Sidemate.exe .
 ```
 
 **两个 ldflags 都必须**：
 - `-H windowsgui`：**铁律！不加会弹 cmd 窗口**（Sidemate.exe 本身是 GUI 应用，不是 console 应用）
-- `-X main.AppVersion=v0.9.5`：版本号注入
+- `-X main.AppVersion=v0.9.7`：版本号注入
 
-**不要硬编码版本号到 main.go**（虽然 `var AppVersion = "v0.9.5"` 是默认兜底）
+**不要硬编码版本号到 main.go**（虽然 `var AppVersion = "v0.9.7"` 是默认兜底）
 
 **版本来源**：`server/config.py` 的 `version` 字段是权威
 
@@ -57,10 +57,10 @@ go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.5" -o Sidemate.exe .
 
 1. Splash 启动画面
 2. GPU 检测 + OLLAMA_LLM_LIBRARY 设置
-3. 环境指纹校验（< 1 秒）
+3. 环境指纹校验（核心包 SHA256，< 1 秒）
 4. 硬链接备份初始化（首次启动）
-5. Ollama 启动（隐藏窗口）
-6. FastAPI（python.exe）启动（隐藏窗口）
+5. FastAPI（python.exe）启动（隐藏窗口）
+6. 推理引擎由 Python 后端拉起（P7-4：llama-server.exe，Go 不再直接启动推理进程）
 7. 看门狗 goroutine 启动
 8. 浏览器打开
 
@@ -72,7 +72,7 @@ go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.5" -o Sidemate.exe .
 
 ```bash
 cd C:\Sidemate\launcher
-go build -ldflags "-X main.AppVersion=v0.9.5" -o Sidemate.exe .
+go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.7" -o Sidemate.exe .
 ```
 
 验证编译成功 + Sidemate.exe 大小 ~9.6MB

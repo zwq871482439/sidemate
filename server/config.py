@@ -301,42 +301,52 @@ def _validate_config_value(key: str, value: Any) -> bool:
         return False
 
 
+# 配置写锁：保护 save_config 的"读-改-写"序列（稳定性测试 S3 抓到的丢更新 race）
+# 与 _cache_lock 独立；锁序固定 _save_lock → _cache_lock（_invalidate_cache 内取后者）
+_save_lock = threading.Lock()
+
+
 def save_config(config: Dict[str, Any]) -> bool:
-    """保存配置到 settings.json（原子写入，防崩溃截断）"""
+    """保存配置到 settings.json（原子写入，防崩溃截断）
+
+    并发安全：整个读-改-写在 _save_lock 内完成——否则两个线程并发写不同 key 时，
+    后写者会用过期的读结果覆盖先写者的更新（lost update）。
+    """
     tmp_path = _CONFIG_FILE + ".tmp"
-    try:
-        existing = {}
-        if os.path.exists(_CONFIG_FILE):
-            with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-
-        # 校验关键配置项，非法值拒绝并记录
-        for k, v in config.items():
-            if not _validate_config_value(k, v):
-                log.warning("[CONFIG] 拒绝非法配置值: %s=%r（类型或范围不符）" % (k, v))
-                return False
-            existing[k] = v
-
-        # 原子写入：先写临时文件，再替换目标文件
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, _CONFIG_FILE)
-
-        # 保存后重新加载缓存
-        _invalidate_cache()
-
-        return True
-    except Exception as e:
-        log.error("[CONFIG] 保存配置失败: %s" % str(e))
-        # 清理临时文件
+    with _save_lock:
         try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
-        return False
+            existing = {}
+            if os.path.exists(_CONFIG_FILE):
+                with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+
+            # 校验关键配置项，非法值拒绝并记录
+            for k, v in config.items():
+                if not _validate_config_value(k, v):
+                    log.warning("[CONFIG] 拒绝非法配置值: %s=%r（类型或范围不符）" % (k, v))
+                    return False
+                existing[k] = v
+
+            # 原子写入：先写临时文件，再替换目标文件
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, _CONFIG_FILE)
+
+            # 保存后重新加载缓存
+            _invalidate_cache()
+
+            return True
+        except Exception as e:
+            log.error("[CONFIG] 保存配置失败: %s" % str(e))
+            # 清理临时文件
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            return False
 
 
 # ===== 模块级配置缓存（启动时加载，写操作后同步更新） =====

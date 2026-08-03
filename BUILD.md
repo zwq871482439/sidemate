@@ -7,7 +7,7 @@
 | 依赖 | 版本 | 说明 |
 |------|------|------|
 | Python | 3.12+ | 推荐 3.14 |
-| Go | 1.21+ | 仅编译 Launcher 时需要 |
+| Go | 1.22+ | 仅编译 Launcher 时需要 |
 | Git | 任意 | |
 
 ## 快速开始
@@ -21,7 +21,7 @@ python envsetup.py
 ```
 
 脚本会自动：
-1. 部署嵌入式 Python 并安装 pip 依赖（`requirements_gen.txt`）
+1. 部署嵌入式 Python 并安装 pip 依赖（`requirements.txt`，另单独安装 torch CPU 版）
 2. 下载/放置 llama-server 到 `lib/ollama/`
 3. 编译 Go Launcher（可选）
 
@@ -30,7 +30,7 @@ python envsetup.py
 ### 1. 安装 Python 依赖
 
 ```bash
-pip install -r requirements_gen.txt
+pip install -r requirements.txt
 ```
 
 ### 2. 获取 llama-server
@@ -83,7 +83,7 @@ sidemate/
 ├── lib/             ← llama-server + DLL（不进 git）
 ├── data/            ← 运行时数据（不进 git）
 ├── envsetup.py      ← 一键部署脚本
-└── requirements_gen.txt ← Python 依赖清单
+└── requirements.txt ← Python 依赖清单
 ```
 
 ## 运行测试
