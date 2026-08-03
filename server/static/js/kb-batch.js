@@ -42,47 +42,56 @@ function kbToggleSelect(docId) {
   kbUpdateBatchToolbar();
 }
 
-function kbSelectAll() {
+// P8-4: 分批渲染下，批量操作基于数据而非 DOM（未渲染的卡片也要被选中）
+function _kbVisibleDocIds() {
+  var ids = [];
+  var docs = (typeof _kbLastDocs !== 'undefined') ? _kbLastDocs : [];
+  for (var i = 0; i < docs.length; i++) {
+    var d = docs[i];
+    if (typeof _kbActiveTagFilter !== 'undefined' && _kbActiveTagFilter) {
+      if (_kbActiveTagFilter === '__uncategorized__') { if (d.category) continue; }
+      else if (d.category !== _kbActiveTagFilter) continue;
+    }
+    if (typeof _kbNameFilter !== 'undefined' && _kbNameFilter &&
+        d.filename.toLowerCase().indexOf(_kbNameFilter.toLowerCase()) === -1) continue;
+    ids.push(d.doc_id);
+  }
+  return ids;
+}
+
+function _kbSyncSelectionVisual() {
   var _sel = _ensureSelectedDocs();
   var cards = document.querySelectorAll('.kb-card');
   for (var i = 0; i < cards.length; i++) {
     var docId = cards[i].getAttribute('data-doc-id');
-    if (docId) {
-      _sel.add(docId);
-      cards[i].style.borderColor = 'var(--accent-color)';
-      cards[i].style.background = 'var(--color-background-info, #E6F1FB)';
-    }
+    var sel = docId && _sel.has(docId);
+    cards[i].style.borderColor = sel ? 'var(--accent-color)' : '';
+    cards[i].style.background = sel ? 'var(--color-background-info, #E6F1FB)' : '';
   }
+}
+
+function kbSelectAll() {
+  var _sel = _ensureSelectedDocs();
+  var ids = _kbVisibleDocIds();
+  for (var i = 0; i < ids.length; i++) _sel.add(ids[i]);
+  _kbSyncSelectionVisual();
   kbUpdateBatchToolbar();
 }
 
 function kbSelectInvert() {
   var newSet = new Set();
-  var cards = document.querySelectorAll('.kb-card');
-  for (var i = 0; i < cards.length; i++) {
-    var docId = cards[i].getAttribute('data-doc-id');
-    if (docId && !_ensureSelectedDocs().has(docId)) {
-      newSet.add(docId);
-    }
+  var ids = _kbVisibleDocIds();
+  for (var i = 0; i < ids.length; i++) {
+    if (!_ensureSelectedDocs().has(ids[i])) newSet.add(ids[i]);
   }
   _kbSelectedDocs = newSet;
-  // 更新视觉
-  for (var j = 0; j < cards.length; j++) {
-    var dId = cards[j].getAttribute('data-doc-id');
-    var sel = newSet.has(dId);
-    cards[j].style.borderColor = sel ? 'var(--accent-color)' : '';
-    cards[j].style.background = sel ? 'var(--color-background-info, #E6F1FB)' : '';
-  }
+  _kbSyncSelectionVisual();
   kbUpdateBatchToolbar();
 }
 
 function kbClearSelection() {
   _resetSelectedDocs();
-  var cards = document.querySelectorAll('.kb-card');
-  for (var j = 0; j < cards.length; j++) {
-    cards[j].style.borderColor = '';
-    cards[j].style.background = '';
-  }
+  _kbSyncSelectionVisual();
   kbUpdateBatchToolbar();
 }
 

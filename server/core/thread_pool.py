@@ -16,6 +16,7 @@ core/thread_pool.py — 全局线程池管理器（Patch5 T01）
   - 全局单例，在 server.py lifespan 中初始化
 """
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Any, Callable, Optional
 
@@ -115,19 +116,23 @@ class ThreadPoolManager:
 # ===== 全局单例 =====
 
 _thread_pool_instance: Optional[ThreadPoolManager] = None
+_pool_lock = threading.Lock()
 
 
 def get_thread_pool() -> ThreadPoolManager:
     """获取全局 ThreadPoolManager 单例
 
     如果尚未初始化，惰性创建（但不推荐在 lifespan 之前调用）。
+    P8-4：双重检查锁，防止并发首调创建多个线程池。
 
     Returns:
         ThreadPoolManager 全局实例
     """
     global _thread_pool_instance
     if _thread_pool_instance is None:
-        _thread_pool_instance = ThreadPoolManager()
+        with _pool_lock:
+            if _thread_pool_instance is None:
+                _thread_pool_instance = ThreadPoolManager()
     return _thread_pool_instance
 
 

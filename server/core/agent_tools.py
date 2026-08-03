@@ -33,6 +33,12 @@ _AGENT_BASE_PROMPT = (
     "- 如果上下文中已提供了用户附带的文档内容（标注[用户选定的参考文档]），直接使用，不需要再调 search_kb\n"
     "- 用户的知识库（search_kb）包含用户上传的专业文档，涉及用户特定领域时查看\n"
     "- 互联网搜索（search_web）用于获取最新信息或你不了解的领域\n"
+    "- 联网检索工作流（必须遵守）：① search_web 搜 → ② fetch_url 读原文（至少 1 篇）→ ③ 基于原文回答。"
+    "搜索结果只是摘要，可能过时或片面，**摘要不是事实来源，严禁仅凭摘要下结论**\n"
+    "- 来源编号 [1] 只能标注你实际用 fetch_url 读过的页面，不得标注搜索结果摘要\n"
+    "- 不要重复相同 query 搜索：结果不够就换关键词（换表述/加限定词/换中英文）\n"
+    "- 上下文中会周期性出现 [剩余预算]（搜索/阅读/轮次的剩余次数），请据此规划检索深度；"
+    "预算不足时停止检索，直接基于已有信息回答\n"
     "- 需要深入某个网页时用 fetch_url\n"
     "- 用户提到今天/昨天/上周/下个月等相对时间时，用 get_current_time 获取真实日期，不要凭空猜\n"
     "- 需要精确计算数字（折扣、汇率、求和、百分比）时用 calculator，避免心算出错\n"
@@ -684,7 +690,10 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
     tools = []
 
     # 判断环境
-    kb_available = kb is not None and kb_permission != "disabled"
+    # P8-2 修复：KB 空库（模型已装但无文档）时不注入 search_kb——
+    # 否则模型被"知识库优先"引导反复空调用，白烧轮次
+    _kb_doc_count = len(getattr(kb, "documents", None) or {}) if kb else 0
+    kb_available = (kb is not None and kb_permission != "disabled" and _kb_doc_count > 0)
     doc_mode = mode == "doc"
 
     # 读取工具级权限配置（_TOOL_PERM_MAP 定义在模块级）
@@ -709,6 +718,13 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         base = _DOC_BASE_PROMPT
     else:
         base = _AGENT_BASE_PROMPT
+
+    # P8-2：KB 不可用（未安装/空库/权限禁用）时裁剪 KB 引导——
+    # 否则模型会寻找并未注入的 search_kb 工具，或对着空库白搜
+    if not kb_available:
+        base = base.replace("- 用户的知识库（search_kb）包含用户上传的专业文档，涉及用户特定领域时查看\n", "")
+        base = base.replace("1. 【检索】先 search_kb 查知识库，再 search_web 补充（每个最多 2-3 次）",
+                            "1. 【检索】用 search_web 联网搜索补充（最多 2-3 次）")
 
     # KB 标签注入（full 权限时）—— 保留现有逻辑，作为 [KB 标签概览] 的一部分
     tag_str = ""

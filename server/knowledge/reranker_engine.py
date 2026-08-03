@@ -25,6 +25,8 @@ class RerankerEngine:
         self._loaded = False
         self._mode = "none"          # "pytorch" | "none"
         self._device = "cpu"  # Reranker 跑 CPU
+        import threading as _th
+        self._load_lock = _th.Lock()  # P8-4: 并发加载保护（防双重加载占双倍内存）
 
     @property
     def available(self) -> bool:
@@ -38,6 +40,13 @@ class RerankerEngine:
         """
         if self._loaded:
             return True
+        with self._load_lock:
+            if self._loaded:  # 双重检查（等锁期间可能已被别的线程加载）
+                return True
+            return self._load_locked()
+
+    def _load_locked(self) -> bool:
+        """实际加载流程（调用方须已持有 _load_lock）"""
 
         # 确定项目根目录：knowledge/ → 项目根目录
         _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

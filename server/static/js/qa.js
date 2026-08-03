@@ -335,9 +335,21 @@ async function kbRefreshDocs() {
     var svgImg = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="5.5" r="1.5" stroke="currentColor" stroke-width="0.8"/><path d="M3 10.5l2.5-2.5L8 10l2-2 2 2" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     var svgEmpty = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M3.5 1.5h5L11.5 4.5v8a.5.5 0 01-.5.5h-7.5a.5.5 0 01-.5-.5V2a.5.5 0 01.5-.5z" stroke="currentColor" stroke-width="1.1"/><path d="M8.5 1.5V4.5h3" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M4 10L10 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>';
 
+    // P8-4: 分批渲染——先过滤出待渲染文档，再按 50 张/批渲染（大文库不卡）
+    var _filteredDocs = [];
+    for (var _fi2 = 0; _fi2 < docs.length; _fi2++) {
+      var _fd = docs[_fi2];
+      if (_kbActiveTagFilter) {
+        if (_kbActiveTagFilter === '__uncategorized__') { if (_fd.category) continue; }
+        else if (_fd.category !== _kbActiveTagFilter) continue;
+      }
+      if (_kbNameFilter && _fd.filename.toLowerCase().indexOf(_kbNameFilter.toLowerCase()) === -1) continue;
+      _filteredDocs.push(_fd);
+    }
+    var _kbCardsHtmlFor = function(subset) {
     var html = '';
-    for (var di = 0; di < docs.length; di++) {
-      var d = docs[di];
+    for (var di = 0; di < subset.length; di++) {
+      var d = subset[di];
 
       // P6: 按 category 筛选（一个文档只属于一个分类）
       if (_kbActiveTagFilter) {
@@ -472,12 +484,36 @@ async function kbRefreshDocs() {
       }
       html += '</div>';
     }
+      return html;
+    };  // _kbCardsHtmlFor
 
     var gridEl = document.getElementById('kbDocGrid');
     if (gridEl) {
       // P6: 根据 _kbViewMode 切换 class
       gridEl.className = _kbViewMode === 'list' ? 'kb-doc-list' : 'kb-doc-grid';
-      gridEl.innerHTML = html;
+      // P8-4: 首批 50 张 + IntersectionObserver 滚动加载下一批
+      var KB_BATCH = 50;
+      gridEl.innerHTML = _kbCardsHtmlFor(_filteredDocs.slice(0, KB_BATCH));
+      if (_filteredDocs.length > KB_BATCH) {
+        gridEl.insertAdjacentHTML('beforeend',
+          '<div id="kbLoadMore" style="grid-column:1/-1;text-align:center;padding:14px;color:var(--text-muted);font-size:12px">下拉加载更多…</div>');
+        var _rendered = KB_BATCH;
+        var _kbLoadObserver = new IntersectionObserver(function(entries) {
+          if (!entries[0].isIntersecting) return;
+          var lm = document.getElementById('kbLoadMore');
+          var next = _filteredDocs.slice(_rendered, _rendered + KB_BATCH);
+          if (next.length && lm) {
+            lm.insertAdjacentHTML('beforebegin', _kbCardsHtmlFor(next));
+            _rendered += next.length;
+          }
+          if (_rendered >= _filteredDocs.length) {
+            if (lm) lm.remove();
+            _kbLoadObserver.disconnect();
+          }
+        }, {root: null, rootMargin: '300px'});
+        var _sentinel = document.getElementById('kbLoadMore');
+        if (_sentinel) _kbLoadObserver.observe(_sentinel);
+      }
     }
 
     // P6 打磨 #7：更新底部统计

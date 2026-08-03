@@ -160,7 +160,8 @@ def _safe_math_eval(expression: str):
 
 # ===== 常量 =====
 # Patch4 修复 3：MAX_ROUNDS 从 10 提到 20，支持长文档（>10 章）
-MAX_ROUNDS = 20
+# P8-2：20→26（search 5 + fetch 15 最坏情况占 20，留 6 轮收尾）
+MAX_ROUNDS = 26
 MAX_TOOL_HISTORY_CHARS = 60000  # 工具历史最大字符数（约 40000 token）
 
 # Cheap 工具：本地、不消耗 token 预算，**不计入 MAX_ROUNDS**（Patch4 v3.1 BUG#28 修复）
@@ -178,10 +179,11 @@ CHEEP_TOOLS = {
 
 # Patch4 修复 3：子类硬限制（防死循环 + 防 token 爆炸）
 # 未列出的工具（set_doc_status / list_docs / workspace 工具）不限制
+# P8-2：search_web 3→5、fetch_url 5→15（与 search 保持 1:3，一次搜索读 3 篇）
 TOOL_LIMITS = {
-    "search_web": 3,   # 互联网搜索最多 3 次
+    "search_web": 5,   # 互联网搜索最多 5 次
     "search_kb": 5,    # 知识库搜索最多 5 次（Patch4 v3.1：2→5，KB 本地检索便宜，实测需要多角度查）
-    "fetch_url": 5,    # 网页阅读最多 5 次
+    "fetch_url": 15,   # 网页阅读最多 15 次
 }
 
 # 剩余轮次预警阈值（剩 N 轮时开始注入 hint 促收尾）
@@ -285,6 +287,8 @@ class AgentLoop:
         tool_counts = {}
         # P6 #7: 记录已发过"达上限"友好提示的工具，避免每轮重复报 limit_exceeded
         _limit_notified = set()
+        # P8-2: 只搜不读护栏——本任务内是否已注入过补读提示（只介入一次）
+        _fetch_hint_used = False
 
         if not has_tools:
             # 无工具可用（不应该发生，在线模式有网），直接纯对话
@@ -334,6 +338,23 @@ class AgentLoop:
                     log.warning("[AGENT] 所有可限制工具已达上限且无其他工具可用，结束循环")
                     yield ("agent_status", {"status": "budget_exceeded"})
                     break
+
+            # P8-2 预算注入：每轮在 messages 末尾刷新一条预算快照
+            # （替换旧快照不累积；用内容前缀识别，不加自定义字段——
+            #  部分服务商对 message 里的未知字段会 400）
+            messages[:] = [m for m in messages
+                           if not (m.get("role") == "user"
+                                   and isinstance(m.get("content"), str)
+                                   and m["content"].startswith("[剩余预算]"))]
+            messages.append({
+                "role": "user",
+                "content": ("[剩余预算] 联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮"
+                            "（请据此规划检索深度，预算不足时直接基于已有信息回答）" % (
+                                max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
+                                max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
+                                max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
+                                MAX_ROUNDS - rounds)),
+            })
 
             # 发送思考状态
             yield ("agent_status", {"status": "thinking"})
@@ -389,6 +410,21 @@ class AgentLoop:
 
             # 模型没调工具 = 回答完毕
             if not tool_calls:
+                # P8-2 只搜不读护栏：搜索过但从未 fetch 读原文 →
+                # 注入一次提示（user 角色，兼容性最好），给一次补读机会。
+                # 只介入一次：模型坚持不读则放行（简单事实问题可接受）。
+                if (stats["searches"] > 0 and stats["fetches"] == 0
+                        and not _fetch_hint_used):
+                    _fetch_hint_used = True
+                    log.info("[AGENT] 只搜不读护栏触发：search=%d fetch=0，注入补读提示", stats["searches"])
+                    messages.append({
+                        "role": "user",
+                        "content": ("[系统提示] 你刚才的回答仅基于搜索结果摘要，摘要可能过时、片面或不准确。"
+                                    "请先调用 fetch_url 阅读最相关的 1-2 个来源的正文，再给出最终答案。"
+                                    "回答中的来源编号 [1] 只能标注你实际读过的页面。"),
+                    })
+                    yield ("agent_status", {"status": "fetch_hint"})
+                    continue
                 if text_output:
                     final_text += text_output
                     # text 已在循环内逐 token yield，这里不重复

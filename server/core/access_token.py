@@ -351,20 +351,26 @@ class AccessTokenManager:
 # ===== 全局单例 =====
 
 _access_token_manager: Optional[AccessTokenManager] = None
+import threading as _threading
+_atm_lock = _threading.Lock()
 
 
 def get_access_token_manager() -> AccessTokenManager:
     """获取全局 AccessTokenManager 单例
+
+    P8-4：双重检查锁，防止并发首调创建多个实例（token 表分裂）。
 
     Returns:
         AccessTokenManager 全局实例
     """
     global _access_token_manager
     if _access_token_manager is None:
-        try:
-            from config import get as _cfg
-            default_ttl = _cfg("access_token_default_ttl", 0)
-        except Exception:
-            default_ttl = 0
-        _access_token_manager = AccessTokenManager(default_ttl=default_ttl)
+        with _atm_lock:
+            if _access_token_manager is None:
+                try:
+                    from config import get as _cfg
+                    default_ttl = _cfg("access_token_default_ttl", 0)
+                except Exception:
+                    default_ttl = 0
+                _access_token_manager = AccessTokenManager(default_ttl=default_ttl)
     return _access_token_manager

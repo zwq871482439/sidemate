@@ -24,6 +24,7 @@ import ssl
 import json
 import shutil
 import zipfile
+import hashlib
 import subprocess
 import urllib.request
 import urllib.error
@@ -37,6 +38,14 @@ PYTHON_VERSION = "3.14.5"
 PYTHON_EMBED_URL = "https://www.python.org/ftp/python/%s/python-%s-embed-amd64.zip"
 
 GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
+
+# Pinned SHA256 for downloaded artifacts (supply-chain verification).
+# 注意：升级 PYTHON_VERSION 或 LLAMA_TAG 时必须同步更新对应哈希，
+# 否则下载会因校验失败而终止。重新计算方式见文件底部注释。
+ARTIFACT_SHA256 = {
+    "python-3.14.5-embed-amd64.zip": "ba6bd811c4eedb19195cf275770ef127e893d63701e24152606e2cb76f6d876a",
+    "llama-b9585-bin-win-vulkan-x64.zip": "af6b1b94377b9f78dbb2285b878fb696d36766391499d65e055ecd622b69018a",
+}
 
 # llama.cpp release tag (Vulkan build for Windows x64)
 # This is a known-stable release. Update periodically.
@@ -146,21 +155,29 @@ def t(key, *args):
 # ====================================================================
 
 def download_with_progress(url, dest_path):
-    """Download a file with a progress bar."""
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    """Download a file with a progress bar.
+
+    P8-4 供应链加固：默认启用 SSL 验证 + 下载后 SHA256 校验（ARTIFACT_SHA256）。
+    SSL 验证失败时需用户显式确认才降级（老机器 certifi 过期场景），不再静默跳过。
+    """
+    ctx = ssl.create_default_context()  # 默认即验证证书+主机名
 
     req = urllib.request.Request(url, headers={"User-Agent": "Sidemate-Setup/1.0"})
     try:
         resp = urllib.request.urlopen(req, timeout=60, context=ctx)
-    except urllib.error.URLError as e:
-        # Try without SSL verification for problematic mirrors
+    except (urllib.error.URLError, ssl.SSLError) as e:
+        # 不在 try 里静默降级：明确告知风险，由用户决定是否继续
+        print("\n  ⚠️  SSL 证书验证失败: %s" % str(e)[:120])
+        print("  ⚠️  继续下载将不校验服务器身份（仅建议在确认网络可信时继续）")
+        ans = input("  仍要继续吗？(y/N): ").strip().lower()
+        if ans != "y":
+            raise RuntimeError("SSL 验证失败，用户取消下载: %s" % url)
         resp = urllib.request.urlopen(req, timeout=60)
 
     total = int(resp.headers.get("Content-Length", 0))
     downloaded = 0
     chunk_size = 1024 * 64  # 64KB
+    hasher = hashlib.sha256()
 
     with open(dest_path, "wb") as f:
         while True:
@@ -168,6 +185,7 @@ def download_with_progress(url, dest_path):
             if not chunk:
                 break
             f.write(chunk)
+            hasher.update(chunk)
             downloaded += len(chunk)
             if total > 0:
                 pct = downloaded * 100 // total
@@ -179,6 +197,22 @@ def download_with_progress(url, dest_path):
             else:
                 print("\r  %d bytes" % downloaded, end="", flush=True)
     print()  # newline after progress
+
+    # SHA256 校验（钉扎表内有此文件才校验；不匹配即终止并删除文件）
+    fname = os.path.basename(dest_path)
+    expected = ARTIFACT_SHA256.get(fname)
+    if expected:
+        actual = hasher.hexdigest()
+        if actual != expected:
+            try:
+                os.remove(dest_path)
+            except OSError:
+                pass
+            raise RuntimeError(
+                "SHA256 校验失败: %s\n  期望: %s\n  实际: %s\n"
+                "  文件可能损坏或被篡改，已删除。若是官方更新，请同步更新 ARTIFACT_SHA256。"
+                % (fname, expected, actual))
+        print("  SHA256 verified: %s" % fname)
 
 
 # ====================================================================

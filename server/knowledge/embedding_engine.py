@@ -14,6 +14,7 @@ Patch5 T03: 升级为 FlagModel（FlagEmbedding），支持 dense + sparse 双�
 """
 import os
 import logging
+import threading
 from typing import List, Tuple, Dict, Any
 
 import numpy as np
@@ -44,6 +45,7 @@ class EmbeddingEngine:
         self._mode = "none"               # "flag_model" | "bge" | "none"
         self._model_path = None           # 实际加载的模型路径
         self._sparse_available = False     # sparse 是否可用
+        self._load_lock = threading.Lock()  # P8-4: 并发加载保护（防双重加载占双倍内存）
 
     @property
     def mode(self) -> str:
@@ -117,7 +119,16 @@ class EmbeddingEngine:
         return model_path or ""
 
     def load(self) -> bool:
-        """加载嵌入模型，成功返回 True
+        """加载嵌入模型（P8-4：加锁包装，防并发双重加载），成功返回 True"""
+        if self.available:
+            return True
+        with self._load_lock:
+            if self.available:  # 双重检查（等锁期间可能已被别的线程加载）
+                return True
+            return self._load_locked()
+
+    def _load_locked(self) -> bool:
+        """加载嵌入模型（调用方须已持有 _load_lock），成功返回 True
 
         降级链：FlagModel → SentenceTransformer → none
 

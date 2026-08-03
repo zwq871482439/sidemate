@@ -241,10 +241,10 @@ async def api_cloud_config_save(request: Request):
     if ok:
         log.info("[CLOUD] 云端配置已更新: %s", list(updates.keys()))
 
-    # 配置变更后清除缓存的 client，下次请求会使用新配置重建
+    # 配置变更后清除缓存的 client，下次请求会使用新配置重建（持锁，P8-4）
     mgr = get_mgr()
     if hasattr(mgr, '_cloud_engine') and mgr._cloud_engine:
-        mgr._cloud_engine._client = None
+        mgr._cloud_engine._reset_client()
 
     # 返回更新后的模型能力信息（优先用用户配置的上下文窗口）
     from config import get as _cfg_save

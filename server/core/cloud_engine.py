@@ -278,22 +278,32 @@ class CloudEngine:
     def __init__(self, model_manager):
         self._mm = model_manager
         self._client = None  # 延迟初始化
+        import threading as _th
+        self._client_lock = _th.Lock()  # P8-4: _get_client 懒初始化并发保护
 
     def _get_client(self):
         """延迟创建 OpenAI 客户端（带超时保护）"""
         if self._client is not None:
             return self._client
-        if not _HAS_OPENAI:
-            raise ImportError("openai 包未安装，请运行 pip install openai>=1.30")
-        base_url = _cfg("cloud_base_url", "https://api.openai.com/v1")
-        api_key = self._decode_api_key(_cfg("cloud_api_key", ""))
-        # 设置超时：连接 15s，读取 120s，防止网络不通时无限阻塞
-        self._client = openai.OpenAI(
-            base_url=base_url,
-            api_key=api_key,
-            timeout=openai.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
-        )
+        with self._client_lock:
+            if self._client is not None:  # 双重检查
+                return self._client
+            if not _HAS_OPENAI:
+                raise ImportError("openai 包未安装，请运行 pip install openai>=1.30")
+            base_url = _cfg("cloud_base_url", "https://api.openai.com/v1")
+            api_key = self._decode_api_key(_cfg("cloud_api_key", ""))
+            # 设置超时：连接 15s，读取 120s，防止网络不通时无限阻塞
+            self._client = openai.OpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                timeout=openai.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
+            )
         return self._client
+
+    def _reset_client(self):
+        """配置变更后清除缓存 client（持锁，避免与 _get_client 竞争）"""
+        with self._client_lock:
+            self._client = None
 
     @staticmethod
     def _decode_api_key(encoded: str) -> str:
