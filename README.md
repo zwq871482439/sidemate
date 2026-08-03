@@ -30,11 +30,12 @@
 | 功能 | 说明 |
 |------|------|
 | **三种模式** | 离线（完全本地）/ 在线（云端大模型）/ 并行（本地检索+云端推理） |
-| **本地知识库** | bge-m3 向量化 + bge-reranker-v2-m3 精排，dense+sparse 双路检索 |
-| **KB 问答引擎可选** | 知识库问答独立选择本地/云端 LLM，不受全局模式影响 |
+| **本地知识库** | bge-m3 向量化 + bge-reranker-v2-m3 精排，向量检索与重排序全在本地 |
+| **KB 智能标签** | 自动为文档打标、语义分组（打标引擎可选本地/云端），支持 AI 智能筛选 |
 | **文档生成** | 提纲确认→两阶段生成，支持 .docx / .html（可视化报告）/ .ppt.html（演示文稿） |
 | **AI Agent** | 联网搜索、读网页、深度阅读、知识库检索、文件读写、计算器、格式转换等工具链 |
-| **模型下载** | 提供下载页，从魔搭 ModelScope 一键下载 LLM（三档）和知识库模型，支持断点续传 |
+| **模型下载** | 内置下载页，从魔搭 ModelScope 一键下载，按内存自动推荐档位，支持断点续传 |
+| **开箱即用** | 一键下载推荐方案，下载完成自动加载并预热模型，无需手动配置 |
 | **审计日志** | 知识库每次检索记录访问明细（时间/访问者/查询词/命中片段/相关性评分） |
 | **深色模式** | 完整的深色/浅色主题 |
 
@@ -45,11 +46,11 @@
 **开发者**：clone 源码后运行 `python envsetup.py` 一键部署（自动下载嵌入式 Python、pip 依赖、llama-server、编译 Launcher）
 
 1. 下载安装包或 clone 源码
-2. 启动后进入 **设置 → 模型下载**
-3. 下载 LLM 模型（推荐 4B，2.7GB）和知识库模型（4.5GB）
-4. 开始对话或知识库问答
+2. 启动后进入 **设置 → 模型下载**（或使用首页"快速开始"一键下载推荐方案）
+3. 下载 LLM（按内存自动推荐档位：16GB→0.8B / 24GB→2B / 32GB→4B）和知识库模型（4.5GB）
+4. 下载完成自动加载并预热模型，直接开始对话或知识库问答
 
-**系统要求**：Windows 10/11 · 8GB 内存起步（建议 16GB）· 10GB 磁盘
+**系统要求**：Windows 10/11 · 16GB 内存起步（本地模型；纯云端模式 8GB 即可）· 15GB 磁盘（含模型）
 
 ### 📖 文档
 
@@ -111,22 +112,23 @@ launcher/                   ← Go Launcher
 | Feature | Description |
 |---------|-------------|
 | **Three modes** | Offline (fully local) / Online (cloud LLM) / Parallel (local retrieval + cloud reasoning) |
-| **Local knowledge base** | bge-m3 embedding + bge-reranker-v2-m3, dense+sparse dual retrieval |
-| **KB engine selection** | KB Q&A independently chooses local/cloud LLM, separate from global mode |
+| **Local knowledge base** | bge-m3 embedding + bge-reranker-v2-m3 — vector search and reranking, all local |
+| **KB smart tagging** | Auto-tag and group documents semantically (tagging engine: local or cloud), with AI-powered filtering |
 | **Document generation** | Outline confirmation → two-phase generation (.docx / .html / .ppt.html) |
 | **AI Agent** | Web search, URL fetch, deep read, KB search, file I/O, calculator, format conversion |
-| **Model downloader** | Built-in download page — get LLMs and KB models from ModelScope with resume support |
+| **Model downloader** | Built-in download page — ModelScope one-click download, RAM-based tier recommendation, resume support |
+| **Zero-config start** | One-click recommended bundle — models auto-load and warm up after download |
 | **Audit logging** | Every KB search logs access details (time/actor/query/matched text/relevance score) |
 | **Dark mode** | Full dark/light theme |
 
 ### 🚀 Quick Start
 
 1. Download the installer → one-click install
-2. Go to **Settings → Model Download**
-3. Download an LLM (4B recommended, 2.7GB) and knowledge base models (4.5GB)
-4. Start chatting or asking your knowledge base
+2. Go to **Settings → Model Download** (or use the "Quick Start" one-click recommended bundle)
+3. Download an LLM (auto-recommended by RAM: 16GB→0.8B / 24GB→2B / 32GB→4B) and knowledge base models (4.5GB)
+4. Models auto-load and warm up after download — start chatting right away
 
-**Requirements**: Windows 10/11 · 8GB+ RAM (16GB recommended) · 10GB disk
+**Requirements**: Windows 10/11 · 16GB+ RAM (local models; 8GB for cloud-only) · 15GB disk (incl. models)
 
 ### 🛠 Tech Stack
 
