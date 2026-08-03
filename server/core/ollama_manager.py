@@ -10,6 +10,7 @@ P7-4 变更：内部从 Ollama 进程委托到 LlamaCppManager。
   - start() 无参时，从 ModelRegistry 找默认模型的 GGUF 路径
 """
 import os
+import time
 import logging
 
 log = logging.getLogger(__name__)
@@ -146,6 +147,34 @@ class OllamaManager:
                     from server import mgr as _mm
                     _mm._loaded.clear()
                     _mm._loaded[_model_id] = True
+                except Exception:
+                    pass
+                # 切换后预热：后台线程发一次 tiny 请求，提前支付首次推理成本
+                # （系统提示词 prefill + GPU kernel 编译 + KV cache 初始化），
+                # 否则用户首条消息要多等数秒。直接 httpx 绕过生成队列，不占用 is_busy。
+                try:
+                    import threading as _th
+
+                    def _warmup_after_switch(mid=_model_id):
+                        try:
+                            import httpx as _hx
+                            _t0 = time.time()
+                            _resp = _hx.post(
+                                "http://%s:%d/v1/chat/completions" % (self._impl.host, self._impl.port),
+                                json={"model": mid,
+                                      "messages": [{"role": "user", "content": "hi"}],
+                                      "stream": False, "max_tokens": 1},
+                                timeout=_hx.Timeout(connect=10, read=120, write=10, pool=10),
+                                trust_env=False,
+                            )
+                            if _resp.status_code == 200:
+                                log.info("[OLLAMA-MGR] 切换后预热完成: %s (%.1fs)" % (mid, time.time() - _t0))
+                            else:
+                                log.warning("[OLLAMA-MGR] 切换后预热 HTTP %d（不影响使用）" % _resp.status_code)
+                        except Exception as _we:
+                            log.warning("[OLLAMA-MGR] 切换后预热失败（不影响使用）: %s" % str(_we)[:80])
+
+                    _th.Thread(target=_warmup_after_switch, daemon=True).start()
                 except Exception:
                     pass
             except Exception as e:
