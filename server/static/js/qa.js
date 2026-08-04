@@ -58,6 +58,10 @@ async function updateKbTabLock(status) {
   var lock = document.getElementById('kbTabLock');
   if (!lock) return;
   try {
+    // P8-6：优先用统一状态里的 kb.installed（与锁卡/门禁同源），没有再单独拉
+    if (!status && window._appState && window._appState.kb) {
+      status = { installed: window._appState.kb.installed };
+    }
     if (!status) {
       var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/module-status');
       status = await resp.json();
@@ -907,7 +911,7 @@ function _kbRenderInsightDashboard(data) {
     '</div>' +
     asksHtml;
 
-  if (sourceEl) sourceEl.textContent = (data.engine_label || '本地 AI') + ' 整理';
+  if (sourceEl) sourceEl.textContent = (data.engine_label || '离线 AI') + ' 整理';
   if (countEl) countEl.textContent = docCount + ' 篇';
   if (updatedEl) {
     var now = new Date();

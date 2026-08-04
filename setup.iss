@@ -1,10 +1,10 @@
 ; ====================================================================
 ; Sidemate 安装脚本 (Inno Setup)
-; 版本: 0.9.7.0
+; 版本: 0.9.8.0
 ; ====================================================================
 
 #define MyAppName "桌伴 Sidemate"
-#define MyAppVersion "0.9.7.0"
+#define MyAppVersion "0.9.8.0"
 #define MyAppPublisher "Sidemate Team"
 #define MyAppURL "https://sidemate.app"
 #define MyAppExeName "Sidemate.exe"
@@ -14,7 +14,7 @@
 AppId={{B7E3F2A1-8C9D-4E5F-A6B0-1D2E3F4A5B6C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName=Sidemate v0.9.7
+AppVerName=Sidemate v0.9.8
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -26,7 +26,7 @@ DisableDirPage=yes
 
 ; 输出设置
 OutputDir=output
-OutputBaseFilename=Sidemate_Setup_v0.9.7
+OutputBaseFilename=Sidemate_Setup_v0.9.8
 SetupIconFile=installer\setup.ico
 ; Patch4 v3.1：ultra64 → normal（含模型时 ultra 跑一整天，normal 30 分钟）
 Compression=lzma2/normal
@@ -45,10 +45,10 @@ InfoBeforeFile=LICENSE
 ; WizardSmallSetupFile=installer\wizard_small.bmp
 
 ; 版本信息
-VersionInfoVersion=0.9.7.0
+VersionInfoVersion=0.9.8.0
 VersionInfoCompany=Sidemate Team
 VersionInfoProductName=桌伴 Sidemate
-VersionInfoProductVersion=0.9.7.0
+VersionInfoProductVersion=0.9.8.0
 
 ; 禁用程序组页（桌面应用不需要）
 DisableProgramGroupPage=yes

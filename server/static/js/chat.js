@@ -702,24 +702,21 @@ async function sendMessage() {
   if (typeof generating !== 'undefined' && generating) return;
   if (_stopping) { showToast('正在停止当前响应，请稍候...', 'warning'); return; }
 
-  var modelTag = document.getElementById('modelTag');
-  var isLocalMode = typeof _currentMode === 'undefined' || _currentMode !== 'cloud';
-  if (isLocalMode && modelTag && modelTag.classList.contains('none')) {
-    // modelTag 的 none 类由 refreshStatus 异步刷新，可能滞后
-    // （如下载完自动加载后直接来聊天）。门禁触发时先实时问一次后端，真的没模型才拦截。
-    try {
-      var _mresp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/models');
-      var _mdata = await _mresp.json();
-      if (_mdata && _mdata.current) {
-        // 实际已加载：矫正标签并顺手全量刷新，然后放行
-        if (typeof refreshStatus === 'function') refreshStatus();
-      } else {
-        showToast('请先在「设置」页面加载模型，再开始对话', 'warning');
+  // P8-6：发送门禁与锁卡/modelTag 同源——由 AppState 派生的 canSend 决定。
+  // 视图可能滞后（如下载完自动加载后直接来聊天），门禁触发时实时复核一次，真的不可用才拦截。
+  if (typeof AppState !== 'undefined') {
+    var _view = await AppState.getView();
+    if (_view && !_view.canSend) {
+      _view = await AppState.refresh();
+      if (_view && !_view.canSend) {
+        var _gateMsg = (_view.lock === 'need_cloud_key')
+          ? '请先在「设置」页面配置在线 API，再开始对话'
+          : '请先在「设置」页面加载模型，再开始对话';
+        showToast(_gateMsg, 'warning');
         return;
       }
-    } catch (e) {
-      showToast('请先在「设置」页面加载模型，再开始对话', 'warning');
-      return;
+      // 实际已就绪：矫正标签并顺手全量刷新，然后放行
+      if (typeof refreshStatus === 'function') refreshStatus();
     }
   }
 
@@ -731,7 +728,7 @@ async function sendMessage() {
     var _threshold = Math.max(2000, _maxTok - 2000);
     if (_docTok > _threshold) {
       var _overBy = _docTok - _threshold;
-      showToast('文档过大（约 ' + (_docTok/1000).toFixed(1) + 'K tokens，超过可用空间 ' + (_overBy/1000).toFixed(1) + 'K）。请换更小的文档，或切换到云端模式', 'error', 6000);
+      showToast('文档过大（约 ' + (_docTok/1000).toFixed(1) + 'K tokens，超过可用空间 ' + (_overBy/1000).toFixed(1) + 'K）。请换更小的文档，或切换到在线模式', 'error', 6000);
       console.warn('[sendMessage] 文档 token 超阈值: doc=%d threshold=%d max=%d', _docTok, _threshold, _maxTok);
       return;
     }
@@ -2324,8 +2321,8 @@ var CardRenderer = (function() {
     reformulate: '分析问题',
     search: '检索知识库',
     retrieve: '本地知识库检索',
-    local_gen: '本地AI生成回答',
-    cloud_gen: '云端AI补充',
+    local_gen: '离线AI生成回答',
+    cloud_gen: '在线AI补充',
     merge: '本地自动融合优化',
     understanding: '理解问题',
     thinking: '思考中',

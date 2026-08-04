@@ -270,6 +270,68 @@ def api_models():
 
 
 # ============================================================
+#  统一应用状态（P8-6）
+# ============================================================
+
+@router.get("/api/app-state")
+def api_app_state():
+    """统一应用状态端点——状态只在服务端算一次，前端只做派生渲染。
+
+    返回原始状态（onboard/mode/local/cloud/kb），锁卡类型、发送门禁等
+    由前端 AppState.derive() 单点派生，不再各处拼凑。
+    """
+    from config import get as cfg_get, DATA_DIR
+
+    # onboard：服务端标记文件为唯一权威（前端 localStorage 降级为缓存）
+    onboard_completed = os.path.exists(os.path.join(DATA_DIR, ".onboard_done"))
+
+    # mode
+    mode = cfg_get("ai_mode", "local")
+
+    # local：复用 /api/models 的判定（current 以实际运行为准，含启动初期兜底）
+    local = {"installed": False, "loaded": False, "model_id": None, "model_display": None}
+    try:
+        m = api_models()
+        local = {
+            "installed": bool(m.get("available")),
+            "loaded": bool(m.get("current")),
+            "model_id": m.get("current"),
+            "model_display": m.get("current_display"),
+        }
+    except Exception as e:
+        log.warning("[APP-STATE] local 状态获取失败: %s", e)
+
+    # cloud：与 /api/mode 同口径（api_key 非空即已配置）
+    cloud_key = cfg_get("cloud_api_key", "")
+    cloud = {
+        "configured": bool(cloud_key),
+        "model": (cfg_get("cloud_model", "") or None) if cloud_key else None,
+    }
+
+    # kb：与 /api/kb/module-status 同口径
+    kb_state = {"installed": False, "ready": False}
+    try:
+        from routers.kb import _is_module_installed
+        kb = get_kb()
+        installed = _is_module_installed()
+        kb_state = {
+            "installed": installed,
+            "ready": bool(installed and kb._embedder_loaded
+                          and kb.embedder.mode in ("bge", "flag_model")),
+        }
+    except Exception as e:
+        log.warning("[APP-STATE] kb 状态获取失败: %s", e)
+
+    return {
+        "onboard_completed": onboard_completed,
+        "mode": mode,
+        "local": local,
+        "cloud": cloud,
+        "kb": kb_state,
+    }
+
+
+# ============================================================
 #  模型管理
 # ============================================================
 

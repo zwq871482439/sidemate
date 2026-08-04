@@ -16,9 +16,9 @@ var _placeholders = {
   local: '随便聊聊，AI 陪你聊天...',
   local_doc: '描述文档主题，AI 离线撰写...',
   local_kb: '基于知识库提问，完全本地回答...',
-  cloud: '让云端 AI 帮你搜索、阅读、推理...',
+  cloud: '让在线 AI 帮你搜索、阅读、推理...',
   cloud_doc: '输入文档需求，AI 搜索资料并生成...',
-  parallel: '本地+云端协作回答，核心数据不出机器...'
+  parallel: '离线+在线协作回答，核心数据不出机器...'
 };
 
 /**
@@ -101,31 +101,38 @@ function selectMode(mode) {
  * P6 T04: 实际执行模式切换（确认后调用）
  */
 function _executeModeSwitch(mode) {
-  // P6 打磨 #1：模式切换前置条件检查
+  // P8-6：前置条件读 AppState 派生视图（与锁卡/发送门禁同源），
+  // 不再读 modelTag 的 none DOM 类；视图不可用时回落 DOM 检查
+  var _av = (typeof window._appView !== 'undefined') ? window._appView : null;
+  var _noModel, _noCloud;
+  if (_av) {
+    _noCloud = !(window._appState && window._appState.cloud && window._appState.cloud.configured);
+    _noModel = !(window._appState && window._appState.local && window._appState.local.loaded);
+  } else {
+    var _tagEl0 = document.getElementById('modelTag');
+    _noModel = _tagEl0 && _tagEl0.classList.contains('none');
+    _noCloud = !(typeof _cloudConfigured !== 'undefined' && _cloudConfigured);
+  }
   if (mode === 'parallel') {
     // 并行模式：离线 LLM + 云端 API 缺一不可
-    var _modelTag = document.getElementById('modelTag');
-    var _noModel = _modelTag && _modelTag.classList.contains('none');
-    var _noCloud = !(typeof _cloudConfigured !== 'undefined' && _cloudConfigured);
     if (_noModel && _noCloud) {
-      showToast('并行模式需要加载本地 LLM 和配置云端 API，请先前往设置页完成配置', 'warning', 6000);
+      showToast('并行模式需要离线模型和在线 API，请先前往设置页完成配置', 'warning', 6000);
       return;
     } else if (_noModel) {
-      showToast('并行模式需要本地 LLM，请先在设置页加载模型', 'warning');
+      showToast('并行模式需要离线模型，请先在设置页加载模型', 'warning');
       return;
     } else if (_noCloud) {
-      showToast('并行模式需要云端 API，请先在设置页配置 API 密钥', 'warning');
+      showToast('并行模式需要在线 API，请先在设置页配置 API 密钥', 'warning');
       return;
     }
   } else if (mode === 'offline') {
-    var _tag2 = document.getElementById('modelTag');
-    if (_tag2 && _tag2.classList.contains('none')) {
-      showToast('离线模式需要本地 LLM，请先在设置页加载模型', 'warning');
+    if (_noModel) {
+      showToast('离线模式需要先加载离线模型，请前往设置页', 'warning');
       return;
     }
   } else if (mode === 'online') {
-    if (!(typeof _cloudConfigured !== 'undefined' && _cloudConfigured)) {
-      showToast('在线模式需要云端 API，请先在设置页配置 API 密钥', 'warning');
+    if (_noCloud) {
+      showToast('在线模式需要配置 API 密钥，请前往设置页', 'warning');
       return;
     }
   }
@@ -299,12 +306,16 @@ async function refreshStatus() {
         });
       });
     }
+    // P8-6：刷新统一应用状态（失效旧缓存后重拉），后续 modelTag/锁卡/门禁同源派生
+    if (typeof AppState !== 'undefined') AppState.invalidate();
     var results = await Promise.all([
       fetchWithTimeout(_apiBase + '/api/models'),
-      fetchWithTimeout(_apiBase + '/api/status')
+      fetchWithTimeout(_apiBase + '/api/status'),
+      (typeof AppState !== 'undefined') ? AppState.refresh() : Promise.resolve(null)
     ]);
     var data = results[0];
     var info2 = results[1];
+    var appView = results[2];
 
     if (typeof _maxPromptTokens !== 'undefined') {
       // 本地模式用 Ollama 模型返回的 max_prompt_tokens；
@@ -353,23 +364,25 @@ async function refreshStatus() {
 
     var currentDisplay = data.current_display || data.current;
     _loadedModelId = data.current || null;
+    // P8-6：none 类（发送门禁/模式切换门禁锚点）与锁卡同源——由 AppState 派生的 engineReady 决定
+    var _engineReady = appView ? appView.engineReady : null;
+    var _noneCls = (_engineReady === false) ? ' none' : '';
     if (typeof _currentMode !== 'undefined' && _currentMode === 'parallel') {
       // P6 打磨 #4：并行模式同时展示双模型
       var _local = currentDisplay || '离线 AI';
-      var _cloud = window._cloudModelName || '云端 AI';
-      tag.className = 'model-tag model-tag-inline';
-      tag.textContent = '离线 ' + _local + ' · 云端 ' + _cloud;
-      stag.innerHTML = '<span class="model-tag">离线 ' + esc(_local) + ' · 云端 ' + esc(_cloud) + '</span>';
+      var _cloud = window._cloudModelName || '在线 AI';
+      tag.className = 'model-tag model-tag-inline' + _noneCls;
+      tag.textContent = '离线 ' + _local + ' · 在线 ' + _cloud;
+      stag.innerHTML = '<span class="model-tag' + _noneCls + '">离线 ' + esc(_local) + ' · 云端 ' + esc(_cloud) + '</span>';
     } else if (typeof _currentMode !== 'undefined' && _currentMode === 'cloud') {
-      currentDisplay = window._cloudModelName || '云端模型';
-      tag.className = 'model-tag model-tag-inline';
+      currentDisplay = window._cloudModelName || '在线模型';
+      tag.className = 'model-tag model-tag-inline' + _noneCls;
       tag.textContent = '在线 AI · ' + currentDisplay;
-      stag.innerHTML = '<span class="model-tag">在线 AI · ' + esc(currentDisplay) + '</span>';
+      stag.innerHTML = '<span class="model-tag' + _noneCls + '">在线 AI · ' + esc(currentDisplay) + '</span>';
     } else if (data.current) {
       tag.className = 'model-tag model-tag-inline';
       tag.textContent = '离线 AI · ' + currentDisplay;
       stag.innerHTML = '<span class="model-tag">离线 AI · ' + esc(currentDisplay) + '</span>';
-      localStorage.setItem('_model_ever_loaded', '1');
     } else {
       tag.className = 'model-tag model-tag-inline none';
       tag.textContent = '未加载';
@@ -379,7 +392,7 @@ async function refreshStatus() {
     var sourceTag = document.getElementById('sourceTag');
     if (sourceTag) {
       if (data.current) {
-        sourceTag.textContent = '正在使用本地AI模型';
+        sourceTag.textContent = '正在使用离线模型';
         sourceTag.className = 'tag online on';
         sourceTag.style.background = '';
         sourceTag.style.color = '';
@@ -389,7 +402,7 @@ async function refreshStatus() {
         sourceTag.style.background = '';
         sourceTag.style.color = '';
       } else {
-        sourceTag.textContent = '本地模型未加载';
+        sourceTag.textContent = '离线模型未加载';
         sourceTag.className = 'tag online off';
         sourceTag.style.background = '';
         sourceTag.style.color = '';
@@ -836,9 +849,9 @@ function _updateKbAiModeHint(mode) {
   var hint = document.getElementById('kbAiModeHint');
   if (!hint) return;
   if (mode === 'cloud') {
-    hint.textContent = '文档打标、AI 洞察和标签分组将使用云端模型，质量更高，但需配置云端 API 且数据会发送到云端';
+    hint.textContent = '文档打标、AI 洞察和标签分组将使用在线模型，质量更高，但需配置在线 API 且数据会发送到在线服务';
   } else {
-    hint.textContent = '文档打标、AI 洞察和标签分组将使用本地模型，数据完全不出本机，隐私优先';
+    hint.textContent = '文档打标、AI 洞察和标签分组将使用离线模型，数据完全不出本机，隐私优先';
   }
 }
 
@@ -851,7 +864,7 @@ async function saveKbAiMode(mode) {
       body: JSON.stringify({kb_ai_mode: mode})
     });
     if (typeof showToast === 'function') {
-      showToast(mode === 'cloud' ? '已切换为云端 LLM' : '已切换为本地 LLM', 'success');
+      showToast(mode === 'cloud' ? '已切换为在线模型' : '已切换为离线模型', 'success');
     }
   } catch(e) {
     console.error('[settings.saveKbAiMode]', e);
@@ -912,13 +925,62 @@ async function updateTabVisibility() {
 // ===== 云端配置 =====
 var _cloudConfigLoaded = false;
 
+// P8-1: 接口格式联动 placeholder（格式下拉已表达格式信息，不再用 badge 说明行）
+function onCloudFormatChange() {
+  var fmt = (document.getElementById('cloudApiFormat') || {}).value || 'openai';
+  var urlEl = document.getElementById('cloudBaseUrl');
+  var keyEl = document.getElementById('cloudApiKey');
+  var modelEl = document.getElementById('cloudModel');
+  if (fmt === 'anthropic') {
+    if (urlEl) urlEl.placeholder = 'https://api.anthropic.com';
+    if (keyEl) keyEl.placeholder = 'sk-ant-...';
+    if (modelEl) modelEl.placeholder = 'claude-sonnet-4-5';
+  } else {
+    if (urlEl) urlEl.placeholder = 'OpenAI 兼容格式，如 https://api.deepseek.com';
+    if (keyEl) keyEl.placeholder = '请输入 API Key';
+    if (modelEl) modelEl.placeholder = '如 deepseek-v4-flash';
+  }
+  _hideCloudModelList();
+}
+window.onCloudFormatChange = onCloudFormatChange;
+
+// P8-3: 保存成功横幅（C 方案引导式迁移）——任何字段被编辑时隐藏
+function dismissCloudSaveBanner() {
+  var b = document.getElementById('cloudSaveBanner');
+  if (b) b.style.display = 'none';
+}
+window.dismissCloudSaveBanner = dismissCloudSaveBanner;
+
+function _showCloudSaveBanner(modelName) {
+  var b = document.getElementById('cloudSaveBanner');
+  var t = document.getElementById('cloudSaveBannerText');
+  if (t) t.textContent = '✅ 已保存：' + (modelName || '云端配置');
+  if (b) b.style.display = 'flex';
+}
+
+function _bindCloudFormOnce() {
+  var form = document.querySelector('#stab-cloud form');
+  if (form && !form._p83Bound) {
+    form._p83Bound = true;
+    form.addEventListener('input', dismissCloudSaveBanner);
+  }
+}
+
 async function loadCloudConfig() {
+  // P8-3: 配置未加载完时禁用保存按钮（防"点了没存上"）
+  var saveBtn = document.getElementById('cloudSaveBtn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.title = '配置加载中，请稍候'; }
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/cloud/config');
     var data = await resp.json();
     var urlEl = document.getElementById('cloudBaseUrl');
     var modelEl = document.getElementById('cloudModel');
     var keyEl = document.getElementById('cloudApiKey');
+    var fmtEl = document.getElementById('cloudApiFormat');
+    if (fmtEl) {
+      fmtEl.value = data.api_format || 'openai';
+      onCloudFormatChange();
+    }
     if (urlEl) {
       if (data.base_url && data.base_url_set === true) {
         urlEl.value = data.base_url;
@@ -933,22 +995,10 @@ async function loadCloudConfig() {
         modelEl.value = '';
       }
     }
-    var capsEl = document.getElementById('cloudCapsDisplay');
-    if (capsEl) {
-      if (data.model_set === true && data.model) {
-        var ctxW = data.context_window || 0;
-        var maxOut = data.max_output_tokens || 0;
-        if (ctxW > 0) {
-          capsEl.innerHTML = '输入 <strong style="color:var(--text-primary)">' + ctxW.toLocaleString() + '</strong> · 输出 <strong style="color:var(--text-primary)">' + maxOut.toLocaleString() + '</strong> tokens';
-          capsEl.style.color = 'var(--text-secondary)';
-        } else {
-          capsEl.textContent = '输入模型名称后自动匹配';
-        }
-      } else {
-        capsEl.textContent = '输入模型名称后自动匹配';
-        capsEl.style.color = 'var(--text-muted)';
-      }
-    }
+    // P8-3: 输入上限——用户覆盖值优先，其次自动匹配预填，未匹配留空引导手填
+    _setCtxField(data.context_window_user > 0 ? data.context_window_user : 0,
+                 data.context_matched ? data.context_window : 0,
+                 data.context_window_user > 0);
     if (keyEl) {
       if (data.api_key_set && data.api_key_preview) {
         keyEl.value = data.api_key_preview;
@@ -972,16 +1022,157 @@ async function loadCloudConfig() {
     }
     if (modelEl && !modelEl._capsBound) {
       modelEl._capsBound = true;
-      modelEl.addEventListener('blur', _previewCloudCaps);
+      modelEl.addEventListener('blur', _autofillCloudCtx);
       modelEl.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); _previewCloudCaps(); }
+        if (e.key === 'Enter') { e.preventDefault(); _autofillCloudCtx(); }
       });
     }
+    // 输入上限手动编辑 → 标注"用户覆盖"
+    var ctxEl = document.getElementById('cloudContextWindow');
+    if (ctxEl && !ctxEl._p83Bound) {
+      ctxEl._p83Bound = true;
+      ctxEl.addEventListener('input', function() {
+        _setCtxHint('用户覆盖');
+      });
+    }
+    _bindCloudFormOnce();
     _cloudConfigLoaded = true;
   } catch(e) {
     console.warn('[loadCloudConfig] 加载现有配置失败，允许直接保存:', e.message || e);
     _cloudConfigLoaded = true;
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.title = ''; }
   }
+}
+
+// P8-3: 输入上限字段状态（value + hint 同源设置）
+// userVal>0 → 用户覆盖；autoVal>0 → 自动匹配预填；都 0 → 留空引导手填
+function _setCtxField(userVal, autoVal, isUserOverride) {
+  var ctxEl = document.getElementById('cloudContextWindow');
+  if (!ctxEl) return;
+  if (userVal > 0) {
+    ctxEl.value = userVal;
+    _setCtxHint(isUserOverride ? '用户覆盖' : '已自动匹配，可改');
+  } else if (autoVal > 0) {
+    ctxEl.value = autoVal;
+    _setCtxHint('已自动匹配，可改');
+  } else {
+    ctxEl.value = '';
+    _setCtxHint('未识别，请查服务商文档后手填');
+  }
+}
+
+function _setCtxHint(text) {
+  var hint = document.getElementById('cloudCtxHint');
+  if (hint) hint.textContent = 'tokens · ' + text;
+}
+
+// P8-3: 模型名变更 → 自动匹配输入上限（内置表），未匹配则留空引导手填
+function _autofillCloudCtx() {
+  clearTimeout(window._capsTimer);
+  window._capsTimer = setTimeout(async function() {
+    var modelEl = document.getElementById('cloudModel');
+    var ctxEl = document.getElementById('cloudContextWindow');
+    if (!modelEl || !ctxEl) return;
+    var model = modelEl.value.trim();
+    if (!model) { _setCtxField(0, 0, false); return; }
+    try {
+      var resp = await fetch(_apiBase + '/api/cloud/model-capabilities?model=' + encodeURIComponent(model));
+      var data = await resp.json();
+      if (data.error || !data.matched) {
+        _setCtxField(0, 0, false);  // 未命中内置表 → 留空引导手填
+        return;
+      }
+      _setCtxField(0, data.context_window || 0, false);
+    } catch(e) { /* 查询失败保持现状 */ }
+  }, 300);
+}
+
+// P8-3: 拉取模型列表（失败/列表不全都可手填，输入框始终可编辑）
+async function fetchCloudModels() {
+  var listEl = document.getElementById('cloudModelList');
+  var btn = document.getElementById('cloudFetchModelsBtn');
+  var result = document.getElementById('cloudTestResult');
+  if (!listEl) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 拉取中…'; }
+  try {
+    var body = {
+      api_format: (document.getElementById('cloudApiFormat') || {}).value || 'openai',
+      base_url: (document.getElementById('cloudBaseUrl') || {}).value || '',
+    };
+    var keyEl = document.getElementById('cloudApiKey');
+    if (keyEl && keyEl.value && keyEl.value.indexOf('***...***') === -1) {
+      body.api_key = keyEl.value;
+    }
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/cloud/models', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    var data = await resp.json();
+    if (!data.ok) {
+      if (result) {
+        result.innerHTML = '<div style="padding:10px 14px;border-radius:8px;background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.3);color:var(--danger-color,#dc2626)">' +
+          '拉取模型列表失败<code style="display:block;margin-top:6px;padding:6px 8px;border-radius:4px;background:rgba(220,38,38,0.08);font-size:.92em;white-space:pre-wrap">' + esc(data.error || '未知错误') + '</code></div>';
+      }
+      return;
+    }
+    _renderCloudModelList(data.models || []);
+  } catch(e) {
+    if (result) result.textContent = '拉取失败: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ 拉取模型列表'; }
+  }
+}
+window.fetchCloudModels = fetchCloudModels;
+
+function _renderCloudModelList(models) {
+  var listEl = document.getElementById('cloudModelList');
+  var modelEl = document.getElementById('cloudModel');
+  if (!listEl || !modelEl) return;
+  var cur = modelEl.value.trim();
+  var html = '';
+  models.forEach(function(m) {
+    var ctx = m.context_window ? _fmtCtx(m.context_window) + ' 上下文' : '上下文未知';
+    var isCur = cur && m.id === cur;
+    html += '<div data-mid="' + esc(m.id) + '" data-mctx="' + (m.context_window || '') + '" style="padding:7px 12px;font-size:.85em;cursor:pointer;display:flex;justify-content:space-between;gap:10px' + '">' +
+      '<span style="' + (isCur ? 'color:var(--accent-color);font-weight:600' : '') + '">' + esc(m.id) + (isCur ? '（当前）' : '') + '</span>' +
+      '<span style="color:var(--text-muted);font-size:.92em;flex-shrink:0">' + ctx + '</span></div>';
+  });
+  if (!models.length) {
+    html += '<div style="padding:7px 12px;font-size:.85em;color:var(--text-muted)">服务商未返回任何模型</div>';
+  }
+  // 手动输入兜底（固定底部）
+  html += '<div style="padding:7px 12px;font-size:.78em;color:var(--text-muted);border-top:1px dashed var(--border-color);font-style:italic">✎ 列表没有？直接在上面输入框手动填写</div>';
+  listEl.innerHTML = html;
+  listEl.style.display = '';
+  // 绑定点击（悬停样式用事件实现，避免依赖额外 CSS）
+  Array.prototype.forEach.call(listEl.children, function(row) {
+    var mid = row.getAttribute('data-mid');
+    if (!mid) return;
+    row.addEventListener('mouseenter', function() { row.style.background = 'var(--bg-secondary)'; });
+    row.addEventListener('mouseleave', function() { row.style.background = ''; });
+    row.addEventListener('click', function() {
+      modelEl.value = mid;
+      _hideCloudModelList();
+      var mctx = parseInt(row.getAttribute('data-mctx') || '0', 10);
+      if (mctx > 0) {
+        _setCtxField(0, mctx, false);  // 列表带上下文 → 直接预填
+      } else {
+        _autofillCloudCtx();  // 列表不带 → 查内置表，未命中留空引导手填
+      }
+    });
+  });
+}
+
+function _hideCloudModelList() {
+  var listEl = document.getElementById('cloudModelList');
+  if (listEl) listEl.style.display = 'none';
+}
+
+function _fmtCtx(n) {
+  if (n >= 1048576) return (n / 1048576).toFixed(n % 1048576 ? 1 : 0) + 'M';
+  if (n >= 1024) return Math.round(n / 1024) + 'K';
+  return String(n);
 }
 
 // ===== 云端 AI 用量统计 =====
@@ -1232,30 +1423,7 @@ function _cloudUsageSetRange(r) { _cloudUsageRange = r; loadCloudUsage(); }
 window.loadCloudUsage = loadCloudUsage;
 window._cloudUsageSetRange = _cloudUsageSetRange;
 
-var _capsTimer = null;
-function _previewCloudCaps() {
-  clearTimeout(_capsTimer);
-  _capsTimer = setTimeout(async function() {
-    var modelEl = document.getElementById('cloudModel');
-    var capsEl = document.getElementById('cloudCapsDisplay');
-    if (!modelEl || !capsEl) return;
-    var model = modelEl.value.trim();
-    if (!model) { capsEl.textContent = '请输入模型名称'; return; }
-    try {
-      var resp = await fetch(_apiBase + '/api/cloud/model-capabilities?model=' + encodeURIComponent(model));
-      var data = await resp.json();
-      if (data.error) {
-        capsEl.innerHTML = '<span style="color:var(--text-muted)">未知模型</span>';
-        return;
-      }
-      capsEl.innerHTML = '输入 <strong style="color:var(--text-primary)">' + (data.context_window || 0).toLocaleString() + '</strong> · 输出 <strong style="color:var(--text-primary)">' + (data.max_output || 0).toLocaleString() + '</strong> tokens';
-      capsEl.style.color = 'var(--text-secondary)';
-    } catch(e) {
-      capsEl.textContent = '查询失败';
-    }
-  }, 300);
-}
-
+var _capsTimer = null;  // P8-3: 供 window._capsTimer 兼容（模型名防抖）
 function toggleApiKeyVisibility() {
   var el = document.getElementById('cloudApiKey');
   if (!el) return;
@@ -1271,6 +1439,7 @@ async function testCloudConnection() {
     var body = {
       base_url: (document.getElementById('cloudBaseUrl') || {}).value || '',
       model: (document.getElementById('cloudModel') || {}).value || '',
+      api_format: (document.getElementById('cloudApiFormat') || {}).value || 'openai',
     };
     var keyEl = document.getElementById('cloudApiKey');
     if (keyEl && keyEl.value) {
@@ -1289,8 +1458,16 @@ async function testCloudConnection() {
     clearTimeout(timer);
     var data = await resp.json();
     if (result) {
-      result.textContent = data.ok ? '连接成功 — 延迟 ' + data.latency_ms + 'ms' : (data.error || '连接失败');
-      result.className = data.ok ? 'success' : 'error';
+      if (data.ok) {
+        result.textContent = '连接成功 — 延迟 ' + data.latency_ms + 'ms';
+        result.className = 'success';
+      } else {
+        // P8-3: 报错透传——服务商原文放进 code 块（如 DeepSeek 模型名大小写 400），
+        // 用户能看到真实原因而不是一句"连接失败"
+        result.innerHTML = '<div style="padding:10px 14px;border-radius:8px;background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.3);color:var(--danger-color,#dc2626)">' +
+          '测试失败<code style="display:block;margin-top:6px;padding:6px 8px;border-radius:4px;background:rgba(220,38,38,0.08);font-size:.92em;white-space:pre-wrap">' + esc(data.error || '连接失败') + '</code></div>';
+        result.className = '';
+      }
     }
   } catch(e) {
     if (result) {
@@ -1305,14 +1482,30 @@ async function saveCloudConfig() {
   var policy = document.querySelector('input[name="contextPolicy"]:checked');
   var rounds = document.getElementById('slimHistoryRounds');
   var kbPermEl = document.getElementById('kbPermissionSelect');
+  var fmtEl = document.getElementById('cloudApiFormat');
   var body = {};
   var baseUrl = document.getElementById('cloudBaseUrl').value.trim();
   var modelName = document.getElementById('cloudModel').value.trim();
   if (baseUrl) body.base_url = baseUrl;
   if (modelName) body.model = modelName;
+  if (fmtEl) body.api_format = fmtEl.value || 'openai';
   body.context_policy = policy ? policy.value : 'full';
   body.slim_history_rounds = parseInt(rounds ? rounds.value : 6) || 6;
   body.kb_permission = kbPermEl ? kbPermEl.value : 'full';
+  // P8-3: 输入上限——留空回落保守默认 32K（并明确告知），只校验正整数
+  var ctxEl = document.getElementById('cloudContextWindow');
+  var ctxRaw = ctxEl ? ctxEl.value.trim() : '';
+  if (!ctxRaw) {
+    body.context_window = 32768;
+    showToast('输入上限未填，将按保守默认 32K 处理（可回设置页修改）', 'warning', 5000);
+  } else {
+    var ctxNum = parseInt(ctxRaw, 10);
+    if (!ctxNum || ctxNum <= 0) {
+      showToast('输入上限必须为正整数', 'error');
+      return;
+    }
+    body.context_window = ctxNum;
+  }
   var keyEl = document.getElementById('cloudApiKey');
   if (keyEl && keyEl.value) {
     var hasExisting = keyEl.getAttribute('data-has-key') === 'true';
@@ -1330,22 +1523,16 @@ async function saveCloudConfig() {
     });
     var data = await resp.json();
     if (data.ok) {
-      showToast('云端配置已保存', 'success');
-      // 同步全局标记：否则本次会话内切到在线模式，
-      // updateChatOverlay 仍按旧的 _cloudConfigured=false 显示"未配置云端 API"遮罩
-      if (body.api_key || (keyEl && keyEl.getAttribute('data-has-key') === 'true')) {
-        window._cloudConfigured = true;
+      // P8-3: 持久保存成功横幅（C 方案引导式迁移），替代一闪而过的 toast
+      _showCloudSaveBanner(modelName);
+      // P8-6：从统一状态刷新（服务端权威），同步 _cloudConfigured/_cloudModelName 等遗留全局，
+      // 并保证锁卡/门禁立刻拿到新值
+      if (typeof AppState !== 'undefined') {
+        AppState.invalidate();
+        await AppState.refresh();
       }
-      if (modelName) window._cloudModelName = modelName;
       if (typeof updateChatOverlay === 'function') updateChatOverlay();
       if (typeof fetchContextUsage === 'function') fetchContextUsage();
-      if (data.context_window) {
-        var capsEl = document.getElementById('cloudCapsDisplay');
-        if (capsEl) {
-          capsEl.innerHTML = '输入 <strong style="color:var(--text-primary)">' + data.context_window.toLocaleString() + '</strong> · 输出 <strong style="color:var(--text-primary)">' + (data.max_output_tokens || 0).toLocaleString() + '</strong> tokens';
-          capsEl.style.color = 'var(--text-secondary)';
-        }
-      }
       refreshTokenBudget();
     } else {
       showToast(data.error || '保存失败', 'error');
@@ -1624,7 +1811,7 @@ function togglePrivacyDetail() {
       '<div style="line-height:1.8;font-size:12px">' +
       '<div style="font-weight:600;color:var(--text-primary);margin-bottom:6px">完整隐私声明</div>' +
       '<div style="margin-bottom:4px"><b>本地存储</b>：对话记录、上传文档、知识库索引、用户设置均存储在本地磁盘，不上传到任何 Sidemate 服务器（本程序无自有服务器）。</div>' +
-      '<div style="margin-bottom:4px"><b>云端 AI 通信</b>：使用在线/并行模式时，对话内容（含历史上下文）会发送到你配置的云端 API 提供商（如 DeepSeek）。通信直接在你和 API 提供商之间进行，不经过第三方中转。请参阅对应 API 提供商的隐私政策。</div>' +
+      '<div style="margin-bottom:4px"><b>在线 AI 通信</b>：使用在线/并行模式时，对话内容（含历史上下文）会发送到你配置的在线 API 提供商（如 DeepSeek）。通信直接在你和 API 提供商之间进行，不经过第三方中转。请参阅对应 API 提供商的隐私政策。</div>' +
       '<div style="margin-bottom:4px"><b>网页搜索</b>：Agent 启用联网搜索工具时，会向搜索引擎（如 Bing）发送查询关键词，搜索引擎返回结果由 Agent 阅读。</div>' +
       '<div style="margin-bottom:4px"><b>文件读取</b>：Agent 文件读写工具仅限沙盒目录（当前会话工作区），不会访问沙盒外的系统文件。</div>' +
       '<div style="margin-bottom:4px"><b>知识库权限</b>：知识库文档受三级令牌保护（完全访问/仅检索/禁用），私密文档需令牌才能访问。</div>' +
@@ -1741,7 +1928,7 @@ async function refreshAboutDiagnostics() {
       // 组件状态点
       if (compEl && resData.modules) {
         var comps = [
-          {name:'本地 LLM', loaded: !!(resData.modules.llm && resData.modules.llm.loaded), detail: resData.modules.llm ? resData.modules.llm.name : ''},
+          {name:'离线模型', loaded: !!(resData.modules.llm && resData.modules.llm.loaded), detail: resData.modules.llm ? resData.modules.llm.name : ''},
           {name:'向量化引擎', loaded: !!(resData.modules.embedder && resData.modules.embedder.loaded), detail: ''},
           // P6 #23: Reranker 闲置时会自动卸载省内存(使用KB时重新加载),未加载时加说明避免误判为故障
           {name:'Reranker', loaded: !!(resData.modules.reranker && resData.modules.reranker.loaded), detail: '',
@@ -1750,9 +1937,9 @@ async function refreshAboutDiagnostics() {
         try {
           var cfgResp = await fetch(_apiBase + '/api/cloud/config');
           var cfgData = await cfgResp.json();
-          comps.push({name:'云端 API', loaded: !!(cfgData.base_url && cfgData.model), detail: cfgData.model || ''});
+          comps.push({name:'在线 API', loaded: !!(cfgData.base_url && cfgData.model), detail: cfgData.model || ''});
         } catch(e2) {
-          comps.push({name:'云端 API', loaded: false, detail: ''});
+          comps.push({name:'在线 API', loaded: false, detail: ''});
         }
         var html = '';
         for (var i = 0; i < comps.length; i++) {

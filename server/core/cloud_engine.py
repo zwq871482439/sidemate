@@ -368,6 +368,29 @@ class CloudEngine:
             model = _cfg("cloud_model", "gpt-4o-mini")
         return self._lookup_capabilities(model)["context_window"]
 
+    def _capabilities_matched(self, model: str) -> bool:
+        """模型是否在内置表中匹配到（false = 回落 _default，前端应引导手填输入上限）"""
+        caps = self.MODEL_CAPABILITIES
+        if model in caps:
+            return True
+        model_lower = model.lower()
+        for name in caps:
+            if name != "_default" and name.lower() == model_lower:
+                return True
+        model_stripped = model_lower.replace("-", "").replace(".", "")
+        for name in caps:
+            if name != "_default" and name.lower().replace("-", "").replace(".", "") == model_stripped:
+                return True
+        for name in caps:
+            if name == "_default":
+                continue
+            name_lower = name.lower()
+            if model_lower.startswith(name_lower):
+                next_char = model_lower[len(name_lower):len(name_lower) + 1]
+                if next_char in ("", "-", ".", " "):
+                    return True
+        return False
+
     def _build_messages(self, message: str, history: Optional[List] = None,
                         context_cache: str = None,
                         kb_mode: bool = False, strategy_enhancement: str = "",
@@ -460,8 +483,11 @@ class CloudEngine:
         """
         mm = self._mm
 
-        # ===== 检查 openai 包 =====
-        if not _HAS_OPENAI:
+        # ===== P8-1：接口格式（anthropic 走 httpx 适配器，不需要 openai 包）=====
+        fmt = self._api_format()
+
+        # ===== 检查 openai 包（仅 openai 格式需要）=====
+        if fmt == "openai" and not _HAS_OPENAI:
             yield ("raw", "[ERROR] openai 包未安装，请运行 pip install openai>=1.30")
             return
 
@@ -532,73 +558,55 @@ class CloudEngine:
                     yield ("raw", "[ERROR] 等待设备释放超时（60s）或请求被取消")
                     return
 
-            client = self._get_client()
+            client = self._get_client() if fmt == "openai" else None
 
             base_url = _cfg("cloud_base_url", "")
             api_key_set = bool(_cfg("cloud_api_key", ""))
-            log_scan.info("[CLOUD] 开始流式请求: model=%s, messages=%d条, max_tokens=%d, base_url=%s, api_key_set=%s" % (
-                cloud_model, len(messages), max_tokens, base_url[:50] if base_url else "(empty)", api_key_set))
+            log_scan.info("[CLOUD] 开始流式请求: format=%s, model=%s, messages=%d条, max_tokens=%d, base_url=%s, api_key_set=%s" % (
+                fmt, cloud_model, len(messages), max_tokens, base_url[:50] if base_url else "(empty)", api_key_set))
 
             # Patch4 修复 8：在 stream 调用外层包一层重试
             # 约束：只要已经开始向下游 yield token/think_token，就不再重试（避免重复输出）
-            _last_usage = None  # 最后一个 chunk 的 usage 字段
+            _last_usage = None  # 最后一次 usage（归一化 dict）
             _stream_done = False
             _cloud_call_start = time.time()  # 用量统计：记录调用起始时间
             for _attempt in range(MAX_RETRIES + 1):
                 _reasoning_started = False  # 是否已发送 think_start
                 _yielded_any = False  # 本轮是否已向下游 yield 任何 token
                 try:
-                    stream = client.chat.completions.create(
-                        model=cloud_model,
-                        messages=messages,
-                        max_tokens=max_tokens,
-                        stream=True,
-                        stream_options={"include_usage": True},  # 用量统计：要求 API 返回真实 usage
-                        temperature=0.7,
-                    )
-
-                    for chunk in stream:
+                    for _ev in self._iter_format_events(fmt, client, cloud_model, messages, max_tokens):
                         if mm.stop_requested:
                             log_scan.info("[CLOUD] 用户停止，中断流式读取")
                             break
+                        _kind, _payload = _ev
 
-                        # 提取 usage（最后一个有效 chunk 的 usage 即为最终统计）
-                        if hasattr(chunk, 'usage') and chunk.usage:
-                            _last_usage = chunk.usage
+                        if _kind == "usage":
+                            _last_usage = _payload
 
-                        if chunk.choices and chunk.choices[0].delta:
-                            delta = chunk.choices[0].delta
+                        elif _kind == "reasoning":
+                            # 推理内容逐条推送，前端实时渲染（流式思考效果）
+                            if not _reasoning_started:
+                                yield ("think_start", "")
+                                _reasoning_started = True
+                            total_chars += len(_payload)
+                            _yielded_any = True
+                            yield ("think_token", _payload)
 
-                            # 1) 推理模型的 reasoning_content（如 GLM-5.1, DeepSeek-R1 等）
-                            #    逐条推送，前端实时渲染（流式思考效果）
-                            reasoning = getattr(delta, 'reasoning_content', None) or ""
-                            if reasoning:
-                                if not _reasoning_started:
-                                    yield ("think_start", "")
-                                    _reasoning_started = True
-                                total_chars += len(reasoning)
-                                _yielded_any = True
-                                yield ("think_token", reasoning)
+                        elif _kind == "text":
+                            # 如果之前有推理内容，先关闭思考区
+                            if _reasoning_started:
+                                yield ("think_end", "")
+                                _reasoning_started = False
+                            full_output += _payload
+                            total_chars += len(_payload)
+                            _yielded_any = True
+                            yield ("text", _payload)
 
-                            # 2) 正文 content
-                            content = delta.content or ""
-                            if content:
-                                # 如果之前有推理内容，先关闭思考区
-                                if _reasoning_started:
-                                    yield ("think_end", "")
-                                    _reasoning_started = False
-                                full_output += content
-                                total_chars += len(content)
-                                _yielded_any = True
-                                yield ("text", content)
-
-                            # 检查结束原因
-                            finish_reason = chunk.choices[0].finish_reason
-                            if finish_reason == "stop":
-                                # 如果结束时还在思考，关闭思考区
-                                if _reasoning_started:
-                                    yield ("think_end", "")
-                                    _reasoning_started = False
+                        elif _kind == "finish":
+                            if _reasoning_started:
+                                yield ("think_end", "")
+                                _reasoning_started = False
+                            if _payload == "stop":
                                 break
 
                     # for 循环正常结束（或用户停止），本轮视为完成
@@ -642,10 +650,9 @@ class CloudEngine:
                 from core.cloud_usage import record_usage
                 _elapsed_ms = int((time.time() - _cloud_call_start) * 1000)
                 if _last_usage:
-                    _in_tok = getattr(_last_usage, 'prompt_tokens', 0) or 0
-                    _out_tok = getattr(_last_usage, 'completion_tokens', 0) or 0
-                    _reason_tok = (getattr(_last_usage, 'completion_tokens_details', None)
-                                   and getattr(_last_usage.completion_tokens_details, 'reasoning_tokens', 0)) or 0
+                    _in_tok = _last_usage.get("prompt_tokens", 0)
+                    _out_tok = _last_usage.get("completion_tokens", 0)
+                    _reason_tok = _last_usage.get("reasoning_tokens", 0)
                     record_usage(cloud_model, input_tokens=_in_tok, output_tokens=_out_tok,
                                  reasoning_tokens=_reason_tok, elapsed_ms=_elapsed_ms, token_accurate=True)
                 else:
@@ -657,10 +664,9 @@ class CloudEngine:
             # 发送 token_stats（从 usage 提取）
             if _last_usage:
                 _token_stats = {
-                    "input_tokens": getattr(_last_usage, 'prompt_tokens', 0) or 0,
-                    "output_tokens": getattr(_last_usage, 'completion_tokens', 0) or 0,
-                    "reasoning_tokens": getattr(_last_usage, 'completion_tokens_details', None)
-                                       and getattr(_last_usage.completion_tokens_details, 'reasoning_tokens', 0) or 0,
+                    "input_tokens": _last_usage.get("prompt_tokens", 0),
+                    "output_tokens": _last_usage.get("completion_tokens", 0),
+                    "reasoning_tokens": _last_usage.get("reasoning_tokens", 0),
                 }
                 yield ("token_stats", _token_stats)
 
@@ -718,7 +724,9 @@ class CloudEngine:
         """
         mm = self._mm
 
-        if not _HAS_OPENAI:
+        fmt = self._api_format()
+
+        if fmt == "openai" and not _HAS_OPENAI:
             yield ("raw", "[ERROR] openai 包未安装，请运行 pip install openai>=1.30")
             return
 
@@ -739,24 +747,12 @@ class CloudEngine:
                 yield ("raw", "[ERROR] 等待设备释放超时（60s）或请求被取消")
                 return
 
-            client = self._get_client()
-
-            # 构建请求参数
-            create_kwargs = {
-                "model": cloud_model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "stream": True,
-                "stream_options": {"include_usage": True},  # 用量统计：要求 API 返回真实 usage
-                "temperature": temperature,
-            }
-            if tools:
-                create_kwargs["tools"] = tools
+            client = self._get_client() if fmt == "openai" else None
 
             # Patch4 修复 8：stream 调用外层包一层重试
             # 约束：已向下游 yield 任何 token/think_token/tool_calls 后不再重试
             _tc_buffers = {}  # index → {id, name, arguments}
-            _last_usage_wt = None  # 最后一个 chunk 的 usage 字段
+            _last_usage_wt = None  # 最后一次 usage（归一化 dict）
             _cloud_call_start_wt = time.time()  # 用量统计：记录调用起始时间
             finish_reason = None
             for _attempt_wt in range(MAX_RETRIES + 1):
@@ -765,82 +761,61 @@ class CloudEngine:
                 _tc_buffers = {}  # 每次重试重置 tool_calls 累积器
                 finish_reason = None
                 try:
-                    stream = client.chat.completions.create(**create_kwargs)
-
-                    for chunk in stream:
+                    for _ev in self._iter_format_events(fmt, client, cloud_model, messages,
+                                                        max_tokens, tools, temperature):
                         if mm.stop_requested:
                             log_scan.info("[CLOUD-WT] 用户停止，中断流式读取")
                             break
+                        _kind, _payload = _ev
 
-                        # 提取 usage（即使 choices 为空，最后一个 chunk 可能只含 usage）
-                        if hasattr(chunk, 'usage') and chunk.usage:
-                            _last_usage_wt = chunk.usage
+                        if _kind == "usage":
+                            _last_usage_wt = _payload
 
-                        if not chunk.choices:
-                            continue
-
-                        choice = chunk.choices[0]
-                        delta = choice.delta
-
-                        # 1) 推理内容
-                        reasoning = getattr(delta, 'reasoning_content', None) or ""
-                        if reasoning:
+                        elif _kind == "reasoning":
                             if not _reasoning_started:
                                 yield ("think_start", "")
                                 _reasoning_started = True
                             _yielded_any = True
-                            yield ("think_token", reasoning)
+                            yield ("think_token", _payload)
 
-                        # 2) FC 工具调用（增量拼接）
-                        if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                            for tc in delta.tool_calls:
-                                idx = tc.index
-                                if idx not in _tc_buffers:
-                                    _tc_buffers[idx] = {
-                                        "id": tc.id or "",
-                                        "type": "function",
-                                        "function": {
-                                            "name": (tc.function.name or "") if tc.function else "",
-                                            "arguments": ""
-                                        }
-                                    }
-                                # 累积 id / name / arguments delta
-                                if tc.id:
-                                    _tc_buffers[idx]["id"] = tc.id
-                                if tc.function:
-                                    if tc.function.name:
-                                        _tc_buffers[idx]["function"]["name"] = tc.function.name
-                                    if tc.function.arguments:
-                                        _tc_buffers[idx]["function"]["arguments"] += tc.function.arguments
+                        elif _kind == "tool_delta":
+                            # FC 工具调用（增量拼接）
+                            idx = _payload["index"]
+                            if idx not in _tc_buffers:
+                                _tc_buffers[idx] = {
+                                    "id": "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""}
+                                }
+                            if _payload.get("id"):
+                                _tc_buffers[idx]["id"] = _payload["id"]
+                            if _payload.get("name"):
+                                _tc_buffers[idx]["function"]["name"] = _payload["name"]
+                            if _payload.get("arguments"):
+                                _tc_buffers[idx]["function"]["arguments"] += _payload["arguments"]
 
-                        # 3) 正文 content
-                        content = delta.content or ""
-                        if content:
+                        elif _kind == "text":
                             if _reasoning_started:
                                 yield ("think_end", "")
                                 _reasoning_started = False
                             _yielded_any = True
-                            yield ("text", content)
+                            yield ("text", _payload)
 
-                        # 4) 流结束检查
-                        finish_reason = choice.finish_reason
-                        if finish_reason == "tool_calls":
-                            # FC 调用完成，关闭思考区（如果还在）
+                        elif _kind == "finish":
+                            finish_reason = _payload
                             if _reasoning_started:
                                 yield ("think_end", "")
                                 _reasoning_started = False
-                            # 解析并返回完整的 tool_calls 列表
-                            tc_list = []
-                            for idx_key in sorted(_tc_buffers.keys()):
-                                tc_list.append(_tc_buffers[idx_key])
-                            _yielded_any = True
-                            yield ("tool_calls", tc_list)
-                            break
-                        elif finish_reason == "stop":
-                            if _reasoning_started:
-                                yield ("think_end", "")
-                                _reasoning_started = False
-                            break
+                            if finish_reason == "tool_calls":
+                                # 解析并返回完整的 tool_calls 列表
+                                tc_list = []
+                                for idx_key in sorted(_tc_buffers.keys()):
+                                    tc_list.append(_tc_buffers[idx_key])
+                                _yielded_any = True
+                                yield ("tool_calls", tc_list)
+                                break
+                            elif finish_reason == "stop":
+                                break
 
                     # 本轮 stream 正常结束
                     break
@@ -885,10 +860,9 @@ class CloudEngine:
                 from core.cloud_usage import record_usage
                 _elapsed_ms_wt = int((time.time() - _cloud_call_start_wt) * 1000)
                 if _last_usage_wt:
-                    _in_w = getattr(_last_usage_wt, 'prompt_tokens', 0) or 0
-                    _out_w = getattr(_last_usage_wt, 'completion_tokens', 0) or 0
-                    _reason_w = (getattr(_last_usage_wt, 'completion_tokens_details', None)
-                                 and getattr(_last_usage_wt.completion_tokens_details, 'reasoning_tokens', 0)) or 0
+                    _in_w = _last_usage_wt.get("prompt_tokens", 0)
+                    _out_w = _last_usage_wt.get("completion_tokens", 0)
+                    _reason_w = _last_usage_wt.get("reasoning_tokens", 0)
                     record_usage(cloud_model, input_tokens=_in_w, output_tokens=_out_w,
                                  reasoning_tokens=_reason_w, elapsed_ms=_elapsed_ms_wt, token_accurate=True)
                 else:
@@ -899,10 +873,9 @@ class CloudEngine:
             # 发送 token_stats
             if _last_usage_wt:
                 _token_stats_wt = {
-                    "input_tokens": getattr(_last_usage_wt, 'prompt_tokens', 0) or 0,
-                    "output_tokens": getattr(_last_usage_wt, 'completion_tokens', 0) or 0,
-                    "reasoning_tokens": getattr(_last_usage_wt, 'completion_tokens_details', None)
-                                       and getattr(_last_usage_wt.completion_tokens_details, 'reasoning_tokens', 0) or 0,
+                    "input_tokens": _last_usage_wt.get("prompt_tokens", 0),
+                    "output_tokens": _last_usage_wt.get("completion_tokens", 0),
+                    "reasoning_tokens": _last_usage_wt.get("reasoning_tokens", 0),
                 }
                 yield ("token_stats", _token_stats_wt)
 
@@ -921,15 +894,14 @@ class CloudEngine:
                 ticket.release()
             mm._gen_done.set()
 
-    def test_connection(self, _temp_api_key: str = "", _temp_base_url: str = "", _temp_model: str = ""):
+    def test_connection(self, _temp_api_key: str = "", _temp_base_url: str = "", _temp_model: str = "",
+                        _temp_format: str = ""):
         """测试连接，返回 (ok, latency_ms, error)
 
-        只调 models.list() 验证 API Key + 网络连通性，不发 LLM 请求。
+        只验证 API Key + 网络连通性，不发 LLM 请求。
         支持 _temp_* 参数：传入未保存的表单值用于测试连接。
+        P8-1：按接口格式分发——anthropic 走适配器 GET /v1/models，openai 走 SDK models.list()。
         """
-        if not _HAS_OPENAI:
-            return (False, 0, "openai 包未安装")
-
         # N-4 修复：表单传入的 _temp_api_key 是原始明文 key，不能按 base64 解码；
         # 只有已保存的配置值 cloud_api_key 是 base64 编码，需要解码。
         if _temp_api_key:
@@ -939,8 +911,15 @@ class CloudEngine:
         if not api_key:
             return (False, 0, "API Key 未配置")
 
+        fmt = _temp_format or self._api_format()
         base_url = _temp_base_url or _cfg("cloud_base_url", "https://api.openai.com/v1")
-        cloud_model = _temp_model or _cfg("cloud_model", "gpt-4o-mini")
+
+        if fmt == "anthropic":
+            from core import anthropic_adapter as _ant
+            return _ant.test_connection(base_url, api_key)
+
+        if not _HAS_OPENAI:
+            return (False, 0, "openai 包未安装")
 
         try:
             t0 = time.time()
@@ -965,3 +944,70 @@ class CloudEngine:
         if not key or len(key) < 8:
             return "***"
         return key[:3] + "***...***" + key[-3:]
+
+    # ===== P8-1: 双接口格式（openai / anthropic）=====
+
+    @staticmethod
+    def _api_format() -> str:
+        """当前接口格式（openai | anthropic）"""
+        return _cfg("cloud_api_format", "openai") or "openai"
+
+    def _iter_openai_events(self, client, model, messages, max_tokens,
+                            tools=None, temperature=0.7):
+        """OpenAI 兼容流 → 归一化事件（与 anthropic_adapter.iter_stream_events 同约定）"""
+        kwargs = dict(model=model, messages=messages, max_tokens=max_tokens,
+                      stream=True, stream_options={"include_usage": True},
+                      temperature=temperature)
+        if tools:
+            kwargs["tools"] = tools
+        stream = client.chat.completions.create(**kwargs)
+        for chunk in stream:
+            # 提取 usage（最后一个有效 chunk 的 usage 即为最终统计）
+            if getattr(chunk, 'usage', None):
+                u = chunk.usage
+                yield ("usage", {
+                    "prompt_tokens": getattr(u, 'prompt_tokens', 0) or 0,
+                    "completion_tokens": getattr(u, 'completion_tokens', 0) or 0,
+                    "reasoning_tokens": (getattr(u, 'completion_tokens_details', None)
+                                         and getattr(u.completion_tokens_details, 'reasoning_tokens', 0)) or 0,
+                })
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            delta = choice.delta
+            if delta:
+                # 推理模型的 reasoning_content（GLM / DeepSeek-R1 等）
+                reasoning = getattr(delta, 'reasoning_content', None) or ""
+                if reasoning:
+                    yield ("reasoning", reasoning)
+                # FC 工具调用（增量）
+                if getattr(delta, 'tool_calls', None):
+                    for tc in delta.tool_calls:
+                        yield ("tool_delta", {
+                            "index": tc.index,
+                            "id": tc.id or None,
+                            "name": (tc.function.name if tc.function else None) or None,
+                            "arguments": (tc.function.arguments if tc.function else None) or None,
+                        })
+                # 正文
+                content = delta.content or ""
+                if content:
+                    yield ("text", content)
+            if choice.finish_reason:
+                yield ("finish", choice.finish_reason)
+
+    def _iter_anthropic_events(self, model, messages, max_tokens,
+                               tools=None, temperature=0.7):
+        """Anthropic 原生流 → 归一化事件（委托适配器，httpx 直连，不依赖 openai 包）"""
+        from core import anthropic_adapter as _ant
+        base_url = _cfg("cloud_base_url", "")
+        api_key = self._decode_api_key(_cfg("cloud_api_key", ""))
+        return _ant.iter_stream_events(base_url, api_key, model, messages,
+                                       max_tokens, tools, temperature)
+
+    def _iter_format_events(self, fmt, client, model, messages, max_tokens,
+                            tools=None, temperature=0.7):
+        """按接口格式分发事件源。消费循环只处理归一化事件，不关心格式差异。"""
+        if fmt == "anthropic":
+            return self._iter_anthropic_events(model, messages, max_tokens, tools, temperature)
+        return self._iter_openai_events(client, model, messages, max_tokens, tools, temperature)

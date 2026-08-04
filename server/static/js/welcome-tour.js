@@ -25,8 +25,8 @@ async function showWelcome() {
       var _goCloud = "dismissWelcome();switchTab('settings');setTimeout(function(){switchSettingsTab('cloud',document.querySelector('.settings-nav-item[data-stab=cloud]'));},500)";
       routeActions =
         '<div style="text-align:left;margin:16px 0">' +
-          optionCard('home', '本地 AI', '安装 LLM 模型包，数据不出本机', 'var(--accent-color)', _goDownload) +
-          optionCard('cloud', '云端 AI', '填入 API Key，无需本地模型', '#7F77DD', _goCloud) +
+          optionCard('home', '离线 AI', '安装离线模型包，数据不出本机', 'var(--accent-color)', _goDownload) +
+          optionCard('cloud', '在线 AI', '填入 API Key，无需离线模型', '#7F77DD', _goCloud) +
         '</div>' +
         '<div style="font-size:.72em;color:var(--text-muted);margin-top:10px;cursor:pointer" onclick="dismissWelcome()">暂不配置，先随便看看</div>';
     } else if (!hasKB) {
@@ -37,7 +37,7 @@ async function showWelcome() {
         '<div style="text-align:left;margin:16px 0">' +
           featureItem('chat', 'Chat 对话', '自由聊天，支持上传文件') +
           featureItem('lock', '隐私优先', '所有数据存放在本机') +
-          (hasCloud ? featureItem('cloud', '在线模式', '云端模型可检索本地知识库辅助回答') : '') +
+          (hasCloud ? featureItem('cloud', '在线模式', '在线模型可检索本地知识库辅助回答') : '') +
         '</div>' +
         '<button onclick="dismissWelcome();startTour()" class="welcome-btn">开始使用</button>' +
         '<div style="font-size:.72em;color:var(--text-muted);margin-top:10px;cursor:pointer" onclick="dismissWelcome()">跳过新手引导，直接开始</div>';
@@ -99,6 +99,8 @@ function dismissWelcome() {
   if (overlay) overlay.style.display = 'none';
   localStorage.setItem('sidemate_welcomed', '1');
   fetch('/api/onboard/complete', {method: 'POST'}).catch(function(){});
+  // P8-6：服务端标记已写，清缓存让派生视图离开 welcome 态
+  if (typeof AppState !== 'undefined') AppState.invalidate();
 }
 
 window.showWelcome = showWelcome;
@@ -109,11 +111,11 @@ window.dismissWelcome = dismissWelcome;
 var _tourStep = 0;
 var _tourLastTab = '';
 var _tourSteps = [
-  { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 本地模型，数据不出本机，无需联网<br><b>在线</b> — 云端大模型，联网搜索 + Agent 推理<br><b>并行</b> — 本地知识库 + 云端融合回答<br><br>在线 / 并行需先在设置配置 API Key', pos: 'bottom' },
+  { id: 'modes',    tab: 'chat', targetSel: '#chatMode',           title: '三种 AI 模式',         desc: '<b>离线</b> — 离线模型，数据不出本机，无需联网<br><b>在线</b> — 在线大模型，联网搜索 + Agent 推理<br><b>并行</b> — 本地知识库 + 在线融合回答<br><br>在线 / 并行需先在设置配置 API Key', pos: 'bottom' },
   { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '输入问题，按 <b>Enter</b> 发送。<br><br>不仅能聊天，还能让 AI 直接生成 Word 文档、引用知识库回答、上传文件辅助提问。<br>顶部 Token 条显示剩余可用长度。', pos: 'top' },
-  { id: 'kb1',      tab: 'qa',   targetSel: '#kbToolbar button',   title: '上传你的文档',         desc: '上传文档后，<b>本地 AI</b> 会自动通读全文，<br>生成摘要、打上标签并归类。<br><br>离线 / 并行模式下文档内容仅在本地处理；<br>在线模式下 Agent 调用知识库检索时，检索结果会发送到云端。', pos: 'bottom' },
-  { id: 'kb2',      tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: 'AI 洞察',             desc: '点击 <b>「整理」</b>，<b>本地 AI</b> 会通读你的整个文库，<br>给出主题归类、适用场景和建议追问。', pos: 'bottom' },
-  { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '配置云端 API Key、安装扩展包、管理本地模型……<br>都在设置 Tab 里完成。<br><br>这就是桌伴的全部，开始使用吧！', pos: 'bottom' }
+  { id: 'kb1',      tab: 'qa',   targetSel: '#kbToolbar button',   title: '上传你的文档',         desc: '上传文档后，<b>离线 AI</b> 会自动通读全文，<br>生成摘要、打上标签并归类。<br><br>离线 / 并行模式下文档内容仅在本地处理；<br>在线模式下 Agent 调用知识库检索时，检索结果会发送到在线服务。', pos: 'bottom' },
+  { id: 'kb2',      tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: 'AI 洞察',             desc: '点击 <b>「整理」</b>，<b>离线 AI</b> 会通读你的整个文库，<br>给出主题归类、适用场景和建议追问。', pos: 'bottom' },
+  { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '配置在线 API Key、安装扩展包、管理离线模型……<br>都在设置 Tab 里完成。<br><br>这就是桌伴的全部，开始使用吧！', pos: 'bottom' }
 ];
 
 // 修复：tab 按钮实际用 onclick="switchTab('chat',this)"，没有 data-tab 属性。

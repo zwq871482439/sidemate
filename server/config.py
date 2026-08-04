@@ -61,7 +61,7 @@ DEFAULTS = {
     # ----- 应用版本号（唯一权威来源 single source of truth）-----
     # 其他所有模块/前端/launcher 均从此处取版本号，禁止在其他地方硬编码版本字面量。
     # launcher/build.bat 通过 findstr 解析此行抽取版本号。
-    "version": "0.9.7",
+    "version": "0.9.8",
 
     # ----- 通用 -----
     # 沙盒清理策略: "on_start" | "24h" | "7d" | "never"
@@ -120,6 +120,7 @@ DEFAULTS = {
     "cloud_base_url": "https://api.openai.com/v1",  # 云端 API 地址
     "cloud_api_key": "",                         # base64 编码存储的 API Key
     "cloud_model": "gpt-4o-mini",                # 云端模型名称
+    "cloud_api_format": "openai",                # 接口格式："openai"（/v1/chat/completions）| "anthropic"（/v1/messages）
     "cloud_context_policy": "full",              # "full" | "current_only" | "slim_history"
     "cloud_slim_history_rounds": 6,               # slim_history 策略保留的轮数
     "cloud_context_window": 0,                    # 用户手动配置的上下文窗口（0=使用模型默认值）
@@ -273,6 +274,7 @@ _CONFIG_VALIDATORS = {
     "ai_mode": lambda v: v in ("local", "cloud"),
     "kb_ai_mode": lambda v: v in ("local", "cloud"),
     "cloud_context_policy": lambda v: v in ("full", "current_only", "slim_history"),
+    "cloud_api_format": lambda v: v in ("openai", "anthropic"),
     "kb_permission": lambda v: v in ("full", "search-only", "disabled"),
     "sandbox_cleanup": lambda v: v in ("on_start", "24h", "7d", "never"),
     "default_mode": lambda v: v in ("qa", "exec"),

@@ -26,7 +26,7 @@ import (
 // ===== 配置 =====
 
 // 版本号（编译时通过 -ldflags 注入，默认值兜底）
-var AppVersion = "v0.9.7"
+var AppVersion = "v0.9.8"
 
 type Config struct {
 	AppDir       string // 应用根目录

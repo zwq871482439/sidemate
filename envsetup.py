@@ -459,7 +459,7 @@ def build_launcher(target_dir):
 
     # Get version from config.py
     config_path = target_dir / "server" / "config.py"
-    version = "0.9.7"  # fallback
+    version = "0.9.8"  # fallback
     if config_path.exists():
         try:
             content = config_path.read_text(encoding="utf-8")

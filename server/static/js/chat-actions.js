@@ -129,7 +129,7 @@ async function refreshActionBar() {
       var kbBtn = document.createElement('button');
       kbBtn.className = 'action-btn active';
       kbBtn.setAttribute('data-action', 'kb_qa');
-      kbBtn.title = '知识库问答 — 本地模型检索知识库，结合云端 AI 综合回答';
+      kbBtn.title = '知识库问答 — 离线模型检索知识库，结合在线 AI 综合回答';
       kbBtn.innerHTML = iconSvg('books', '14') + ' 知识库问答';
       kbBtn.onclick = function() { setActionMode('kb_qa', this); };
       bar2.appendChild(kbBtn);

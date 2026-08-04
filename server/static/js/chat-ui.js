@@ -89,94 +89,97 @@ function _fallbackCopyMsg(text, btn) {
 // ===== P6: 话题漂移提示条已移除（T04）=====
 
 // ===== 模型覆盖层 =====
+// P8-6：锁卡渲染全部从 AppState 派生视图驱动，不再自行拼状态。
+// 卡片类型（view.lock）：
+//   need_cloud_key               锁卡D：cloud/parallel 未配 Key
+//   offline_no_model_cloud_ready 锁卡B：离线无本地模型但已配云端（C 方案引导卡）
+//   no_engine                    锁卡C：无任何引擎（下载本地 + 配云端双选）
+//   not_loaded                   锁卡A：已装模型未加载
+//   none                         就绪，不显示
 async function updateChatOverlay() {
   var overlay = document.getElementById('chatModelOverlay');
   var lock = document.getElementById('chatOverlayLock');
   if (!overlay) return;
-  // onboard 未完成时欢迎弹窗独占空状态引导（本地/云端双入口），
-  // 状态锁不显示，避免两层引导互相冲突。onboard 完成后状态锁才接管。
-  if (!localStorage.getItem('sidemate_welcomed')) {
-    overlay.style.display = 'none';
-    if (lock) lock.style.display = 'none';
-    return;
-  }
   try {
-    var curMode = (typeof _currentMode !== 'undefined') ? _currentMode : 'local';
+    var view = await AppState.getView();
+    if (!view) return;
 
-    // P6 审计修复：恢复模式相关的空状态检测
-    // 云端/并行模式：检查 API 是否配置
-    if (curMode === 'cloud' || curMode === 'parallel') {
-      var cloudConfigured = (typeof _cloudConfigured !== 'undefined') ? _cloudConfigured : false;
-      if (!cloudConfigured) {
-        // 未配置云端 API → 显示配置提示卡片
-        if (lock) lock.style.display = 'none';
-        overlay.style.display = '';
-        overlay.innerHTML =
-          '<div class="overlay-card" style="margin:auto;max-width:340px;padding:24px;text-align:center">' +
-            '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('cloud', '32') + '</div>' +
-            '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">' +
-              (curMode === 'parallel' ? '并行模式需要云端 API' : '在线模式需要云端 API') +
-            '</div>' +
-            '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
-              '请先在设置页配置云端 AI 模型的 API 地址和密钥' +
-            '</div>' +
-            '<button class="btn btn-primary" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'cloud\',document.querySelector(\'.settings-nav-item[data-stab=cloud]\'))},100);" style="padding:6px 16px">' +
-              '前往设置' +
-            '</button>' +
-          '</div>';
-        return;
-      }
-      // 已配置 → 隐藏遮罩
+    // onboard 未完成（或"重新引导"手动重弹）时欢迎弹窗独占空状态引导，
+    // 状态锁不显示，避免两层引导冲突
+    var welcomeEl = document.getElementById('welcomeOverlay');
+    var welcomeShown = welcomeEl && welcomeEl.style.display && welcomeEl.style.display !== 'none';
+    if (view.welcome || welcomeShown || view.lock === 'none') {
       overlay.style.display = 'none';
       if (lock) lock.style.display = 'none';
       return;
     }
 
-    // 离线模式：检查 LLM 是否预热
-    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/models');
-    var data = await resp.json();
-    var current = data.current;
-    var hasLoadedModel = !!current;
-    var hasInstalled = (data.available && data.available.length > 0);
-
-    if (hasLoadedModel) {
-      overlay.style.display = 'none';
-      if (lock) lock.style.display = 'none';
-      return;
-    }
-
-    // 未预热 → 显示 lock 卡片
     if (lock) lock.style.display = '';
     overlay.style.display = '';
 
-    // 区分两种情况：无任何已装模型 → 引导配置引擎（本地/云端双选）；有模型但未加载 → 引导加载
-    if (!hasInstalled) {
+    var goSettings = function(stab) {
+      return 'switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'' + stab +
+        '\',document.querySelector(\'.settings-nav-item[data-stab=' + stab + ']\'))},100);';
+    };
+
+    if (view.lock === 'need_cloud_key') {
+      overlay.innerHTML =
+        '<div class="overlay-card" style="margin:auto;max-width:340px;padding:24px;text-align:center">' +
+          '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('cloud', '32') + '</div>' +
+          '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">' +
+            (view.mode === 'parallel' ? '并行模式需要在线 API' : '在线模式需要配置 API') +
+          '</div>' +
+          '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
+            '请先在设置页配置在线 AI 的 API 地址和密钥' +
+          '</div>' +
+          '<button class="btn btn-primary" onclick="' + goSettings('cloud') + '" style="padding:6px 16px">' +
+            '前往设置' +
+          '</button>' +
+        '</div>';
+    } else if (view.lock === 'offline_no_model_cloud_ready') {
+      // C 方案引导卡：文案直接给答案，一键切换到在线模式
+      overlay.innerHTML =
+        '<div class="overlay-card" style="margin:auto;max-width:360px;padding:24px;text-align:center">' +
+          '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('cloud', '32') + '</div>' +
+          '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">离线模型未安装</div>' +
+          '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
+            '你已配置在线 API（' + esc(window._cloudModelName || '在线模型') + '），可直接切换到在线模式开始使用' +
+          '</div>' +
+          '<div style="display:flex;gap:10px;justify-content:center">' +
+            '<button class="btn btn-primary" onclick="guidedSwitchToOnline()" style="padding:6px 16px">' +
+              '立即切换到在线模式 →' +
+            '</button>' +
+            '<button class="btn" onclick="' + goSettings('download') + '" style="padding:6px 16px">' +
+              '下载离线模型' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+    } else if (view.lock === 'no_engine') {
       overlay.innerHTML =
         '<div class="overlay-card" style="margin:auto;max-width:360px;padding:24px;text-align:center">' +
           '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('brain', '32') + '</div>' +
           '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">还没有可用的 AI 引擎</div>' +
           '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
-            '下载本地模型离线使用，或配置云端 API 立即开始' +
+            '下载离线模型本地运行，或配置在线 API 立即开始' +
           '</div>' +
           '<div style="display:flex;gap:10px;justify-content:center">' +
-            '<button class="btn btn-primary" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'download\',document.querySelector(\'.settings-nav-item[data-stab=download]\'))},100);" style="padding:6px 16px">' +
-              '下载本地模型' +
+            '<button class="btn btn-primary" onclick="' + goSettings('download') + '" style="padding:6px 16px">' +
+              '下载离线模型' +
             '</button>' +
-            '<button class="btn" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'cloud\',document.querySelector(\'.settings-nav-item[data-stab=cloud]\'))},100);" style="padding:6px 16px">' +
-              '配置云端 API' +
+            '<button class="btn" onclick="' + goSettings('cloud') + '" style="padding:6px 16px">' +
+              '配置在线 API' +
             '</button>' +
           '</div>' +
         '</div>';
-    } else {
-      // 恢复 overlay 原始内容（防止被云端 API 提示覆盖后残留）
+    } else { // not_loaded
       overlay.innerHTML =
         '<div class="overlay-card" style="margin:auto;max-width:340px;padding:24px;text-align:center">' +
           '<div style="opacity:.5;margin-bottom:12px">' + iconSvg('brain', '32') + '</div>' +
-          '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">本地模型未加载</div>' +
+          '<div style="font-weight:500;color:var(--text-primary);margin-bottom:6px">离线模型未加载</div>' +
           '<div style="font-size:.9em;color:var(--text-secondary);margin-bottom:14px">' +
-            '请在设置页加载本地 LLM 模型后开始对话' +
+            '请在设置页加载离线模型后开始对话' +
           '</div>' +
-          '<button class="btn btn-primary" onclick="switchTab(\'settings\');setTimeout(function(){switchSettingsTab(\'general\',document.querySelector(\'.settings-nav-item[data-stab=general]\'))},100);" style="padding:6px 16px">' +
+          '<button class="btn btn-primary" onclick="' + goSettings('general') + '" style="padding:6px 16px">' +
             '前往设置' +
           '</button>' +
         '</div>';
@@ -185,6 +188,14 @@ async function updateChatOverlay() {
     console.error('[chat.updateChatOverlay]', e);
   }
 }
+
+// C 方案：锁卡引导一键切换到在线模式。
+// 用户已显式点击切换按钮，跳过模式确认弹窗。
+function guidedSwitchToOnline() {
+  if (typeof _executeModeSwitch === 'function') _executeModeSwitch('online');
+  else if (typeof selectMode === 'function') selectMode('online');
+}
+window.guidedSwitchToOnline = guidedSwitchToOnline;
 
 function updateKbLockBar() {
   // KB 处理中锁定（由 qa.js 调用）

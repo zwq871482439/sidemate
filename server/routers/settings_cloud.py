@@ -82,7 +82,7 @@ async def api_mode_switch(request: Request):
         if not ok:
             return JSONResponse({
                 "ok": False,
-                "error": "云端连接测试失败: %s" % (error or "未知错误"),
+                "error": "在线服务连接测试失败: %s" % (error or "未知错误"),
                 "latency_ms": latency,
             }, status_code=400)
 
@@ -159,8 +159,10 @@ def api_cloud_config():
         "api_key_preview": masked_key,
         "model": cloud_model,
         "model_set": _is_explicit_key("cloud_model"),
+        "api_format": cfg_get("cloud_api_format", "openai"),
         "context_window": context_window,
         "context_window_user": user_ctx,
+        "context_matched": _ce._capabilities_matched(cloud_model),
         "max_output_tokens": caps["max_output"],
         "context_policy": cfg_get("cloud_context_policy", "full"),
         "slim_history_rounds": cfg_get("cloud_slim_history_rounds", 6),
@@ -198,12 +200,24 @@ async def api_cloud_config_save(request: Request):
     if "model" in body:
         updates["cloud_model"] = body["model"].strip()
 
-    if "context_window" in body:
-        # 兼容旧前端：忽略手动配置，始终使用字典自动值
-        pass
+    if "api_format" in body:
+        fmt = body["api_format"]
+        if fmt not in ("openai", "anthropic"):
+            return JSONResponse({"error": "无效的 api_format，支持: openai, anthropic"}, status_code=400)
+        updates["cloud_api_format"] = fmt
 
-    # 模型变更时重置手动上下文窗口为 0（自动模式）
-    if "model" in body:
+    if "context_window" in body:
+        # P8-3：输入上限允许用户覆盖（1M 模型手填 500000 是合法需求）。
+        # 只校验正整数上限，不做"超过模型真实上下文"校验——填大由云端报错自然暴露。
+        try:
+            cw = int(body["context_window"])
+            if cw < 0 or cw > 2097152:
+                raise ValueError
+            updates["cloud_context_window"] = cw
+        except (ValueError, TypeError):
+            return JSONResponse({"error": "context_window 必须为 0-2097152 的整数（0=自动匹配）"}, status_code=400)
+    elif "model" in body:
+        # 模型变更且未显式带上输入上限 → 重置为 0（重新自动匹配）
         updates["cloud_context_window"] = 0
 
     if "context_policy" in body:
@@ -258,7 +272,10 @@ async def api_cloud_config_save(request: Request):
 
 @router.get("/api/cloud/model-capabilities")
 def api_cloud_model_capabilities(model: str = ""):
-    """查询模型能力（从字典自动获取，用于前端实时预览）"""
+    """查询模型能力（从字典自动获取，用于前端实时预览）
+
+    matched=false 表示未命中内置表（回落默认值），前端应把输入上限留空引导手填。
+    """
     model = model.strip()
     if not model:
         return {"error": "model 参数为空"}
@@ -269,7 +286,57 @@ def api_cloud_model_capabilities(model: str = ""):
         "model": model,
         "context_window": caps["context_window"],
         "max_output": caps["max_output"],
+        "matched": _ce._capabilities_matched(model),
     }
+
+
+@router.post("/api/cloud/models")
+async def api_cloud_models(request: Request):
+    """拉取云端模型列表（P8-3）
+
+    按接口格式分发：openai → SDK models.list()；anthropic → GET /v1/models。
+    支持表单临时值（未保存也能拉）。context_window 为 null 表示服务商未返回
+    （前端显示"上下文未知"，输入上限靠内置表或手填）。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    from config import get as cfg_get
+    from core.cloud_engine import CloudEngine
+
+    fmt = body.get("api_format") or cfg_get("cloud_api_format", "openai")
+    temp_key = (body.get("api_key") or "").strip()
+    if temp_key:
+        api_key = temp_key
+    else:
+        api_key = CloudEngine._decode_api_key(cfg_get("cloud_api_key", ""))
+    if not api_key:
+        return JSONResponse({"ok": False, "error": "API Key 未配置"}, status_code=400)
+    base_url = (body.get("base_url") or "").strip() or cfg_get("cloud_base_url", "")
+
+    try:
+        models = []
+        if fmt == "anthropic":
+            from core import anthropic_adapter as _ant
+            models = _ant.list_models(base_url, api_key)
+        else:
+            import openai
+            client = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=15.0)
+            _ce = CloudEngine.__new__(CloudEngine)
+            for m in client.models.list():
+                mid = getattr(m, "id", None)
+                if not mid:
+                    continue
+                # OpenAI 的 list 不带上下文长度，用内置表尽力匹配
+                ctx = None
+                if _ce._capabilities_matched(mid):
+                    ctx = _ce._lookup_capabilities(mid)["context_window"]
+                models.append({"id": mid, "display_name": mid, "context_window": ctx})
+        return {"ok": True, "models": models, "format": fmt}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:200]}, status_code=502)
 
 
 @router.post("/api/cloud/test")
@@ -290,6 +357,7 @@ async def api_cloud_test(request: Request):
             _temp_api_key=body.get("api_key", ""),
             _temp_base_url=body.get("base_url", ""),
             _temp_model=body.get("model", ""),
+            _temp_format=body.get("api_format", ""),
         )
         from config import get as _cfg_test
         cloud_model = body.get("model") or _cfg_test("cloud_model", "gpt-4o-mini")
