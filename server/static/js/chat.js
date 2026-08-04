@@ -329,8 +329,9 @@ function _renderSingleMsg(m, idx) {
   }
   var footerHtml = _buildStats(m);
   // P6 修复: 终止提示统一渲染（与流式 catch 块的 _abortNotice 同款 SVG 样式）
+  // 按 _abort_reason 区分文案：看门狗超时/网络错误不再是"用户手动终止"
   var _abortedHtml = m._aborted
-    ? '<div class="msg-aborted">' + iconSvg('stop','14') + ' 用户已手动终止响应</div>'
+    ? '<div class="msg-aborted">' + iconSvg('stop','14') + ' ' + _abortReasonLabel(m._abort_reason) + '</div>'
     : '';
   if (footerHtml) {
     // 有统计：正文区 + 独立 footer（与流式 done 路径一致）
@@ -346,6 +347,14 @@ function _renderSingleMsg(m, idx) {
     + docBarHtml
     + _buildCopyBtn()
     + '</div>';
+}
+
+// 终止原因文案（_abort_reason → 用户可见提示）
+// user_stop=用户主动停止；timeout=看门狗判定长时间无数据；network_error=连接异常
+function _abortReasonLabel(reason) {
+  if (reason === 'timeout') return '响应超时，连接中断（已生成的内容已保留）';
+  if (reason === 'network_error') return '连接错误，响应中断';
+  return '用户已手动终止响应';
 }
 
 function renderMsg(m) {
@@ -1026,6 +1035,9 @@ async function sendMessage() {
       return max >= 8;
     }
 
+    var _sseDoneReceived = false;  // done 到达后置位，读完剩余行主动结束读取
+    var _stallCount = 0;           // 连续无数据次数（看门狗容错计数）
+    var MAX_STALL = 10;            // 连续 10 × 60s = 10 分钟无数据才判定超时
     while (true) {
       var readResult;
       try {
@@ -1037,10 +1049,26 @@ async function sendMessage() {
         ]);
       } catch(e) {
         if (e.message === '请求超时') {
-          throw new Error('服务器无响应，已等待 ' + (READ_TIMEOUT / 1000) + ' 秒。请检查服务是否正常运行');
+          // 单点卡顿不致命：云端大上下文 prefill / 服务商排队时首 token 可超过 60s，
+          // 此时报错并中断会白白丢掉已生成内容。改为提示等待并继续读；
+          // 连续 MAX_STALL 次完全无数据（真断流）才判定超时中断。
+          _stallCount++;
+          if (_stallCount >= MAX_STALL) {
+            _abortReason = 'timeout';
+            var _te = new Error('服务器长时间无响应（已等待 ' + Math.round(MAX_STALL * READ_TIMEOUT / 60000) + ' 分钟），连接中断');
+            _te._isTimeout = true;
+            throw _te;
+          }
+          var _stallTi = document.querySelector('.thinking-indicator');
+          if (_stallTi) {
+            _stallTi.innerHTML = '服务器响应较慢，仍在等待（已 ' + (_stallCount * READ_TIMEOUT / 1000) + ' 秒）…';
+          }
+          continue;
         }
         throw e;
       }
+      // 有数据流动：重置卡顿计数（等待提示由后续 token 渲染自然替换）
+      _stallCount = 0;
       // P6 修复终止bug: 主动检测 abort 信号。某些浏览器/流实现下 abort 会让 reader.read()
       // 直接 resolve {done:true} 而非 reject AbortError,导致 catch 不执行、_hadError 不设置。
       // 这里主动检测,确保终止态被正确标记(根治计时器狂飙 + 终止标记丢失)。
@@ -1175,6 +1203,12 @@ async function sendMessage() {
           } else if (d.type === 'done') {
             // Patch5 C7: done 事件不再操作骨架屏（P6已移除）
             doneData = d;
+            _sseDoneReceived = true;  // 读完剩余行后主动结束读取（不等服务端关连接）
+            // done 是"回答完成"的权威信号：立即固化推理单元（清"思考中"占位、
+            // 算耗时），不等流关闭——服务端 done 后连接挂着不关时占位会残留
+            if (typeof CardRenderer !== 'undefined' && CardRenderer.closeCurrentUnit) {
+              CardRenderer.closeCurrentUnit();
+            }
             // done 是"回答完成"的权威信号：立即停止思考态计时器。
             // 不依赖 finally 里的 finalizeDOM（并行模式下 fullText 为空，newMsg 可能未定义，
             // 会导致后续清理链路抛错跳过 finalizeDOM，计时器永驻狂飙）。
@@ -1581,6 +1615,12 @@ async function sendMessage() {
           }
         } catch(e) { console.error('[chat.sendMessage.parseSSE]', e); }
       }
+      // done 是"回答完成"的权威信号：剩余行处理完后主动结束读取并取消流，
+      // 不依赖服务端关闭连接（服务端 done 后挂着不关会误触看门狗/滞留 generating 态）
+      if (_sseDoneReceived) {
+        try { reader.cancel(); } catch(e) {}
+        break;
+      }
     }
     if (!doneData) {
       thinkingPhase = false;
@@ -1601,8 +1641,19 @@ async function sendMessage() {
         }
       } catch(_e2) { console.warn('[chat.abort] UI更新失败:', _e2); }
     } else {
-      _abortReason = 'network_error';
-      appendStreamingMsg(iconSvg('cross','14') + ' 连接错误: ' + esc(e.message), '', 0);
+      // 保留 watchdog 预设的 timeout 原因；其余归为网络错误
+      if (!_abortReason) _abortReason = 'network_error';
+      // 报错【追加】到 stream-msg（不覆盖已有正文/工具链——已生成的内容必须保留，
+      // 错误是在已有响应基础上的附加信息）；空响应时 persist 兜底文案保证有内容
+      try {
+        var _errStreamEl = document.getElementById('stream-msg');
+        if (_errStreamEl) {
+          var _errNotice = document.createElement('div');
+          _errNotice.className = 'msg-aborted';
+          _errNotice.innerHTML = iconSvg('cross','14') + ' 连接错误: ' + esc(e.message) + '（已生成的内容已保留）';
+          _errStreamEl.appendChild(_errNotice);
+        }
+      } catch(_e3) { console.warn('[chat.error] UI更新失败:', _e3); }
     }
     _hadError = true;  // 阻止 finally 重新 renderMessages 覆盖错误/终止提示
   } finally {
@@ -1655,6 +1706,9 @@ async function sendMessage() {
       } else if (_isAborted && _abortReason === 'user_stop' && !_persistContent) {
         // 用户手动中止，无输出：记录一条中止提示（_aborted 也会渲染 SVG 提示）
         _persistContent = '[用户已手动终止响应]';
+      } else if (_hadError && _abortReason === 'timeout') {
+        // 看门狗超时（长时间无数据）：保留已输出内容（如果有）
+        _persistContent = _persistContent || '[响应超时，连接中断]';
       } else if (_hadError && _abortReason === 'network_error') {
         // 网络错误：保留已输出内容（如果有）
         _persistContent = _persistContent || '[连接错误，响应中断]';
@@ -2592,26 +2646,7 @@ var CardRenderer = (function() {
       var runSteps = cardArea.querySelectorAll('.cb-step[data-status="running"]');
       runSteps.forEach(function(s) { s.setAttribute('data-status', 'done'); });
       // 模块3b：关闭最后一个推理单元（保持展开 + 算耗时）
-      if (_currentUnit) {
-        var _hasContent = (_currentUnit.tools && _currentUnit.tools.length > 0) || _currentUnit.thinkText;
-        if (!_currentUnit.el) {
-          // pending 单元（从未渲染，即空轮次）：直接丢弃
-          _reasonUnits.pop();
-        } else if (!_hasContent) {
-          // 已渲染但无工具无思考（纯"思考中"占位的空轮次）：删除
-          _currentUnit.el.remove();
-          _reasonUnits.pop();
-        } else {
-          // 有内容：清除可能残留的占位符，保留展开，移除 current 标记 + 算耗时
-          _clearReasonPlaceholder();
-          _currentUnit.el.classList.remove('current');
-          if (_currentUnit.startTime) {
-            var elapsed = Math.round((Date.now() - _currentUnit.startTime) / 1000 * 10) / 10;
-            var timeSpan = _currentUnit.el.querySelector('.cb-reason-time');
-            if (timeSpan) timeSpan.textContent = elapsed + 's';
-          }
-        }
-      }
+      _closeCurrentUnit();
     }
     // 5. 去掉 #card-area 和 #stream-content 的 id（防下一轮串扰）
     if (cardArea) cardArea.removeAttribute('id');
@@ -3155,6 +3190,32 @@ var CardRenderer = (function() {
     if (typeof scrollToBottom === 'function' && _lastScrollBottom) scrollToBottom();
   }
 
+  // 模块3b：关闭当前推理单元（幂等——done 到达和 finalizeDOM 都会调用，
+  // 防止"思考中..."占位在生成完成后残留；空轮次删除，有内容的保留展开 + 算耗时）
+  function _closeCurrentUnit() {
+    if (!_currentUnit) return;
+    var _unit = _currentUnit;
+    _currentUnit = null;  // 先置空，保证幂等（二次调用直接返回）
+    var _hasContent = (_unit.tools && _unit.tools.length > 0) || _unit.thinkText;
+    if (!_unit.el) {
+      // pending 单元（从未渲染，即空轮次）：直接丢弃
+      _reasonUnits.pop();
+    } else if (!_hasContent) {
+      // 已渲染但无工具无思考（纯"思考中"占位的空轮次）：删除
+      _unit.el.remove();
+      _reasonUnits.pop();
+    } else {
+      // 有内容：清除可能残留的占位符，保留展开，移除 current 标记 + 算耗时
+      if (_unit._placeholder) { _unit._placeholder.remove(); _unit._placeholder = null; }
+      _unit.el.classList.remove('current');
+      if (_unit.startTime) {
+        var elapsed = Math.round((Date.now() - _unit.startTime) / 1000 * 10) / 10;
+        var timeSpan = _unit.el.querySelector('.cb-reason-time');
+        if (timeSpan) timeSpan.textContent = elapsed + 's';
+      }
+    }
+  }
+
   // 模块3b：开新推理单元（创建即渲染骨架 + "思考中"占位，等实质内容到来填充）
   function _startReasonUnit() {
     // 关闭前一个单元（保持展开，仅移除 current 标记 + 算耗时）
@@ -3373,6 +3434,7 @@ var CardRenderer = (function() {
     handleStream: handleStream,
     finalize: finalize,
     finalizeDOM: finalizeDOM,
+    closeCurrentUnit: _closeCurrentUnit,  // done 到达即固化推理单元（不等流关闭）
     renderHistory: renderHistory,
     fillParallelStats: fillParallelStats,
     getState: getState,

@@ -598,10 +598,13 @@ async def api_chats_append(chat_name: str, request: Request):
                 if file_tag:
                     msg["_file_tag"] = file_tag
                 # 传递前端附加字段（_aborted/_abort_reason 等）
+                # card_data/parallel_texts/artifacts 等必须在内——中断路径（append 而非 enrich）
+                # 是它们唯一的持久化机会，漏掉会导致刷新后工具链/下载栏丢失
                 for _ek in ("_aborted", "_abort_reason", "think", "model", "chars",
                             "think_chars", "time", "speed", "task_type", "msg_hash",
                             "action_mode", "agent_timeline", "token_stats", "kb_sources",
-                            "context_cutoff"):
+                            "context_cutoff", "card_data", "parallel_texts", "parallel_stats",
+                            "doc_url", "doc_filename", "artifacts"):
                     _ev = body.get(_ek)
                     if _ev is not None:
                         msg[_ek] = _ev
@@ -637,7 +640,8 @@ async def api_chats_append(chat_name: str, request: Request):
                 for _ek in ("_aborted", "_abort_reason", "think", "model", "chars",
                             "think_chars", "time", "speed", "task_type", "msg_hash",
                             "action_mode", "agent_timeline", "token_stats", "kb_sources",
-                            "context_cutoff"):
+                            "context_cutoff", "card_data", "parallel_texts", "parallel_stats",
+                            "doc_url", "doc_filename", "artifacts"):
                     _ev = body.get(_ek)
                     if _ev is not None:
                         msg[_ek] = _ev

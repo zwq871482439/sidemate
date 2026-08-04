@@ -39,8 +39,19 @@ RETRYABLE_ERRORS = (
 )
 
 
+# ===== P8-7: 流式看门狗 =====
+# 实测事故：系统代理（127.0.0.1:10808）对一次 CONNECT 瞬时 stall，
+# openai stream 清理路径在 httpcore 连接池锁上自相死锁（同线程二次取锁），
+# 请求永久卡死且无任何异常抛出。httpx/socket 超时覆盖不到"锁等待"，
+# 只能在应用层做硬看门狗：worker 线程跑事件源，主生成器按超时拉取，
+# 超限即丢弃当前客户端（连接池可能已死锁）并抛可重试错误。
+_STREAM_STALL_LIMIT = 120  # 无任何事件的最长秒数（与引擎 read 超时对齐）
+
+
 def _is_retryable(error) -> bool:
     """判断异常是否属于可重试的瞬时网络错误"""
+    if isinstance(error, TimeoutError):
+        return True  # 看门狗判定的卡死：客户端已重建，值得重试一次
     err_lower = str(error).lower()
     return any(e in err_lower for e in RETRYABLE_ERRORS)
 
@@ -292,12 +303,22 @@ class CloudEngine:
                 raise ImportError("openai 包未安装，请运行 pip install openai>=1.30")
             base_url = _cfg("cloud_base_url", "https://api.openai.com/v1")
             api_key = self._decode_api_key(_cfg("cloud_api_key", ""))
-            # 设置超时：连接 15s，读取 120s，防止网络不通时无限阻塞
-            self._client = openai.OpenAI(
-                base_url=base_url,
-                api_key=api_key,
-                timeout=openai.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
-            )
+            # P8-7: 代理模式——"system" 跟随系统代理（httpx 默认），"direct" 直连。
+            # 代理软件瞬时 stall 会触发 httpcore 池锁自死锁（已实测），直连可彻底绕开该路径。
+            _timeout = openai.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
+            if _cfg("cloud_proxy_mode", "system") == "direct":
+                import httpx as _httpx
+                self._client = openai.OpenAI(
+                    base_url=base_url,
+                    api_key=api_key,
+                    http_client=_httpx.Client(trust_env=False, timeout=_timeout),
+                )
+            else:
+                self._client = openai.OpenAI(
+                    base_url=base_url,
+                    api_key=api_key,
+                    timeout=_timeout,
+                )
         return self._client
 
     def _reset_client(self):
@@ -1005,9 +1026,47 @@ class CloudEngine:
         return _ant.iter_stream_events(base_url, api_key, model, messages,
                                        max_tokens, tools, temperature)
 
+    def _iter_events_guarded(self, event_factory):
+        """看门狗包裹：worker 线程运行事件源，主生成器按超时拉取。
+
+        连续 _STREAM_STALL_LIMIT 秒无事件 → 丢弃缓存客户端（其连接池可能
+        已死锁，下次 _get_client 重建）并抛 TimeoutError（可重试）。
+        卡死的 worker 线程无法被杀死（Python 限制），作为 daemon 随进程结束，
+        每次卡死泄漏一个线程——可接受的代价，换取请求永远不挂死。
+        """
+        import queue as _q
+        import threading as _th
+        q = _q.Queue()
+        _END = object()
+
+        def _worker():
+            try:
+                for ev in event_factory():
+                    q.put(ev)
+            except Exception as e:
+                q.put(e)
+            finally:
+                q.put(_END)
+
+        _th.Thread(target=_worker, daemon=True).start()
+        while True:
+            try:
+                item = q.get(timeout=_STREAM_STALL_LIMIT)
+            except _q.Empty:
+                self._reset_client()
+                raise TimeoutError(
+                    "云端流式响应卡死（%d 秒无数据），已重建连接" % _STREAM_STALL_LIMIT)
+            if item is _END:
+                return
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
     def _iter_format_events(self, fmt, client, model, messages, max_tokens,
                             tools=None, temperature=0.7):
-        """按接口格式分发事件源。消费循环只处理归一化事件，不关心格式差异。"""
+        """按接口格式分发事件源（带看门狗）。消费循环只处理归一化事件，不关心格式差异。"""
         if fmt == "anthropic":
-            return self._iter_anthropic_events(model, messages, max_tokens, tools, temperature)
-        return self._iter_openai_events(client, model, messages, max_tokens, tools, temperature)
+            factory = lambda: self._iter_anthropic_events(model, messages, max_tokens, tools, temperature)
+        else:
+            factory = lambda: self._iter_openai_events(client, model, messages, max_tokens, tools, temperature)
+        return self._iter_events_guarded(factory)

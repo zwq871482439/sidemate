@@ -31,6 +31,15 @@ _TIMEOUT = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
 _TIMEOUT_SHORT = httpx.Timeout(connect=15.0, read=30.0, write=15.0, pool=15.0)
 
 
+def _trust_env() -> bool:
+    """是否跟随系统代理（P8-7：cloud_proxy_mode=direct 时直连，绕开代理 stall）"""
+    try:
+        from config import get as _cfg
+        return _cfg("cloud_proxy_mode", "system") != "direct"
+    except Exception:
+        return True
+
+
 class AnthropicAPIError(Exception):
     """带 status_code 的异常，供 _translate_cloud_error 分类（与 openai.APIStatusError 同构）"""
 
@@ -207,8 +216,8 @@ def iter_stream_events(base_url: str, api_key: str, model: str,
     output_tokens = 0
     stop_reason = None
 
-    with httpx.stream("POST", url, headers=_headers(api_key), json=body,
-                      timeout=_TIMEOUT) as resp:
+    with httpx.Client(trust_env=_trust_env(), timeout=_TIMEOUT) as _cli:
+      with _cli.stream("POST", url, headers=_headers(api_key), json=body) as resp:
         if resp.status_code != 200:
             detail = ""
             try:
@@ -310,7 +319,7 @@ def list_models(base_url: str, api_key: str) -> list:
     输入上限靠内置表匹配或用户手填（P8-3 原型决议）。
     """
     url = _norm_base(base_url) + "/models"
-    with httpx.Client(timeout=_TIMEOUT_SHORT) as cli:
+    with httpx.Client(trust_env=_trust_env(), timeout=_TIMEOUT_SHORT) as cli:
         resp = cli.get(url, headers=_headers(api_key))
     if resp.status_code != 200:
         raise AnthropicAPIError(

@@ -121,6 +121,7 @@ DEFAULTS = {
     "cloud_api_key": "",                         # base64 编码存储的 API Key
     "cloud_model": "gpt-4o-mini",                # 云端模型名称
     "cloud_api_format": "openai",                # 接口格式："openai"（/v1/chat/completions）| "anthropic"（/v1/messages）
+    "cloud_proxy_mode": "system",                # 云端请求代理："system"（跟随系统代理）| "direct"（直连，代理不稳时逃生口）
     "cloud_context_policy": "full",              # "full" | "current_only" | "slim_history"
     "cloud_slim_history_rounds": 6,               # slim_history 策略保留的轮数
     "cloud_context_window": 0,                    # 用户手动配置的上下文窗口（0=使用模型默认值）
@@ -275,6 +276,7 @@ _CONFIG_VALIDATORS = {
     "kb_ai_mode": lambda v: v in ("local", "cloud"),
     "cloud_context_policy": lambda v: v in ("full", "current_only", "slim_history"),
     "cloud_api_format": lambda v: v in ("openai", "anthropic"),
+    "cloud_proxy_mode": lambda v: v in ("system", "direct"),
     "kb_permission": lambda v: v in ("full", "search-only", "disabled"),
     "sandbox_cleanup": lambda v: v in ("on_start", "24h", "7d", "never"),
     "default_mode": lambda v: v in ("qa", "exec"),
