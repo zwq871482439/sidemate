@@ -559,12 +559,16 @@ img { max-width: 100%; border-radius: var(--radius-sm); }
 .vibrant .card { border: none; box-shadow: var(--shadow-lg); }
 .vibrant .stat { background: rgba(255,255,255,.7); backdrop-filter: blur(4px); }
 
-/* ===== mermaid 图表交互容器 ===== */
-.chart-frame { border: 1px solid var(--c-border); border-radius: var(--radius); overflow: hidden; margin: 18px 0; position: relative; background: var(--c-surface); }
+/* ===== mermaid 图表交互容器 =====
+   UX 原则（P8-8 改版）：图表是报告的配角不是主角——
+   1. 默认适配容器宽度且限高，不允许一张图占满一屏
+   2. 滚轮默认归页面滚动，Ctrl+滚轮才缩放（地图嵌入标准模式），不劫持阅读节奏 */
+.chart-frame { border: 1px solid var(--c-border); border-radius: var(--radius); overflow: hidden; margin: 16px 0; position: relative; background: var(--c-surface); }
 .cf-hint { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--c-muted); background: rgba(255,255,255,.85); padding: 2px 8px; border-radius: 4px; z-index: 5; pointer-events: none; }
-.chart-stage { overflow: hidden; cursor: grab; padding: 16px 8px; min-height: 80px; text-align: center; }
+.chart-stage { overflow: hidden; cursor: grab; padding: 12px 8px; min-height: 60px; max-height: 360px; text-align: center; }
 .chart-stage:active { cursor: grabbing; }
-.chart-stage svg { max-width: none !important; height: auto !important; transition: none; display: inline-block; }
+/* 双向约束：宽不超容器、高不超 340px，等比缩放——大图自动收敛到合理占比 */
+.chart-stage svg { max-width: 100%; max-height: 340px; width: auto; height: auto; transition: none; display: inline-block; }
 .chart-toolbar { position: absolute; bottom: 6px; right: 6px; display: flex; gap: 2px; align-items: center; background: rgba(255,255,255,.9); border: 1px solid var(--c-border); border-radius: 6px; padding: 2px 4px; font-size: 11px; z-index: 5; opacity: 0; transition: opacity .15s; }
 .chart-frame:hover .chart-toolbar { opacity: 1; }
 .chart-toolbar button { border: none; background: transparent; cursor: pointer; width: 22px; height: 22px; font-size: 14px; border-radius: 4px; color: var(--c-text); line-height: 1; }
@@ -581,8 +585,8 @@ img { max-width: 100%; border-radius: var(--radius-sm); }
   body { background: #fff; }
   .wrap { max-width: none; padding: 0; }
   .report-tipbar, .chart-toolbar { display: none !important; }
-  .chart-stage { overflow: visible !important; }
-  .chart-stage svg { transform: none !important; }
+  .chart-stage { overflow: visible !important; max-height: none !important; }
+  .chart-stage svg { transform: none !important; max-height: none !important; }
   pre, .chart-frame, .card, table { page-break-inside: avoid; }
   h1, h2, h3 { page-break-after: avoid; }
 }
@@ -735,7 +739,7 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
         _mermaid_codes.append(code)
         return (
             '<div class="chart-frame">'
-            '<div class="cf-hint">滚轮缩放 · 拖拽移动 · 双击复位</div>'
+            '<div class="cf-hint">Ctrl+滚轮缩放 · 拖拽移动 · 双击复位</div>'
             '<div class="chart-stage" data-stage>'
             '<div class="chart-slot" data-idx="%d"></div>' % idx +
             '</div>'
@@ -783,7 +787,7 @@ def generate_html_report(content: str, output_path: str, title: str = "报告"):
     # 顶部提示条
     tipbar = (
         '<div class="report-tipbar" id="reportTipbar">'
-        '💡 图表支持滚轮缩放/拖拽。需要 PDF/打印？按 <b>Ctrl+P</b> 另存'
+        '💡 图表：Ctrl+滚轮缩放，拖拽移动。需要 PDF/打印？按 <b>Ctrl+P</b> 另存'
         '<span class="tipbar-close" onclick="var t=document.getElementById(\'reportTipbar\');'
         'if(t)t.style.display=\'none\';try{localStorage.setItem(\'reportTipHidden\',\'1\')}catch(e){}">×</span>'
         '</div>'
@@ -826,7 +830,11 @@ function enhanceMermaidStage(stage){
   var scale=1,tx=0,ty=0,MIN=0.3,MAX=3;
   function apply(){svg.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';svg.style.transformOrigin='center center';if(zoomVal)zoomVal.textContent=Math.round(scale*100)+'%%';}
   function reset(){scale=1;tx=0;ty=0;apply();}
-  stage.addEventListener('wheel',function(e){e.preventDefault();var d=e.deltaY<0?0.1:-0.1;scale=Math.max(MIN,Math.min(MAX,scale+d));apply();},{passive:false});
+  // P8-8 UX：滚轮默认归页面滚动（看报告时图表不抢滚轮），Ctrl/⌘+滚轮才缩放
+  stage.addEventListener('wheel',function(e){
+    if(!e.ctrlKey&&!e.metaKey)return;  // 普通滚轮 → 页面正常滚动
+    e.preventDefault();var d=e.deltaY<0?0.1:-0.1;scale=Math.max(MIN,Math.min(MAX,scale+d));apply();
+  },{passive:false});
   var drag=false,sx,sy,ox,oy;
   stage.addEventListener('mousedown',function(e){drag=true;sx=e.clientX;sy=e.clientY;ox=tx;oy=ty;e.preventDefault();});
   document.addEventListener('mousemove',function(e){if(!drag)return;tx=ox+(e.clientX-sx);ty=oy+(e.clientY-sy);apply();});
