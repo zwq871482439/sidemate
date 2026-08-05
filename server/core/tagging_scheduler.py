@@ -236,8 +236,9 @@ class TaggingScheduler:
             if summary:
                 doc.summary = summary
             # P6: 保存主题分类（一个文档一个分类，用于侧栏分组）
+            # P8-8: category 同样过 normalize_tag（LLM 会带 ** 加粗等装饰）
             if category:
-                doc.category = category
+                doc.category = normalize_tag(category)
             doc.tag_status = "done"
             kb._save_meta()
             log.info("[TAG] 打标完成: doc_id=%s, category=%s, tags=%s, summary=%s",

@@ -74,6 +74,17 @@ async function updateKbTabLock(status) {
 window.updateKbTabLock = updateKbTabLock;
 
 // --- 二态状态路由 ---
+// P8-8 首屏兜底守卫：网格为空但数据存在（首屏竞态/渲染异常被吞）时补一次渲染
+function _kbEnsureGridRendered() {
+  setTimeout(function() {
+    var gridEl = document.getElementById('kbDocGrid');
+    if (gridEl && !gridEl.children.length && _kbLastDocs && _kbLastDocs.length) {
+      console.warn('[KB] 首屏网格为空但已有文档数据，补渲染');
+      kbRefreshDocs();
+    }
+  }, 800);
+}
+
 async function kbRouteState() {
   var loading = document.getElementById('kbLoading');
   var onboarding = document.getElementById('kbOnboarding');
@@ -100,6 +111,7 @@ async function kbRouteState() {
     await kbRefreshDocs();
     _kbResumeSubscriptions();  // M5: 恢复切 Tab 时关闭的 SSE 订阅
     kbRefreshAIOverview();  // P6: 页面加载时恢复洞察
+    _kbEnsureGridRendered();  // P8-8: 首屏兜底
   } catch (e) {
     silentLog('[KB] 状态路由失败:', e);
     if (loading) loading.style.display = 'none';
@@ -107,6 +119,7 @@ async function kbRouteState() {
     await kbRefreshDocs();
     _kbResumeSubscriptions();  // M5: 异常兜底也恢复订阅
     kbRefreshAIOverview();  // P6: 异常兜底也恢复洞察
+    _kbEnsureGridRendered();  // P8-8: 首屏兜底
   }
 }
 

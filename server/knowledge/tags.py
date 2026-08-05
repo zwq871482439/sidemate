@@ -13,8 +13,16 @@ _FULLWIDTH_MAP = str.maketrans({
 
 
 def normalize_tag(tag: str) -> str:
-    """标签归一化：去空格 + 全角转半角"""
+    """标签归一化：去空格 + 全角转半角 + 剥离 markdown 装饰
+
+    P8-8：LLM 输出常带 **加粗**、`代码`、# 号等 markdown 装饰，
+    不剥掉会导致同一分类出现「健康养生」和「**健康养生**」两个变体，
+    聚类/归并匹配不上（实测：侧栏出现成对的带星号分类）。
+    """
+    import re as _re
     tag = tag.strip()
+    tag = _re.sub(r"[*_`#~]+", "", tag)              # markdown 装饰符
+    tag = tag.strip().strip('"\'“”‘’「」').strip()   # 成对引号/书名号
     tag = tag.translate(_FULLWIDTH_MAP)
     return tag
 

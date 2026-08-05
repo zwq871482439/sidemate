@@ -2776,6 +2776,29 @@ async def api_kb_overview_refresh(request: Request):
     if doc_count == 0:
         return {"ok": True, "insight": "知识库为空，请先上传文档。", "doc_count": 0}
 
+    # P8-8: 存量修复——清理历史遗留的 markdown 装饰（LLM 曾输出 **加粗** 标签），
+    # 否则归并匹配不上、侧栏出现成对变体（「健康养生」vs「**健康养生**」）
+    try:
+        from knowledge.tags import normalize_tag as _norm_tag
+        _repaired = 0
+        for _doc in kb.documents.values():
+            if _doc.category:
+                _cc = _norm_tag(_doc.category)
+                if _cc != _doc.category:
+                    _doc.category = _cc
+                    _repaired += 1
+            if _doc.tags:
+                _ct = [t for t in (_norm_tag(x) for x in _doc.tags if x and x.strip()) if t]
+                if _ct != _doc.tags:
+                    _doc.tags = _ct
+                    _repaired += 1
+        if _repaired:
+            kb._save_meta()
+            log.info("[KB] 存量标签修复完成：清理 %d 处 markdown 装饰", _repaired)
+            all_docs = kb.list_documents()  # 用修复后的数据重建
+    except Exception as _rep_e:
+        log.warning("[KB] 存量标签修复跳过: %s", str(_rep_e)[:80])
+
     # 收集文档列表（标题 + 分类 + 标签）
     doc_list = []
     cat_counts = {}
@@ -2876,16 +2899,19 @@ async def api_kb_overview_refresh(request: Request):
             merge_plan = []
 
         # 执行归并：更新文档 category + save
+        # P8-8：new/from 双向过 normalize_tag——LLM 即使在 JSON 里也可能带 ** 装饰
         if merge_plan:
+            from knowledge.tags import normalize_tag as _norm_merge
             for plan in merge_plan:
-                new_cat = plan.get("new", "").strip()
+                new_cat = _norm_merge(plan.get("new", ""))
                 old_tags = plan.get("from", [])
                 if not new_cat or not old_tags:
                     continue
-                old_set = {t.strip() for t in old_tags}
+                old_set = {_norm_merge(t) for t in old_tags}
+                old_set.discard("")
                 changed = 0
                 for doc in kb.documents.values():
-                    old_cat = (doc.category or "").strip()
+                    old_cat = _norm_merge(doc.category or "")
                     if old_cat in old_set:
                         doc.category = new_cat
                         changed += 1
