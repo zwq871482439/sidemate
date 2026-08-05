@@ -768,16 +768,19 @@ function kbCardClick(docId) {
 
 // --- AI 知识库概览 ---
 // P6 打磨 #10：LLM 驱动的概览刷新
-async function kbRefreshOverviewLLM() {
+// P8-8：支持 auto 模式（stale 自动触发）——不覆盖正文、失败静默
+async function kbRefreshOverviewLLM(_isAuto) {
+  if (_kbOverviewGenerating) return;  // 防并发
+  _kbOverviewGenerating = true;
   var btn = document.getElementById('kbRefreshBtn');
   var bodyEl = document.getElementById('kbOverviewBody');
   var sidebarHdr = document.querySelector('#kbSidebar .kb-sidebar-hdr');
   var sidebarOrig = sidebarHdr ? sidebarHdr.innerHTML : '';
   var bodyPrev = bodyEl ? bodyEl.innerHTML : '';
 
-  if (btn) { btn.disabled = true; btn.innerHTML = iconSvg('spin','11') + ' 整理中...'; }
-  if (sidebarHdr) sidebarHdr.innerHTML = iconSvg('spin','12') + ' AI 智能筛选 — 重新整理中...';
-  if (bodyEl) bodyEl.innerHTML = '<div class="kb-dash-empty">AI 正在分析文档结构，生成洞察中…</div>';
+  if (btn && btn.style.display !== 'none') { btn.disabled = true; btn.innerHTML = iconSvg('spin','11') + ' 生成中...'; }
+  if (sidebarHdr) sidebarHdr.innerHTML = iconSvg('spin','12') + ' AI 智能筛选 — 重新生成中...';
+  if (bodyEl && !_isAuto) bodyEl.innerHTML = '<div class="kb-dash-empty">AI 正在分析文档结构，生成洞察中…</div>';
 
   try {
     var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh', {
@@ -792,17 +795,19 @@ async function kbRefreshOverviewLLM() {
         doc_count: data.doc_count || 0
       };
       _kbRenderInsightDashboard(_kbLastInsightData);
-      // 整理完成后总是刷新文档列表和侧栏（分类可能已变更）
+      // 生成完成后总是刷新文档列表和侧栏（分类可能已变更）
       try { if (typeof kbRefreshDocs === 'function') kbRefreshDocs(); } catch(e) {}
-    } else if (bodyEl) {
+    } else if (bodyEl && !_isAuto) {
       bodyEl.innerHTML = bodyPrev;
     }
   } catch (e) {
-    showToast('AI 整理失败，请重试', 'error');
-    if (bodyEl) bodyEl.innerHTML = bodyPrev;
+    if (!_isAuto) showToast('AI 洞察生成失败，请重试', 'error');
+    if (bodyEl && !_isAuto) bodyEl.innerHTML = bodyPrev;
   }
   finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> 整理'; }
+    _kbOverviewGenerating = false;
+    // 有洞察后按钮常驻为"重新生成"；无洞察保持隐藏
+    _kbSetOverviewBtn(!!_kbLastInsightData, false);
     if (sidebarOrig) { try { var _sh = document.querySelector('#kbSidebar .kb-sidebar-hdr'); if (_sh) _sh.innerHTML = sidebarOrig; } catch(e) {} }
   }
 }
@@ -847,7 +852,7 @@ function _kbRenderInsightDashboard(data) {
     return;
   }
   if (!insight) {
-    bodyEl.innerHTML = '<div class="kb-dash-empty">正在分析知识库...<br><small>点击「整理」触发 AI 洞察</small></div>';
+    bodyEl.innerHTML = '<div class="kb-dash-empty">AI 正在自动聚类并生成洞察分析…</div>';
     return;
   }
 
@@ -911,7 +916,7 @@ function _kbRenderInsightDashboard(data) {
     '</div>' +
     asksHtml;
 
-  if (sourceEl) sourceEl.textContent = (data.engine_label || '离线 AI') + ' 整理';
+  if (sourceEl) sourceEl.textContent = (data.engine_label || '离线 AI') + ' 生成';
   if (countEl) countEl.textContent = docCount + ' 篇';
   if (updatedEl) {
     var now = new Date();
@@ -1004,13 +1009,27 @@ function _kbDashAsk(question) {
 }
 window._kbDashAsk = _kbDashAsk;
 
+// AI 洞察按钮状态管理：洞察生成前隐藏（自动聚类未完成无手动入口）；
+// 有洞察后显示"重新生成"；生成中显示"生成中..."
+var _KB_OVERVIEW_BTN_ICON = '<svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 0110 0M12 7a5 5 0 01-10 0" stroke="currentColor" stroke-width="1.3"/><path d="M2 3v4h4M12 11V7H8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> ';
+var _kbOverviewGenerating = false;
+var _kbOverviewLastAutoTry = 0;  // 自动重生成冷却（60s）
+
+function _kbSetOverviewBtn(visible, generating) {
+  var btn = document.getElementById('kbRefreshBtn');
+  if (!btn) return;
+  btn.style.display = visible ? '' : 'none';
+  btn.disabled = !!generating;
+  btn.innerHTML = _KB_OVERVIEW_BTN_ICON + (generating ? '生成中...' : '重新生成');
+}
+
 async function kbRefreshAIOverview() {
   _kbLastGroupTrigger = 0;
   var bodyEl = document.getElementById('kbOverviewBody');
   if (!bodyEl) return;
 
   // P6: 从服务端取洞察（数据持久化在 kb_insight.json，不依赖前端缓存）
-  var _insight = null, _cats = null, _questions = null, _count = 0;
+  var _insight = null, _cats = null, _questions = null, _count = 0, _stale = false;
   try {
     var _sr = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh');
     var _sd = await _sr.json();
@@ -1020,13 +1039,30 @@ async function kbRefreshAIOverview() {
       _questions = _sd.suggested_questions || [];
       _count = _sd.doc_count || 0;
     }
+    _stale = !!_sd.stale;
+    if (!_count) _count = _sd.doc_count || 0;
   } catch(e) {}
 
   if (_insight) {
     _kbLastInsightData = { insight: _insight, categories: _cats, suggested_questions: _questions, doc_count: _count || (_kbLastDocs.length || 0) };
     try { _kbRenderInsightDashboard(_kbLastInsightData); } catch(e) { console.error('[KB] 仪表盘渲染失败:', e); }
+    _kbSetOverviewBtn(true, false);  // 有洞察 → 显示"重新生成"
   } else {
-    bodyEl.innerHTML = '<div class="kb-dash-empty">点击上方「整理」按钮，AI 将自动聚类并生成洞察分析。</div>';
+    // 空状态：不引导手动点击——导入后自动聚类生成，用户无需操作
+    _kbSetOverviewBtn(false, false);
+    var _hasDocs = (_count > 0) || (_kbLastDocs && _kbLastDocs.length > 0);
+    bodyEl.innerHTML = '<div class="kb-dash-empty">' +
+      (_hasDocs ? '导入完成，AI 正在自动聚类并生成洞察分析…' : '导入文档后，AI 将自动聚类并生成洞察分析') +
+      '</div>';
+  }
+
+  // P8-8: 洞察过期（文档增删/重打标后指纹变化）→ 自动重新生成，无需手动点按钮
+  if (_stale && !_kbOverviewGenerating && typeof kbRefreshOverviewLLM === 'function') {
+    var _nowTs = Date.now();
+    if (_nowTs - _kbOverviewLastAutoTry > 60000) {
+      _kbOverviewLastAutoTry = _nowTs;
+      setTimeout(function() { kbRefreshOverviewLLM(true); }, 300);
+    }
   }
 }
 

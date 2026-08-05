@@ -2701,27 +2701,55 @@ async def api_kb_tags_move(request: Request):
 
 @router.get("/api/kb/overview/refresh")
 def api_kb_overview_get():
-    """返回上次 AI 洞察缓存（页面刷新不丢失）"""
+    """返回上次 AI 洞察缓存（页面刷新不丢失）
+
+    附带 stale 标记：缓存指纹与当前文档集合指纹不一致（导入/删除/重打标）
+    时为 true，前端据此自动重新生成，无需用户手动点按钮。
+    """
     kb = get_kb()
+    cached = None
     try:
         import os as _os_g
         if _os_g.path.exists(kb.insight_path):
             with open(kb.insight_path, "r", encoding="utf-8") as _f:
                 cached = json.load(_f)
-            cached["ok"] = True
-            # 补充引擎标签（缓存文件里没有这个字段）
-            from config import get as _cfg_cache
-            _kb_engine_cache = _cfg_cache("kb_ai_mode", "local")
-            if _kb_engine_cache == "cloud":
-                _cm = _cfg_cache("cloud_model", "")
-                cached["engine_label"] = _cm or "云端 AI"
-            else:
-                _lm = _cfg_cache("last_loaded_model", "")
-                cached["engine_label"] = _lm or "本地 AI"
-            return cached
     except Exception:
-        pass
-    return {"ok": True, "insight": "", "doc_count": 0}
+        cached = None
+
+    # 当前文档集合指纹
+    try:
+        _docs_now = kb.list_documents()
+        fp_now = _kb_doc_fingerprint(_docs_now if isinstance(_docs_now, list) else [])
+        n_now = len(_docs_now) if isinstance(_docs_now, list) else 0
+    except Exception:
+        fp_now, n_now = "", 0
+
+    if cached:
+        cached["ok"] = True
+        cached["stale"] = bool(fp_now) and cached.get("doc_fingerprint", "") != fp_now
+        # 补充引擎标签（缓存文件里没有这个字段）
+        from config import get as _cfg_cache
+        _kb_engine_cache = _cfg_cache("kb_ai_mode", "local")
+        if _kb_engine_cache == "cloud":
+            _cm = _cfg_cache("cloud_model", "")
+            cached["engine_label"] = _cm or "云端 AI"
+        else:
+            _lm = _cfg_cache("last_loaded_model", "")
+            cached["engine_label"] = _lm or "本地 AI"
+        return cached
+    # 无缓存：有文档则标记 stale（触发首次自动生成）
+    return {"ok": True, "insight": "", "doc_count": n_now, "stale": n_now > 0}
+
+
+def _kb_doc_fingerprint(docs) -> str:
+    """文档集合指纹：文件名+摘要长度+标签数 的哈希。
+    导入/删除/重打标后变化，用于判断洞察缓存是否过期。"""
+    import hashlib
+    parts = sorted(
+        "%s:%d:%d" % (d.get("filename", ""), len(d.get("summary") or ""), len(d.get("tags") or []))
+        for d in docs
+    )
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()[:12]
 
 @router.post("/api/kb/overview/refresh")
 async def api_kb_overview_refresh(request: Request):
@@ -3005,6 +3033,7 @@ async def api_kb_overview_refresh(request: Request):
                 "doc_count": doc_count,
                 "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
                 "suggested_questions": suggested_questions,
+                "doc_fingerprint": _kb_doc_fingerprint(all_docs),  # 过期判定用
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             }, _f, ensure_ascii=False)
     except Exception:
