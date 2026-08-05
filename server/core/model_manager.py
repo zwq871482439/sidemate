@@ -80,7 +80,7 @@ class ModelManager:
         self._stop_generation = False
         self._stop_lock = threading.Lock()
         self._gen_lock = threading.RLock()
-        self.generate_queue = GenerateQueue()
+        self.generate_queue = GenerateQueue(on_force_release=self._on_queue_force_release)
         self._gen_done = threading.Event()
         self._gen_done.set()
         # 云端跳过队列（skip_queue）的独立完成事件，避免与本地生成共用状态
@@ -103,6 +103,14 @@ class ModelManager:
         self._MAX_PROMPT_CHARS = 28000  # Qwen3.5-4B 约 32K tokens 上下文
 
     # ====== stop_requested 属性 ======
+
+    def _on_queue_force_release(self):
+        """队列强制释放 active ticket（持有可能卡死）时的回调：
+        置停止标志，让被误判/卡死的生成任务在下一个 token 检查点退出，
+        真正释放设备（否则只是账本释放，旧任务还在跑，新任务会并发抢设备）。
+        下一次生成开始时各引擎会自行重置该标志，无需清理。
+        """
+        self.stop_requested = True
 
     @property
     def stop_requested(self) -> bool:

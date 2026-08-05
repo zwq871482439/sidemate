@@ -22,15 +22,24 @@ class GenerateQueue:
     HIGH = "high"   # 用户对话
     LOW = "low"     # 后台任务（摘要/纠错/压缩）
 
-    def __init__(self):
+    # active ticket 强制释放阈值：必须高于最坏情况的合法长任务
+    # （启动预热 / CPU 上的长文档生成 / agent 单轮大上下文），
+    # 否则会把正在正常工作的任务误判为僵尸（实测：预热超 120s 即被误杀，
+    # 队列以为设备空闲实际还占着 → 新请求与运行中任务并发抢设备）
+    FORCE_RELEASE_AFTER = 600  # 秒
+
+    def __init__(self, on_force_release=None):
         self._lock = threading.Lock()
         # 内部队列项: [(priority_weight, seq_num, threading.Event, result_dict)]
         self._queue = []
-        self._seq = 0             # FIFO 序号（相同优先级先来先服务）
+        self._seq = 0             # FIFO 序号（相同优先级先来后到）
         self._active_event = None  # 当前持有"设备"的请求的 event
         self._active_priority = None
         self._cancel_next_low = False  # HIGH 到达时标记
         self._active_since = None     # active ticket 获取时间
+        # 强制释放时的回调（由 model_manager 注入：置 stop_requested，
+        # 让被误判/真卡死的任务在下一个 token 检查点退出，真正释放设备）
+        self._on_force_release = on_force_release
 
     def submit(self, priority="low", timeout=60):
         """
@@ -46,6 +55,7 @@ class GenerateQueue:
         """
         ticket_event = threading.Event()
         result = {"cancelled": False, "ticket_id": self._seq}
+        _fire_force_release = False
 
         with self._lock:
             # HIGH 到达时，取消排队中的 LOW
@@ -58,13 +68,15 @@ class GenerateQueue:
             self._queue.sort(key=lambda x: (x[0], x[1]))  # 按优先级+序号排序
             self._seq += 1
 
-            # Watchdog：如果 active ticket 持有超过 300 秒，视为僵尸，强制释放
+            # Watchdog：active ticket 持有超过 FORCE_RELEASE_AFTER 秒，视为僵尸，强制释放
             # 必须在设备空闲判断之前执行，否则僵尸占用 active_event 导致空闲判断失败
-            if self._active_since is not None and (time.time() - self._active_since) > 120:
-                log.warning("[GenerateQueue] Active ticket held >120s, force releasing")
+            if self._active_since is not None and (time.time() - self._active_since) > self.FORCE_RELEASE_AFTER:
+                log.warning("[GenerateQueue] Active ticket held >%ds, force releasing（已请求停止当前生成）",
+                            self.FORCE_RELEASE_AFTER)
                 self._active_event = None
                 self._active_priority = None
                 self._active_since = None
+                _fire_force_release = True
 
             # 设备空闲时立即授权（无需排队）
             if self._active_event is None and self._queue:
@@ -72,6 +84,13 @@ class GenerateQueue:
                 _, _, next_event, _ = self._queue[0]
                 self._queue = self._queue[1:]
                 next_event.set()
+
+        # 锁外触发回调（避免持队列锁调外部代码引入锁序问题）
+        if _fire_force_release and self._on_force_release:
+            try:
+                self._on_force_release()
+            except Exception as e:
+                log.warning("[GenerateQueue] force-release 回调异常: %s", str(e)[:80])
 
         # 等待获得设备使用权
         acquired = ticket_event.wait(timeout=timeout)

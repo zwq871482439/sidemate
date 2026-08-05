@@ -160,6 +160,7 @@ def api_cloud_config():
         "model": cloud_model,
         "model_set": _is_explicit_key("cloud_model"),
         "api_format": cfg_get("cloud_api_format", "openai"),
+        "proxy_mode": cfg_get("cloud_proxy_mode", "system"),
         "context_window": context_window,
         "context_window_user": user_ctx,
         "context_matched": _ce._capabilities_matched(cloud_model),
@@ -205,6 +206,12 @@ async def api_cloud_config_save(request: Request):
         if fmt not in ("openai", "anthropic"):
             return JSONResponse({"error": "无效的 api_format，支持: openai, anthropic"}, status_code=400)
         updates["cloud_api_format"] = fmt
+
+    if "proxy_mode" in body:
+        pm = body["proxy_mode"]
+        if pm not in ("system", "direct"):
+            return JSONResponse({"error": "无效的 proxy_mode，支持: system, direct"}, status_code=400)
+        updates["cloud_proxy_mode"] = pm
 
     if "context_window" in body:
         # P8-3：输入上限允许用户覆盖（1M 模型手填 500000 是合法需求）。

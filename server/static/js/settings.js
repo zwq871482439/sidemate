@@ -981,6 +981,8 @@ async function loadCloudConfig() {
       fmtEl.value = data.api_format || 'openai';
       onCloudFormatChange();
     }
+    var proxyEl = document.getElementById('cloudProxyMode');
+    if (proxyEl) proxyEl.value = data.proxy_mode || 'system';
     if (urlEl) {
       if (data.base_url && data.base_url_set === true) {
         urlEl.value = data.base_url;
@@ -1489,6 +1491,8 @@ async function saveCloudConfig() {
   if (baseUrl) body.base_url = baseUrl;
   if (modelName) body.model = modelName;
   if (fmtEl) body.api_format = fmtEl.value || 'openai';
+  var proxyEl = document.getElementById('cloudProxyMode');
+  if (proxyEl) body.proxy_mode = proxyEl.value || 'system';
   body.context_policy = policy ? policy.value : 'full';
   body.slim_history_rounds = parseInt(rounds ? rounds.value : 6) || 6;
   body.kb_permission = kbPermEl ? kbPermEl.value : 'full';

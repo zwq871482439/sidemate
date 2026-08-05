@@ -490,6 +490,13 @@
               <div id="cloudModelList" style="display:none;margin:0 0 8px 98px;border:1px solid var(--border-color);border-radius:6px;overflow:hidden;max-height:220px;overflow-y:auto"></div>
               <div class="row"><span class="lbl">输入上限</span><input type="number" id="cloudContextWindow" min="1" max="2097152" placeholder="如 200000" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)"><span id="cloudCtxHint" style="flex-shrink:0;font-size:.78em;color:var(--text-muted)">tokens</span></div>
               <div style="font-size:.78em;color:var(--text-muted);margin:-4px 0 4px 98px">本地按此上限做上下文压缩/截断。能识别就自动预填，识别不了请查服务商文档后手填；预填值可随意覆盖</div>
+              <div class="row"><span class="lbl">网络代理</span>
+                <select id="cloudProxyMode" style="flex:1;padding:6px 8px;border:0.5px solid var(--border-color);border-radius:4px;font-size:var(--font-sm);background:var(--bg-primary);color:var(--text-primary)">
+                  <option value="system">跟随系统代理（默认）</option>
+                  <option value="direct">直连（不走代理，代理不稳定时推荐）</option>
+                </select>
+              </div>
+              <div style="font-size:.78em;color:var(--text-muted);margin:-4px 0 4px 98px">访问 OpenAI/Anthropic 等境外服务通常需要系统代理；DeepSeek/通义/智谱等国内服务直连更快更稳</div>
               </form>
               <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" onclick="testCloudConnection()">测试连接</button><button class="btn btn-primary" id="cloudSaveBtn" onclick="saveCloudConfig()">保存配置</button></div>
               <div id="cloudTestResult" style="margin-top:6px;font-size:.82em"></div>
