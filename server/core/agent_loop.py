@@ -669,6 +669,64 @@ class AgentLoop:
 
         return messages
 
+    def _review_mermaid_blocks(self, content: str) -> tuple:
+        """P8-8 交付前查错：提取 ```mermaid``` 围栏代码，让模型校验语法并修复。
+
+        只在含 mermaid 块时多花一次小 LLM 调用；任何失败都返回原文，不阻塞交付
+        （报告内的渲染失败兜底提示仍然兜底）。
+
+        Returns:
+            (content, fixed_count): 修复后的内容 + 修复段数
+        """
+        import re as _re
+        import json as _json
+
+        blocks = list(_re.finditer(r"```mermaid\s*\n(.*?)```", content, flags=_re.DOTALL))
+        if not blocks:
+            return content, 0
+
+        codes = [b.group(1).strip() for b in blocks]
+        listing = "\n\n".join("【图表 %d】\n%s" % (i, c) for i, c in enumerate(codes))
+        prompt = (
+            "以下是一份 HTML 报告里的 %d 段 mermaid 图表代码，将被原样渲染。\n"
+            "请逐一做语法检查。常见错误：xychart-beta 的数值不是纯数字或缺 x-axis；"
+            "节点文字含括号/特殊符号未加英文引号；混入中文标点；箭头或关键字拼写错误；"
+            "pie 条目格式错误；subgraph 未闭合。\n"
+            "只返回 JSON 数组，不要任何其他文字：\n"
+            '[{"index": 0, "ok": true}, {"index": 1, "ok": false, "fixed": "修正后的完整 mermaid 代码"}]\n'
+            "没问题的图表直接 ok=true（不带 fixed）。\n\n" % len(codes) + listing
+        )
+
+        try:
+            text = ""
+            for phase, chunk in self.cloud_engine.run(prompt, override_task_type="text"):
+                if phase == "text":
+                    text += chunk
+                elif phase == "error":
+                    log.warning("[DOC] mermaid 审查调用失败: %s",
+                                (chunk.get("user_msg", "") if isinstance(chunk, dict) else str(chunk))[:80])
+                    return content, 0
+            m = _re.search(r"\[.*\]", text, flags=_re.DOTALL)
+            if not m:
+                return content, 0
+            reviews = _json.loads(m.group(0))
+            fixes = []
+            for rv in reviews:
+                idx = rv.get("index")
+                if (isinstance(idx, int) and 0 <= idx < len(blocks)
+                        and not rv.get("ok", True) and rv.get("fixed")):
+                    fixes.append((idx, rv["fixed"].strip()))
+            # 从后往前替换，避免 span 偏移
+            for idx, fixed in sorted(fixes, reverse=True):
+                span = blocks[idx].span(1)
+                content = content[:span[0]] + "\n" + fixed + "\n" + content[span[1]:]
+            if fixes:
+                log.info("[DOC] mermaid 交付前查错：修复 %d/%d 段", len(fixes), len(codes))
+            return content, len(fixes)
+        except Exception as e:
+            log.warning("[DOC] mermaid 审查异常（按原文交付）: %s", str(e)[:80])
+            return content, 0
+
     def _execute_tool(self, tool_name, args, stats):
         """执行单个工具调用
 
@@ -1111,6 +1169,12 @@ class AgentLoop:
                         }
                     md_content = f["content"]
 
+                    # P8-8: 交付前查错——.html 报告的 mermaid 图表先经模型校验/修复，
+                    # 再打包推送下载（实测：xychart 语法错误导致用户下载到开天窗的报告）
+                    _mermaid_fixed = 0
+                    if filename.endswith(".html"):
+                        md_content, _mermaid_fixed = self._review_mermaid_blocks(md_content)
+
                     # 2. 生成产物（输出到 workspace/，模型可见）
                     docs_dir = _workspace_root(self.chat_id)
                     os.makedirs(docs_dir, exist_ok=True)
@@ -1143,6 +1207,9 @@ class AgentLoop:
 
                     log.info("[AGENT] set_doc_status completed: file=%s → %s",
                              filename, out_filename)
+                    _msg = None
+                    if _mermaid_fixed:
+                        _msg = "已生成可下载产物；交付前已自动校验并修复 %d 处图表语法" % _mermaid_fixed
                     return {
                         "success": True,
                         "tool": "set_doc_status",
@@ -1151,7 +1218,9 @@ class AgentLoop:
                             "status": "completed",
                             "docx_path": out_filename,
                             "title": title,
+                            "mermaid_fixed": _mermaid_fixed,
                         },
+                        **({"message": _msg} if _msg else {}),
                     }
                 except Exception as e:
                     import logging as _log_mod
