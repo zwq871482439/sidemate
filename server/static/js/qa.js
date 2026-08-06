@@ -506,6 +506,9 @@ async function kbRefreshDocs() {
 
     var gridEl = document.getElementById('kbDocGrid');
     if (gridEl) {
+      // P8-8：网格渲染独立 try/catch——此前渲染异常被外层大 catch 吞掉，
+      // 表现为"侧栏有分类、网格空白"且无任何可见错误，无法溯源
+      try {
       // P6: 根据 _kbViewMode 切换 class
       gridEl.className = _kbViewMode === 'list' ? 'kb-doc-list' : 'kb-doc-grid';
       // P8-4: 首批 50 张 + IntersectionObserver 滚动加载下一批
@@ -530,6 +533,13 @@ async function kbRefreshDocs() {
         }, {root: null, rootMargin: '300px'});
         var _sentinel = document.getElementById('kbLoadMore');
         if (_sentinel) _kbLoadObserver.observe(_sentinel);
+      }
+      } catch (renderErr) {
+        // 渲染失败可见化：错误直接显示在网格区（可溯源、可点击重试）
+        console.error('[KB] 网格渲染失败:', renderErr);
+        gridEl.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:13px;color:var(--error-color,#dc2626)">' +
+          '文档列表渲染出错：' + esc((renderErr && renderErr.message) || String(renderErr)) +
+          ' · <a href="#" onclick="kbRefreshDocs();return false" style="color:var(--accent-color);text-decoration:underline">点击重试</a></div>';
       }
     }
 
@@ -573,13 +583,27 @@ async function kbRefreshDocs() {
     _kbRefreshOverviewStatsOnly();
     // P6 修复：同步队列条目和文档 tag_status
     _kbSyncQueueWithDocs(docs);
+    kbRefreshDocs._retried = false;  // P8-8: 成功后重置重试标记
   } catch (err) {
     _kbSkipFetch = false;
-    // P6: 轮询中的错误静默，直接触发时才通知用户
-    if (!_kbPollTimer && typeof showToast === 'function') {
-      showToast('刷新文档列表失败', 'error');
-    }
     silentLog('[KB] 刷新文档列表失败:', err);
+    // P8-8: 失败自动重试一次（首屏竞态/瞬时错误可自愈）；
+    // 仍失败则把错误显示在网格区（可见可溯源），不再静默
+    if (!kbRefreshDocs._retried) {
+      kbRefreshDocs._retried = true;
+      setTimeout(function() { kbRefreshDocs(); }, 2000);
+    } else {
+      kbRefreshDocs._retried = false;
+      var gridErrEl = document.getElementById('kbDocGrid');
+      if (gridErrEl && !gridErrEl.children.length) {
+        gridErrEl.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:13px;color:var(--error-color,#dc2626)">' +
+          '文档列表加载失败：' + esc((err && err.message) || String(err)) +
+          ' · <a href="#" onclick="kbRefreshDocs();return false" style="color:var(--accent-color);text-decoration:underline">点击重试</a></div>';
+      }
+      if (!_kbPollTimer && typeof showToast === 'function') {
+        showToast('刷新文档列表失败', 'error');
+      }
+    }
   }
 }
 
@@ -699,11 +723,11 @@ function _kbRenderCategoryTree(docs) {
       '<span class="cnt">' + count + '</span></div>';
   }
 
-  // 没有 category 的文档（等待 AI 智能筛选）
+  // 没有 category 的文档（待打标/打标失败）
   if (noCategoryCount > 0) {
     var isUnSel = _kbActiveTagFilter === '__uncategorized__';
     html += '<div class="kb-tag cat kb-tag-pending' + (isUnSel ? ' sel' : '') + '" data-tag="__uncategorized__" onclick="kbFilterByTag(\'__uncategorized__\',this)">' +
-      '<span class="dot"></span>正在等待智能筛选' +
+      '<span class="dot"></span>未分类' +
       '<span class="cnt">' + noCategoryCount + '</span></div>';
   }
 

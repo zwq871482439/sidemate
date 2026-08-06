@@ -244,7 +244,8 @@ class TaggingScheduler:
             log.info("[TAG] 打标完成: doc_id=%s, category=%s, tags=%s, summary=%s",
                      doc_id, category, doc.tags, doc.summary[:80])
         else:
-            log.warning("[TAG] 解析结果为空，跳过: doc_id=%s", doc_id)
+            log.warning("[TAG] 解析结果为空，跳过: doc_id=%s, response=%s",
+                        doc_id, response[:200])  # P8-8: 留下原文便于诊断格式漂移
             self._re_enqueue(doc_id, "解析结果为空")
 
     def _re_enqueue(self, doc_id: str, reason: str):
@@ -272,36 +273,55 @@ class TaggingScheduler:
 
         Returns:
             (tags: list, summary: str, category: str)
-            P6: 新增 category 字段（文档级单一主题分类）
+
+        P8-8 健壮性：模型常把三行包成 markdown 加粗（**主题：** xxx），
+        行首锚定的 re.match 会全部落空 → "解析结果为空" → 重试 3 次仍失败。
+        现在先剥装饰再匹配，并加全文兜底搜索。
         """
         tags = []
         summary = ""
         category = ""
 
-        # 按行解析
+        def _strip_deco(s: str) -> str:
+            # 剥行首/行内的 markdown 装饰（**、__、`、#、多余空格）
+            return re.sub(r"[*_`#]+", "", s).strip()
+
+        # 按行解析（剥装饰后匹配）
         for line in response.split('\n'):
-            line = line.strip()
+            line = _strip_deco(line)
             if not line:
                 continue
 
             # P6: 匹配主题行（新增）
             cat_match = re.match(r'主题[：:]\s*(.+)', line)
             if cat_match:
-                category = cat_match.group(1).strip()
+                category = _strip_deco(cat_match.group(1))
                 continue
 
             # 匹配标签行
             tag_match = re.match(r'标签[：:]\s*(.+)', line)
             if tag_match:
-                tag_str = tag_match.group(1)
+                tag_str = _strip_deco(tag_match.group(1))
                 tags = [t.strip() for t in re.split(r'[，,、\s]+', tag_str) if t.strip()]
                 continue
 
             # 匹配摘要行
             summary_match = re.match(r'摘要[：:]\s*(.+)', line)
             if summary_match:
-                summary = summary_match.group(1).strip()
+                summary = _strip_deco(summary_match.group(1))
                 continue
+
+        # 全文兜底：行解析全空时（模型输出了别的结构），跨行搜索字段名
+        if not tags and not summary and not category:
+            m = re.search(r'标签[：:]\s*([^\n]+)', response)
+            if m:
+                tags = [t.strip() for t in re.split(r'[，,、\s]+', _strip_deco(m.group(1))) if t.strip()]
+            m = re.search(r'主题[：:]\s*([^\n]+)', response)
+            if m:
+                category = _strip_deco(m.group(1))
+            m = re.search(r'摘要[：:]\s*([^\n]+)', response)
+            if m:
+                summary = _strip_deco(m.group(1))
 
         return tags, summary, category
 

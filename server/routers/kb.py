@@ -2855,22 +2855,19 @@ async def api_kb_overview_refresh(request: Request):
     insight = ""
     merges_applied = []
     try:
-        # Fix: category 为空时，改用 doc.tags 收集碎片标签作为归并输入
-        if not cat_counts:
-            tag_counts = {}
-            for d in doc_list:
+        # P8-8：归并输入 = 现有分类 + 无分类文档的标签。
+        # 旧逻辑只在"全部文档都无分类"时才用标签，导致"有标签无分类"的文档
+        # 永远进不了归并输入、永远落单（实测 4 篇）——两类来源现在都要。
+        merge_items = dict(cat_counts)
+        for d in doc_list:
+            if not d.get("category"):
                 for t in d.get("tags", []):
                     if t:
-                        tag_counts[t] = tag_counts.get(t, 0) + 1
-            cats_text = "\n".join(
-                "  %s（%d 篇）" % (k, v)
-                for k, v in sorted(tag_counts.items(), key=lambda x: -x[1])[:30]
-            ) if tag_counts else ""
-        else:
-            cats_text = "\n".join(
-                "  %s（%d 篇）" % (k, v)
-                for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])
-            )
+                        merge_items[t] = merge_items.get(t, 0) + 1
+        cats_text = "\n".join(
+            "  %s（%d 篇）" % (k, v)
+            for k, v in sorted(merge_items.items(), key=lambda x: -x[1])[:40]
+        )
 
         if not cats_text:
             cats_text = "\n".join(
@@ -2884,8 +2881,9 @@ async def api_kb_overview_refresh(request: Request):
             "要求：\n"
             "1. 含义相近的标签必须合并（如「中医养生」「中医流派」「中医病机」→ 「中医药与养生」）\n"
             "2. 归并到 3-5 个大类，最多不超过 10 个，宁少勿多\n"
-            "3. 输出纯 JSON 数组，每项格式：{\"new\": \"新标签\", \"from\": [\"旧标签1\", \"旧标签2\"]}\n"
-            "4. 不准输出 Markdown，不准加解释文字，只剩 JSON\n\n"
+            "3. 上面列出的每个旧标签都必须归到某个大类——一个都不许漏（实在不相关的归到「其他」）\n"
+            "4. 输出纯 JSON 数组，每项格式：{\"new\": \"新标签\", \"from\": [\"旧标签1\", \"旧标签2\"]}\n"
+            "5. 不准输出 Markdown，不准加解释文字，只剩 JSON\n\n"
             "归并方案 JSON：" % cats_text
         )
         raw = await _run_async(merge_prompt, max_tokens=400)
@@ -2915,12 +2913,26 @@ async def api_kb_overview_refresh(request: Request):
                     if old_cat in old_set:
                         doc.category = new_cat
                         changed += 1
+                    elif not old_cat:
+                        # P8-8：无分类文档按其标签参与归并（tags 命中 from 列表即归入新类）
+                        _doc_tags = {_norm_merge(t) for t in (doc.tags or [])}
+                        if _doc_tags & old_set:
+                            doc.category = new_cat
+                            changed += 1
                 if changed > 0:
                     merges_applied.append({
                         "from": list(old_set),
                         "to": new_cat,
                         "count": changed,
                     })
+
+            # P8-8 兜底：LLM 方案未覆盖到的无分类文档 → 统一进「其他」，
+            # 保证归并后侧栏不再有"未分类"残留（LLM 部分覆盖是常态）
+            _leftover = [d for d in kb.documents.values() if not (d.category or "").strip()]
+            for d in _leftover:
+                d.category = "其他"
+            if _leftover:
+                log.info("[KB] 归并兜底：%d 篇未覆盖文档归入「其他」", len(_leftover))
 
             # 持久化
             try:
