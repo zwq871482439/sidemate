@@ -881,77 +881,84 @@ function _kbRenderInsightDashboard(data) {
 
   var insight = data.insight || '';
   var questions = data.suggested_questions || [];
-  var cats = data.categories || {};
+  var graph = data.graph || null;
   var docCount = data.doc_count || 0;
 
-  if (!insight && docCount === 0) {
+  if (!insight && docCount === 0 && !(graph && graph.nodes && graph.nodes.length)) {
     bodyEl.innerHTML = '<div class="kb-dash-empty">上传文档后，AI 会自动聚类并生成洞察分析，帮你发现知识结构中的骨架与空白。</div>';
     return;
   }
-  if (!insight) {
+  if (!insight && !(graph && graph.nodes && graph.nodes.length)) {
     bodyEl.innerHTML = '<div class="kb-dash-empty">AI 正在自动聚类并生成洞察分析…</div>';
     return;
   }
 
-  var catEntries = [];
-  for (var ck in cats) catEntries.push({ name: ck, count: cats[ck] });
-  catEntries.sort(function(a,b){ return b.count - a.count; });
-  if (catEntries.length > 10) catEntries = catEntries.slice(0, 10);
-  var totalDocs = catEntries.reduce(function(s,c){ return s + c.count; }, 0);
-  if (totalDocs === 0) totalDocs = docCount;
+  var html = '';
 
-  var donutSize = 100, donutR = 44, donutCx = 50, donutCy = 50, donutInner = 24;
-  var donutSvg = '<svg class="kb-dash-donut-svg" viewBox="0 0 ' + donutSize + ' ' + donutSize + '" width="' + donutSize + '" height="' + donutSize + '">';
-  var angle = -Math.PI / 2;
-  for (var ci = 0; ci < catEntries.length; ci++) {
-    var cc = catEntries[ci];
-    var sliceAngle = (cc.count / totalDocs) * 2 * Math.PI;
-    var sa = angle, ea = angle + sliceAngle;
-    var x1 = donutCx + donutR * Math.cos(sa), y1 = donutCy + donutR * Math.sin(sa);
-    var x2 = donutCx + donutR * Math.cos(ea), y2 = donutCy + donutR * Math.sin(ea);
-    var isActive = _donutActiveCategory === cc.name;
-    // Fix: 单分类全圆时用双弧避免 SVG 退化
-    var d;
-    if (sliceAngle >= 2 * Math.PI - 0.001) {
-      var xm = donutCx + donutR * Math.cos(sa + Math.PI), ym = donutCy + donutR * Math.sin(sa + Math.PI);
-      d = 'M' + donutCx + ' ' + donutCy + ' L' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' A' + donutR + ' ' + donutR + ' 0 1 0 ' + xm.toFixed(1) + ' ' + ym.toFixed(1) + ' A' + donutR + ' ' + donutR + ' 0 1 0 ' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' Z';
-    } else {
-      var large = (ea - sa) > Math.PI ? 1 : 0;
-      d = 'M' + donutCx + ' ' + donutCy + ' L' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' A' + donutR + ' ' + donutR + ' 0 ' + large + ' 1 ' + x2.toFixed(1) + ' ' + y2.toFixed(1) + ' Z';
+  // ===== P8-9: 文档地图（力导向图谱，替代环形图）=====
+  if (graph && graph.nodes && graph.nodes.length) {
+    var legendHtml = '';
+    var catSet = [];
+    for (var gi = 0; gi < graph.nodes.length; gi++) {
+      var gc = graph.nodes[gi].cat || '未分类';
+      if (catSet.indexOf(gc) < 0) catSet.push(gc);
     }
-    donutSvg += '<path class="kb-donut-slice' + (isActive ? ' donut-active' : '') + '" data-cat="' + escAttr(cc.name) + '" d="' + d + '" fill="' + (_DONUT_COLORS[ci % _DONUT_COLORS.length]) + '" opacity=".88" onclick="_kbDonutSliceClick(this)" style="cursor:pointer"/>';
-    angle = ea;
+    for (var li = 0; li < catSet.length; li++) {
+      var cnt = 0;
+      for (var gj = 0; gj < graph.nodes.length; gj++) if ((graph.nodes[gj].cat || '未分类') === catSet[li]) cnt++;
+      // 节点颜色与图例同源（侧栏同一套色板）
+      for (var gk = 0; gk < graph.nodes.length; gk++) {
+        if ((graph.nodes[gk].cat || '未分类') === catSet[li]) graph.nodes[gk].color = _DONUT_COLORS[li % _DONUT_COLORS.length];
+      }
+      legendHtml += '<div class="kb-map-lg-item" data-cat="' + escAttr(catSet[li]) + '">' +
+        '<span class="kb-map-lg-dot" style="background:' + _DONUT_COLORS[li % _DONUT_COLORS.length] + '"></span>' +
+        esc(catSet[li]) + '<span class="kb-map-lg-n">' + cnt + '</span></div>';
+    }
+    html += '<div class="kb-map-row">' +
+      '<div class="kb-map-box" id="kbMapBox">' +
+        '<svg viewBox="0 0 1020 580" id="kbMapSvg"><g id="kbMapViewport"></g></svg>' +
+        '<div class="kb-map-hint">Ctrl+滚轮缩放 · 拖拽移动 · 双击复位</div>' +
+        '<div class="kb-map-tip" id="kbMapTip"></div>' +
+      '</div>' +
+      '<div class="kb-map-legend"><div class="kb-map-legend-title">分类（点击高亮）</div>' + legendHtml + '</div>' +
+      '</div>';
   }
-  donutSvg += '<circle cx="' + donutCx + '" cy="' + donutCy + '" r="' + donutInner + '" fill="var(--bg-primary, #fff)"/>';
-  donutSvg += '<text x="' + donutCx + '" y="' + (donutCy - 3) + '" text-anchor="middle" class="kb-dash-donut-center" font-size="18">' + totalDocs + '</text>';
-  donutSvg += '<text x="' + donutCx + '" y="' + (donutCy + 11) + '" text-anchor="middle" class="kb-dash-donut-sub">篇</text>';
-  donutSvg += '</svg>';
 
-  var legendHtml = '<div class="kb-dash-donut-legend">';
-  for (var li = 0; li < catEntries.length; li++) {
-    var legendCatName = catEntries[li].name;
-    legendHtml += '<div class="kb-dash-donut-legend-item" onclick="_kbDonutLegendClick(\'' + escAttr(legendCatName) + '\')"><span class="kb-dash-donut-dot" style="background:' + _DONUT_COLORS[li % _DONUT_COLORS.length] + '"></span>' + esc(legendCatName) + ' <span class="kb-dash-donut-count">' + catEntries[li].count + '</span></div>';
+  // 导读（一段话）
+  if (insight) {
+    html += '<div class="kb-map-guide">' + esc(insight) + '</div>';
   }
-  legendHtml += '</div>';
 
-  var asksHtml = '';
+  // 统计行
+  var catCount = 0;
+  var seenCat = {};
+  if (graph && graph.nodes) {
+    for (var ci2 = 0; ci2 < graph.nodes.length; ci2++) {
+      var cc = graph.nodes[ci2].cat || '未分类';
+      if (!seenCat[cc]) { seenCat[cc] = 1; catCount++; }
+    }
+  }
+  html += '<div class="kb-dash-stats">' +
+    '<span class="kb-dash-stat">文档 <span class="kb-dash-stat-val">' + docCount + '</span> 篇</span>' +
+    (catCount ? '<span class="kb-dash-stat">主题 <span class="kb-dash-stat-val">' + catCount + '</span> 个</span>' : '') +
+    (graph && graph.edges ? '<span class="kb-dash-stat">关联 <span class="kb-dash-stat-val">' + graph.edges.length + '</span> 条</span>' : '') +
+    '</div>';
+
+  // 推荐问题（保留——从"看"到"用"的引导链路）
   if (questions.length > 0) {
-    asksHtml = '<div class="kb-dash-divider"></div><div class="kb-dash-asks">';
+    html += '<div class="kb-dash-divider"></div><div class="kb-dash-asks">';
     for (var qi = 0; qi < questions.length; qi++) {
-      asksHtml += '<button class="kb-dash-ask" title="' + escAttr(questions[qi]) + '" onclick="_kbDashAsk(\'' + escAttr(questions[qi]) + '\')"><span class="kb-dash-ask-rank">' + (qi + 1) + '</span>' + esc(questions[qi]) + '</button>';
+      html += '<button class="kb-dash-ask" title="' + escAttr(questions[qi]) + '" onclick="_kbDashAsk(\'' + escAttr(questions[qi]) + '\')"><span class="kb-dash-ask-rank">' + (qi + 1) + '</span>' + esc(questions[qi]) + '</button>';
     }
-    asksHtml += '</div>';
+    html += '</div>';
   }
 
-  bodyEl.innerHTML = '<div class="kb-dash-row">' +
-    '<div class="kb-dash-donut">' + donutSvg + legendHtml + '</div>' +
-    '<div class="kb-dash-text">' + (typeof md === 'function' ? md(insight, true) : esc(insight)) + '</div>' +
-    '</div>' +
-    '<div class="kb-dash-stats">' +
-      '<span class="kb-dash-stat">文档 <span class="kb-dash-stat-val">' + docCount + '</span> 篇</span>' +
-      '<span class="kb-dash-stat">主题 <span class="kb-dash-stat-val">' + catEntries.length + '</span> 个</span>' +
-    '</div>' +
-    asksHtml;
+  bodyEl.innerHTML = html;
+
+  // 初始化图谱（力布局沉降动画 + 交互）
+  if (graph && graph.nodes && graph.nodes.length) {
+    _kbInitDocMap(graph);
+  }
 
   if (sourceEl) sourceEl.textContent = (data.engine_label || '离线 AI') + ' 生成';
   if (countEl) countEl.textContent = docCount + ' 篇';
@@ -961,6 +968,178 @@ function _kbRenderInsightDashboard(data) {
   }
   } catch(e) { console.error('[KB] 仪表盘渲染失败:', e); }
 }
+
+// ===== P8-9: 文档地图渲染与交互（Fruchterman-Reingold 力布局 + Obsidian 式悬停高亮）=====
+function _kbInitDocMap(graph) {
+  var box = document.getElementById('kbMapBox');
+  var svg = document.getElementById('kbMapSvg');
+  var vp = document.getElementById('kbMapViewport');
+  var tip = document.getElementById('kbMapTip');
+  if (!box || !svg || !vp) return;
+
+  var NODES = graph.nodes, EDGES = graph.edges || [];
+  var W = 1020, H = 580, K = 85;
+  var pos = NODES.map(function(n) { return { x: n.x || (W/2), y: n.y || (H/2) }; });
+  var tick = 0, MAXTICK = 120, temp = W / 8;
+
+  function forceStep() {
+    var i, j, dx, dy, dist, f;
+    var disp = pos.map(function() { return { x: 0, y: 0 }; });
+    for (i = 0; i < pos.length; i++) {
+      for (j = i + 1; j < pos.length; j++) {
+        dx = pos[i].x - pos[j].x; dy = pos[i].y - pos[j].y;
+        dist = Math.max(0.1, Math.sqrt(dx*dx + dy*dy));
+        f = (K * K) / dist;
+        disp[i].x += dx / dist * f; disp[i].y += dy / dist * f;
+        disp[j].x -= dx / dist * f; disp[j].y -= dy / dist * f;
+      }
+    }
+    EDGES.forEach(function(e) {
+      var a = pos[e.s], b = pos[e.t];
+      dx = b.x - a.x; dy = b.y - a.y;
+      dist = Math.max(0.1, Math.sqrt(dx*dx + dy*dy));
+      var kEdge = K * (1.3 - (e.w || 0.5) * 0.5);
+      f = (dist * dist) / kEdge * (e.w || 0.5);
+      disp[e.s].x += dx / dist * f; disp[e.s].y += dy / dist * f;
+      disp[e.t].x -= dx / dist * f; disp[e.t].y -= dy / dist * f;
+    });
+    for (i = 0; i < pos.length; i++) {
+      disp[i].x += (W/2 - pos[i].x) * 0.002 * K;
+      disp[i].y += (H/2 - pos[i].y) * 0.002 * K;
+    }
+    for (i = 0; i < pos.length; i++) {
+      var dl = Math.max(0.1, Math.sqrt(disp[i].x*disp[i].x + disp[i].y*disp[i].y));
+      pos[i].x += disp[i].x / dl * Math.min(dl, temp) * 0.2;
+      pos[i].y += disp[i].y / dl * Math.min(dl, temp) * 0.2;
+      pos[i].x = Math.max(24, Math.min(W-24, pos[i].x));
+      pos[i].y = Math.max(24, Math.min(H-24, pos[i].y));
+    }
+    temp *= 0.985;
+    tick++;
+  }
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var edgeEls = EDGES.map(function(e) {
+    var l = document.createElementNS(NS, 'line');
+    l.setAttribute('stroke', '#B8C2CC');
+    l.setAttribute('stroke-width', (0.6 + (e.w || 0.5) * 1.2).toFixed(2));
+    l.setAttribute('stroke-opacity', '0.55');
+    vp.appendChild(l);
+    return l;
+  });
+  var nodeEls = NODES.map(function(n, i) {
+    var c = document.createElementNS(NS, 'circle');
+    c.setAttribute('r', Math.min(6 + (n.deg || 0) * 1.3, 15));
+    c.setAttribute('fill', n.color || '#7F77DD');
+    c.setAttribute('fill-opacity', '.85');
+    c.setAttribute('stroke', '#fff');
+    c.setAttribute('stroke-width', '1.5');
+    c.style.cursor = 'pointer';
+    vp.appendChild(c);
+    return c;
+  });
+  function paint() {
+    edgeEls.forEach(function(l, i) {
+      var e = EDGES[i];
+      l.setAttribute('x1', pos[e.s].x); l.setAttribute('y1', pos[e.s].y);
+      l.setAttribute('x2', pos[e.t].x); l.setAttribute('y2', pos[e.t].y);
+    });
+    nodeEls.forEach(function(c, i) {
+      c.setAttribute('cx', pos[i].x); c.setAttribute('cy', pos[i].y);
+    });
+  }
+  (function animate() {
+    if (tick < MAXTICK && document.getElementById('kbMapViewport')) { forceStep(); paint(); requestAnimationFrame(animate); }
+  })();
+
+  // 悬停高亮节点 + 邻居（Obsidian 行为）
+  var neighbors = NODES.map(function() { return {}; });
+  EDGES.forEach(function(e) { neighbors[e.s][e.t] = 1; neighbors[e.t][e.s] = 1; });
+  nodeEls.forEach(function(c, i) {
+    c.addEventListener('mouseenter', function() {
+      var n = NODES[i];
+      tip.textContent = n.name + ' · ' + (n.cat || '未分类') + ' · 关联 ' + (n.deg || 0) + ' 篇';
+      tip.style.display = 'block';
+      var r = c.getBoundingClientRect(), br = box.getBoundingClientRect();
+      tip.style.left = (r.left - br.left + 14) + 'px';
+      tip.style.top = (r.top - br.top - 10) + 'px';
+      nodeEls.forEach(function(c2, j) { c2.style.opacity = (j === i || neighbors[i][j]) ? '1' : '.12'; });
+      edgeEls.forEach(function(l, k) {
+        var e = EDGES[k];
+        l.style.strokeOpacity = (e.s === i || e.t === i) ? '0.9' : '0.06';
+      });
+    });
+    c.addEventListener('mouseleave', function() {
+      tip.style.display = 'none';
+      nodeEls.forEach(function(c2) { c2.style.opacity = ''; });
+      edgeEls.forEach(function(l) { l.style.strokeOpacity = ''; });
+    });
+    // 点击跳转文档卡片（未渲染时先重置筛选再跳）
+    c.addEventListener('click', function() {
+      var card = document.querySelector('.kb-card[data-doc-id="' + NODES[i].doc_id + '"]');
+      if (!card) {
+        if (_kbActiveTagFilter !== null && typeof kbFilterByTag === 'function') {
+          kbFilterByTag(null, null);
+          setTimeout(function() { _kbScrollToDoc(NODES[i].doc_id); }, 600);
+          return;
+        }
+      }
+      _kbScrollToDoc(NODES[i].doc_id);
+    });
+  });
+
+  // 分类高亮
+  box.parentElement.querySelectorAll('.kb-map-lg-item').forEach(function(lg) {
+    lg.addEventListener('click', function() {
+      var cat = lg.getAttribute('data-cat');
+      var active = lg.classList.contains('active');
+      box.parentElement.querySelectorAll('.kb-map-lg-item').forEach(function(x) { x.classList.remove('active', 'dim'); });
+      nodeEls.forEach(function(c) { c.style.opacity = ''; });
+      if (!active) {
+        lg.classList.add('active');
+        box.parentElement.querySelectorAll('.kb-map-lg-item').forEach(function(x) { if (x !== lg) x.classList.add('dim'); });
+        nodeEls.forEach(function(c, i) { if ((NODES[i].cat || '未分类') !== cat) c.style.opacity = '.12'; });
+      }
+    });
+  });
+
+  // 缩放/平移（Ctrl+滚轮缩放，拖拽平移，双击复位——与报告图表同一手势约定）
+  var scale = 1, tx = 0, ty = 0, MIN = 0.5, MAX = 6;
+  function apply() { vp.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')'); }
+  svg.addEventListener('wheel', function(e) {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    var d = e.deltaY < 0 ? 0.15 : -0.15;
+    scale = Math.max(MIN, Math.min(MAX, scale + d));
+    apply();
+  }, { passive: false });
+  var drag = false, sx, sy, ox, oy;
+  svg.addEventListener('mousedown', function(e) {
+    if (e.target.tagName === 'circle') return;
+    drag = true; sx = e.clientX; sy = e.clientY; ox = tx; oy = ty; e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e) { if (!drag) return; tx = ox + (e.clientX - sx); ty = oy + (e.clientY - sy); apply(); });
+  document.addEventListener('mouseup', function() { drag = false; });
+  svg.addEventListener('dblclick', function() { scale = 1; tx = 0; ty = 0; apply(); });
+}
+
+function _kbScrollToDoc(docId) {
+  var card = document.querySelector('.kb-card[data-doc-id="' + docId + '"]');
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.style.transition = 'box-shadow .3s';
+  card.style.boxShadow = '0 0 0 2px var(--accent-color)';
+  setTimeout(function() { card.style.boxShadow = ''; }, 1600);
+}
+
+// ⓘ 说明弹层（事件委托，免绑定时机问题）
+document.addEventListener('click', function(e) {
+  var btn = document.getElementById('kbMapInfoBtn');
+  var pop = document.getElementById('kbMapInfoPop');
+  if (!btn || !pop) return;
+  if (btn.contains(e.target)) { pop.classList.toggle('show'); }
+  else if (!pop.contains(e.target)) { pop.classList.remove('show'); }
+});
 
 function _kbDonutSliceClick(el) {
   var catName = el.getAttribute('data-cat');

@@ -2726,7 +2726,9 @@ def api_kb_overview_get():
 
     if cached:
         cached["ok"] = True
-        cached["stale"] = bool(fp_now) and cached.get("doc_fingerprint", "") != fp_now
+        # 指纹不一致（文档变化）或无 graph 字段（P8-9 前的旧缓存）都算过期
+        cached["stale"] = ((bool(fp_now) and cached.get("doc_fingerprint", "") != fp_now)
+                           or "graph" not in cached)
         # 补充引擎标签（缓存文件里没有这个字段）
         from config import get as _cfg_cache
         _kb_engine_cache = _cfg_cache("kb_ai_mode", "local")
@@ -2750,6 +2752,76 @@ def _kb_doc_fingerprint(docs) -> str:
         for d in docs
     )
     return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()[:12]
+
+
+def _build_doc_graph(kb):
+    """P8-9 文档地图数据：文档均值向量 → k-NN 相似度边（top2 + 0.35 下限）。
+
+    布局不做（前端力导向沉降更有仪式感），这里只算结构：
+    nodes（含度数/分类/doc_id 供点击跳转）+ edges（含相似度权重）。
+    全部本地计算，毫秒级完成。
+    """
+    import numpy as np
+    if getattr(kb, "vectors", None) is None or not getattr(kb, "chunk_order", None):
+        return None
+    chunk_doc = {}
+    for cid, ch in kb.chunks.items():
+        chunk_doc[cid] = getattr(ch, "doc_id", None)
+    acc = {}
+    for i, cid in enumerate(kb.chunk_order):
+        did = chunk_doc.get(cid)
+        if did:
+            acc.setdefault(did, []).append(kb.vectors[i])
+    if not acc:
+        return None
+    doc_ids = sorted(acc.keys())
+    mat = np.array([np.mean(acc[d], axis=0) for d in doc_ids])
+    norm = mat / (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-9)
+    sim = norm @ norm.T
+    n = len(doc_ids)
+    edge_map = {}
+    for i in range(n):
+        sims = sorted(((float(sim[i][j]), j) for j in range(n) if j != i), reverse=True)[:2]
+        for s, j in sims:
+            if s >= 0.35:
+                key = (min(i, j), max(i, j))
+                if key not in edge_map:
+                    edge_map[key] = s
+    deg = [0] * n
+    for (a, b) in edge_map:
+        deg[a] += 1
+        deg[b] += 1
+    # PCA 初始位置（力布局起点，比随机收敛快且语义初分；sklearn 不可用退化为环形）
+    pos = None
+    try:
+        if n >= 3:
+            from sklearn.decomposition import PCA
+            _c = PCA(n_components=2).fit_transform(mat)
+            xs = _c[:, 0]
+            ys = _c[:, 1]
+            px = (xs - xs.min()) / (float(xs.max() - xs.min()) + 1e-9) * 880 + 70
+            py = (ys - ys.min()) / (float(ys.max() - ys.min()) + 1e-9) * 440 + 70
+            pos = list(zip(px.tolist(), py.tolist()))
+    except Exception:
+        pos = None
+    if pos is None:
+        import math as _math
+        pos = [(510 + 200 * _math.cos(2 * _math.pi * i / max(n, 1)),
+                290 + 170 * _math.sin(2 * _math.pi * i / max(n, 1))) for i in range(n)]
+
+    nodes = []
+    for i, did in enumerate(doc_ids):
+        doc = kb.documents.get(did)
+        nodes.append({
+            "doc_id": did,
+            "name": getattr(doc, "filename", "?") if doc else "?",
+            "cat": (getattr(doc, "category", "") or "").strip() or "未分类" if doc else "未分类",
+            "deg": deg[i],
+            "x": round(pos[i][0], 1),
+            "y": round(pos[i][1], 1),
+        })
+    edges = [{"s": a, "t": b, "w": round(w, 2)} for (a, b), w in edge_map.items()]
+    return {"nodes": nodes, "edges": edges}
 
 @router.post("/api/kb/overview/refresh")
 async def api_kb_overview_refresh(request: Request):
@@ -2961,6 +3033,20 @@ async def api_kb_overview_refresh(request: Request):
     except Exception:
         pass
 
+    # ==== P8-9：文档地图结构（边 + 度数），供导读 prompt 和前端图谱使用 ====
+    graph_data = None
+    _hub_names = []
+    _isolated_names = []
+    try:
+        graph_data = _build_doc_graph(kb)
+        if graph_data:
+            _nodes = graph_data["nodes"]
+            _by_deg = sorted(_nodes, key=lambda x: -x["deg"])
+            _hub_names = [n["name"] for n in _by_deg[:3] if n["deg"] > 0]
+            _isolated_names = [n["name"] for n in _nodes if n["deg"] == 0]
+    except Exception as _ge:
+        log.warning("[KB] 文档地图构建失败: %s", str(_ge)[:80])
+
     # ==== 第二轮：基于聚类分布生成洞察 ====
     try:
         # 聚类摘要
@@ -2984,20 +3070,30 @@ async def api_kb_overview_refresh(request: Request):
             _digest_lines.append("  " + _line)
         docs_digest = "\n".join(_digest_lines[:25])
 
+        # P8-9：导读围绕「文档地图」写——用户看到的是图谱（点=文档、线=相似、团=主题），
+        # 导读的职责是带用户看懂这张图，而不是游离的分析报告
         insight_prompt = (
-            "你是一位知识库分析助手。根据以下文档及其真实摘要，帮用户理解这个文库的实用价值（100-150字）。\n\n"
-            "聚类分布：%s\n\n"
+            "你是一位知识库分析助手。用户的文库被可视化成一张「文档地图」："
+            "每篇文档是一个点，内容越像的点离得越近，明显相近的会连线，自然形成大小不一的「团」。\n"
+            "请根据以下结构数据写一段 120 字以内的导读，带用户看懂这张图。\n\n"
+            "聚类分布：%s\n"
+            "枢纽文档（关联最多）：%s\n"
+            "离群文档（几乎不与其他文档相连）：%s\n\n"
             "文档清单（标题 | 摘要 | 标签）：\n%s\n\n"
-            "请直接描述（不要编号，不要套话）：\n"
-            "- 这个文库能回答什么问题，适合做哪类讨论\n"
-            "- 不同主题之间能怎样交叉产生新想法\n"
-            "- 如果要让这个文库更好用，最值得补什么方向\n\n"
+            "导读要点（连贯的一段话，不要分条、不要编号）：\n"
+            "- 最大的团是什么主题、约占几成\n"
+            "- 离群文档是什么、值不值得留意\n"
+            "- 团与团之间的空白意味着什么、最值得补充什么方向\n\n"
             "铁律：\n"
-            "- 只描述上述文档实际涵盖的内容，不要推断或联想文档中没有的主题\n"
-            "- 只输出正文，不要任何标记\n"
-            "- 像同事给你介绍资料夹能干嘛，不是写分析报告\n"
+            "- 只说上述数据里有的内容，不要推断文档外的主题\n"
+            "- 像同事指着图介绍，不用术语，不写分析报告腔\n"
             "- 禁止说「您的」「以上」「本文」「综上所述」「缺乏」「不足」「碎片」\n\n"
-            "洞察：" % (cluster_summary, docs_digest)
+            "导读：" % (
+                cluster_summary,
+                "、".join(_hub_names) if _hub_names else "（无明显枢纽）",
+                "、".join(_isolated_names[:5]) if _isolated_names else "（无）",
+                docs_digest,
+            )
         )
         insight = await _run_async(insight_prompt, max_tokens=600)
 
@@ -3072,6 +3168,7 @@ async def api_kb_overview_refresh(request: Request):
                 "categories": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
                 "suggested_questions": suggested_questions,
                 "doc_fingerprint": _kb_doc_fingerprint(all_docs),  # 过期判定用
+                "graph": graph_data,  # P8-9: 文档地图（nodes+edges）
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             }, _f, ensure_ascii=False)
     except Exception:
