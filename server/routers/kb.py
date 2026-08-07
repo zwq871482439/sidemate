@@ -3097,6 +3097,14 @@ async def api_kb_overview_refresh(request: Request):
         )
         insight = await _run_async(insight_prompt, max_tokens=600)
 
+        # P8-9：导读是纯文本段落——剥掉模型可能带出的 markdown 装饰
+        # （**加粗**、`代码` 等，前端按纯文本渲染，不剥会露出星号）
+        try:
+            import re as _re_clean
+            insight = _re_clean.sub(r"[*_`#]+", "", insight).strip()
+        except Exception:
+            pass
+
         # ==== 独立生成建议追问（基于文档真实内容，而非上一轮洞察的二手描述）====
         suggested_questions = []
         try:
@@ -3199,4 +3207,5 @@ async def api_kb_overview_refresh(request: Request):
         "merges_applied": merges_applied,
         "suggested_questions": suggested_questions,
         "engine_label": _engine_label,
+        "graph": graph_data,  # P8-9: 自动重生路径直接渲染图谱（不等下次 GET）
     }

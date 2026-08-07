@@ -829,7 +829,8 @@ async function kbRefreshOverviewLLM(_isAuto) {
         insight: data.insight || '',
         categories: data.categories || {},
         suggested_questions: data.suggested_questions || [],
-        doc_count: data.doc_count || 0
+        doc_count: data.doc_count || 0,
+        graph: data.graph || null  // P8-9
       };
       _kbRenderInsightDashboard(_kbLastInsightData);
       // 生成完成后总是刷新文档列表和侧栏（分类可能已变更）
@@ -1132,6 +1133,21 @@ function _kbScrollToDoc(docId) {
   setTimeout(function() { card.style.boxShadow = ''; }, 1600);
 }
 
+// P8-9: 侧栏「AI 智能筛选」折叠状态保持（details 原生折叠 + localStorage 记忆）
+(function _kbInitSidebarFilterToggle() {
+  var wrap = document.getElementById('kbSidebarFilterWrap');
+  if (!wrap) return;
+  var KEY = 'kb_sidebar_filter_open';
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved === '0') wrap.removeAttribute('open');
+    else wrap.setAttribute('open', '');
+  } catch (e) {}
+  wrap.addEventListener('toggle', function() {
+    try { localStorage.setItem(KEY, wrap.open ? '1' : '0'); } catch (e) {}
+  });
+})();
+
 // ⓘ 说明弹层（事件委托，免绑定时机问题）
 document.addEventListener('click', function(e) {
   var btn = document.getElementById('kbMapInfoBtn');
@@ -1245,7 +1261,7 @@ async function kbRefreshAIOverview() {
   if (!bodyEl) return;
 
   // P6: 从服务端取洞察（数据持久化在 kb_insight.json，不依赖前端缓存）
-  var _insight = null, _cats = null, _questions = null, _count = 0, _stale = false;
+  var _insight = null, _cats = null, _questions = null, _count = 0, _stale = false, _graph = null;
   try {
     var _sr = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/overview/refresh');
     var _sd = await _sr.json();
@@ -1255,12 +1271,13 @@ async function kbRefreshAIOverview() {
       _questions = _sd.suggested_questions || [];
       _count = _sd.doc_count || 0;
     }
+    _graph = _sd.graph || null;  // P8-9: 图谱数据（漏传则地图永远不渲染）
     _stale = !!_sd.stale;
     if (!_count) _count = _sd.doc_count || 0;
   } catch(e) {}
 
   if (_insight) {
-    _kbLastInsightData = { insight: _insight, categories: _cats, suggested_questions: _questions, doc_count: _count || (_kbLastDocs.length || 0) };
+    _kbLastInsightData = { insight: _insight, categories: _cats, suggested_questions: _questions, doc_count: _count || (_kbLastDocs.length || 0), graph: _graph };
     try { _kbRenderInsightDashboard(_kbLastInsightData); } catch(e) { console.error('[KB] 仪表盘渲染失败:', e); }
     _kbSetOverviewBtn(true, false);  // 有洞察 → 显示"重新生成"
   } else {

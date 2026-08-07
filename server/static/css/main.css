@@ -2666,3 +2666,11 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 .kb-info-pop h6 { font-size: 12.5px; color: var(--text-primary); margin-bottom: 6px; }
 .kb-info-pop li { margin-left: 16px; }
 .kb-info-pop b { color: var(--text-primary); }
+
+/* P8-9: 侧栏筛选折叠箭头（原生 marker 已隐藏，用 chevron 指示状态） */
+.kb-sidebar-filter-hdr::after {
+  content: ''; width: 7px; height: 7px; margin-left: auto; flex-shrink: 0;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg); transition: transform .15s;
+}
+details.kb-sidebar-filter-wrap:not([open]) .kb-sidebar-filter-hdr::after { transform: rotate(-45deg); }
