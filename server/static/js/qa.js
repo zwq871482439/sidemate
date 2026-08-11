@@ -358,7 +358,11 @@ async function kbRefreshDocs() {
       var _fd = docs[_fi2];
       if (_kbActiveTagFilter) {
         if (_kbActiveTagFilter === '__uncategorized__') { if (_fd.category) continue; }
-        else if (_fd.category !== _kbActiveTagFilter) continue;
+        else if (_fd.category !== _kbActiveTagFilter) {
+          // P8-9 v6.1：二级子类筛选（按星图子类归属匹配）
+          var _sm1 = (window._kbDocSubMap || {})[_fd.doc_id];
+          if (!(_sm1 && _sm1.sub === _kbActiveTagFilter)) continue;
+        }
       }
       if (_kbNameFilter && _fd.filename.toLowerCase().indexOf(_kbNameFilter.toLowerCase()) === -1) continue;
       _filteredDocs.push(_fd);
@@ -374,8 +378,11 @@ async function kbRefreshDocs() {
           // 未分类：category 为空的文档
           if (d.category) continue;
         } else {
-          // 精确匹配 category
-          if (d.category !== _kbActiveTagFilter) continue;
+          // 精确匹配 category；P8-9 v6.1：子类名走 sub 映射匹配
+          if (d.category !== _kbActiveTagFilter) {
+            var _sm2 = (window._kbDocSubMap || {})[d.doc_id];
+            if (!(_sm2 && _sm2.sub === _kbActiveTagFilter)) continue;
+          }
         }
       }
 
@@ -682,6 +689,22 @@ function kbRenderPrivateList(docs) {
   container.innerHTML = html;
 }
 
+// P8-9 v6.1: 主类下的子类列表（[{name, count}]，按数量倒序）
+function _kbSubsOfCategory(catName) {
+  var map = window._kbDocSubMap || {};
+  var counter = {};
+  for (var did in map) {
+    var e = map[did];
+    if (e.group === catName && e.sub && e.sub !== e.group) {
+      counter[e.sub] = (counter[e.sub] || 0) + 1;
+    }
+  }
+  var out = [];
+  for (var name in counter) out.push({ name: name, count: counter[name] });
+  out.sort(function(a, b) { return b.count - a.count; });
+  return out;
+}
+
 function _kbRenderCategoryTree(docs) {
   // P8-9 v6：渲染到横排 chips（替代左侧栏列表）
   var listEl = document.getElementById('kbFilterChips');
@@ -722,6 +745,20 @@ function _kbRenderCategoryTree(docs) {
     html += '<div class="' + cls + '" data-tag="' + esc(catName) + '" onclick="kbFilterByTag(\'' + escapedCat + '\',this)">' +
       '<span class="dot" style="background:' + dotColor + '"></span>' + esc(catName) +
       '<span class="cnt">' + count + '</span></div>';
+    // P8-9 v6.1：主类被选中（或其子类被选中）且有子类时，紧跟展开二级筛选 chips
+    var _subsOf = _kbSubsOfCategory(catName);
+    var _subActive = _subsOf.some(function(s) { return s.name === _kbActiveTagFilter; });
+    if (_subsOf.length > 1 && (isSel || _subActive)) {
+      for (var sj = 0; sj < _subsOf.length; sj++) {
+        var _sub = _subsOf[sj];
+        var _subSel = _kbActiveTagFilter === _sub.name;
+        var _subColor = _kbShadeColor(dotColor, sj === 0 ? 0.35 : -0.28);
+        var _escapedSub = _sub.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        html += '<div class="kb-tag kb-sub-chip' + (_subSel ? ' sel' : '') + '" data-tag="' + esc(_sub.name) + '" onclick="kbFilterByTag(\'' + _escapedSub + '\',this)">' +
+          '<span class="dot" style="background:' + _subColor + '"></span>↳ ' + esc(_sub.name) +
+          '<span class="cnt">' + _sub.count + '</span></div>';
+      }
+    }
   }
 
   // 没有 category 的文档（待打标/打标失败）
@@ -975,8 +1012,13 @@ function _kbRenderInsightDashboard(data) {
 
   bodyEl.innerHTML = html;
 
-  // 初始化图谱（力布局沉降动画 + 交互）
+  // 初始化图谱（静态终态 + 交互）
   if (graph && graph.nodes && graph.nodes.length) {
+    // doc_id → {group, sub} 映射（chips 二级筛选 / 子类过滤用）
+    window._kbDocSubMap = {};
+    graph.nodes.forEach(function(gn) {
+      window._kbDocSubMap[gn.doc_id] = { group: gn.group || gn.cat, sub: gn.sub || gn.cat };
+    });
     _kbInitDocMap(graph);
   }
 
@@ -1092,13 +1134,18 @@ function _kbInitDocMap(graph) {
   box.querySelectorAll('.kb-map-lg-item').forEach(function(lg) {
     lg.addEventListener('click', function() {
       var cat = lg.getAttribute('data-cat');
+      var isSub = !!lg.getAttribute('data-group');  // 子类条目按 sub 匹配
       var active = lg.classList.contains('active');
       box.querySelectorAll('.kb-map-lg-item').forEach(function(x) { x.classList.remove('active', 'dim'); });
       nodeEls.forEach(function(c) { c.style.opacity = ''; });
       if (!active) {
         lg.classList.add('active');
         box.querySelectorAll('.kb-map-lg-item').forEach(function(x) { if (x !== lg) x.classList.add('dim'); });
-        nodeEls.forEach(function(c, i) { if ((NODES[i].cat || '未分类') !== cat) c.style.opacity = '.12'; });
+        nodeEls.forEach(function(c, i) {
+          var key = isSub ? (NODES[i].sub || NODES[i].cat || '未分类')
+                          : (NODES[i].group || NODES[i].cat || '未分类');
+          if (key !== cat) c.style.opacity = '.12';
+        });
       }
     });
   });
@@ -1196,24 +1243,30 @@ function _kbShowMapFloat(idx, NODES, EDGES, neighbors) {
   _kbMapFloatSel = idx;
 
   var n = NODES[idx];
-  // 收集邻居（按相似度降序，最多 4 条）
+  // 收集邻居（按相似度降序，全部列出）
   var nbs = [];
   EDGES.forEach(function(e) {
     if (e.s === idx) nbs.push({ w: e.w || 0, j: e.t, reasons: e.reasons || [] });
     else if (e.t === idx) nbs.push({ w: e.w || 0, j: e.s, reasons: e.reasons || [] });
   });
   nbs.sort(function(a, b) { return b.w - a.w; });
-  nbs = nbs.slice(0, 4);
+
+  // 有明确理由的逐条列出；仅相似度的归拢为一句（详情交给 AI 详解）
+  var withReason = [], simOnly = [];
+  nbs.forEach(function(nb) { (nb.reasons.length ? withReason : simOnly).push(nb); });
 
   var nbHtml = '';
   if (nbs.length) {
     nbHtml = '<div style="margin-top:6px;font-size:11.5px;color:var(--text-muted)">为什么相连：</div>';
-    nbs.forEach(function(nb) {
+    withReason.forEach(function(nb) {
       var nn = NODES[nb.j];
-      var reasonText = nb.reasons.length ? nb.reasons.join(' · ') : '相似度 ' + nb.w.toFixed(2);
       nbHtml += '<div class="mf-nb"><span class="mf-nb-name">' + esc(nn.name) + '</span>' +
-        '<div class="mf-nb-reason">' + esc(reasonText) + (nb.reasons.length ? ' · 相似度 ' + nb.w.toFixed(2) : '') + '</div></div>';
+        '<div class="mf-nb-reason">' + esc(nb.reasons.join(' · ')) + ' · 相似度 ' + nb.w.toFixed(2) + '</div></div>';
     });
+    if (simOnly.length) {
+      nbHtml += '<div class="mf-nb-reason" style="margin:4px 0 0 0">另有 ' + simOnly.length +
+        ' 篇与本文高度相关，详情请点击「AI 详解」</div>';
+    }
   } else {
     nbHtml = '<div style="margin-top:6px;color:var(--text-muted)">孤立点——和文库里其他文档都不太像</div>';
   }
@@ -1224,11 +1277,14 @@ function _kbShowMapFloat(idx, NODES, EDGES, neighbors) {
   floatEl.innerHTML =
     '<span class="mf-close" onclick="_kbHideMapFloat()">×</span>' +
     '<div class="mf-title">' + esc(n.name) + '</div>' +
-    '<div class="mf-meta">' + esc(n.cat || '未分类') + ' · 关联 ' + (n.deg || 0) + ' 篇</div>' +
+    '<div class="mf-meta">' + esc(n.sub || n.cat || '未分类') + ' · 关联 ' + (n.deg || 0) + ' 篇</div>' +
     nbHtml +
     '<button class="mf-explain-btn" id="kbMapExplainBtn">✨ AI 详解</button>' +
     '<div class="mf-explain" id="kbMapExplain" style="display:none"></div>';
   box.appendChild(floatEl);
+  // 定位：贴在图例浮层下方，与图例同宽（左上区域纵向排列）
+  var lg = box.querySelector('.kb-map-legend-float');
+  if (lg) floatEl.style.top = (lg.offsetTop + lg.offsetHeight + 8) + 'px';
 
   document.getElementById('kbMapExplainBtn').addEventListener('click', function() {
     _kbFetchMapExplain(n.doc_id);
