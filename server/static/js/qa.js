@@ -925,10 +925,6 @@ function _kbRenderInsightDashboard(data) {
       '</div>';
   }
 
-  // 导读（一段话）
-  if (insight) {
-    html += '<div class="kb-map-guide">' + esc(insight) + '</div>';
-  }
 
   // 统计行
   var catCount = 0;
@@ -1075,17 +1071,10 @@ function _kbInitDocMap(graph) {
       nodeEls.forEach(function(c2) { c2.style.opacity = ''; });
       edgeEls.forEach(function(l) { l.style.strokeOpacity = ''; });
     });
-    // 点击跳转文档卡片（未渲染时先重置筛选再跳）
+    // 点选：浮条展示连线理由 + 下方列表按关联重排（P8-9 v5，取消跳转）
     c.addEventListener('click', function() {
-      var card = document.querySelector('.kb-card[data-doc-id="' + NODES[i].doc_id + '"]');
-      if (!card) {
-        if (_kbActiveTagFilter !== null && typeof kbFilterByTag === 'function') {
-          kbFilterByTag(null, null);
-          setTimeout(function() { _kbScrollToDoc(NODES[i].doc_id); }, 600);
-          return;
-        }
-      }
-      _kbScrollToDoc(NODES[i].doc_id);
+      _kbShowMapFloat(i, NODES, EDGES, neighbors);
+      _kbSortDocsByRelated(i, NODES, neighbors);
     });
   });
 
@@ -1122,6 +1111,117 @@ function _kbInitDocMap(graph) {
   document.addEventListener('mousemove', function(e) { if (!drag) return; tx = ox + (e.clientX - sx); ty = oy + (e.clientY - sy); apply(); });
   document.addEventListener('mouseup', function() { drag = false; });
   svg.addEventListener('dblclick', function() { scale = 1; tx = 0; ty = 0; apply(); });
+}
+
+// ===== P8-9 v5: 点选浮条（连线理由 + AI 详解） =====
+var _kbMapFloatSel = null;
+
+function _kbShowMapFloat(idx, NODES, EDGES, neighbors) {
+  var box = document.getElementById('kbMapBox');
+  if (!box) return;
+  _kbHideMapFloat();
+  _kbMapFloatSel = idx;
+
+  var n = NODES[idx];
+  // 收集邻居（按相似度降序，最多 4 条）
+  var nbs = [];
+  EDGES.forEach(function(e) {
+    if (e.s === idx) nbs.push({ w: e.w || 0, j: e.t, reasons: e.reasons || [] });
+    else if (e.t === idx) nbs.push({ w: e.w || 0, j: e.s, reasons: e.reasons || [] });
+  });
+  nbs.sort(function(a, b) { return b.w - a.w; });
+  nbs = nbs.slice(0, 4);
+
+  var nbHtml = '';
+  if (nbs.length) {
+    nbHtml = '<div style="margin-top:6px;font-size:11.5px;color:var(--text-muted)">为什么相连：</div>';
+    nbs.forEach(function(nb) {
+      var nn = NODES[nb.j];
+      var reasonText = nb.reasons.length ? nb.reasons.join(' · ') : '相似度 ' + nb.w.toFixed(2);
+      nbHtml += '<div class="mf-nb"><span class="mf-nb-name">' + esc(nn.name) + '</span>' +
+        '<div class="mf-nb-reason">' + esc(reasonText) + (nb.reasons.length ? ' · 相似度 ' + nb.w.toFixed(2) : '') + '</div></div>';
+    });
+  } else {
+    nbHtml = '<div style="margin-top:6px;color:var(--text-muted)">孤立点——和文库里其他文档都不太像</div>';
+  }
+
+  var floatEl = document.createElement('div');
+  floatEl.className = 'kb-map-float';
+  floatEl.id = 'kbMapFloat';
+  floatEl.innerHTML =
+    '<span class="mf-close" onclick="_kbHideMapFloat()">×</span>' +
+    '<div class="mf-title">' + esc(n.name) + '</div>' +
+    '<div class="mf-meta">' + esc(n.cat || '未分类') + ' · 关联 ' + (n.deg || 0) + ' 篇</div>' +
+    nbHtml +
+    '<button class="mf-explain-btn" id="kbMapExplainBtn">✨ AI 详解</button>' +
+    '<div class="mf-explain" id="kbMapExplain" style="display:none"></div>';
+  box.appendChild(floatEl);
+
+  document.getElementById('kbMapExplainBtn').addEventListener('click', function() {
+    _kbFetchMapExplain(n.doc_id);
+  });
+}
+
+function _kbHideMapFloat() {
+  var f = document.getElementById('kbMapFloat');
+  if (f) f.remove();
+  _kbMapFloatSel = null;
+}
+window._kbHideMapFloat = _kbHideMapFloat;
+
+// AI 详解（引擎遵循 kb_ai_mode 设置；结果服务端缓存）
+async function _kbFetchMapExplain(docId) {
+  var btn = document.getElementById('kbMapExplainBtn');
+  var box = document.getElementById('kbMapExplain');
+  if (!btn || !box) return;
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  box.style.display = '';
+  box.textContent = '';
+  try {
+    var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/kb/map-explain', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doc_id: docId })
+    });
+    var data = await resp.json();
+    if (data.ok && data.explain) {
+      box.textContent = data.explain;
+      btn.style.display = 'none';  // 已生成（服务端缓存），按钮隐藏
+    } else {
+      box.textContent = data.error || '生成失败，请重试';
+      btn.disabled = false;
+      btn.textContent = '✨ AI 详解';
+    }
+  } catch (e) {
+    box.textContent = '请求失败：' + e.message;
+    btn.disabled = false;
+    btn.textContent = '✨ AI 详解';
+  }
+}
+
+// 点选后下方列表重排：选中 + 关联文档置顶，选中高亮
+function _kbSortDocsByRelated(idx, NODES, neighbors) {
+  var selId = NODES[idx].doc_id;
+  var relIds = {};
+  relIds[selId] = 2;  // 选中权重最高
+  Object.keys(neighbors[idx]).forEach(function(j) { relIds[NODES[j].doc_id] = 1; });
+
+  var matched = [], rest = [];
+  for (var i = 0; i < _kbLastDocs.length; i++) {
+    var w = relIds[_kbLastDocs[i].doc_id];
+    if (w === 2) matched.unshift(_kbLastDocs[i]);      // 选中最前
+    else if (w === 1) matched.push(_kbLastDocs[i]);    // 关联其次
+    else rest.push(_kbLastDocs[i]);
+  }
+  _kbLastDocs = matched.concat(rest);
+  _kbSkipFetch = true;
+  kbRefreshDocs();
+  // 高亮选中卡片（渲染后）
+  setTimeout(function() {
+    document.querySelectorAll('.kb-card.map-selected').forEach(function(c) { c.classList.remove('map-selected'); });
+    var card = document.querySelector('.kb-card[data-doc-id="' + selId + '"]');
+    if (card) card.classList.add('map-selected');
+  }, 60);
 }
 
 function _kbScrollToDoc(docId) {

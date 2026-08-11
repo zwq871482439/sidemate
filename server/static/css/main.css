@@ -2674,3 +2674,29 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
   transform: rotate(45deg); transition: transform .15s;
 }
 details.kb-sidebar-filter-wrap:not([open]) .kb-sidebar-filter-hdr::after { transform: rotate(-45deg); }
+
+/* P8-9 v5: 地图浮条（点选节点的连线理由详情） */
+.kb-map-float {
+  position: absolute; top: 10px; left: 10px; width: 320px; max-height: 280px; overflow-y: auto;
+  background: var(--bg-primary, #fff); border: 1px solid var(--border-color, #E8ECF1);
+  border-radius: 10px; padding: 12px 14px; z-index: 15;
+  box-shadow: 0 8px 28px rgba(26,43,66,.15);
+  font-size: 12.5px; color: var(--text-secondary); line-height: 1.65;
+}
+.kb-map-float .mf-title { font-size: 13px; font-weight: 600; color: var(--text-primary);
+  margin-bottom: 2px; word-break: break-all; }
+.kb-map-float .mf-meta { font-size: 11.5px; color: var(--text-muted); margin-bottom: 8px; }
+.kb-map-float .mf-close { position: absolute; top: 8px; right: 10px; cursor: pointer;
+  color: var(--text-muted); font-size: 14px; }
+.kb-map-float .mf-close:hover { color: var(--text-primary); }
+.kb-map-float .mf-nb { margin: 5px 0; padding-left: 2px; }
+.kb-map-float .mf-nb-name { color: var(--text-primary); font-weight: 500; }
+.kb-map-float .mf-nb-reason { font-size: 11.5px; color: var(--text-muted); margin-left: 12px; }
+.kb-map-float .mf-explain-btn { margin-top: 8px; font-size: 12px; padding: 4px 12px;
+  border: 1px solid var(--border-color, #E8ECF1); border-radius: 6px; background: var(--bg-primary, #fff);
+  color: var(--text-secondary); cursor: pointer; }
+.kb-map-float .mf-explain-btn:hover { border-color: var(--accent-color); color: var(--accent-color); }
+.kb-map-float .mf-explain-btn:disabled { opacity: .5; cursor: not-allowed; }
+.kb-map-float .mf-explain { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color, #E8ECF1);
+  color: var(--text-secondary); }
+.kb-card.map-selected { box-shadow: 0 0 0 2px var(--accent-color) !important; }

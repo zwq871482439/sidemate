@@ -2726,9 +2726,13 @@ def api_kb_overview_get():
 
     if cached:
         cached["ok"] = True
-        # 指纹不一致（文档变化）或无 graph 字段（P8-9 前的旧缓存）都算过期
+        # 过期条件：指纹不一致（文档变化）/ 无 graph（P8-9 前旧缓存）/ 边缺 reasons（v5 前缓存）
+        _g = cached.get("graph") or {}
+        _edges = _g.get("edges") or []
+        _no_reasons = bool(_edges) and "reasons" not in _edges[0]
         cached["stale"] = ((bool(fp_now) and cached.get("doc_fingerprint", "") != fp_now)
-                           or "graph" not in cached)
+                           or "graph" not in cached
+                           or _no_reasons)
         # 补充引擎标签（缓存文件里没有这个字段）
         from config import get as _cfg_cache
         _kb_engine_cache = _cfg_cache("kb_ai_mode", "local")
@@ -2791,6 +2795,24 @@ def _build_doc_graph(kb):
     for (a, b) in edge_map:
         deg[a] += 1
         deg[b] += 1
+
+    # 边理由（方案 C 事实层，零 LLM 成本秒出）：
+    # 共享标签（tags 交集）/ 同类 / 相似度——点开节点即得"为什么相连"
+    edge_reasons = {}
+    for (a, b) in edge_map:
+        da = kb.documents.get(doc_ids[a])
+        db = kb.documents.get(doc_ids[b])
+        reasons = []
+        if da and db:
+            shared = [t for t in (getattr(da, "tags", None) or []) if t in set(getattr(db, "tags", None) or [])]
+            if shared:
+                reasons.append("共享标签：" + "、".join(shared[:3]))
+            ca = (getattr(da, "category", "") or "").strip()
+            cb = (getattr(db, "category", "") or "").strip()
+            if ca and ca == cb:
+                reasons.append("同属「%s」" % ca)
+        edge_reasons[(a, b)] = reasons
+
     # PCA 初始位置（力布局起点，比随机收敛快且语义初分；sklearn 不可用退化为环形）
     pos = None
     try:
@@ -2820,7 +2842,8 @@ def _build_doc_graph(kb):
             "x": round(pos[i][0], 1),
             "y": round(pos[i][1], 1),
         })
-    edges = [{"s": a, "t": b, "w": round(w, 2)} for (a, b), w in edge_map.items()]
+    edges = [{"s": a, "t": b, "w": round(w, 2), "reasons": edge_reasons.get((a, b), [])}
+             for (a, b), w in edge_map.items()]
     return {"nodes": nodes, "edges": edges}
 
 @router.post("/api/kb/overview/refresh")
@@ -3209,3 +3232,127 @@ async def api_kb_overview_refresh(request: Request):
         "engine_label": _engine_label,
         "graph": graph_data,  # P8-9: 自动重生路径直接渲染图谱（不等下次 GET）
     }
+
+
+@router.post("/api/kb/map-explain")
+async def api_kb_map_explain(request: Request):
+    """P8-9 文档地图 · AI 详解：解释选中节点与邻居为什么相连。
+
+    引擎遵循 kb_ai_mode 设置（离线/在线模型），与洞察/打标同一开关。
+    结果缓存在 kb_insight.json 的 explains 字段，同一文档不重复调用。
+    """
+    body = await request.json()
+    doc_id = (body.get("doc_id") or "").strip()
+    force = bool(body.get("force"))
+    if not doc_id:
+        return JSONResponse({"ok": False, "error": "缺少 doc_id"}, status_code=400)
+
+    kb = get_kb()
+    mgr = get_mgr()
+
+    # 读缓存（图谱 + 已有详解）
+    cached = {}
+    try:
+        import os as _os_ex
+        if _os_ex.path.exists(kb.insight_path):
+            with open(kb.insight_path, "r", encoding="utf-8") as _f:
+                cached = json.load(_f)
+    except Exception:
+        cached = {}
+    explains = cached.get("explains") or {}
+
+    if not force and doc_id in explains:
+        return {"ok": True, "explain": explains[doc_id], "cached": True}
+
+    graph = cached.get("graph") or {}
+    nodes = graph.get("nodes") or []
+    edges = graph.get("edges") or []
+    idx_by_id = {n.get("doc_id"): i for i, n in enumerate(nodes)}
+    if doc_id not in idx_by_id:
+        return JSONResponse({"ok": False, "error": "文档不在当前图谱中"}, status_code=404)
+
+    sel_idx = idx_by_id[doc_id]
+    sel_doc = kb.documents.get(doc_id)
+    if not sel_doc:
+        return JSONResponse({"ok": False, "error": "文档不存在"}, status_code=404)
+
+    # 收集邻居（按相似度降序，最多 4 个）
+    neighbors = []
+    for e in edges:
+        if e["s"] == sel_idx:
+            neighbors.append((e["w"], e["t"], e.get("reasons") or []))
+        elif e["t"] == sel_idx:
+            neighbors.append((e["w"], e["s"], e.get("reasons") or []))
+    neighbors.sort(key=lambda x: -x[0])
+    neighbors = neighbors[:4]
+
+    sel_title = getattr(sel_doc, "filename", "?")
+    sel_summary = (getattr(sel_doc, "summary", "") or "").strip()[:150]
+
+    nb_lines = []
+    for w, ni, reasons in neighbors:
+        nd = kb.documents.get(nodes[ni].get("doc_id"))
+        if not nd:
+            continue
+        line = "《%s》摘要：%s" % (getattr(nd, "filename", "?"),
+                                  (getattr(nd, "summary", "") or "").strip()[:100])
+        if reasons:
+            line += "（%s；相似度 %.2f）" % ("；".join(reasons), w)
+        nb_lines.append("- " + line)
+
+    prompt = (
+        "用户在看一张「文档地图」：每篇文档是一个点，内容相近的文档之间会连线。\n"
+        "请用一两句话说明选中文档为什么和这些文档相连——它们内容上共同关心什么、各自侧重有何不同。\n\n"
+        "选中文档：《%s》\n摘要：%s\n\n"
+        "相连文档：\n%s\n\n"
+        "要求：不超过 80 字；只说这些摘要里有的内容；像同事口头解释，不用术语，不要编号。\n\n"
+        "解读：" % (sel_title, sel_summary or "（无摘要）", "\n".join(nb_lines) or "（无相连文档）")
+    )
+
+    # 引擎路由：遵循 kb_ai_mode（与洞察/打标同一开关）
+    from config import get as _cfg_ex
+    from core.generate_queue import GenerateQueue
+    _kb_engine = _cfg_ex("kb_ai_mode", "local")
+    parts = []
+    try:
+        if _kb_engine == "cloud":
+            if not hasattr(mgr, '_cloud_engine') or not mgr._cloud_engine:
+                from core.cloud_engine import CloudEngine
+                mgr._cloud_engine = CloudEngine(mgr)
+            _gen = mgr._cloud_engine.run(
+                message=prompt, model=None, max_tokens=200,
+                history=[], context_cache=None, override_task_type="text",
+                _priority=GenerateQueue.HIGH,
+            )
+        else:
+            _gen = mgr._stream_engine.run(
+                message=prompt, model=None, max_tokens=200,
+                history=[], context_cache=None, override_task_type="text",
+                kb_mode=False, _priority=GenerateQueue.HIGH,
+            )
+        for ctype, ctext in _gen:
+            if ctype in ("text", "raw"):
+                parts.append(ctext)
+            elif ctype == "error":
+                return {"ok": False, "error": (ctext.get("user_msg", "LLM 调用失败") if isinstance(ctext, dict) else str(ctext))[:120]}
+        explain = mgr.strip_think("".join(parts)).strip()
+        import re as _re_ex
+        explain = _re_ex.sub(r"[*_`#]+", "", explain).strip()
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+
+    if not explain:
+        return {"ok": False, "error": "模型未返回内容，请重试"}
+
+    # 写入缓存
+    try:
+        explains[doc_id] = explain
+        cached["explains"] = explains
+        import os as _os_ex2
+        _os_ex2.makedirs(_os_ex2.path.dirname(kb.insight_path), exist_ok=True)
+        with open(kb.insight_path, "w", encoding="utf-8") as _f:
+            json.dump(cached, _f, ensure_ascii=False)
+    except Exception:
+        pass
+
+    return {"ok": True, "explain": explain, "cached": False}
