@@ -1100,15 +1100,10 @@ updateChatOverlay();
 (function restoreTab() {
   const saved = localStorage.getItem('_activeTab');
   if (saved && saved !== 'chat') {
-    const btns = document.querySelectorAll('.tabs-nav button');
-    for (const btn of btns) {
-      if (btn.textContent.trim() === {chat:'对话',qa:'知识库',settings:'设置'}[saved]) {
-        // 只切换到可见的 tab
-        if (btn.style.display !== 'none') {
-          btn.click();
-          return;
-        }
-      }
+    // 按 data-tab 属性匹配——知识库按钮带 🔒 徽标，textContent 会混入隐藏文本导致匹配失败
+    const btn = document.querySelector('.tabs-nav button[data-tab="' + saved + '"]');
+    if (btn && btn.style.display !== 'none') {
+      btn.click();
     }
   }
 })();
