@@ -2624,7 +2624,7 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 }
 .kb-map-box svg { display: block; width: 100%; height: auto; }
 .kb-map-hint {
-  position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--text-muted);
+  position: absolute; top: 6px; left: 8px; font-size: 11px; color: var(--text-muted);
   background: rgba(255,255,255,.85); padding: 2px 8px; border-radius: 4px; pointer-events: none;
 }
 .kb-map-tip {
@@ -2718,3 +2718,22 @@ details.kb-sidebar-filter-wrap:not([open]) .kb-sidebar-filter-hdr::after { trans
 /* 点选三层视觉 */
 .kb-map-node-dim { opacity: .1; filter: grayscale(1); }
 .kb-map-node-sel-halo { fill: var(--accent-color); opacity: .14; }
+
+/* P8-9 v6: 横排筛选 chips（替代左侧栏） */
+.kb-filter-chips {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 10px;
+}
+.kb-filter-chips .kb-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--border-color, #E8ECF1); background: var(--bg-primary, #fff);
+  color: var(--text-secondary); cursor: pointer; transition: all .12s;
+}
+.kb-filter-chips .kb-tag:hover { border-color: var(--accent-color); color: var(--accent-color); }
+.kb-filter-chips .kb-tag.sel {
+  background: var(--accent-color); color: #fff; border-color: var(--accent-color);
+}
+.kb-filter-chips .kb-tag.sel .cnt { color: rgba(255,255,255,.8); }
+.kb-filter-chips .kb-tag .cnt { font-size: 11px; color: var(--text-muted); }
+.kb-filter-chips .kb-tag .dot { width: 8px; height: 8px; border-radius: 50%; }
+.kb-filter-chips .kb-tag-pending { border-style: dashed; }

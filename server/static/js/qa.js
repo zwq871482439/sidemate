@@ -313,7 +313,7 @@ async function kbRefreshDocs() {
     _kbRenderCategoryTree(docs);
 
     // 更新侧栏底部统计
-    var ft = document.getElementById('kbSidebarFt');
+    var ft = document.getElementById('kbGridSectionTip');
     if (ft) {
       var catCount = 0;
       var seenCats = {};
@@ -683,7 +683,8 @@ function kbRenderPrivateList(docs) {
 }
 
 function _kbRenderCategoryTree(docs) {
-  var listEl = document.getElementById('kbSidebarList');
+  // P8-9 v6：渲染到横排 chips（替代左侧栏列表）
+  var listEl = document.getElementById('kbFilterChips');
   if (!listEl) return;
   docs = docs || _kbLastDocs || [];
 
@@ -779,7 +780,7 @@ function kbFilterByTag(tagName, el) {
   _kbActiveTagFilter = tagName;
 
   // 更新侧栏选中状态（kb-tag, kb-group, kb-group-tag）
-  var items = document.querySelectorAll('#kbSidebarList .kb-tag, #kbSidebarList .kb-group, #kbSidebarList .kb-group-tag');
+  var items = document.querySelectorAll('#kbFilterChips .kb-tag, #kbFilterChips .kb-group, #kbFilterChips .kb-group-tag');
   for (var i = 0; i < items.length; i++) {
     var itemTag = items[i].getAttribute('data-tag');
     var itemGroup = items[i].getAttribute('data-group');

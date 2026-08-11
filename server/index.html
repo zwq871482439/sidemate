@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=3.05">
+<link rel="stylesheet" href="/static/css/main.css?v=3.07">
 </head>
 <body>
 
@@ -226,7 +226,7 @@
     <!-- P6: 新布局 — 左侧标签树 + 右侧卡片网格 -->
     <div class="kb-layout">
       <!-- 左侧：标签筛选侧栏 -->
-      <div class="kb-sidebar" id="kbSidebar">
+      <div class="kb-sidebar" id="kbSidebar" style="display:none">
         <details class="kb-sidebar-filter-wrap" id="kbSidebarFilterWrap" open>
           <summary class="kb-sidebar-hdr kb-sidebar-filter-hdr">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:4px"><path d="M4.5 1L2 5.5V12a1 1 0 001 1h8a1 1 0 001-1V5.5L9.5 1H4.5z" stroke="currentColor" stroke-width="1.2"/></svg>
@@ -234,16 +234,6 @@
           </summary>
           <div class="kb-sidebar-list" id="kbSidebarList">
             <div class="kb-tag all sel" data-tag="__all__"><span class="dot"></span>全部文档<span class="cnt">0</span></div>
-          </div>
-        </details>
-        <!-- P6: 私密文档清单（无私密文档时隐藏，由 JS 控制显隐） -->
-        <details class="kb-sidebar-tokens-wrap" id="kbSidebarPrivateWrap" style="display:none">
-          <summary class="kb-sidebar-tokens-hdr">
-            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:3px"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>
-            <span id="kbSidebarPrivateHdr">私密文档</span>
-          </summary>
-          <div class="kb-sidebar-tokens" id="kbSidebarPrivate">
-            <div class="kb-token-empty">暂无私密文档</div>
           </div>
         </details>
         <div class="kb-sidebar-ft" id="kbSidebarFt">0篇 · 0标签</div>
@@ -323,6 +313,18 @@
             <span class="kb-grid-section-hdr-line"></span>
             <span class="kb-grid-section-tip" id="kbGridSectionTip"></span>
           </div>
+          <!-- P8-9 v6: 横排筛选 chips（替代左侧栏） -->
+          <div class="kb-filter-chips" id="kbFilterChips"></div>
+          <!-- 私密文档清单（挪自主区，无私密文档时隐藏） -->
+          <details class="kb-sidebar-tokens-wrap" id="kbSidebarPrivateWrap" style="display:none">
+            <summary class="kb-sidebar-tokens-hdr">
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" style="vertical-align:-2px;margin-right:3px"><rect x="3" y="6" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4a2 2 0 014 0v2" stroke="currentColor" stroke-width="1.2"/></svg>
+              <span id="kbSidebarPrivateHdr">私密文档</span>
+            </summary>
+            <div class="kb-sidebar-tokens" id="kbSidebarPrivate">
+              <div class="kb-token-empty">暂无私密文档</div>
+            </div>
+          </details>
           <!-- 文档卡片网格 -->
           <div class="kb-grid" id="kbDocGrid"></div>
 
@@ -956,7 +958,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/core/app-state.js?v=3.00"></script>
 <script src="/static/js/stream_renderer.js?v=3.00"></script>
 <script src="/static/js/settings.js?v=3.06"></script>
-<script src="/static/js/qa.js?v=3.12"></script>
+<script src="/static/js/qa.js?v=3.13"></script>
 <script src="/static/js/kb-batch.js?v=3.02"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
