@@ -974,46 +974,10 @@ function _kbInitDocMap(graph) {
   var tip = document.getElementById('kbMapTip');
   if (!box || !svg || !vp) return;
 
+  // P8-9 v5：位置已在服务端预沉降（终态直出），前端只渲染 + 淡入，不再跑力模拟
   var NODES = graph.nodes, EDGES = graph.edges || [];
-  var W = 1020, H = 580, K = 85;
+  var W = 1020, H = 580;
   var pos = NODES.map(function(n) { return { x: n.x || (W/2), y: n.y || (H/2) }; });
-  var tick = 0, MAXTICK = 120, temp = W / 8;
-
-  function forceStep() {
-    var i, j, dx, dy, dist, f;
-    var disp = pos.map(function() { return { x: 0, y: 0 }; });
-    for (i = 0; i < pos.length; i++) {
-      for (j = i + 1; j < pos.length; j++) {
-        dx = pos[i].x - pos[j].x; dy = pos[i].y - pos[j].y;
-        dist = Math.max(0.1, Math.sqrt(dx*dx + dy*dy));
-        f = (K * K) / dist;
-        disp[i].x += dx / dist * f; disp[i].y += dy / dist * f;
-        disp[j].x -= dx / dist * f; disp[j].y -= dy / dist * f;
-      }
-    }
-    EDGES.forEach(function(e) {
-      var a = pos[e.s], b = pos[e.t];
-      dx = b.x - a.x; dy = b.y - a.y;
-      dist = Math.max(0.1, Math.sqrt(dx*dx + dy*dy));
-      var kEdge = K * (1.3 - (e.w || 0.5) * 0.5);
-      f = (dist * dist) / kEdge * (e.w || 0.5);
-      disp[e.s].x += dx / dist * f; disp[e.s].y += dy / dist * f;
-      disp[e.t].x -= dx / dist * f; disp[e.t].y -= dy / dist * f;
-    });
-    for (i = 0; i < pos.length; i++) {
-      disp[i].x += (W/2 - pos[i].x) * 0.002 * K;
-      disp[i].y += (H/2 - pos[i].y) * 0.002 * K;
-    }
-    for (i = 0; i < pos.length; i++) {
-      var dl = Math.max(0.1, Math.sqrt(disp[i].x*disp[i].x + disp[i].y*disp[i].y));
-      pos[i].x += disp[i].x / dl * Math.min(dl, temp) * 0.2;
-      pos[i].y += disp[i].y / dl * Math.min(dl, temp) * 0.2;
-      pos[i].x = Math.max(24, Math.min(W-24, pos[i].x));
-      pos[i].y = Math.max(24, Math.min(H-24, pos[i].y));
-    }
-    temp *= 0.985;
-    tick++;
-  }
 
   var NS = 'http://www.w3.org/2000/svg';
   var edgeEls = EDGES.map(function(e) {
@@ -1035,19 +999,18 @@ function _kbInitDocMap(graph) {
     vp.appendChild(c);
     return c;
   });
-  function paint() {
-    edgeEls.forEach(function(l, i) {
-      var e = EDGES[i];
-      l.setAttribute('x1', pos[e.s].x); l.setAttribute('y1', pos[e.s].y);
-      l.setAttribute('x2', pos[e.t].x); l.setAttribute('y2', pos[e.t].y);
-    });
-    nodeEls.forEach(function(c, i) {
-      c.setAttribute('cx', pos[i].x); c.setAttribute('cy', pos[i].y);
-    });
-  }
-  (function animate() {
-    if (tick < MAXTICK && document.getElementById('kbMapViewport')) { forceStep(); paint(); requestAnimationFrame(animate); }
-  })();
+  // 静态渲染（终态坐标）+ 视口淡入
+  edgeEls.forEach(function(l, i) {
+    var e = EDGES[i];
+    l.setAttribute('x1', pos[e.s].x); l.setAttribute('y1', pos[e.s].y);
+    l.setAttribute('x2', pos[e.t].x); l.setAttribute('y2', pos[e.t].y);
+  });
+  nodeEls.forEach(function(c, i) {
+    c.setAttribute('cx', pos[i].x); c.setAttribute('cy', pos[i].y);
+  });
+  vp.style.opacity = '0';
+  vp.style.transition = 'opacity .5s ease';
+  setTimeout(function() { vp.style.opacity = '1'; }, 30);
 
   // 悬停高亮节点 + 邻居（Obsidian 行为）
   var neighbors = NODES.map(function() { return {}; });
@@ -1071,8 +1034,9 @@ function _kbInitDocMap(graph) {
       nodeEls.forEach(function(c2) { c2.style.opacity = ''; });
       edgeEls.forEach(function(l) { l.style.strokeOpacity = ''; });
     });
-    // 点选：浮条展示连线理由 + 下方列表按关联重排（P8-9 v5，取消跳转）
+    // 点选：浮条展示连线理由 + 列表关联重排 + 图上聚焦（选中+邻居高亮，其余淡出）
     c.addEventListener('click', function() {
+      _kbMapFocus(i, nodeEls, edgeEls, EDGES, neighbors);
       _kbShowMapFloat(i, NODES, EDGES, neighbors);
       _kbSortDocsByRelated(i, NODES, neighbors);
     });
@@ -1108,9 +1072,45 @@ function _kbInitDocMap(graph) {
     if (e.target.tagName === 'circle') return;
     drag = true; sx = e.clientX; sy = e.clientY; ox = tx; oy = ty; e.preventDefault();
   });
+  // 背景点击（非拖拽）取消聚焦
+  svg.addEventListener('mouseup', function(e) {
+    if (e.target.tagName === 'circle') return;
+    if (Math.abs(e.clientX - sx) < 4 && Math.abs(e.clientY - sy) < 4) _kbMapFocusClear(nodeEls, edgeEls);
+  });
   document.addEventListener('mousemove', function(e) { if (!drag) return; tx = ox + (e.clientX - sx); ty = oy + (e.clientY - sy); apply(); });
   document.addEventListener('mouseup', function() { drag = false; });
   svg.addEventListener('dblclick', function() { scale = 1; tx = 0; ty = 0; apply(); });
+}
+
+// P8-9 v5: 点选聚焦——选中点+关联点高亮，其余淡出（与悬浮同效果但驻留）
+var _kbMapSelected = null;
+function _kbMapFocus(idx, nodeEls, edgeEls, EDGES, neighbors) {
+  _kbMapSelected = idx;
+  nodeEls.forEach(function(c, j) {
+    c.style.opacity = (j === idx || neighbors[idx][j]) ? '1' : '.12';
+    // 选中点加高亮环
+    if (j === idx) {
+      c.setAttribute('stroke', 'var(--accent-color)');
+      c.setAttribute('stroke-width', '3');
+    } else {
+      c.setAttribute('stroke', '#fff');
+      c.setAttribute('stroke-width', '1.5');
+    }
+  });
+  edgeEls.forEach(function(l, k) {
+    var e = EDGES[k];
+    l.style.strokeOpacity = (e.s === idx || e.t === idx) ? '0.9' : '0.06';
+  });
+}
+function _kbMapFocusClear(nodeEls, edgeEls) {
+  _kbMapSelected = null;
+  nodeEls.forEach(function(c) {
+    c.style.opacity = '';
+    c.setAttribute('stroke', '#fff');
+    c.setAttribute('stroke-width', '1.5');
+  });
+  edgeEls.forEach(function(l) { l.style.strokeOpacity = ''; });
+  _kbHideMapFloat();
 }
 
 // ===== P8-9 v5: 点选浮条（连线理由 + AI 详解） =====

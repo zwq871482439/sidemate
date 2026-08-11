@@ -2730,9 +2730,11 @@ def api_kb_overview_get():
         _g = cached.get("graph") or {}
         _edges = _g.get("edges") or []
         _no_reasons = bool(_edges) and "reasons" not in _edges[0]
+        _not_settled = bool(_g) and not _g.get("settled")  # v5 前缓存：位置未沉降
         cached["stale"] = ((bool(fp_now) and cached.get("doc_fingerprint", "") != fp_now)
                            or "graph" not in cached
-                           or _no_reasons)
+                           or _no_reasons
+                           or _not_settled)
         # 补充引擎标签（缓存文件里没有这个字段）
         from config import get as _cfg_cache
         _kb_engine_cache = _cfg_cache("kb_ai_mode", "local")
@@ -2758,12 +2760,80 @@ def _kb_doc_fingerprint(docs) -> str:
     return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()[:12]
 
 
-def _build_doc_graph(kb):
-    """P8-9 文档地图数据：文档均值向量 → k-NN 相似度边（top2 + 0.35 下限）。
+def _fr_settle(pos, edges, cats, iterations=250, K=120.0):
+    """Fruchterman-Reingold 力布局沉降（numpy 向量化）+ 归一化适配画布。
 
-    布局不做（前端力导向沉降更有仪式感），这里只算结构：
-    nodes（含度数/分类/doc_id 供点击跳转）+ edges（含相似度权重）。
-    全部本地计算，毫秒级完成。
+    参数经真实数据网格搜索定版（K=120：占比39%/主团内距266）：
+    - 斥力 K²/d²（弱长程——同团不被扯散，Obsidian 式致密星系团）
+    - 引力 d²/K（边，相似度越高目标边长越短）
+    - 轻全局向心 0.001 + 同类向心 0.02（色块聚拢）
+    - 温度线性冷却；末段归一化：等比缩放到画布内（上限 2.0 倍，小文库不硬撑满屏）
+
+    Args:
+        pos: [(x,y)] 初始位置（PCA）
+        edges: [(s,t,w)] 边及相似度权重
+        cats: [str] 各节点分类
+    Returns:
+        [(x,y)] 沉降 + 归一化后的终态位置
+    """
+    import numpy as np
+    n = len(pos)
+    if n < 2:
+        return pos
+    p = np.array(pos, dtype=np.float64)
+    eidx = np.array([[e[0], e[1]] for e in edges], dtype=np.int64) if edges else np.zeros((0, 2), dtype=np.int64)
+    ew = np.array([e[2] for e in edges], dtype=np.float64) if edges else np.zeros(0)
+    cats_arr = np.array(cats)
+
+    W, H = 1020.0, 580.0
+    temp = 60.0
+    cooling = temp / iterations
+
+    for _t in range(iterations):
+        delta = p[:, None, :] - p[None, :, :]
+        dist = np.maximum(0.1, np.sqrt((delta ** 2).sum(axis=2)))
+        np.fill_diagonal(dist, np.inf)
+        # 斥力 K²/d²（dist³ 分量×delta 后模长为 K²/d²）
+        disp = ((K * K / dist ** 3)[:, :, None] * delta).sum(axis=1)
+
+        if len(eidx):
+            d_e = p[eidx[:, 1]] - p[eidx[:, 0]]
+            dist_e = np.maximum(0.1, np.sqrt((d_e ** 2).sum(axis=1)))
+            att = ((dist_e ** 2) / (K * (1.3 - ew * 0.5)) * ew)[:, None] * (d_e / dist_e[:, None])
+            np.add.at(disp, eidx[:, 0], att)
+            np.add.at(disp, eidx[:, 1], -att)
+
+        disp += (np.array([W / 2, H / 2]) - p) * 0.001  # 轻全局向心
+
+        for c in set(cats_arr):
+            mask = cats_arr == c
+            if mask.sum() > 1:
+                disp[mask] += (p[mask].mean(axis=0) - p[mask]) * 0.02  # 同类向心
+
+        dlen = np.maximum(0.1, np.sqrt((disp ** 2).sum(axis=1)))
+        p = p + disp / dlen[:, None] * np.minimum(dlen, temp)[:, None]
+        p[:, 0] = np.clip(p[:, 0], 24, W - 24)
+        p[:, 1] = np.clip(p[:, 1], 24, H - 24)
+        temp -= cooling
+
+    # 归一化：等比缩放到画布内（pad 55，上限 2.0 倍），保持团内结构
+    pad = 55.0
+    span_x = float(p[:, 0].max() - p[:, 0].min())
+    span_y = float(p[:, 1].max() - p[:, 1].min())
+    s = min((W - 2 * pad) / max(span_x, 1.0), (H - 2 * pad) / max(span_y, 1.0), 2.0)
+    cx = (float(p[:, 0].min()) + float(p[:, 0].max())) / 2
+    cy = (float(p[:, 1].min()) + float(p[:, 1].max())) / 2
+    p[:, 0] = (p[:, 0] - cx) * s + W / 2
+    p[:, 1] = (p[:, 1] - cy) * s + H / 2
+
+    return [(round(float(x), 1), round(float(y), 1)) for x, y in p]
+
+
+def _build_doc_graph(kb):
+    """P8-9 文档地图数据：文档均值向量 → k-NN 相似度边（top2 + 0.35 下限）+ 服务端预沉降。
+
+    nodes（度数/分类/doc_id/终态坐标）+ edges（相似度权重 + 连线理由）。
+    布局在后端一次算完存终态——前端直出成品图+淡入，不再每次重排。
     """
     import numpy as np
     if getattr(kb, "vectors", None) is None or not getattr(kb, "chunk_order", None):
@@ -2785,7 +2855,7 @@ def _build_doc_graph(kb):
     n = len(doc_ids)
     edge_map = {}
     for i in range(n):
-        sims = sorted(((float(sim[i][j]), j) for j in range(n) if j != i), reverse=True)[:2]
+        sims = sorted(((float(sim[i][j]), j) for j in range(n) if j != i), reverse=True)[:3]
         for s, j in sims:
             if s >= 0.35:
                 key = (min(i, j), max(i, j))
@@ -2831,6 +2901,12 @@ def _build_doc_graph(kb):
         pos = [(510 + 200 * _math.cos(2 * _math.pi * i / max(n, 1)),
                 290 + 170 * _math.sin(2 * _math.pi * i / max(n, 1))) for i in range(n)]
 
+    # P8-9 v5：服务端预沉降——力布局在后端一次算完存终态，前端直出成品图+淡入
+    # （用户反馈加载抖动/布局每次漂移；含同类向心引力，色块更聚拢）
+    pos = _fr_settle(pos, [(a, b, w) for (a, b), w in edge_map.items()],
+                     [((kb.documents.get(did).category or "").strip() or "未分类")
+                      if kb.documents.get(did) else "未分类" for did in doc_ids])
+
     nodes = []
     for i, did in enumerate(doc_ids):
         doc = kb.documents.get(did)
@@ -2844,7 +2920,7 @@ def _build_doc_graph(kb):
         })
     edges = [{"s": a, "t": b, "w": round(w, 2), "reasons": edge_reasons.get((a, b), [])}
              for (a, b), w in edge_map.items()]
-    return {"nodes": nodes, "edges": edges}
+    return {"nodes": nodes, "edges": edges, "settled": True}
 
 @router.post("/api/kb/overview/refresh")
 async def api_kb_overview_refresh(request: Request):
