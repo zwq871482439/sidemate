@@ -896,50 +896,72 @@ function _kbRenderInsightDashboard(data) {
 
   var html = '';
 
-  // ===== P8-9: 文档地图（力导向图谱，替代环形图）=====
+  // ===== P8-9: 知识星图（力导向图谱；图例/统计收进图内浮层，v6）=====
   if (graph && graph.nodes && graph.nodes.length) {
-    var legendHtml = '';
-    var catSet = [];
+    // 主类/子类结构：group 有多个 sub 时图例显示层级，子类用同色相浅/深两阶
+    var groups = [];  // [{name, subs:[{name, count}], count, colorIdx}]
+    var groupIdx = {};
     for (var gi = 0; gi < graph.nodes.length; gi++) {
-      var gc = graph.nodes[gi].cat || '未分类';
-      if (catSet.indexOf(gc) < 0) catSet.push(gc);
-    }
-    for (var li = 0; li < catSet.length; li++) {
-      var cnt = 0;
-      for (var gj = 0; gj < graph.nodes.length; gj++) if ((graph.nodes[gj].cat || '未分类') === catSet[li]) cnt++;
-      // 节点颜色与图例同源（侧栏同一套色板）
-      for (var gk = 0; gk < graph.nodes.length; gk++) {
-        if ((graph.nodes[gk].cat || '未分类') === catSet[li]) graph.nodes[gk].color = _DONUT_COLORS[li % _DONUT_COLORS.length];
+      var gn = graph.nodes[gi];
+      var gname = gn.group || gn.cat || '未分类';
+      var sname = gn.sub || gname;
+      if (!(gname in groupIdx)) {
+        groupIdx[gname] = groups.length;
+        groups.push({ name: gname, subs: [], subIdx: {}, count: 0 });
       }
-      legendHtml += '<div class="kb-map-lg-item" data-cat="' + escAttr(catSet[li]) + '">' +
-        '<span class="kb-map-lg-dot" style="background:' + _DONUT_COLORS[li % _DONUT_COLORS.length] + '"></span>' +
-        esc(catSet[li]) + '<span class="kb-map-lg-n">' + cnt + '</span></div>';
+      var G = groups[groupIdx[gname]];
+      G.count++;
+      if (!(sname in G.subIdx)) {
+        G.subIdx[sname] = G.subs.length;
+        G.subs.push({ name: sname, count: 0 });
+      }
+      G.subs[G.subIdx[sname]].count++;
     }
+    var legendHtml = '';
+    for (var li = 0; li < groups.length; li++) {
+      var G2 = groups[li];
+      var baseColor = _DONUT_COLORS[li % _DONUT_COLORS.length];
+      var hasSubs = G2.subs.length > 1;
+      legendHtml += '<div class="kb-map-lg-item" data-cat="' + escAttr(G2.name) + '">' +
+        '<span class="kb-map-lg-dot" style="background:' + baseColor + '"></span>' +
+        esc(G2.name) + '<span class="kb-map-lg-n">' + G2.count + '</span></div>';
+      for (var si = 0; si < G2.subs.length; si++) {
+        var subColor = hasSubs ? _kbShadeColor(baseColor, si === 0 ? 0.35 : -0.28) : baseColor;
+        for (var gk = 0; gk < graph.nodes.length; gk++) {
+          var nd = graph.nodes[gk];
+          if ((nd.group || nd.cat) === G2.name && (nd.sub || nd.cat) === G2.subs[si].name) {
+            nd.color = subColor;
+          }
+        }
+        if (hasSubs) {
+          legendHtml += '<div class="kb-map-lg-item kb-map-lg-sub" data-cat="' + escAttr(G2.subs[si].name) + '" data-group="' + escAttr(G2.name) + '">' +
+            '<span class="kb-map-lg-dot" style="background:' + subColor + '"></span>' +
+            esc(G2.subs[si].name) + '<span class="kb-map-lg-n">' + G2.subs[si].count + '</span></div>';
+        } else {
+          for (var gk2 = 0; gk2 < graph.nodes.length; gk2++) {
+            var nd2 = graph.nodes[gk2];
+            if ((nd2.group || nd2.cat) === G2.name) nd2.color = baseColor;
+          }
+        }
+      }
+    }
+    // 统计 chip（右下角图内信息条）
+    var edgeCnt = graph.edges ? graph.edges.length : 0;
+    var statsChip = docCount + ' 篇 · ' + groups.length + ' 主题' + (edgeCnt ? ' · ' + edgeCnt + ' 关联' : '');
     html += '<div class="kb-map-row">' +
       '<div class="kb-map-box" id="kbMapBox">' +
         '<svg viewBox="0 0 1020 580" id="kbMapSvg"><g id="kbMapViewport"></g></svg>' +
         '<div class="kb-map-hint">Ctrl+滚轮缩放 · 拖拽移动 · 双击复位</div>' +
         '<div class="kb-map-tip" id="kbMapTip"></div>' +
+        '<div class="kb-map-legend-float"><div class="kb-map-legend-title">分类（点击高亮）</div>' + legendHtml + '</div>' +
+        '<div class="kb-map-stats-chip">' + statsChip + '</div>' +
       '</div>' +
-      '<div class="kb-map-legend"><div class="kb-map-legend-title">分类（点击高亮）</div>' + legendHtml + '</div>' +
       '</div>';
   }
 
 
-  // 统计行
-  var catCount = 0;
-  var seenCat = {};
-  if (graph && graph.nodes) {
-    for (var ci2 = 0; ci2 < graph.nodes.length; ci2++) {
-      var cc = graph.nodes[ci2].cat || '未分类';
-      if (!seenCat[cc]) { seenCat[cc] = 1; catCount++; }
-    }
-  }
-  html += '<div class="kb-dash-stats">' +
-    '<span class="kb-dash-stat">文档 <span class="kb-dash-stat-val">' + docCount + '</span> 篇</span>' +
-    (catCount ? '<span class="kb-dash-stat">主题 <span class="kb-dash-stat-val">' + catCount + '</span> 个</span>' : '') +
-    (graph && graph.edges ? '<span class="kb-dash-stat">关联 <span class="kb-dash-stat-val">' + graph.edges.length + '</span> 条</span>' : '') +
-    '</div>';
+
+
 
   // 推荐问题（保留——从"看"到"用"的引导链路）
   if (questions.length > 0) {
@@ -966,6 +988,19 @@ function _kbRenderInsightDashboard(data) {
   } catch(e) { console.error('[KB] 仪表盘渲染失败:', e); }
 }
 
+// P8-9 v6: 颜色明度调整（amount>0 变浅，<0 变深）——子类同色系
+function _kbShadeColor(hex, amount) {
+  var m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  var n = parseInt(m[1], 16);
+  var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  function adj(c) {
+    return Math.round(amount > 0 ? c + (255 - c) * amount : c * (1 + amount));
+  }
+  var out = (adj(r) << 16) | (adj(g) << 8) | adj(b);
+  return '#' + ('00000' + out.toString(16)).slice(-6);
+}
+
 // ===== P8-9: 文档地图渲染与交互（Fruchterman-Reingold 力布局 + Obsidian 式悬停高亮）=====
 function _kbInitDocMap(graph) {
   var box = document.getElementById('kbMapBox');
@@ -989,13 +1024,22 @@ function _kbInitDocMap(graph) {
     return l;
   });
   var nodeEls = NODES.map(function(n, i) {
+    var r = Math.min(6 + (n.deg || 0) * 1.3, 15);
+    // halo 辉光（选中时显示，藏在节点后）
+    var halo = document.createElementNS(NS, 'circle');
+    halo.setAttribute('r', r * 2.2);
+    halo.setAttribute('class', 'kb-map-node-sel-halo');
+    halo.style.display = 'none';
+    vp.appendChild(halo);
     var c = document.createElementNS(NS, 'circle');
-    c.setAttribute('r', Math.min(6 + (n.deg || 0) * 1.3, 15));
+    c.setAttribute('r', r);
+    c.setAttribute('data-r', r);
     c.setAttribute('fill', n.color || '#7F77DD');
     c.setAttribute('fill-opacity', '.85');
     c.setAttribute('stroke', '#fff');
     c.setAttribute('stroke-width', '1.5');
     c.style.cursor = 'pointer';
+    c._halo = halo;
     vp.appendChild(c);
     return c;
   });
@@ -1007,6 +1051,7 @@ function _kbInitDocMap(graph) {
   });
   nodeEls.forEach(function(c, i) {
     c.setAttribute('cx', pos[i].x); c.setAttribute('cy', pos[i].y);
+    if (c._halo) { c._halo.setAttribute('cx', pos[i].x); c._halo.setAttribute('cy', pos[i].y); }
   });
   vp.style.opacity = '0';
   vp.style.transition = 'opacity .5s ease';
@@ -1043,15 +1088,15 @@ function _kbInitDocMap(graph) {
   });
 
   // 分类高亮
-  box.parentElement.querySelectorAll('.kb-map-lg-item').forEach(function(lg) {
+  box.querySelectorAll('.kb-map-lg-item').forEach(function(lg) {
     lg.addEventListener('click', function() {
       var cat = lg.getAttribute('data-cat');
       var active = lg.classList.contains('active');
-      box.parentElement.querySelectorAll('.kb-map-lg-item').forEach(function(x) { x.classList.remove('active', 'dim'); });
+      box.querySelectorAll('.kb-map-lg-item').forEach(function(x) { x.classList.remove('active', 'dim'); });
       nodeEls.forEach(function(c) { c.style.opacity = ''; });
       if (!active) {
         lg.classList.add('active');
-        box.parentElement.querySelectorAll('.kb-map-lg-item').forEach(function(x) { if (x !== lg) x.classList.add('dim'); });
+        box.querySelectorAll('.kb-map-lg-item').forEach(function(x) { if (x !== lg) x.classList.add('dim'); });
         nodeEls.forEach(function(c, i) { if ((NODES[i].cat || '未分类') !== cat) c.style.opacity = '.12'; });
       }
     });
@@ -1087,29 +1132,56 @@ var _kbMapSelected = null;
 function _kbMapFocus(idx, nodeEls, edgeEls, EDGES, neighbors) {
   _kbMapSelected = idx;
   nodeEls.forEach(function(c, j) {
-    c.style.opacity = (j === idx || neighbors[idx][j]) ? '1' : '.12';
-    // 选中点加高亮环
-    if (j === idx) {
+    var isSel = (j === idx), isNb = !!neighbors[idx][j];
+    if (isSel) {
+      // 选中：放大 1.4 倍 + halo 辉光 + 主题色描边
+      c.classList.remove('kb-map-node-dim');
+      c.style.opacity = '1';
+      var baseR = parseFloat(c.getAttribute('data-r') || c.getAttribute('r'));
+      c.setAttribute('r', baseR * 1.4);
       c.setAttribute('stroke', 'var(--accent-color)');
-      c.setAttribute('stroke-width', '3');
+      c.setAttribute('stroke-width', '2.5');
+      if (c._halo) c._halo.style.display = '';
+    } else if (isNb) {
+      // 关联：保持原色，描边加亮
+      c.classList.remove('kb-map-node-dim');
+      c.style.opacity = '1';
+      c.setAttribute('stroke', '#fff');
+      c.setAttribute('stroke-width', '2');
     } else {
+      // 无关：淡出 + 去色（三档层级拉开）
+      c.classList.add('kb-map-node-dim');
       c.setAttribute('stroke', '#fff');
       c.setAttribute('stroke-width', '1.5');
+      if (c._halo) c._halo.style.display = 'none';
     }
   });
   edgeEls.forEach(function(l, k) {
     var e = EDGES[k];
-    l.style.strokeOpacity = (e.s === idx || e.t === idx) ? '0.9' : '0.06';
+    if (e.s === idx || e.t === idx) {
+      l.style.strokeOpacity = '0.9';
+      l.setAttribute('stroke', 'var(--accent-color)');
+      l.setAttribute('stroke-width', '2.2');
+    } else {
+      l.style.strokeOpacity = '0.06';
+    }
   });
 }
 function _kbMapFocusClear(nodeEls, edgeEls) {
   _kbMapSelected = null;
   nodeEls.forEach(function(c) {
+    c.classList.remove('kb-map-node-dim');
     c.style.opacity = '';
+    c.setAttribute('r', c.getAttribute('data-r') || c.getAttribute('r'));
     c.setAttribute('stroke', '#fff');
     c.setAttribute('stroke-width', '1.5');
+    if (c._halo) c._halo.style.display = 'none';
   });
-  edgeEls.forEach(function(l) { l.style.strokeOpacity = ''; });
+  edgeEls.forEach(function(l) {
+    l.style.strokeOpacity = '';
+    l.setAttribute('stroke', '#B8C2CC');
+    l.setAttribute('stroke-width', (0.6 + 0.5 * 1.2).toFixed(2));
+  });
   _kbHideMapFloat();
 }
 

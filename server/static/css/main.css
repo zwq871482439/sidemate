@@ -2700,3 +2700,21 @@ details.kb-sidebar-filter-wrap:not([open]) .kb-sidebar-filter-hdr::after { trans
 .kb-map-float .mf-explain { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color, #E8ECF1);
   color: var(--text-secondary); }
 .kb-card.map-selected { box-shadow: 0 0 0 2px var(--accent-color) !important; }
+
+/* P8-9 v6: 图例/统计收进星图浮层 + 点选三层视觉 + 子类图例 */
+.kb-map-legend-float {
+  position: absolute; top: 8px; right: 8px; width: 168px; max-height: 70%; overflow-y: auto;
+  background: rgba(255,255,255,.92); border: 1px solid var(--border-color, #E8ECF1);
+  border-radius: 8px; padding: 8px 10px; z-index: 6; backdrop-filter: blur(2px);
+}
+.kb-map-legend-float .kb-map-legend-title { margin-bottom: 4px; }
+.kb-map-lg-sub { padding-left: 18px; font-size: 12px; }
+.kb-map-stats-chip {
+  position: absolute; bottom: 8px; right: 8px; z-index: 6;
+  font-size: 11px; color: var(--text-muted);
+  background: rgba(255,255,255,.85); padding: 3px 10px; border-radius: 5px;
+  border: 1px solid var(--border-color, #E8ECF1);
+}
+/* 点选三层视觉 */
+.kb-map-node-dim { opacity: .1; filter: grayscale(1); }
+.kb-map-node-sel-halo { fill: var(--accent-color); opacity: .14; }

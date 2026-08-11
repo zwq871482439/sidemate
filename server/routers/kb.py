@@ -2922,6 +2922,127 @@ def _build_doc_graph(kb):
              for (a, b), w in edge_map.items()]
     return {"nodes": nodes, "edges": edges, "settled": True}
 
+async def _split_big_categories(kb, graph_data, run_llm):
+    """P8-9 v6：≥6 篇的分类用 k-means k=2 拆两个子类，LLM 命名。
+
+    只产出星图展示用的 group/sub 标签，不动文档 category。
+    前端用同色相的浅/深两阶给子类着色。
+    """
+    import numpy as np
+    groups = {}
+    for nd in graph_data["nodes"]:
+        cat = nd.get("cat") or ""
+        if cat and cat != "未分类":
+            groups.setdefault(cat, []).append(nd)
+
+    chunk_doc = {cid: getattr(ch, "doc_id", None) for cid, ch in kb.chunks.items()}
+    acc = {}
+    for i, cid in enumerate(kb.chunk_order):
+        did = chunk_doc.get(cid)
+        if did:
+            acc.setdefault(did, []).append(kb.vectors[i])
+
+    sub_map = {}
+    from sklearn.cluster import KMeans
+    for cat, nodes in groups.items():
+        if len(nodes) < 6:
+            for nd in nodes:
+                sub_map[nd["doc_id"]] = {"group": cat, "sub": cat}
+            continue
+        dids = [nd["doc_id"] for nd in nodes if nd["doc_id"] in acc]
+        if len(dids) < 6:
+            continue
+        mat = np.array([np.mean(acc[d], axis=0) for d in dids])
+        labels = KMeans(n_clusters=2, n_init=4, random_state=42).fit_predict(mat)
+        g0 = [i for i, l in enumerate(labels) if l == 0]
+        g1 = [i for i, l in enumerate(labels) if l == 1]
+        if not g0 or not g1:
+            continue
+
+        def _digest(idxs):
+            lines = []
+            for d in [dids[i] for i in idxs][:10]:
+                doc = kb.documents.get(d)
+                if doc:
+                    lines.append("《%s》%s" % (getattr(doc, "filename", "?"),
+                                              (getattr(doc, "summary", "") or "")[:60]))
+            return "\n".join(lines)
+
+        prompt = (
+            "以下两组文档同属「%s」。请分别给每组起一个 2-6 字的子类名（体现各自侧重）。\n\n"
+            "第一组：\n%s\n\n第二组：\n%s\n\n"
+            "只返回 JSON：{\"g1\": \"名称\", \"g2\": \"名称\"}，不要其他内容。"
+            % (cat, _digest(g0), _digest(g1))
+        )
+        n0 = n1 = ""
+        try:
+            from knowledge.tags import normalize_tag as _norm_sub
+            raw = await run_llm(prompt, 300)
+            import json as _json, re as _re
+            # 解析策略1：标准 JSON 对象
+            m = _re.search(r"\{.*\}", raw, _re.DOTALL)
+            if m:
+                try:
+                    names = _json.loads(m.group(0))
+                    # 值可能是列表（实测小模型返回 "g1": ["甲","乙"]）——取第一个
+                    def _name_of(v):
+                        if isinstance(v, list):
+                            v = v[0] if v else ""
+                        return _norm_sub(str(v))
+                    n0 = _name_of(names.get("g1"))
+                    n1 = _name_of(names.get("g2"))
+                except Exception:
+                    pass
+            # 策略2：键值对正则（JSON 不合法但含 "g1": "xxx" 片段）
+            if not n0 or not n1:
+                m1 = _re.search(r"[\"']g1[\"']\s*[:：]\s*[\"']([^\"']{2,10})[\"']", raw)
+                m2 = _re.search(r"[\"']g2[\"']\s*[:：]\s*[\"']([^\"']{2,10})[\"']", raw)
+                if m1 and not n0:
+                    n0 = _norm_sub(m1.group(1))
+                if m2 and not n1:
+                    n1 = _norm_sub(m2.group(1))
+            # 策略3：g1/g2 标记附近的加粗短语（小模型爱写「g1侧重：**病机解析**」）
+            if not n0 or not n1:
+                m1b = _re.search(r"g1[^\n*]{0,12}\*\*(.{2,8}?)\*\*", raw)
+                m2b = _re.search(r"g2[^\n*]{0,12}\*\*(.{2,8}?)\*\*", raw)
+                if m1b and not n0:
+                    n0 = _norm_sub(m1b.group(1))
+                if m2b and not n1:
+                    n1 = _norm_sub(m2b.group(1))
+            # 策略4：任意加粗短语兜底（过滤"分析思路"等噪音词）
+            if not n0 or not n1:
+                bolds = _re.findall(r"\*\*(.{2,8}?)\*\*", raw)
+                _noise = ("分析", "思路", "第一组", "第二组", "辨析", "侧重")
+                bolds = [_norm_sub(b) for b in bolds
+                         if 2 <= len(_norm_sub(b)) <= 8 and not any(w in b for w in _noise)]
+                if len(bolds) >= 2:
+                    n0 = n0 or bolds[0]
+                    n1 = n1 or bolds[1]
+        except Exception:
+            pass
+        # 兜底：组内最高频标签命名（确定性，比 A/B 占位有意义）
+        if not n0 or not n1:
+            def _top_tag(idxs):
+                import collections as _col
+                c = _col.Counter()
+                for i in idxs:
+                    doc = kb.documents.get(dids[i])
+                    for tg in (getattr(doc, "tags", None) or []):
+                        if tg:
+                            c[tg] += 1
+                return c.most_common(1)[0][0] if c else ""
+            if not n0:
+                n0 = _top_tag(g0) or ("%s·A" % cat)
+            if not n1:
+                n1 = _top_tag(g1) or ("%s·B" % cat)
+            log.info("[KB] 子类命名走标签兜底: %s → %s / %s", cat, n0, n1)
+        for i in g0:
+            sub_map[dids[i]] = {"group": cat, "sub": n0}
+        for i in g1:
+            sub_map[dids[i]] = {"group": cat, "sub": n1}
+    return sub_map
+
+
 @router.post("/api/kb/overview/refresh")
 async def api_kb_overview_refresh(request: Request):
     """AI 知识库洞察 · 自动整理
@@ -3029,12 +3150,17 @@ async def api_kb_overview_refresh(request: Request):
         # P8-8：归并输入 = 现有分类 + 无分类文档的标签。
         # 旧逻辑只在"全部文档都无分类"时才用标签，导致"有标签无分类"的文档
         # 永远进不了归并输入、永远落单（实测 4 篇）——两类来源现在都要。
-        merge_items = dict(cat_counts)
+        # P8-9 v6：分类退化（≤1 个不同分类，如曾被错误归一成单一大类）时，
+        # 改用标签作为归并输入——标签保留了真实主题区分，可据此重建分类。
+        _degenerate_cats = len(cat_counts) <= 1
+        merge_items = {} if _degenerate_cats else dict(cat_counts)
         for d in doc_list:
-            if not d.get("category"):
+            if _degenerate_cats or not d.get("category"):
                 for t in d.get("tags", []):
                     if t:
                         merge_items[t] = merge_items.get(t, 0) + 1
+        if _degenerate_cats:
+            log.info("[KB] 分类退化（%d 个不同分类），改用标签做归并输入", len(cat_counts))
         cats_text = "\n".join(
             "  %s（%d 篇）" % (k, v)
             for k, v in sorted(merge_items.items(), key=lambda x: -x[1])[:40]
@@ -3051,7 +3177,7 @@ async def api_kb_overview_refresh(request: Request):
             "当前标签：\n%s\n\n"
             "要求：\n"
             "1. 含义相近的标签必须合并（如「中医养生」「中医流派」「中医病机」→ 「中医药与养生」）\n"
-            "2. 归并到 3-5 个大类，最多不超过 10 个，宁少勿多\n"
+            "2. 归并到 3-8 个大类：含义相近的合并，但主题明显不同的保持独立，不要为了少而硬凑\n"
             "3. 上面列出的每个旧标签都必须归到某个大类——一个都不许漏（实在不相关的归到「其他」）\n"
             "4. 输出纯 JSON 数组，每项格式：{\"new\": \"新标签\", \"from\": [\"旧标签1\", \"旧标签2\"]}\n"
             "5. 不准输出 Markdown，不准加解释文字，只剩 JSON\n\n"
@@ -3066,6 +3192,15 @@ async def api_kb_overview_refresh(request: Request):
             merge_plan = json.loads(raw[start:end])
         except (ValueError, json.JSONDecodeError):
             merge_plan = []
+
+        # 退化防护：方案只产出一个大类且文档较多 → 放弃归并（LLM 偶发"全部归一"，
+        # 单一大类会让星图失去主题区分度）
+        if merge_plan:
+            _new_cats = {(_mp.get("new") or "").strip() for _mp in merge_plan}
+            _new_cats.discard("")
+            if len(_new_cats) <= 1 and doc_count >= 8:
+                log.warning("[KB] 归并方案退化为单一大类，放弃执行（保持原分类）")
+                merge_plan = []
 
         # 执行归并：更新文档 category + save
         # P8-8：new/from 双向过 normalize_tag——LLM 即使在 JSON 里也可能带 ** 装饰
@@ -3084,8 +3219,8 @@ async def api_kb_overview_refresh(request: Request):
                     if old_cat in old_set:
                         doc.category = new_cat
                         changed += 1
-                    elif not old_cat:
-                        # P8-8：无分类文档按其标签参与归并（tags 命中 from 列表即归入新类）
+                    elif not old_cat or _degenerate_cats:
+                        # 无分类文档 / 分类退化重建时：按其标签参与归并（tags 命中即归入）
                         _doc_tags = {_norm_merge(t) for t in (doc.tags or [])}
                         if _doc_tags & old_set:
                             doc.category = new_cat
@@ -3145,6 +3280,19 @@ async def api_kb_overview_refresh(request: Request):
             _isolated_names = [n["name"] for n in _nodes if n["deg"] == 0]
     except Exception as _ge:
         log.warning("[KB] 文档地图构建失败: %s", str(_ge)[:80])
+
+    # ==== P8-9 v6：大类拆分（≥6 篇 → k-means k=2 子类 + LLM 命名，同色系展示）====
+    # 只影响星图/图例展示，不动文档 category（侧栏筛选/搜索仍按主类）
+    sub_map = {}  # doc_id -> {"group": 主类, "sub": 子类名}
+    if graph_data and graph_data.get("nodes"):
+        try:
+            sub_map = await _split_big_categories(kb, graph_data, _run_async)
+            for _nd in graph_data["nodes"]:
+                _sm = sub_map.get(_nd["doc_id"])
+                _nd["group"] = _sm["group"] if _sm else _nd["cat"]
+                _nd["sub"] = _sm["sub"] if _sm else _nd["cat"]
+        except Exception as _se:
+            log.warning("[KB] 大类拆分失败: %s", str(_se)[:80])
 
     # ==== 第二轮：基于聚类分布生成洞察 ====
     try:

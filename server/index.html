@@ -20,7 +20,7 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=3.04">
+<link rel="stylesheet" href="/static/css/main.css?v=3.05">
 </head>
 <body>
 
@@ -295,18 +295,17 @@
             <div class="s-hdr">
               <div class="s-title" style="position:relative">
                 <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v4M7 9.5h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                AI 洞察
-                <span class="kb-insight-badge">结构报告</span>
+                知识星图
                 <button class="kb-info-btn" id="kbMapInfoBtn" title="这个图是什么？">i</button>
                 <div class="kb-info-pop" id="kbMapInfoPop">
-                  <h6>这个图是什么？</h6>
-                  你的每篇文档是图上的一个<b>点</b>，AI 按内容相似度计算位置：<b>离得越近内容越像</b>，内容明显相近的文档之间会连<b>线</b>。
+                  <h6>知识星图是什么？</h6>
+                  你的每篇文档是星图上的一颗<b>星</b>，AI 按内容相似度计算位置：<b>离得越近内容越像</b>，明显相近的文档之间会连<b>线</b>。
                   <ul>
-                    <li><b>连成团的</b>＝同一主题（同一颜色＝同一分类）</li>
-                    <li><b>点越大</b>＝关联的文档越多，是文库的枢纽</li>
-                    <li><b>孤立的点</b>＝和文库其他内容都不太像</li>
+                    <li><b>连成团的</b>＝同一主题（同一颜色＝同一分类，同色系＝同一主类下的子类）</li>
+                    <li><b>星越大</b>＝关联的文档越多，是文库的枢纽</li>
+                    <li><b>孤立的星</b>＝和文库其他内容都不太像</li>
                   </ul>
-                  操作：悬停看文件名和关联，点击跳转文档；Ctrl+滚轮缩放，拖拽移动，双击复位。
+                  操作：悬停看文档名，点击聚焦并查看连线理由；Ctrl+滚轮缩放，拖拽移动，双击复位。
                 </div>
               </div>
               <button class="s-refresh" onclick="kbRefreshOverviewLLM()" id="kbRefreshBtn" style="display:none">
@@ -957,7 +956,7 @@ window.addEventListener('load', function() {
 <script src="/static/js/core/app-state.js?v=3.00"></script>
 <script src="/static/js/stream_renderer.js?v=3.00"></script>
 <script src="/static/js/settings.js?v=3.06"></script>
-<script src="/static/js/qa.js?v=3.11"></script>
+<script src="/static/js/qa.js?v=3.12"></script>
 <script src="/static/js/kb-batch.js?v=3.02"></script>
 <!-- P6: 纪要模块归档，minutes.js 已移除 -->
 <!-- Patch2 D1: chat.js 拆分为子模块 -->
