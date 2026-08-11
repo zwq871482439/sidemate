@@ -755,7 +755,7 @@ function _kbRenderCategoryTree(docs) {
         var _subColor = _kbShadeColor(dotColor, sj === 0 ? 0.35 : -0.28);
         var _escapedSub = _sub.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         html += '<div class="kb-tag kb-sub-chip' + (_subSel ? ' sel' : '') + '" data-tag="' + esc(_sub.name) + '" onclick="kbFilterByTag(\'' + _escapedSub + '\',this)">' +
-          '<span class="dot" style="background:' + _subColor + '"></span>↳ ' + esc(_sub.name) +
+          '<span class="dot" style="background:' + _subColor + '"></span>' + esc(_sub.name) +
           '<span class="cnt">' + _sub.count + '</span></div>';
       }
     }
@@ -955,6 +955,8 @@ function _kbRenderInsightDashboard(data) {
       }
       G.subs[G.subIdx[sname]].count++;
     }
+    // 按文档数倒序（与筛选 chips 顺序一致）
+    groups.sort(function(a, b) { return b.count - a.count; });
     var legendHtml = '';
     for (var li = 0; li < groups.length; li++) {
       var G2 = groups[li];
@@ -1257,7 +1259,7 @@ function _kbShowMapFloat(idx, NODES, EDGES, neighbors) {
 
   var nbHtml = '';
   if (nbs.length) {
-    nbHtml = '<div style="margin-top:6px;font-size:11.5px;color:var(--text-muted)">为什么相连：</div>';
+    nbHtml = '<div style="margin-top:6px;font-size:11.5px;color:var(--text-muted)">关联知识：</div>';
     withReason.forEach(function(nb) {
       var nn = NODES[nb.j];
       nbHtml += '<div class="mf-nb"><span class="mf-nb-name">' + esc(nn.name) + '</span>' +
@@ -1278,9 +1280,9 @@ function _kbShowMapFloat(idx, NODES, EDGES, neighbors) {
     '<span class="mf-close" onclick="_kbHideMapFloat()">×</span>' +
     '<div class="mf-title">' + esc(n.name) + '</div>' +
     '<div class="mf-meta">' + esc(n.sub || n.cat || '未分类') + ' · 关联 ' + (n.deg || 0) + ' 篇</div>' +
-    nbHtml +
     '<button class="mf-explain-btn" id="kbMapExplainBtn">✨ AI 详解</button>' +
-    '<div class="mf-explain" id="kbMapExplain" style="display:none"></div>';
+    '<div class="mf-explain" id="kbMapExplain" style="display:none"></div>' +
+    nbHtml;
   box.appendChild(floatEl);
   // 定位：贴在图例浮层下方，与图例同宽（左上区域纵向排列）
   var lg = box.querySelector('.kb-map-legend-float');

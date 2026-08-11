@@ -2677,7 +2677,7 @@ details.kb-sidebar-filter-wrap:not([open]) .kb-sidebar-filter-hdr::after { trans
 
 /* P8-9 v5: 地图浮条（点选节点的连线理由详情） */
 .kb-map-float {
-  position: absolute; top: 10px; left: 8px; width: 190px; max-height: 46%; overflow-y: auto;
+  position: absolute; top: 10px; left: 8px; width: 240px; max-height: 46%; overflow-y: auto;
   background: var(--bg-primary, #fff); border: 1px solid var(--border-color, #E8ECF1);
   border-radius: 10px; padding: 12px 14px; z-index: 15;
   box-shadow: 0 8px 28px rgba(26,43,66,.15);
@@ -2703,7 +2703,7 @@ details.kb-sidebar-filter-wrap:not([open]) .kb-sidebar-filter-hdr::after { trans
 
 /* P8-9 v6: 图例/统计收进星图浮层 + 点选三层视觉 + 子类图例 */
 .kb-map-legend-float {
-  position: absolute; top: 8px; left: 8px; width: 190px; max-height: 46%; overflow-y: auto;
+  position: absolute; top: 8px; left: 8px; width: 240px; max-height: 46%; overflow-y: auto;
   background: rgba(255,255,255,.92); border: 1px solid var(--border-color, #E8ECF1);
   border-radius: 8px; padding: 8px 10px; z-index: 6; backdrop-filter: blur(2px);
 }
