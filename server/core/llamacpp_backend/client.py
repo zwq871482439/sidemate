@@ -97,12 +97,28 @@ class LlamaCppClient:
             "repeat_penalty": repeat_penalty,
         }
 
-        try:
-            response = self._client.chat.completions.create(**kwargs)
-            self._active_response = response
-        except Exception as e:
-            yield {"phase": "raw", "content": "[ERROR] %s" % str(e)[:200]}
+        # P8-9: 启动窗口容错——llama-server 比 app 的 HTTP 服务晚几秒就绪（装模型进显存），
+        # 此窗口内的连接错误/502/503 是可恢复瞬时状态，重试 3 次再报错
+        response = None
+        _last_err = None
+        for _attempt in range(3):
+            try:
+                response = self._client.chat.completions.create(**kwargs)
+                break
+            except Exception as e:
+                _last_err = e
+                _emsg = str(e).lower()
+                _retryable = ("502" in _emsg or "503" in _emsg or "connection" in _emsg
+                              or "connect" in type(e).__name__.lower())
+                if not _retryable or _attempt >= 2:
+                    break
+                log.info("[LLAMACPP-CLIENT] 启动窗口重试 %d/3: %s", _attempt + 1, str(e)[:60])
+                import time as _time
+                _time.sleep(2)
+        if response is None:
+            yield {"phase": "raw", "content": "[ERROR] %s" % str(_last_err)[:200]}
             return
+        self._active_response = response
 
         full_content = ""
         full_thinking = ""
