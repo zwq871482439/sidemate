@@ -118,6 +118,9 @@ class LlamaCppManager:
                 self._do_stop()
             else:
                 self._ownership = "EXTERNAL"
+                if model_path:
+                    self._restart_model = model_path  # 死亡接管重启用快照
+                self._start_watchdog()  # P8-9：收养的实例也要盯（死亡时接管重启）
                 log.info("[LLAMACPP] 检测到已有 llama-server 实例（EXTERNAL 模式）")
                 return {"status": "already_running", "host": self._host, "port": self._port}
 
@@ -126,6 +129,9 @@ class LlamaCppManager:
             # 先重试等它变健康（llama-server 正在加载模型的情况）
             if self._wait_healthy_with_retry(retries=3, interval=3):
                 self._ownership = "EXTERNAL"
+                if model_path:
+                    self._restart_model = model_path
+                self._start_watchdog()  # P8-9：同上，收养即盯
                 log.info("[LLAMACPP] 复用已有 llama-server 实例（EXTERNAL 模式）")
                 return {"status": "already_running", "host": self._host, "port": self._port}
             # 仍不健康 → 可能是 Ollama 残留，杀掉占用端口的进程
@@ -352,6 +358,20 @@ class LlamaCppManager:
 
             if not self._watchdog_stop.is_set() and not self.is_healthy():
                 log.warning("[LLAMACPP] Watchdog: 健康检查失败")
+                # P8-9：EXTERNAL 收养的实例死亡时接管——EXTERNAL 语义是"不主动杀"，
+                # 不是"死了不管"。死后拉起自己的 MANAGED 实例，服务自愈。
+                if (self._ownership == "EXTERNAL" and self._restart_model
+                        and self._restart_count < self._MAX_RESTART_ATTEMPTS):
+                    self._restart_count += 1
+                    log.info("[LLAMACPP] EXTERNAL 实例失健，接管重启 (%d/%d)" % (
+                        self._restart_count, self._MAX_RESTART_ATTEMPTS))
+                    time.sleep(5)
+                    result = self.start(self._restart_model)
+                    if result.get("status") in ("started", "already_running"):
+                        log.info("[LLAMACPP] 接管重启成功（已转为 MANAGED）")
+                        self._restart_count = 0
+                    else:
+                        log.warning("[LLAMACPP] 接管重启失败: %s" % result.get("error", "unknown"))
 
     def _is_port_in_use(self) -> bool:
         try:
