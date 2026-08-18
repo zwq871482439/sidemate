@@ -24,6 +24,10 @@ tests/
 requirements_gen.txt
 setup_dev.bat
 
+# 打包资产已迁移到 sidemate-dev 私有仓库（v0.9.8 发版整理）
+setup.iss
+installer/
+
 # ====== Python 缓存 ======
 __pycache__/
 *.pyc
