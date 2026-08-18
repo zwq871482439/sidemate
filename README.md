@@ -22,6 +22,7 @@
 - 🔌 **断网照用**：离线模式（llama.cpp + Qwen3.5）完全本地运行，坐飞机也能用
 - ☁️ **在线按需**：需要更强模型时，可配置在线模型 API（OpenAI 兼容 / Anthropic 双接口），数据直接发给你选的服务商，不经第三方
 - 📚 **本地知识库**：上传 PDF/Word/笔记，AI 基于你的资料回答，向量化+重排序全在本地
+- 🌌 **知识星图**：文档关系图谱可视化——相似度连线、AI 聚类分色、点选查看关联，一眼看清你的知识脉络
 - 📊 **报告/PPT 生成**：一键生成 Word 文档（离线可用）、HTML 可视化报告（在线模式）、PPT 演示文稿
 - 🛠️ **AI Agent**：自主联网搜索、读网页、查知识库、写文档，多步任务自动完成
 
@@ -105,6 +106,7 @@ launcher/                   ← Go Launcher
 - 🔌 **Works offline**: Offline mode (llama.cpp + Qwen3.5) runs entirely on your machine — use it on a plane
 - ☁️ **Online on your terms**: Connect online model APIs (OpenAI-compatible / Anthropic) when you need more power — data goes directly to your chosen provider, no middleman
 - 📚 **Local knowledge base**: Upload PDFs/Word/notes, AI answers from your documents with vector search + reranking, all local
+- 🌌 **Knowledge star map**: Visual graph of document relationships — similarity links, AI-clustered colors, click to explore connections
 - 📊 **Report & PPT generation**: Generate Word docs (offline), HTML visual reports (online mode), and presentation slides in one click
 - 🛠️ **AI Agent**: Autonomous web search, page reading, knowledge base lookup, file operations — multi-step tasks done automatically
 
