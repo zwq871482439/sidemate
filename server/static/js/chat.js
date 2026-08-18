@@ -445,6 +445,9 @@ function renderMessages(forceFull) {
 
 // ===== 流式渲染（性能优化：50ms 节流）=====
 var _streamRenderPending = false;
+// done 终态用「已渲染正文长度」决定是否补刷尾巴；
+// 不能用 contentEl.textContent 对比（含 .ts 时间戳/模式标签文本，会把缺失的尾巴抵掉）
+var _streamLastContentLen = 0;
 
 function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   var msgEl2 = document.getElementById('messages');
@@ -461,6 +464,7 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     streamEl.id = 'stream-msg';
     streamEl.className = 'msg ai';
     el.appendChild(streamEl);
+    _streamLastContentLen = 0;  // 新一条消息：重置已渲染长度
   }
 
   // P6 打磨：使用 #stream-content 子元素做打字机区域，不再 innerHTML 全量替换
@@ -477,16 +481,16 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
   // 这样正文 DOM 原封不动，只新增一条统计/复制栏，视觉上无重排。
   if (stats) {
     // 修复流式截断：节流可能导致最后一批 token 未渲染。
-    // 若 fullText 比当前 DOM 显示的更长，强制刷新正文（否则会停留在节流时的截断内容）。
+    // 与「已渲染正文长度」精确对比（不读 DOM textContent——它含 .ts 时间戳/模式
+    // 标签等额外文本，会把缺失的尾巴抵掉，导致短截断永远补不上）。
     var _curBody = contentEl.querySelector('p, div:not(.thinking-indicator)');
     var _needRender = !_curBody;  // 无正文（空回复兜底）
-    if (!_needRender && content) {
-      // 有正文但可能不完整：比较纯文本长度
-      var _curTextLen = (contentEl.textContent || '').length;
-      if (content.length > _curTextLen + 5) _needRender = true;  // +5 容差（DOM 可能含时间戳等额外文本）
+    if (!_needRender && content && content.length > _streamLastContentLen) {
+      _needRender = true;
     }
     if (_needRender && content) {
       contentEl.innerHTML = _renderMsgBody(content, {sanitize: false});
+      _streamLastContentLen = content.length;
     }
     // 修 #模式tag缺失 + #tag时间同排：done 终态确保正文最前是一个 .ts 块，
     // 且块内同时含 action-tag + 时间（先 tag 后时间，同一排）。
@@ -577,6 +581,7 @@ function appendStreamingMsg(content, think, thinkLen, stats, isThinking) {
     if (_prevTimer) _prevTimerStart = parseInt(_prevTimer.getAttribute('data-start') || '0', 10);
   }
   contentEl.innerHTML = html;
+  _streamLastContentLen = (content || '').length;  // 记录已渲染正文长度（done 补刷判据）
   if (_prevTimerStart && isThinking) {
     var _newTimer = contentEl.querySelector('.thinking-timer');
     if (_newTimer) {
