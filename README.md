@@ -70,7 +70,6 @@
 | **前端** | 原生 HTML/CSS/JS（无框架，CSS 变量主题） |
 | **知识库** | bge-m3（embedding）+ bge-reranker-v2-m3（reranker） |
 | **Launcher** | Go（进程管理 + 看门狗 + GPU 检测） |
-| **打包** | Inno Setup |
 | **CI** | GitHub Actions |
 | **协议** | Apache-2.0 |
 
