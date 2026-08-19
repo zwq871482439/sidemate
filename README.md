@@ -33,8 +33,10 @@
 | **三种模式** | 离线（本地运行）/ 在线（在线大模型）/ 并行（本地检索+在线推理） |
 | **本地知识库** | bge-m3 向量化 + bge-reranker-v2-m3 精排，向量检索与重排序全在本地 |
 | **KB 智能标签** | 自动为文档打标、语义分组（打标引擎可选离线/在线），支持 AI 智能筛选 |
-| **文档生成** | 提纲确认→两阶段生成，支持 .docx / .html（可视化报告）/ .ppt.html（演示文稿） |
-| **AI Agent** | 联网搜索、读网页、深度阅读、知识库检索、文件读写、计算器、格式转换等工具链 |
+| **知识星图** | 文档关系图谱：k-NN 相似度连线、力导向布局、AI 聚类同色系分组、点选浮条查看关联知识与 AI 详解 |
+| **云端配置** | 一键拉取模型列表（下拉可选/手填兜底）、上下文上限可覆盖、网络代理开关 |
+| **文档生成** | 提纲确认→两阶段生成，支持 .docx / .html（可视化报告，内置图表选型+交付前模型自查）/ .ppt.html（演示文稿） |
+| **AI Agent** | 联网搜索（搜索→阅读→回答三段式工作流）、读网页、深度阅读、知识库检索、文件读写、计算器、格式转换等工具链 |
 | **模型下载** | 内置下载页，从魔搭 ModelScope 一键下载，按内存自动推荐档位，支持断点续传 |
 | **开箱即用** | 一键下载推荐方案，下载完成自动加载并预热模型，无需手动配置 |
 | **审计日志** | 知识库每次检索记录访问明细（时间/访问者/查询词/命中片段/相关性评分） |
@@ -69,6 +71,7 @@
 | **知识库** | bge-m3（embedding）+ bge-reranker-v2-m3（reranker） |
 | **Launcher** | Go（进程管理 + 看门狗 + GPU 检测） |
 | **打包** | Inno Setup |
+| **CI** | GitHub Actions |
 | **协议** | Apache-2.0 |
 
 ### 📦 项目结构
@@ -117,8 +120,10 @@ launcher/                   ← Go Launcher
 | **Three modes** | Offline (local inference) / Online (third-party LLM APIs) / Parallel (local retrieval + online reasoning) |
 | **Local knowledge base** | bge-m3 embedding + bge-reranker-v2-m3 — vector search and reranking, all local |
 | **KB smart tagging** | Auto-tag and group documents semantically (tagging engine: offline or online), with AI-powered filtering |
-| **Document generation** | Outline confirmation → two-phase generation (.docx / .html / .ppt.html) |
-| **AI Agent** | Web search, URL fetch, deep read, KB search, file I/O, calculator, format conversion |
+| **Knowledge star map** | Document relationship graph — k-NN similarity links, force-directed layout, AI clustering in color families, click any node for connections & AI insights |
+| **Cloud API configuration** | One-click model list fetching (dropdown or manual entry), context-limit override, network proxy toggle |
+| **Document generation** | Outline confirmation → two-phase generation (.docx / visual .html reports with built-in chart guidance + pre-delivery self-check / .ppt.html) |
+| **AI Agent** | Web search (search→read→answer workflow), URL fetch, deep read, KB search, file I/O, calculator, format conversion |
 | **Model downloader** | Built-in download page — ModelScope one-click download, RAM-based tier recommendation, resume support |
 | **Zero-config start** | One-click recommended bundle — models auto-load and warm up after download |
 | **Audit logging** | Every KB search logs access details (time/actor/query/matched text/relevance score) |
@@ -142,6 +147,7 @@ launcher/                   ← Go Launcher
 | **Frontend** | Vanilla HTML/CSS/JS (no framework, CSS variable theming) |
 | **Knowledge base** | bge-m3 (embedding) + bge-reranker-v2-m3 (reranker) |
 | **Launcher** | Go (process management + watchdog + GPU detection) |
+| **CI** | GitHub Actions |
 | **License** | Apache-2.0 |
 
 ### 📄 License
