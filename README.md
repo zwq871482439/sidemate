@@ -46,7 +46,7 @@
 
 **普通用户**：下载安装包 → 一键安装 → 模型下载页选模型 → 开始使用
 
-**开发者**：clone 源码后运行 `python envsetup.py` 一键部署（自动下载嵌入式 Python、pip 依赖、llama-server、编译 Launcher）
+**开发者**：clone 源码后运行 `python envsetup.py` 一键部署（自动下载嵌入式 Python、pip 依赖、llama-server、编译 Launcher），详细步骤见 [BUILD.md](BUILD.md)
 
 1. 下载安装包或 clone 源码
 2. 启动后进入 **设置 → 模型下载**（或使用首页"快速开始"一键下载推荐方案）
@@ -136,6 +136,8 @@ launcher/                   ← Go Launcher
 4. Models auto-load and warm up after download — start chatting right away
 
 **Requirements**: Windows 10/11 · 16GB+ RAM (offline models; 8GB for online-only) · 10GB disk (incl. models)
+
+**Developers**: clone the repo and run `python envsetup.py` for a one-shot setup — see [BUILD.md](BUILD.md) for details.
 
 ### 🛠 Tech Stack
 
