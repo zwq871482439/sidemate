@@ -1398,6 +1398,16 @@ details[open]>.settings-summary::before{transform:rotate(90deg)}
 #messages.msg-bubble-mode .msg.ai {
   border-radius: 12px 12px 12px 4px !important;
 }
+/* E3b 气泡模式左右分布（测试机反馈）：用户消息靠右、AI 靠左，经典聊天布局 */
+#messages.msg-bubble-mode .msg.user {
+  align-self: flex-end !important;
+  max-width: 80% !important;
+  margin-left: auto !important;
+}
+#messages.msg-bubble-mode .msg.ai {
+  align-self: flex-start !important;
+  max-width: 92% !important;
+}
 
 /* A2 论坛风列表模式（P6 重写：flexbox + 头像 absolute，适配新卡片结构）*/
 #messages.msg-list-mode .msg {

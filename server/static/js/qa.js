@@ -1796,17 +1796,13 @@ function _kbRenderQueue() {
 async function kbOnFilePicked(e) {
   var files = Array.from(e.target.files);
   e.target.value = '';
-  for (var i = 0; i < files.length; i++) {
-    await kbUploadFile(files[i]);
-  }
+  await kbUploadFiles(files);
 }
 
 async function kbOnDrop(e) {
   e.preventDefault();
   var files = Array.from(e.dataTransfer.files);
-  for (var i = 0; i < files.length; i++) {
-    await kbUploadFile(files[i]);
-  }
+  await kbUploadFiles(files);
 }
 
 // P6 拖拽视觉反馈
@@ -1829,12 +1825,11 @@ async function kbHandleDrop(e) {
   var page = document.getElementById('kbFullInterface');
   if (page) page.classList.remove('drag-over');
   var files = Array.from(e.dataTransfer.files);
-  for (var i = 0; i < files.length; i++) {
-    await kbUploadFile(files[i]);
-  }
+  await kbUploadFiles(files);
 }
 
 async function kbUploadFile(f) {
+  // 返回 'ok' | 'fail' | 'retry-later'（模型未就绪等可恢复错误，批量上传应中断）
   var formData = new FormData();
   formData.append('file', f);
   try {
@@ -1862,11 +1857,31 @@ async function kbUploadFile(f) {
           kbSubscribeProgress(data.doc_id, f.name);
         }
       }
+      return 'ok';
     } else {
       showToast('上传失败: ' + (data.error || '未知错误'), 'error');
+      // 模型未就绪属于可恢复错误——批量上传应立即中断，避免后续文件连吃 400
+      if (resp.status === 400 && (data.error || '').indexOf('加载模型') >= 0) return 'retry-later';
+      return 'fail';
     }
   } catch (err) {
     showToast('上传失败: ' + err.message, 'error');
+    return 'fail';
+  }
+}
+
+// 批量上传入口：遇"模型未就绪"中断剩余并给出明确指引（不再连吞失败 toast）
+async function kbUploadFiles(files) {
+  for (var i = 0; i < files.length; i++) {
+    var r = await kbUploadFile(files[i]);
+    if (r === 'retry-later') {
+      var left = files.length - i - 1;
+      if (typeof showToast === 'function') {
+        showToast('AI 模型还没就绪，已暂停上传' + (left > 0 ? '（剩余 ' + left + ' 个文件）' : '') +
+          '。请稍等片刻后重新选择这些文件', 'warning', 7000);
+      }
+      break;
+    }
   }
 }
 
