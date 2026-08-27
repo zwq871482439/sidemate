@@ -273,6 +273,42 @@ def api_models():
 #  统一应用状态（P8-6）
 # ============================================================
 
+def _onboard_completed() -> bool:
+    """onboard 完成判定（含 0.9.7 升级用户迁移兜底）。
+
+    0.9.8 起 .onboard_done 服务端文件为唯一权威；但 0.9.7 升级上来的用户
+    从未有过该文件，会被误判为"未完成引导"→ welcome 态接管 → canSend=false，
+    发消息被"请先加载模型"误拦（实测回归：升级后模型明明已加载仍被拦）。
+    老用户有明显使用痕迹（聊过天/配过云端/装过 LLM），不应被重新引导——
+    检测到任一痕迹即自动补写标记（幂等，下次走快路径）。
+    """
+    from config import get as cfg_get, DATA_DIR, EXTENSIONS_DIR
+    marker = os.path.join(DATA_DIR, ".onboard_done")
+    if os.path.exists(marker):
+        return True
+    try:
+        traces = False
+        chats_dir = os.path.join(DATA_DIR, "chats")
+        if os.path.isdir(chats_dir) and any(os.listdir(chats_dir)):
+            traces = True
+        if not traces and cfg_get("cloud_api_key", ""):
+            traces = True
+        if not traces:
+            from core.extension_manager import ExtensionRegistry
+            if ExtensionRegistry(EXTENSIONS_DIR).is_installed("llm"):
+                traces = True
+        if traces:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            from datetime import datetime
+            with open(marker, "w", encoding="utf-8") as f:
+                f.write("migrated:" + datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
+            log.info("[ONBOARD] 0.9.7 升级用户迁移：检测到使用痕迹，自动补写完成标记")
+            return True
+    except Exception as e:
+        log.warning("[ONBOARD] 迁移兜底检查失败: %s", str(e)[:80])
+    return False
+
+
 @router.get("/api/app-state")
 def api_app_state():
     """统一应用状态端点——状态只在服务端算一次，前端只做派生渲染。
@@ -282,8 +318,9 @@ def api_app_state():
     """
     from config import get as cfg_get, DATA_DIR
 
-    # onboard：服务端标记文件为唯一权威（前端 localStorage 降级为缓存）
-    onboard_completed = os.path.exists(os.path.join(DATA_DIR, ".onboard_done"))
+    # onboard：服务端标记文件为唯一权威（前端 localStorage 降级为缓存；
+    # 0.9.7 升级用户由 _onboard_completed 的迁移兜底自动补标记）
+    onboard_completed = _onboard_completed()
 
     # mode
     mode = cfg_get("ai_mode", "local")
@@ -1030,9 +1067,8 @@ def api_onboard_status():
 
     registry = ExtensionRegistry(EXTENSIONS_DIR)
 
-    # 检查 .onboard_done 标记
-    onboard_marker = os.path.join(DATA_DIR, ".onboard_done")
-    onboard_done = os.path.exists(onboard_marker)
+    # 检查 .onboard_done 标记（含 0.9.7 升级用户迁移兜底，与 /api/app-state 同源）
+    onboard_done = _onboard_completed()
 
     # 检查模型是否已加载
     mgr = get_mgr()
