@@ -2323,6 +2323,89 @@ def _collect_all_tags(kb) -> list:
     return sorted(tags)
 
 
+def _tag_bigram_sim(a: str, b: str) -> float:
+    """中文标签相似度：字符 bigram 的 Jaccard 重叠率。
+
+    "中医养生学" vs "中医药与养生" → bigram 高重叠 → 高分；完全无关 → 0。
+    纯确定性规则，用于小模型归并结果的兜底守护。
+    """
+    def _bigrams(s):
+        s = (s or "").strip()
+        if len(s) < 2:
+            return {s} if s else set()
+        return {s[i:i + 2] for i in range(len(s) - 1)}
+    ba, bb = _bigrams(a), _bigrams(b)
+    if not ba or not bb:
+        return 0.0
+    return len(ba & bb) / len(ba | bb)
+
+
+def _postmerge_groups(groups: list, max_groups: int = 6) -> list:
+    """归并结果确定性后处理（P0 标签太散实测驱动）。
+
+    小模型（0.8B）归并质量不可信：实测 38 篇文档归并出 20+ 个单成员组
+    （「中医养生学」「中医药道养生」「中医养生气血经络」各成一组）。
+    在 LLM 输出之后用规则强制收敛：
+      1. 单成员组 → 并入与其最相似的组（bigram 相似度 ≥ 0.1）
+      2. 组数仍超 max_groups → 从成员最少的组起继续并入最相似组
+      3. 「其他」组不参与评分合并，永远保留兜底
+    """
+    others = [g for g in groups if (g.get("group") or "").strip() == "其他"]
+    main = [g for g in groups
+            if (g.get("group") or "").strip() != "其他" and g.get("members")]
+
+    def _sim(g, cand):
+        gm = [m for m in g.get("members", []) if m]
+        scores = []
+        for t in [cand.get("group", "")] + [m for m in cand.get("members", []) if m]:
+            s = _tag_bigram_sim(g.get("group", ""), t)
+            for m in gm:
+                s = max(s, _tag_bigram_sim(m, t))
+            scores.append(s)
+        return max(scores) if scores else 0.0
+
+    other_members = []
+    for g in others:
+        other_members.extend([m for m in g.get("members", []) if m])
+
+    def _merge_one(min_sim):
+        """处理最小/单成员组：相似度达标并入最相似组，否则进「其他」——不硬塞。"""
+        main.sort(key=lambda g: len(g.get("members", [])))
+        for g in main:
+            if len(g["members"]) > 1 and min_sim < 0.15:
+                return False  # 阶段1只动单成员组
+            pool = [x for x in main if x is not g]
+            if not pool:
+                return False
+            target = max(pool, key=lambda c: _sim(g, c))
+            if _sim(g, target) >= min_sim:
+                merged = list(target.get("members", [])) + list(g["members"])
+                target["members"] = list(dict.fromkeys(merged))
+            else:
+                other_members.extend(g["members"])  # 没有足够相似的大类 → 其他
+            main.remove(g)
+            return True
+        return False
+
+    n_before = len(groups)
+    # 阶段1：单成员组归位（相似 ≥0.15 并入，否则进其他）
+    while any(len(g.get("members", [])) <= 1 for g in main) and len(main) > 1:
+        if not _merge_one(0.15):
+            break
+    # 阶段2：组数仍超限，继续收敛（标准更严：相似 ≥0.3 才并，否则进其他）
+    while len(main) > max_groups and len(main) > 1:
+        if not _merge_one(0.3):
+            break
+
+    result = main
+    if other_members:
+        result = result + [{"group": "其他", "members": list(dict.fromkeys(other_members))}]
+    if len(result) != n_before:
+        log.info("[KB-TAGS] 后处理归并：%d 组收敛为 %d 组（单成员组并入最近似组）",
+                 n_before, len(result))
+    return result
+
+
 def _parse_llm_groups(raw_text: str, all_tags: list) -> list:
     """解析 LLM 输出的分组 JSON，失败回退到「其他」分组
 
@@ -2364,7 +2447,7 @@ def _parse_llm_groups(raw_text: str, all_tags: list) -> list:
                     continue
                 valid.append(item)
             if valid:
-                return valid
+                return _postmerge_groups(valid)
     except json.JSONDecodeError:
         pass
 
@@ -2379,7 +2462,7 @@ def _parse_llm_groups(raw_text: str, all_tags: list) -> list:
 
     if partial_groups:
         log.warning("[KB-TAGS] JSON 完整解析失败，部分提取 %d 组", len(partial_groups))
-        return partial_groups
+        return _postmerge_groups(partial_groups)
 
     # 5. 完全失败 → 全部放入「其他」
     log.warning("[KB-TAGS] 无法解析 LLM 输出，回退到「其他」分组")
@@ -2428,9 +2511,18 @@ async def api_kb_tags_group(request: Request):
     # 构建 prompt
     tags_str = json.dumps(tags_to_group, ensure_ascii=False)
     prompt = (
-        "将以下标签按语义归并为5-10组。每个标签必须属于一个组。"
-        "输出JSON数组: [{\"group\":\"组名\",\"members\":[\"标签1\",\"标签2\"]}]。"
-        "只输出JSON，不要任何解释。\n\n标签: " + tags_str
+        "把下面的文档标签聚合成两级结构：一级是大类目（≤5 个），二级是原标签本身。规则：\
+"
+        "1. 语义相近的标签必须归入同一个大类（例：「中医养生学」「中医药道养生」「中医养生气血经络」都归入「中医养生」）；\
+"
+        "2. 原样保留每个标签作为二级成员，不要丢弃、改写或发明新标签；\
+"
+        "3. 实在无法归类才放「其他」。\
+"
+        "输出JSON数组: [{\"group\":\"大类名\",\"members\":[\"原标签1\",\"原标签2\"]}]。"
+        "只输出JSON，不要任何解释。\
+\
+标签: " + tags_str
     )
 
     log.info("[KB-TAGS] 开始 LLM 分组: %d 标签（已排除 %d 个 manual）",
@@ -2583,9 +2675,18 @@ async def api_kb_tags_regroup(request: Request):
 
     tags_str = json.dumps(all_tags, ensure_ascii=False)
     prompt = (
-        "将以下标签按语义归并为5-10组。每个标签必须属于一个组。"
-        "输出JSON数组: [{\"group\":\"组名\",\"members\":[\"标签1\",\"标签2\"]}]。"
-        "只输出JSON，不要任何解释。\n\n标签: " + tags_str
+        "把下面的文档标签聚合成两级结构：一级是大类目（≤5 个），二级是原标签本身。规则：\
+"
+        "1. 语义相近的标签必须归入同一个大类（例：「中医养生学」「中医药道养生」「中医养生气血经络」都归入「中医养生」）；\
+"
+        "2. 原样保留每个标签作为二级成员，不要丢弃、改写或发明新标签；\
+"
+        "3. 实在无法归类才放「其他」。\
+"
+        "输出JSON数组: [{\"group\":\"大类名\",\"members\":[\"原标签1\",\"原标签2\"]}]。"
+        "只输出JSON，不要任何解释。\
+\
+标签: " + tags_str
     )
 
     log.info("[KB-TAGS] 开始强制重新分组: %d 标签", len(all_tags))

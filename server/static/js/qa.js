@@ -358,7 +358,8 @@ async function kbRefreshDocs() {
       var _fd = docs[_fi2];
       if (_kbActiveTagFilter) {
         if (_kbActiveTagFilter === '__uncategorized__') { if (_fd.category) continue; }
-        else if (_fd.category !== _kbActiveTagFilter) {
+        else if (_fd.category !== _kbActiveTagFilter &&
+                 !(_kbCategoryMergeMap[_kbActiveTagFilter] || []).some(function(_mc) { return _mc === _fd.category; })) {
           // P8-9 v6.1：二级子类筛选（按星图子类归属匹配）
           var _sm1 = (window._kbDocSubMap || {})[_fd.doc_id];
           if (!(_sm1 && _sm1.sub === _kbActiveTagFilter)) continue;
@@ -379,7 +380,8 @@ async function kbRefreshDocs() {
           if (d.category) continue;
         } else {
           // 精确匹配 category；P8-9 v6.1：子类名走 sub 映射匹配
-          if (d.category !== _kbActiveTagFilter) {
+          if (d.category !== _kbActiveTagFilter &&
+              !(_kbCategoryMergeMap[_kbActiveTagFilter] || []).some(function(_mc) { return _mc === d.category; })) {
             var _sm2 = (window._kbDocSubMap || {})[d.doc_id];
             if (!(_sm2 && _sm2.sub === _kbActiveTagFilter)) continue;
           }
@@ -705,6 +707,82 @@ function _kbSubsOfCategory(catName) {
   return out;
 }
 
+// ===== P0 标签聚合（0.9.8 prerelease 实测驱动）：散 category 归并为大类 =====
+// 后端 routers/kb.py _postmerge_groups 的 JS 同款（bigram 相似度 + 两阶段收敛），
+// 侧栏渲染前对文档 category 做确定性归并：一级=大类、二级=原分类。
+var _kbCategoryMergeMap = {};   // {大类名: [原category,...]}，过滤时 OR 匹配
+
+function _kbBigramSim(a, b) {
+  function bg(s) {
+    s = (s || '').trim();
+    if (s.length < 2) return s ? [s] : [];
+    var r = [];
+    for (var i = 0; i < s.length - 1; i++) r.push(s.substr(i, 2));
+    return r;
+  }
+  var ba = bg(a), bb = bg(b);
+  if (!ba.length || !bb.length) return 0;
+  var inter = 0, seen = {};
+  ba.forEach(function (x) { seen[x] = 1; });
+  bb.forEach(function (x) { if (seen[x]) inter++; });
+  ba.concat(bb).forEach(function (x) { seen[x] = 1; });
+  return inter / Object.keys(seen).length;
+}
+
+function _kbMergeCategories(catNames, catCounts) {
+  // 按文档数降序贪心：大类组长吸收相似成员（≥0.2）；再两阶段收敛（同后端）
+  var sorted = catNames.slice().sort(function (a, b) { return (catCounts[b] || 0) - (catCounts[a] || 0); });
+  var groups = [], assigned = {};
+  for (var i = 0; i < sorted.length; i++) {
+    if (assigned[sorted[i]]) continue;
+    var g = { group: sorted[i], members: [sorted[i]] };
+    assigned[sorted[i]] = 1;
+    for (var j = i + 1; j < sorted.length; j++) {
+      var cand = sorted[j];
+      if (assigned[cand]) continue;
+      if (_kbBigramSim(sorted[i], cand) >= 0.2) { g.members.push(cand); assigned[cand] = 1; }
+    }
+    groups.push(g);
+  }
+  function simTo(g, cand) {
+    var best = 0;
+    [cand.group].concat(cand.members).forEach(function (t) {
+      best = Math.max(best, _kbBigramSim(g.group, t));
+      g.members.forEach(function (m) { best = Math.max(best, _kbBigramSim(m, t)); });
+    });
+    return best;
+  }
+  function settle(minSim) {
+    groups.sort(function (a, b) { return a.members.length - b.members.length; });
+    for (var k = 0; k < groups.length; k++) {
+      var g = groups[k];
+      if (g.members.length > 1 && minSim < 0.15) return false;
+      var pool = groups.filter(function (x) { return x !== g; });
+      if (!pool.length) return false;
+      var target = pool[0];
+      pool.forEach(function (c) { if (simTo(g, c) > simTo(g, target)) target = c; });
+      if (simTo(g, target) >= minSim) {
+        target.members = target.members.concat(g.members);
+      } else {
+        var other = null;
+        for (var oi = 0; oi < groups.length; oi++) if (groups[oi].group === '其他') { other = groups[oi]; break; }
+        if (!other) { other = { group: '其他', members: [] }; groups.push(other); }
+        other.members = other.members.concat(g.members);
+      }
+      groups.splice(groups.indexOf(g), 1);
+      return true;
+    }
+    return false;
+  }
+  while (groups.some(function (g) { return g.members.length <= 1; }) && groups.length > 1) {
+    if (!settle(0.15)) break;
+  }
+  while (groups.length > 6 && groups.length > 1) {
+    if (!settle(0.3)) break;
+  }
+  return groups;
+}
+
 function _kbRenderCategoryTree(docs) {
   // P8-9 v6：渲染到横排 chips（替代左侧栏列表）
   var listEl = document.getElementById('kbFilterChips');
@@ -729,15 +807,40 @@ function _kbRenderCategoryTree(docs) {
   var catNames = Object.keys(catGroups);
   catNames.sort(function(a, b) { return catGroups[b].length - catGroups[a].length; });
 
+  // P0 标签聚合：散 category 归并成大类（一级=大类、二级=原分类），过滤走 OR
+  var catCountMap = {};
+  catNames.forEach(function(c) { catCountMap[c] = catGroups[c].length; });
+  var mergedGroups = (catNames.length > 6) ? _kbMergeCategories(catNames, catCountMap) : null;
+  _kbCategoryMergeMap = {};
+  if (mergedGroups) {
+    mergedGroups.forEach(function(g) { _kbCategoryMergeMap[g.group] = g.members; });
+  }
+
   var totalDocs = docs.length;
   var html = '<div class="kb-tag all' + (_kbActiveTagFilter === null ? ' sel' : '') +
     '" data-tag="__all__" onclick="kbFilterByTag(null,this)"><span class="dot"></span>全部文档<span class="cnt">' +
     totalDocs + '</span></div>';
 
-  // 渲染每个分类
-  for (var ci = 0; ci < catNames.length; ci++) {
-    var catName = catNames[ci];
-    var count = catGroups[catName].length;
+  // 渲染每个分类（归并后的大类，或 category 本身）
+  var _renderList = [];
+  if (mergedGroups) {
+    // 大类按文档总数倒序；「其他」垫底
+    mergedGroups.forEach(function(g) {
+      var n = 0; g.members.forEach(function(m) { n += (catGroups[m] || []).length; });
+      _renderList.push({ name: g.group, count: n, members: g.members });
+    });
+    _renderList.sort(function(a, b) {
+      var ao = a.name === '其他', bo = b.name === '其他';
+      if (ao !== bo) return ao ? 1 : -1;
+      return b.count - a.count;
+    });
+  } else {
+    catNames.forEach(function(c) { _renderList.push({ name: c, count: catGroups[c].length, members: null }); });
+  }
+
+  for (var ci = 0; ci < _renderList.length; ci++) {
+    var catName = _renderList[ci].name;
+    var count = _renderList[ci].count;
     var isSel = _kbActiveTagFilter === catName;
     var cls = 'kb-tag cat' + (isSel ? ' sel' : '');
     var escapedCat = catName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -745,8 +848,14 @@ function _kbRenderCategoryTree(docs) {
     html += '<div class="' + cls + '" data-tag="' + esc(catName) + '" onclick="kbFilterByTag(\'' + escapedCat + '\',this)">' +
       '<span class="dot" style="background:' + dotColor + '"></span>' + esc(catName) +
       '<span class="cnt">' + count + '</span></div>';
-    // P8-9 v6.1：主类被选中（或其子类被选中）且有子类时，紧跟展开二级筛选 chips
-    var _subsOf = _kbSubsOfCategory(catName);
+    // 二级展开：归并成员（原分类）优先；未归并时回落星图子类（P8-9 v6.1）
+    var _subsOf;
+    if (_renderList[ci].members && _renderList[ci].members.length > 1) {
+      _subsOf = _renderList[ci].members.map(function(m) { return { name: m, count: (catGroups[m] || []).length }; })
+        .sort(function(a, b) { return b.count - a.count; });
+    } else {
+      _subsOf = _kbSubsOfCategory(catName);
+    }
     var _subActive = _subsOf.some(function(s) { return s.name === _kbActiveTagFilter; });
     if (_subsOf.length > 1 && (isSel || _subActive)) {
       for (var sj = 0; sj < _subsOf.length; sj++) {
