@@ -3087,9 +3087,15 @@ async def _split_big_categories(kb, graph_data, run_llm):
                     names = _json.loads(m.group(0))
                     # 值可能是列表（实测小模型返回 "g1": ["甲","乙"]）——取第一个
                     def _name_of(v):
+                        # 实测小模型会返回 {"g1": {"name":.., "desc":..}}——
+                        # dict 必须取 name，否则 str(dict) 整个进子类名（星图图例显示原始字典的根因）
+                        if isinstance(v, dict):
+                            v = v.get("name") or v.get("label") or ""
                         if isinstance(v, list):
                             v = v[0] if v else ""
-                        return _norm_sub(str(v))
+                        v = _norm_sub(str(v))
+                        return v if "{" not in v and len(v) <= 12 else ""
+
                     n0 = _name_of(names.get("g1"))
                     n1 = _name_of(names.get("g2"))
                 except Exception:
@@ -3630,7 +3636,7 @@ async def api_kb_map_explain(request: Request):
         "请用一两句话说明选中文档为什么和这些文档相连——它们内容上共同关心什么、各自侧重有何不同。\n\n"
         "选中文档：《%s》\n摘要：%s\n\n"
         "相连文档：\n%s\n\n"
-        "要求：不超过 80 字；只说这些摘要里有的内容；像同事口头解释，不用术语，不要编号。\n\n"
+        "要求：不超过 100 字；只用提供的摘要内容，不要引用或猜测用户说过的话；像同事口头解释，不用术语，不要编号；先一句话讲这些文档共同关心什么，再分别点出各自侧重。\n\n"
         "解读：" % (sel_title, sel_summary or "（无摘要）", "\n".join(nb_lines) or "（无相连文档）")
     )
 
