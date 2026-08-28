@@ -3078,7 +3078,7 @@ async def _split_big_categories(kb, graph_data, run_llm):
         n0 = n1 = ""
         try:
             from knowledge.tags import normalize_tag as _norm_sub
-            raw = await run_llm(prompt, 300)
+            raw = await run_llm(prompt, 500)
             import json as _json, re as _re
             # 解析策略1：标准 JSON 对象
             m = _re.search(r"\{.*\}", raw, _re.DOTALL)
@@ -3473,7 +3473,7 @@ async def api_kb_overview_refresh(request: Request):
                 "反例（需要库外数据，禁止）：「中医养生与职场理财的量化指标对比分析」\n\n"
                 "追问问题 JSON：" % docs_digest
             )
-            q_raw = await _run_async(questions_prompt, max_tokens=200)
+            q_raw = await _run_async(questions_prompt, max_tokens=500)
             try:
                 import re as _re
                 # 去掉 markdown 代码块标记
@@ -3651,13 +3651,13 @@ async def api_kb_map_explain(request: Request):
                 from core.cloud_engine import CloudEngine
                 mgr._cloud_engine = CloudEngine(mgr)
             _gen = mgr._cloud_engine.run(
-                message=prompt, model=None, max_tokens=200,
+                message=prompt, model=None, max_tokens=400,
                 history=[], context_cache=None, override_task_type="text",
                 _priority=GenerateQueue.HIGH,
             )
         else:
             _gen = mgr._stream_engine.run(
-                message=prompt, model=None, max_tokens=200,
+                message=prompt, model=None, max_tokens=600,
                 history=[], context_cache=None, override_task_type="text",
                 kb_mode=False, _priority=GenerateQueue.HIGH,
             )
