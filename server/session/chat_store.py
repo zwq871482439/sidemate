@@ -230,6 +230,7 @@ def _save_folder_session(folder_path, messages, context_cache=None):
     # 读取旧的 _file_tag（前端附加属性）
     msgs_path = os.path.join(folder_path, "messages.json")
     old_tags = {}
+    old_msgs = []
     if os.path.exists(msgs_path):
         try:
             with open(msgs_path, "r", encoding="utf-8") as f:
@@ -243,6 +244,11 @@ def _save_folder_session(folder_path, messages, context_cache=None):
             pass
 
     # 合并 _file_tag
+    # 匹配 1（历史行为）：ts+content 精确匹配。
+    # 匹配 2（0828 修复）：末尾兜底——后端 pipeline 保存时重建 user 消息，ts 用完成时刻，
+    # 与前端 append 落盘的发送时刻不同，匹配 1 必然失败（仅 AI 秒回同秒时碰巧成功，
+    # 即"刷新后引用时有时无"的根源）。若旧文件末条 user 带引用，而新 messages 的
+    # 最后一条 user 同内容且无引用，则继承 _file_tag 与 ts（还原发送时刻）。
     if old_tags:
         for m in messages:
             if m.get("role") == "user" and not m.get("_file_tag"):
@@ -250,6 +256,17 @@ def _save_folder_session(folder_path, messages, context_cache=None):
                 tag = old_tags.get(key)
                 if tag:
                     m["_file_tag"] = tag
+    if old_msgs:
+        last_old = old_msgs[-1]
+        if last_old.get("role") == "user" and last_old.get("_file_tag"):
+            for m in reversed(messages):
+                if m.get("role") != "user":
+                    continue
+                if not m.get("_file_tag") and m.get("content") == last_old.get("content"):
+                    m["_file_tag"] = last_old["_file_tag"]
+                    if last_old.get("ts"):
+                        m["ts"] = last_old["ts"]
+                break
 
     # 写入 messages.json（原子写入）
     msgs_data = {
@@ -290,7 +307,7 @@ def _save_json_session(filepath, messages, context_cache=None):
             pass
     if context_cache is None:
         context_cache = existing.get("context_cache")
-    # 合并 _file_tag
+    # 合并 _file_tag（与 _save_folder_session 相同的两级匹配：ts+content 精确 + 末尾兜底）
     old_msgs = existing.get("messages", [])
     if old_msgs:
         old_tags = {}
@@ -305,6 +322,16 @@ def _save_json_session(filepath, messages, context_cache=None):
                     tag = old_tags.get(key)
                     if tag:
                         m["_file_tag"] = tag
+        last_old = old_msgs[-1]
+        if last_old.get("role") == "user" and last_old.get("_file_tag"):
+            for m in reversed(messages):
+                if m.get("role") != "user":
+                    continue
+                if not m.get("_file_tag") and m.get("content") == last_old.get("content"):
+                    m["_file_tag"] = last_old["_file_tag"]
+                    if last_old.get("ts"):
+                        m["ts"] = last_old["ts"]
+                break
     data = {
         "version": 2,
         "context_cache": context_cache,
