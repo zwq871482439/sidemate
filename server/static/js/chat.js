@@ -803,15 +803,14 @@ async function sendMessage() {
   //   1) File 对象（刚选择，未上传）→ 立即上传到 workspace/，取返回的 path
   //   2) {path, source:'upload'}（chat-files.js 已预上传）→ 直接用 path
   //   3) {path, source:'kb'}（KB 引用，path 是 doc_id）→ 直接用 path
+  // 0828 修复：不再往 userMsg.content 追加引用 label——文档内容注入由后端 file_path 完成；
+  // 此前 append 落盘的 content（带 label）与后端重建的 content（裸文本）不一致，
+  // 导致 save_chat 的 _file_tag 继承匹配失败（刷新后引用标记丢失的真正根源）。
   if (_prePendingFile && userMsg) {
     var _alreadyHasPath = (typeof _prePendingFile.path === 'string') && _prePendingFile.path;
     if (_alreadyHasPath) {
       // 形态 2/3：已经上传过（upload）或不需要上传（kb）→ 直接用 path
       uploadedFilePath = _prePendingFile.path;
-      var _refLabel = _prePendingFile.source === 'kb'
-        ? ('[用户引用了知识库文档: ' + (_prePendingFile.name || '') + '，请读取并参考]')
-        : ('[用户上传了文件: ' + (_prePendingFile.name || '') + '，请读取并参考]');
-      userMsg.content += '\n\n' + _refLabel;
       pendingFile = null;
     } else {
       // 形态 1：真实 File 对象，需要上传
@@ -827,7 +826,6 @@ async function sendMessage() {
         var fileResp = await fetch(_uploadUrl, {method: 'POST', body: fd2});
         var fileData = await fileResp.json();
         if (fileData.path) {
-          userMsg.content += '\n\n[用户上传了文件: ' + (_prePendingFile.name || '') + '，请读取并参考]';
           uploadedFilePath = fileData.path;
         }
       } catch(e) { console.error('[chat.sendMessage.fileUpload]', e); }

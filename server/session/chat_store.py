@@ -262,7 +262,10 @@ def _save_folder_session(folder_path, messages, context_cache=None):
             for m in reversed(messages):
                 if m.get("role") != "user":
                     continue
-                if not m.get("_file_tag") and m.get("content") == last_old.get("content"):
+                _nc = m.get("content") or ""
+                _oc = last_old.get("content") or ""
+                # 前缀匹配：历史版本 append 的 content 可能带引用 label 尾巴
+                if not m.get("_file_tag") and _nc and (_oc == _nc or _oc.startswith(_nc)):
                     m["_file_tag"] = last_old["_file_tag"]
                     if last_old.get("ts"):
                         m["ts"] = last_old["ts"]
@@ -327,7 +330,10 @@ def _save_json_session(filepath, messages, context_cache=None):
             for m in reversed(messages):
                 if m.get("role") != "user":
                     continue
-                if not m.get("_file_tag") and m.get("content") == last_old.get("content"):
+                _nc = m.get("content") or ""
+                _oc = last_old.get("content") or ""
+                # 前缀匹配：历史版本 append 的 content 可能带引用 label 尾巴
+                if not m.get("_file_tag") and _nc and (_oc == _nc or _oc.startswith(_nc)):
                     m["_file_tag"] = last_old["_file_tag"]
                     if last_old.get("ts"):
                         m["ts"] = last_old["ts"]
