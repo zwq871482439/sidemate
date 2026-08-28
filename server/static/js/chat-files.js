@@ -143,6 +143,21 @@ function removeSingleKbDoc(idx) {
 }
 window.removeSingleKbDoc = removeSingleKbDoc;
 
+// 统一清理引用/附件状态（新会话、切换会话时调用）。
+// 之前 newChat 只清 pendingFile + 指示器，_refFilePath / _uploadedFiles / _kbSelectedFiles
+// 跨会话残留，导致 A 会话的引用被悄悄带进 B 会话的首条消息。
+function resetAttachState() {
+  if (typeof pendingFile !== 'undefined') pendingFile = null;
+  if (typeof _refFilePath !== 'undefined') _refFilePath = null;
+  window._uploadedFiles = [];
+  window._kbSelectedFiles = [];
+  hideFileIndicator();
+  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
+    try { TokenEstimator.updateInputDisplay(); } catch (e) {}
+  }
+}
+window.resetAttachState = resetAttachState;
+
 function hideFileIndicator() {
   _pendingFileName = '';
   _pendingFileSource = '';

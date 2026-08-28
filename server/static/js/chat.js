@@ -748,6 +748,14 @@ async function sendMessage() {
     }
   }
 
+  // Bug修复（测试机 0828）：引用快照必须在自动 newChat 之前捕获——
+  // newChat 会清 pendingFile / _pendingFileName（hideFileIndicator），
+  // 导致"新会话首条消息带引用"时 _file_tag 与 file_path 全部丢失（刷新后引用消失）。
+  var _prePendingFile = (typeof pendingFile !== 'undefined') ? pendingFile : null;
+  var _sentFileName = (typeof _pendingFileName !== 'undefined') ? _pendingFileName : '';
+  var _sentFileSource = (typeof _pendingFileSource !== 'undefined') ? _pendingFileSource : '';
+  var _preRefPath = (typeof _refFilePath !== 'undefined') ? _refFilePath : null;
+
   // Patch5 修复：空状态发消息时自动新建 session
   if (typeof currentChatFile === 'undefined' || !currentChatFile) {
     if (typeof newChat === 'function') {
@@ -766,10 +774,7 @@ async function sendMessage() {
     }
   }
 
-  // 提前捕获文件名和来源（在 clear 之前）
   var uploadedFilePath = null;
-  var _sentFileName = (typeof _pendingFileName !== 'undefined') ? _pendingFileName : '';
-  var _sentFileSource = (typeof _pendingFileSource !== 'undefined') ? _pendingFileSource : '';
 
   var ts = new Date().toTimeString().slice(0,8);
   var userMsg = {role:'user', content: text, ts: ts};
@@ -793,26 +798,26 @@ async function sendMessage() {
   var msgEl3 = document.getElementById('messages');
   if (msgEl3) { msgEl3.scrollTop = msgEl3.scrollHeight; }
 
-  // 文件上传处理
+  // 文件上传处理（使用 newChat 前的快照 _prePendingFile，全局 pendingFile 可能已被 newChat 清空）
   // 三种 pendingFile 形态：
   //   1) File 对象（刚选择，未上传）→ 立即上传到 workspace/，取返回的 path
   //   2) {path, source:'upload'}（chat-files.js 已预上传）→ 直接用 path
   //   3) {path, source:'kb'}（KB 引用，path 是 doc_id）→ 直接用 path
-  if ((typeof pendingFile !== 'undefined') && pendingFile && userMsg) {
-    var _alreadyHasPath = (typeof pendingFile.path === 'string') && pendingFile.path;
+  if (_prePendingFile && userMsg) {
+    var _alreadyHasPath = (typeof _prePendingFile.path === 'string') && _prePendingFile.path;
     if (_alreadyHasPath) {
       // 形态 2/3：已经上传过（upload）或不需要上传（kb）→ 直接用 path
-      uploadedFilePath = pendingFile.path;
-      var _refLabel = pendingFile.source === 'kb'
-        ? ('[用户引用了知识库文档: ' + (pendingFile.name || '') + '，请读取并参考]')
-        : ('[用户上传了文件: ' + (pendingFile.name || '') + '，请读取并参考]');
+      uploadedFilePath = _prePendingFile.path;
+      var _refLabel = _prePendingFile.source === 'kb'
+        ? ('[用户引用了知识库文档: ' + (_prePendingFile.name || '') + '，请读取并参考]')
+        : ('[用户上传了文件: ' + (_prePendingFile.name || '') + '，请读取并参考]');
       userMsg.content += '\n\n' + _refLabel;
       pendingFile = null;
     } else {
       // 形态 1：真实 File 对象，需要上传
       try {
         var fd2 = new FormData();
-        fd2.append('file', pendingFile);
+        fd2.append('file', _prePendingFile);
         var _uploadChatId = '';
         if (typeof currentChatFile !== 'undefined' && currentChatFile) {
           _uploadChatId = currentChatFile.split(/[\\/]/).pop().replace('.json','');
@@ -822,15 +827,15 @@ async function sendMessage() {
         var fileResp = await fetch(_uploadUrl, {method: 'POST', body: fd2});
         var fileData = await fileResp.json();
         if (fileData.path) {
-          userMsg.content += '\n\n[用户上传了文件: ' + (pendingFile.name || '') + '，请读取并参考]';
+          userMsg.content += '\n\n[用户上传了文件: ' + (_prePendingFile.name || '') + '，请读取并参考]';
           uploadedFilePath = fileData.path;
         }
       } catch(e) { console.error('[chat.sendMessage.fileUpload]', e); }
       pendingFile = null;
     }
   }
-  // 在 clearFileRef 之前保存引用路径
-  var _savedRefPath = (typeof _refFilePath !== 'undefined') ? _refFilePath : null;
+  // 在 clearFileRef 之前保存引用路径（同样用 newChat 前快照）
+  var _savedRefPath = _preRefPath;
   // 保存到全局供 confirmDocOutline 使用（doc_action Phase 1→Phase 2 引用传递）
   window._savedRefPathForDoc = _savedRefPath;
   // KB 引用也捕获文件名

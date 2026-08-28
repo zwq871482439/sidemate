@@ -299,6 +299,8 @@ async function onSessionChange() {
   if (typeof generating !== 'undefined' && generating) return;
   var path = document.getElementById('sessionSelect').value;
   if (!path) return;
+  // 切换会话：清引用/附件状态，防止上个会话的引用被带进新会话的首条消息
+  if (typeof resetAttachState === 'function') resetAttachState();
   var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/switch', {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({path: path})
@@ -321,6 +323,9 @@ async function onSessionChange() {
 
 async function newChat() {
   if (typeof generating !== 'undefined' && generating) return;
+  // 统一清引用状态（含 _refFilePath/_uploadedFiles/_kbSelectedFiles；sendMessage 自动 newChat
+  // 场景已在调用前做了引用快照，不受影响）
+  if (typeof resetAttachState === 'function') resetAttachState();
   if (typeof pendingFile !== 'undefined') pendingFile = null;
   if (typeof hideFileIndicator === 'function') hideFileIndicator();
   var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/new', {method:'POST'});
