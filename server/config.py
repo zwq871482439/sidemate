@@ -272,7 +272,7 @@ _CONFIG_VALIDATORS = {
     "kb_max_total_chunks": lambda v: isinstance(v, int) and 1 <= v <= 100000,
     "access_token_default_ttl": lambda v: isinstance(v, int) and 0 <= v <= 86400 * 30,
     "thread_pool_max_workers": lambda v: isinstance(v, int) and 1 <= v <= 16,
-    "ai_mode": lambda v: v in ("local", "cloud"),
+    "ai_mode": lambda v: v in ("local", "cloud", "parallel"),  # 0828 修复：校验器漏了 parallel，导致切换并行被拒绝、请求回落 cloud
     "kb_ai_mode": lambda v: v in ("local", "cloud"),
     "cloud_context_policy": lambda v: v in ("full", "current_only", "slim_history"),
     "cloud_api_format": lambda v: v in ("openai", "anthropic"),
