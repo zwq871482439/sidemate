@@ -326,8 +326,6 @@ async function newChat() {
   // 统一清引用状态（含 _refFilePath/_uploadedFiles/_kbSelectedFiles；sendMessage 自动 newChat
   // 场景已在调用前做了引用快照，不受影响）
   if (typeof resetAttachState === 'function') resetAttachState();
-  if (typeof pendingFile !== 'undefined') pendingFile = null;
-  if (typeof hideFileIndicator === 'function') hideFileIndicator();
   var resp = await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/new', {method:'POST'});
   var data = await resp.json();
   currentChatFile = data.path;

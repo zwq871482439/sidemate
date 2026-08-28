@@ -227,11 +227,14 @@ function checkScrollBtn() {
 }
 
 function clearFileRef() {
-  if (typeof _refFilePath !== 'undefined') _refFilePath = null;
-  if (typeof pendingFile !== 'undefined') pendingFile = null;
-  if (typeof hideFileIndicator === 'function') hideFileIndicator();
-  if (typeof TokenEstimator !== 'undefined' && TokenEstimator.updateInputDisplay) {
-    TokenEstimator.updateInputDisplay();
+  // 0828 收口：清理逻辑统一走 resetAttachState（chat-files.js），
+  // 消灭并存的第二套清理（曾出现 pendingFile 与 _pendingFileName 清理不一致的半态）
+  if (typeof resetAttachState === 'function') {
+    resetAttachState();
+  } else {
+    if (typeof _refFilePath !== 'undefined') _refFilePath = null;
+    if (typeof pendingFile !== 'undefined') pendingFile = null;
+    if (typeof hideFileIndicator === 'function') hideFileIndicator();
   }
   var input = document.getElementById('unifiedInput');
   if (input) input.value = '';
