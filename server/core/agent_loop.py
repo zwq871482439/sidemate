@@ -794,7 +794,7 @@ class AgentLoop:
                         return {
                             "success": False, "tool": "fetch_url",
                             "error": "private_network_blocked",
-                            "message": "内网地址受保护（%s）。如需访问，请在设置→安全中选择「完全信任」权限预设。" % detail,
+                            "message": "局域网地址受保护（%s）。如需访问，请在设置→安全中选择「完全信任」权限预设。" % detail,
                         }
                     log.info("[AGENT] fetch_url 内网地址已放行（完全信任模式）: %s", url[:80])
 

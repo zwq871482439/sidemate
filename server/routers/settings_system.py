@@ -1301,8 +1301,8 @@ _PERMISSION_TOOLS = [
         # 与开关语义相反：勾选=允许内网(confirm_external_read=False)，故用 inverted 标记
         "tool_id": "intranet_access",
         "category": "信息检索",
-        "name": "允许内网访问",
-        "description": "允许 Agent 抓取内网/本机地址（如 http://192.168.x.x）。关闭则内网受保护，仅公网可访问",
+        "name": "允许访问局域网",
+        "description": "允许 Agent 抓取局域网/本机地址（如 http://192.168.x.x）。关闭则局域网受保护，仅公网可访问",
         "config_key": "confirm_external_read",
         "default_enabled": False,  # 默认 False（即 confirm_external_read=True，内网受保护）
         "inverted": True,          # config 值与勾选状态相反
