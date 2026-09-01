@@ -493,20 +493,30 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
     elapsed = time.time() - t0
     final_response = merge_text or local_answer or cloud_answer or "无有效回答"
 
+    # 双列统计先于保存计算（M1-B：随 assistant 消息一次落盘，原靠前端 enrich 回写）
+    _local_elapsed = int(((_local_done_t or time.time()) - t0) * 1000)
+    _cloud_elapsed = int(((_cloud_done_t or time.time()) - t0) * 1000)
+
+    messages = None
     try:
-        from session.chat_store import save_chat
+        from pipelines._base import persist_turn
         ts = time.strftime("%H:%M:%S")
-        messages = history_raw + [
-            {"role": "user", "content": message, "ts": ts},
-            {"role": "assistant",
+        _assistant_msg = {"role": "assistant",
              "content": final_response,
              "ts": time.strftime("%H:%M:%S"),
              "model": model_choice,
              "chars": len(final_response),
              "time": elapsed,
-             "task_type": "kb_compare"},
-        ]
-        save_chat(chat_file, messages)
+             "task_type": "kb_compare",
+             # M1-B：双列原文/统计随消息落盘（与 parallel 对齐，刷新后 footer 不丢）
+             "parallel_texts": {"local": local_answer or "", "cloud": cloud_answer or "",
+                                "merge": merge_text or ""},
+             "parallel_stats": {"local": {"chars": len(local_answer), "elapsed_ms": _local_elapsed,
+                                          "token_stats": None},
+                                "cloud": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed,
+                                          "token_stats": None}},
+             }
+        messages, _persist_mode = persist_turn(ctx, _assistant_msg)
         _saved = True
     except Exception as e:
         log.warning("[COMPARE] 保存对话失败: %s", str(e)[:80])
@@ -514,8 +524,6 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
     # done 事件
     # 补本地/云端各自统计(chars + 耗时)，与 parallel_pipeline 对齐，
     # 供前端 footer 显示双列统计（修 #知识对比footer无云端统计）。
-    _local_elapsed = int(((_local_done_t or time.time()) - t0) * 1000)
-    _cloud_elapsed = int(((_cloud_done_t or time.time()) - t0) * 1000)
     yield sse_event("done", {
         "model": model_choice,
         "chars": len(final_response),
@@ -523,6 +531,7 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
         "time": elapsed,
         "speed": len(final_response) / elapsed if elapsed > 0 else 0,
         "task_type": "kb_compare",
+        "msg_id": (messages[-1].get("id") if messages else None),
         "local_stats": {"chars": len(local_answer), "elapsed_ms": _local_elapsed},
         "cloud_stats": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed},
     })

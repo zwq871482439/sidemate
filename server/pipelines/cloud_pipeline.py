@@ -61,6 +61,7 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
     _saved = False
     _doc_outline_only = False
     _token_stats = None  # token 统计数据
+    _agent_collect = None  # Agent Loop 路径的实时部分输出（M1-B：中断兜底用）
 
     t0 = time.time()
 
@@ -115,15 +116,16 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
 
             # ====== 在线模式：Agent Loop ======
             if _ai_mode == "cloud":
+                _agent_collect = {
+                    "raw_text": "", "think_content": "", "response_text": "",
+                    "think_folded": False, "saved_task_type": "",
+                }
                 yield from _run_agent_loop(
                     ctx, message, prompt, model_history, model_choice,
                     chat_file, history_raw, context_cache, action_mode, mgr, kb,
                     t0=t0,
                     # 收集输出的变量（通过 dict 引用传递）
-                    _collect={
-                        "raw_text": "", "think_content": "", "response_text": "",
-                        "think_folded": False, "saved_task_type": "",
-                    }
+                    _collect=_agent_collect,
                 )
                 # _run_agent_loop 内部已处理保存和 done 事件
                 _saved = True
@@ -318,14 +320,44 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
             _saved = True
 
     finally:
+        # M1-B：Agent Loop 路径的中断兜底（部分输出经 _agent_collect 实时透出）。
+        # 用户中断/断连（GeneratorExit）时 agent 模式的 response_text 在外层恒为空，
+        # 没有这条路，中断的 agent 回合整条丢失（旧版靠前端 append 兜底，已随单写拆除）。
+        if (not _saved and _agent_collect is not None
+                and not _agent_collect.get("_saved")
+                and (_agent_collect.get("response_text") or _agent_collect.get("think_content"))):
+            try:
+                from pipelines._base import persist_turn as _persist_turn_agent
+                from pipelines._base import _sanitize_output as _sanitize_agent
+                _actual = _sanitize_agent(mgr.strip_think(_agent_collect.get("response_text") or ""))
+                _think = _agent_collect.get("think_content") or ""
+                if _actual.strip() or _think.strip():
+                    _stopped = bool(getattr(mgr, "stop_requested", False) or
+                                    getattr(mgr, "_stop_generation", False))
+                    _persist_turn_agent(ctx, {
+                        "role": "assistant",
+                        "content": _actual or "[思考已中断]",
+                        "ts": time.strftime("%H:%M:%S"),
+                        "think": _think,
+                        "model": model_choice,
+                        "chars": len(_actual),
+                        "time": time.time() - t0,
+                        "task_type": _agent_collect.get("saved_task_type") or "agent",
+                        "action_mode": action_mode,
+                        "_aborted": True,
+                        "_abort_reason": "user_stop" if _stopped else "network_error",
+                    })
+                    log.info("[SAVE] Agent 中断兜底落盘 %d 字", len(_actual))
+            except Exception as e:
+                log.warning("[SAVE] Agent 中断兜底落盘失败: %s", str(e)[:100])
         # 中途停止时保存已接收内容
         if not _saved and (response_text or raw_text or think_content):
             try:
                 from session.context_cache import (
                     clean_think_content_wrapped as _clean_think_final,
                 )
-                from session.chat_store import save_chat as _save_chat_final
                 from pipelines._base import _sanitize_output as _sanitize_final
+                from pipelines._base import persist_turn as _persist_turn_final
 
                 actual = response_text or raw_text
                 actual = mgr.strip_think(actual)
@@ -337,10 +369,7 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                 )
                 if (actual.strip() or _clean_think_text) and not actual.strip().startswith("[ERROR]"):
                     _elapsed = time.time() - t0
-                    _ts = time.strftime("%H:%M:%S")
-                    save_msgs = history_raw + [
-                        {"role": "user", "content": message, "ts": _ts},
-                        {"role": "assistant",
+                    _abort_msg = {"role": "assistant",
                          "content": actual or "[用户已手动终止响应]",
                          "ts": time.strftime("%H:%M:%S"),
                          "think": _clean_think_text,
@@ -350,9 +379,8 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                          "task_type": saved_task_type or "text",
                          "action_mode": action_mode,
                          # P6 #6: 终止标记,前端识别后渲染统一终止提示
-                         "_aborted": True, "_abort_reason": "user_stop"},
-                    ]
-                    _save_chat_final(chat_file, save_msgs)
+                         "_aborted": True, "_abort_reason": "user_stop"}
+                    _persist_turn_final(ctx, _abort_msg)
                     log.info("[SAVE] 中途停止，已保存 %d 字 + think %d 字",
                              len(actual), len(_clean_think_text))
             except Exception as e:
@@ -561,6 +589,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         ):
             if phase == "text":
                 full_text += content
+                _collect["response_text"] = full_text  # M1-B：外壳 finally 中断兜底用
                 yield sse_event("token", {"content": content})
 
             elif phase == "agent_think":
@@ -572,6 +601,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 else:
                     think_text += token
                     think_len = len(think_text)
+                    _collect["think_content"] = think_text  # M1-B：外壳 finally 中断兜底用
                     # 模块3a：透传 think token 到前端（供推理单元展示思考过程）
                     yield sse_event("agent_think", {"content": token})
 
@@ -753,7 +783,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         update_session_cache,
     )
     from session.chat_store import save_chat
-    from pipelines._base import _sanitize_output
+    from pipelines._base import _sanitize_output, persist_turn
 
     final_response = _sanitize_output(full_text)
     response_chars = len(final_response)
@@ -803,14 +833,14 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         if _artifacts:
             assistant_msg["artifacts"] = _artifacts
 
-        messages = history_raw + [
-            {"role": "user", "content": message, "ts": ts},
-            assistant_msg,
-        ]
-        new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
+        # 压缩估算基于完整结构（估算用 legacy 形态，真实落盘由 persist_turn 完成）
+        _est = history_raw + [{"role": "user", "content": message, "ts": ts}, assistant_msg]
+        new_cache, did_compress = update_session_cache(chat_file, _est, model_choice)
         if did_compress:
             yield sse_event("compress", {"msg": "正在压缩旧对话..."})
-        save_chat(chat_file, messages, context_cache=new_cache)
+        # M1-B 单写：只追加 assistant 消息，user 消息由 stream 入口开局落盘
+        messages, _persist_mode = persist_turn(ctx, assistant_msg, context_cache=new_cache)
+        _collect["_saved"] = True
 
     # done 事件
     done_payload = {
@@ -823,6 +853,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     }
     if _collect.get("token_stats"):
         done_payload["token_stats"] = _collect["token_stats"]
+    # M1-B：assistant 消息 id 回传（前端 card_data 视图态 enrich 凭 id 定向）
+    if messages:
+        done_payload["msg_id"] = messages[-1].get("id")
     yield sse_event("done", done_payload)
     log.info("[CLOUD-AGENT] === 完成 === model=%s type=%s chars=%d think=%d %.1fs",
              model_choice, saved_task_type, response_chars, think_chars, _elapsed)
@@ -834,7 +867,7 @@ def _save_and_done(ctx, response_text, raw_text, think_content, think_folded,
                    message, chat_file, history_raw, model_choice, context_cache, mgr,
                    token_stats=None):
     """保存对话并发射 done 事件（非 Agent Loop 路径）"""
-    from pipelines._base import sse_event, _sanitize_output
+    from pipelines._base import sse_event, _sanitize_output, persist_turn
     from session.context_cache import (
         clean_think_content_wrapped as _clean_think,
         update_session_cache,
@@ -859,10 +892,7 @@ def _save_and_done(ctx, response_text, raw_text, think_content, think_folded,
     messages = None
     new_cache = None
     if final_response.strip() and not is_error_response:
-        ts = time.strftime("%H:%M:%S")
-        messages = history_raw + [
-            {"role": "user", "content": message, "ts": ts},
-            {"role": "assistant",
+        _assistant_msg = {"role": "assistant",
              "content": final_response,
              "ts": time.strftime("%H:%M:%S"),
              "think": (_clean_think(think_content) if think_folded and len(think_content.strip()) >= 20 else ""),
@@ -870,24 +900,24 @@ def _save_and_done(ctx, response_text, raw_text, think_content, think_folded,
              "chars": response_chars, "think_chars": think_chars,
              "time": elapsed, "speed": speed,
              "task_type": saved_task_type,
-             "token_stats": token_stats},
-        ]
-        new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
+             "token_stats": token_stats}
+        _est = history_raw + [{"role": "user", "content": message, "ts": time.strftime("%H:%M:%S")}, _assistant_msg]
+        new_cache, did_compress = update_session_cache(chat_file, _est, model_choice)
         if did_compress:
             yield sse_event("compress", {"msg": "正在压缩旧对话..."})
-        save_chat(chat_file, messages, context_cache=new_cache)
+        # M1-B 单写：只追加 assistant，user 消息开局已落盘
+        messages, _persist_mode = persist_turn(ctx, _assistant_msg, context_cache=new_cache)
     else:
-        ts = time.strftime("%H:%M:%S")
-        save_messages = history_raw + [
-            {"role": "user", "content": message, "ts": ts},
-        ]
-        if is_error_response:
-            save_messages.append({
+        error_note = final_response.strip() if is_error_response else ""
+        if error_note:
+            _err_asst = {
                 "role": "assistant", "content": "[生成失败，已保留用户消息]",
                 "ts": time.strftime("%H:%M:%S"), "model": model_choice,
                 "chars": 0, "time": elapsed, "task_type": saved_task_type,
-            })
-        save_chat(chat_file, save_messages)
+            }
+            messages, _persist_mode = persist_turn(ctx, _err_asst)
+        else:
+            messages, _persist_mode = persist_turn(ctx, None)
 
     # 文档模式 docx 生成（fallback 分支：非 AgentLoop 的旧路径）
     if _doc_mode and not _doc_outline_only and final_response.strip():
@@ -932,6 +962,9 @@ def _save_and_done(ctx, response_text, raw_text, think_content, think_folded,
     }
     if token_stats:
         done_payload["token_stats"] = token_stats
+    # M1-B：assistant 消息 id 回传（前端 card_data 视图态 enrich 凭 id 定向）
+    if messages:
+        done_payload["msg_id"] = messages[-1].get("id")
     yield sse_event("done", done_payload)
     log.info("[CLOUD] === 完成 === model=%s type=%s chars=%d think=%d %.1fs",
              model_choice, saved_task_type, response_chars, think_chars, elapsed)

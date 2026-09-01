@@ -952,17 +952,8 @@ async function sendMessage() {
       }
     }
 
-    // 先把用户消息落盘
-    if (currentChatFile && userMsg) {
-      var chatFileName = currentChatFile.split(/[\\/]/).pop().replace('.json','');
-      try {
-        await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(chatFileName) + '/append', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ role: 'user', content: userMsg.content, ts: userMsg.ts, _file_tag: userMsg._file_tag || null })
-        });
-      } catch(e) { console.warn('用户消息存盘失败:', e.message); }
-    }
+    // 0.10.1 M1-B 后端单写：user 消息不再由前端 append 落盘，改由后端 stream 入口
+    // 开局落盘（ts/_file_tag 随请求体传给后端，从写入一刻起即为终态，刷新不丢引用标记）
 
     // 构建 body，检查是否有 doc_continue（Phase 2）
     // 前后端协议映射：前端 action_id → 后端 action_mode
@@ -977,6 +968,9 @@ async function sendMessage() {
       // Patch5 G：file_path 只认真实路径（上传返回的）或 KB doc_id，
       // 不再 fallback 到 _savedRefPath（文件名，会导致后端 os.path.exists 失败）
       file_path: uploadedFilePath || window._docPhase2FilePath || null,
+      // M1-B：后端单写凭据（发送时刻 ts + 引用标记）
+      user_ts: userMsg.ts,
+      _file_tag: userMsg._file_tag || null,
     };
     if (window._docContinueOutline) {
       reqBody.doc_continue = window._docContinueOutline;
@@ -1780,37 +1774,21 @@ async function sendMessage() {
 
         currentMessages.push(newMsg);
 
-        // 持久化到后端
-        if (currentChatFile) {
+        // 0.10.1 M1-B 后端单写：消息正文/统计/引用/中断标记全部由后端 pipeline 落盘，
+        // 前端不再 append（异常终止）也不再 enrich 内容字段（正常完成）。
+        // 唯一保留的回写：card_data —— CardRenderer 的前端视图态序列化（步骤卡片回放用），
+        // 属渲染层缓存而非消息真相；按 done 事件回传的 msg_id 定向更新（缺省回退末条 assistant）。
+        if (currentChatFile && newMsg.card_data) {
           try {
             var _chatName = currentChatFile.split(/[\\/]/).pop().replace('.json','');
-            if (_isAborted) {
-              // 异常终止：后端可能没存 assistant 消息，用 append 追加（带 _aborted 标记）
-              await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(_chatName) + '/append', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(newMsg)
-              });
-            } else {
-              // 正常完成：enrich 更新最后一条 assistant 消息的补充字段
-              var _enrichFields = {};
-              if (newMsg.card_data) _enrichFields.card_data = newMsg.card_data;
-              if (newMsg.parallel_texts) _enrichFields.parallel_texts = newMsg.parallel_texts;
-              if (newMsg.token_stats) _enrichFields.token_stats = newMsg.token_stats;
-              if (newMsg.parallel_stats) _enrichFields.parallel_stats = newMsg.parallel_stats;
-              if (newMsg.kb_sources) _enrichFields.kb_sources = newMsg.kb_sources;
-              if (newMsg.doc_url) _enrichFields.doc_url = newMsg.doc_url;
-              if (newMsg.doc_filename) _enrichFields.doc_filename = newMsg.doc_filename;
-              if (newMsg.action_mode) _enrichFields.action_mode = newMsg.action_mode;
-              if (Object.keys(_enrichFields).length > 0) {
-                await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(_chatName) + '/enrich', {
-                  method: 'POST',
-                  headers: {'Content-Type': 'application/json'},
-                  body: JSON.stringify(_enrichFields)
-                });
-              }
-            }
-          } catch(e) { console.warn('[chat.persist] 回写失败:', e.message); }
+            var _enrichBody = { card_data: newMsg.card_data };
+            if (doneData && doneData.msg_id) _enrichBody.msg_id = doneData.msg_id;
+            await fetch((typeof API !== 'undefined' ? API : '') + '/api/chats/' + encodeURIComponent(_chatName) + '/enrich', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(_enrichBody)
+            });
+          } catch(e) { console.warn('[chat.persist] card_data 回写失败:', e.message); }
         }
       }
     } // end else (non-doc-outline mode)

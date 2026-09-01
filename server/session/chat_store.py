@@ -6,6 +6,7 @@ session/chat_store.py — 对话文件管理（文件夹格式 + 旧格式兼容
   - safe_chat_name   — 对话名称安全校验
   - today_str        — 获取当天日期字符串
   - new_chat_file    — 创建新对话文件（线程安全）
+  - append_message   — 追加单条消息（0.10.1 M1-B 后端单写入口，自动分配 id）
   - save_chat        — 保存对话（线程安全）
   - load_chat        — 加载对话消息
   - load_chat_cache  — 加载 context_cache
@@ -206,6 +207,89 @@ def ensure_chat_subdirs(chat_id):
                 log.warning("[CHAT_STORE] 创建子目录失败 %s: %s", sub_path, str(e)[:80])
 
     return chat_path
+
+
+def _next_msg_id(messages):
+    """分配会话内单调递增消息 id（m%04d）。0.10.1 M1-B 引入：
+    旧消息无 id 不回填（双轨兼容），只为新消息分配。"""
+    max_n = 0
+    for m in messages:
+        mid = m.get("id") if isinstance(m, dict) else None
+        if isinstance(mid, str):
+            mm = re.match(r'^m(\d+)$', mid)
+            if mm:
+                max_n = max(max_n, int(mm.group(1)))
+    return "m%04d" % (max_n + 1)
+
+
+def append_message(chat_path, msg):
+    """后端单写入口（0.10.1 M1-B）：追加一条消息到会话，线程安全。
+
+    - 自动分配 id（若 msg 无 id）
+    - 文件夹与旧 .json 格式都支持
+    - 返回写入后的消息 dict（含 id）；chat_path 无效时返回 None
+    """
+    if not chat_path:
+        return None
+
+    _ensure_migrated()
+
+    with _chat_save_lock:
+        if _is_folder_session(chat_path):
+            msgs_path = os.path.join(chat_path, "messages.json")
+            data = {"version": 3, "messages": []}
+            if os.path.exists(msgs_path):
+                try:
+                    with open(msgs_path, "r", encoding="utf-8") as f:
+                        raw = json.load(f)
+                    if isinstance(raw, dict):
+                        data = raw
+                    elif isinstance(raw, list):
+                        data = {"version": 3, "messages": raw}
+                except Exception:
+                    pass
+            data.setdefault("messages", [])
+            msg = dict(msg)
+            if not msg.get("id"):
+                msg["id"] = _next_msg_id(data["messages"])
+            data["messages"].append(msg)
+            atomic_write_json(msgs_path, data)
+            # 更新 meta.json
+            meta_path = os.path.join(chat_path, "meta.json")
+            meta = {}
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                except Exception:
+                    pass
+            meta["message_count"] = len(data["messages"])
+            meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            atomic_write_json(meta_path, meta)
+            return msg
+
+        # 旧 .json 格式
+        if os.path.isfile(chat_path):
+            data = {"version": 2, "messages": []}
+            try:
+                with open(chat_path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if isinstance(raw, dict):
+                    data = raw
+                elif isinstance(raw, list):
+                    data = {"version": 2, "messages": raw}
+            except Exception:
+                pass
+            data.setdefault("messages", [])
+            msg = dict(msg)
+            if not msg.get("id"):
+                msg["id"] = _next_msg_id(data["messages"])
+            data["messages"].append(msg)
+            data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            atomic_write_json(chat_path, data)
+            return msg
+
+    return None
 
 
 def save_chat(filepath, messages, context_cache=None):

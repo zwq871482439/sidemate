@@ -237,6 +237,29 @@ async def api_chat_stream(request: Request):
         _ai_mode))
     mgr.stop_requested = False
 
+    # ===== 0.10.1 M1-B 后端单写：开局即落盘 user 消息 =====
+    # 位置刻意放在所有前置守卫之前——与旧版「前端 append 先于 stream 请求」的行为对齐：
+    # 即使后续守卫拦截（无模型/KB 忙等），用户消息也已留痕。此后管道完成时只追加
+    # assistant 消息（persist_turn），不再重建/覆写 user 消息，_file_tag 与发送
+    # 时刻 ts 从写入那一刻起就是终态，刷新不丢引用标记。
+    # 跳过条件与前端气泡显示一致：doc_continue（Phase2 无用户气泡）或空消息不存。
+    _saved_user = None
+    if chat_file and not body.get("doc_continue") and (message or "").strip():
+        try:
+            from session.chat_store import append_message
+            _um = {
+                "role": "user",
+                "content": message,
+                "ts": body.get("user_ts") or time.strftime("%H:%M:%S"),
+            }
+            _ft = body.get("_file_tag")
+            if isinstance(_ft, dict) and isinstance(_ft.get("name"), str):
+                _um["_file_tag"] = {"name": _ft["name"], "source": _ft.get("source") or "upload"}
+            _saved_user = append_message(chat_file, _um)
+        except Exception as e:
+            # 落盘失败不阻断对话——persist_turn 会回退 legacy 重建路径
+            log.warning("[CHAT] user 消息开局落盘失败，将走 legacy 路径: %s", str(e)[:100])
+
     # P7: 本地模式前置检查——llama-server 未就绪时给友好提示（不等 Connection error）
     _needs_local = _ai_mode in ("local", "parallel")
     if _needs_local:
@@ -389,6 +412,10 @@ async def api_chat_stream(request: Request):
     )
     # 存储管道启动时间（供 Agent Loop 计算耗时）
     ctx._pipeline_t0 = time.time()
+    # M1-B 单写：把开局落盘的 user 消息句柄交给管道（persist_turn 凭它辨认本回合）
+    if _saved_user:
+        ctx.user_msg_id = _saved_user["id"]
+        ctx.user_msg_saved = True
 
     log.info("[CHAT] 即将创建 StreamingResponse, ai_mode=%s, model_choice=%s" % (_ai_mode, model_choice))
 
@@ -656,10 +683,12 @@ async def api_chats_append(chat_name: str, request: Request):
 
 @router.post("/api/chats/{chat_name}/enrich")
 async def api_chats_enrich(chat_name: str, request: Request):
-    """回写前端补充字段到最近的 assistant 消息（agent_timeline/token_stats/kb_sources/doc_url 等）
+    """回写消息的补充字段（0.10.1 M1-B 起收窄为视图态专用）
 
-    前端在流式完成后调用，把流式过程中收集的额外数据同步到后端持久化。
-    只更新最后一条 assistant 消息，不会新增消息。
+    M1-B 后端单写后：消息正文/统计/引用/中断标记全部由后端 pipeline 落盘，
+    本接口只承载 card_data（CardRenderer 前端视图态序列化，渲染层缓存）等
+    前端衍生的视图状态。定位方式：优先按 body.msg_id 精确匹配（done 事件回传），
+    缺省时回退「最后一条 assistant 消息」的历史行为。
     """
     body = await request.json()
     safe_name = _safe_chat_name(chat_name)
@@ -704,18 +733,27 @@ async def api_chats_enrich(chat_name: str, request: Request):
             if not messages:
                 return {"ok": True, "updated": False, "reason": "no messages"}
 
-            # 找到最后一条 assistant 消息
-            last_assistant_idx = -1
-            for i in range(len(messages) - 1, -1, -1):
-                if messages[i].get("role") == "assistant":
-                    last_assistant_idx = i
-                    break
+            # M1-B：优先按 msg_id 精确定位
+            _target_idx = -1
+            _msg_id = body.get("msg_id")
+            if _msg_id:
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i].get("id") == _msg_id:
+                        _target_idx = i
+                        break
 
-            if last_assistant_idx < 0:
+            # 回退：找到最后一条 assistant 消息（历史行为）
+            if _target_idx < 0:
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i].get("role") == "assistant":
+                        _target_idx = i
+                        break
+
+            if _target_idx < 0:
                 return {"ok": True, "updated": False, "reason": "no assistant msg"}
 
             # 回写字段
-            messages[last_assistant_idx].update(enrich_fields)
+            messages[_target_idx].update(enrich_fields)
 
             # 原子写入
             if os.path.isdir(filepath):

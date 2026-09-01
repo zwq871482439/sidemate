@@ -58,6 +58,83 @@ class StreamContext:
     is_kb_compare: bool = False  # Patch3: 是否启用文库对比模式
     memory_local: List[dict] = field(default_factory=list)  # P6: Chat Tab 本地列历史
     parallel_options: dict = field(default_factory=dict)  # P6: 并行模式选项（allow_cloud_keywords 等）
+    # 0.10.1 M1-B 后端单写：stream 入口开局落盘的 user 消息
+    user_msg_id: str = ""        # 开局落盘的 user 消息 id（空=未落盘，走 legacy 重建）
+    user_msg_saved: bool = False  # user 消息是否已在开局落盘
+
+
+# ============================================================
+#  单写持久化（0.10.1 M1-B：后端为消息唯一写入源）
+# ============================================================
+
+def persist_turn(ctx, assistant_msg, context_cache=None):
+    """回合落盘：读盘 → 追加 assistant 消息 → 保存。
+
+    单写路径（新）：stream 入口已把 user 消息开局落盘（ctx.user_msg_saved），
+    这里从磁盘读出现状（含 user 消息的 _file_tag/发送时刻 ts，不再重建），
+    追加 assistant 消息后整体保存——chat_store 的 ts/内容两级匹配合并对
+    新消息不再触发（user 消息自始至终只有一条，无人覆写它）。
+
+    Legacy 回退（旧会话/旧前端/开局未落盘）：按历史行为重建
+    history_raw + [user, assistant]，save_chat 的两级匹配继续兜底 _file_tag。
+
+    Args:
+        ctx: StreamContext
+        assistant_msg: assistant 消息 dict；为 None 表示只保 user（空回复场景）
+        context_cache: update_session_cache 的产物（None=不动缓存文件）
+
+    Returns:
+        (messages, mode) — mode: "append"（单写）/ "legacy"（回退重建）
+    """
+    from session.chat_store import save_chat, load_chat, _next_msg_id
+
+    if ctx.user_msg_saved and ctx.user_msg_id:
+        try:
+            disk = load_chat(ctx.chat_file) or []
+            if disk and disk[-1].get("role") == "user" and disk[-1].get("id") == ctx.user_msg_id:
+                if assistant_msg is not None and not assistant_msg.get("id"):
+                    assistant_msg["id"] = _next_msg_id(disk)
+                if assistant_msg is not None:
+                    disk = disk + [assistant_msg]
+                save_chat(ctx.chat_file, disk, context_cache=context_cache)
+                return disk, "append"
+            # 磁盘末条不是本回合的 user 消息（并发写/外部改动）：不回退重建，
+            # 直接基于磁盘追加，宁可保住别人的写入也不整表覆写
+            if disk:
+                if assistant_msg is not None and not assistant_msg.get("id"):
+                    assistant_msg["id"] = _next_msg_id(disk)
+                if assistant_msg is not None:
+                    disk = disk + [assistant_msg]
+                save_chat(ctx.chat_file, disk, context_cache=context_cache)
+                log.warning("[PERSIST] 磁盘末条非本回合 user（期望 %s），已按磁盘现状追加",
+                            ctx.user_msg_id)
+                return disk, "append"
+        except Exception as e:
+            log.warning("[PERSIST] 单写路径异常，回退 legacy: %s", str(e)[:100])
+
+    # legacy 回退：历史行为重建整表（无条件补 user 消息，与旧 pipeline 行为一致；
+    # doc_continue 等空 content 场景旧版也照存，这里不擅自改语义）
+    messages = list(ctx.history_raw or [])
+    new_tail = []
+    if not ctx.user_msg_saved:
+        import time as _t
+        _um = {"role": "user", "content": ctx.message,
+               "ts": ctx.body.get("user_ts") or _t.strftime("%H:%M:%S")}
+        _ft = ctx.body.get("_file_tag")
+        if _ft:
+            _um["_file_tag"] = _ft
+        new_tail.append(_um)
+    if assistant_msg is not None:
+        new_tail.append(assistant_msg)
+    # 新消息按序分配 id（旧消息无 id 不回填）
+    for _m in new_tail:
+        if not _m.get("id"):
+            _m["id"] = _next_msg_id(messages)
+            messages.append(_m)
+        else:
+            messages.append(_m)
+    save_chat(ctx.chat_file, messages, context_cache=context_cache)
+    return messages, "legacy"
 
 
 # ============================================================

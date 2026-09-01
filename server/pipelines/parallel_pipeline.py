@@ -463,6 +463,53 @@ def _extract_cloud_keywords(ctx, question: str, cloud_history: list = None) -> s
 
 
 def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
+    """并行模式管道 — 实时双线程流式（外壳：M1-B 补中断兜底落盘）
+
+    并行管道历史遗留：无后端 finally 保存、无 stop 检查，用户中断/断连时
+    内容只靠前端 append 才落盘（0.9.8 引用标记回归的重灾区）。M1-B 后端单写
+    后由本外壳统一兜底：impl 把中间产物实时挂在 ctx._par_partial 上，
+    任何中断/异常（含 GeneratorExit）都会把已有内容以 _aborted 标记落盘。
+    """
+    try:
+        yield from _run_parallel_pipeline_impl(ctx)
+    finally:
+        if not getattr(ctx, "_par_saved", False):
+            _p = getattr(ctx, "_par_partial", None) or {}
+            _local = (_p.get("local") or "").strip()
+            _cloud = (_p.get("cloud") or "").strip()
+            _merge = (_p.get("merge") or "").strip()
+            _content = _merge or _local or _cloud
+            if _content:
+                try:
+                    from pipelines._base import persist_turn
+                    _mgr = ctx.mgr
+                    _stopped = bool(getattr(_mgr, "stop_requested", False) or
+                                    getattr(_mgr, "_stop_generation", False))
+                    _elapsed = time.time() - ctx.__dict__.get("_pipeline_t0", time.time())
+                    _msg = {
+                        "role": "assistant",
+                        "content": _content,
+                        "ts": time.strftime("%H:%M:%S"),
+                        "model": ctx.model_choice,
+                        "chars": len(_content),
+                        "time": _elapsed,
+                        "task_type": "parallel",
+                        "action_mode": ctx.action_mode or "chat",
+                        "_aborted": True,
+                        "_abort_reason": "user_stop" if _stopped else "network_error",
+                    }
+                    if _local or _cloud:
+                        _msg["parallel_texts"] = {"local": _local, "cloud": _cloud, "merge": _merge}
+                    if _p.get("sources"):
+                        _msg["kb_sources"] = _p["sources"]
+                    persist_turn(ctx, _msg)
+                    log.info("[PARALLEL] 中断兜底落盘 %d 字 (reason=%s)",
+                             len(_content), _msg["_abort_reason"])
+                except Exception as e:
+                    log.warning("[PARALLEL] 中断兜底落盘失败: %s", str(e)[:100])
+
+
+def _run_parallel_pipeline_impl(ctx) -> Generator[str, None, None]:
     """并行模式管道 — 实时双线程流式
 
     Args:
@@ -593,6 +640,12 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         cloud_error = cloud_state["error"]
         local_sources = local_state["sources"]
 
+    # M1-B：中断兜底用的部分产物挂到 ctx（外壳 finally 读取）
+    ctx._par_partial = {"local": "".join(local_answer_parts),
+                        "cloud": "".join(cloud_answer_parts),
+                        "merge": "",
+                        "sources": local_sources}
+
     # 本地列完成事件（Step 化：mark_done 自动算 elapsed_ms）
     local_answer = "".join(local_answer_parts).strip()
     if local_error and not local_answer:
@@ -692,6 +745,9 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     if not (local_has and cloud_has):
         yield _sse_channel_event("merge", "stream", {"content": merge_text})
 
+    # M1-B：更新中断兜底的 merge 产物
+    ctx._par_partial["merge"] = merge_text
+
     # 融合 done（Step 化）
     step_merge.mark_done()
     yield step_to_sse(step_merge, "done")
@@ -705,16 +761,22 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
     # 构建 agent_timeline 数据（Step 化：steps_to_timeline 自动生成，双写 id/step 兼容前端）
     agent_timeline = steps_to_timeline([step_retrieve, step_local_gen, step_cloud_gen, step_merge])
 
+    # 词元统计先于保存计算（M1-B：parallel_stats/kb_sources/parallel_texts 全部
+    # 由后端随 assistant 消息一次落盘，不再依赖前端 enrich 回写）
+    _local_elapsed = getattr(step_local_gen, "elapsed_ms", 0) or 0
+    _cloud_elapsed = getattr(step_cloud_gen, "elapsed_ms", 0) or 0
+    _local_ts = local_state.get("token_stats") if isinstance(local_state, dict) else None
+    _cloud_ts = cloud_state.get("token_stats") if isinstance(cloud_state, dict) else None
+
+    messages = None
     try:
-        from session.chat_store import save_chat
+        from pipelines._base import persist_turn
         from session.context_cache import update_session_cache
         ts = time.strftime("%H:%M:%S")
         # 子任务C: memory_local 摘要化（澄清1方案d）。下一轮本地列看摘要而非全文，
         # 释放 8K 窗口空间。保留 memory_local_full 全文供调试。
         _memory_local_summary = _summarize_local_answer(local_answer, message, mgr)
-        messages = history_raw + [
-            {"role": "user", "content": message, "ts": ts},
-            {"role": "assistant",
+        _assistant_msg = {"role": "assistant",
              "content": final_response,
              "ts": time.strftime("%H:%M:%S"),
              "model": model_choice,
@@ -727,25 +789,31 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
              "memory_local_full": (local_answer or "") if _memory_local_summary != (local_answer or "") else None,
              "memory_cloud": cloud_answer or "",
              "agent_timeline": agent_timeline,
-             },
-        ]
+             # M1-B：双列原文/双列统计/KB 来源随消息落盘（原靠前端 enrich/append）
+             "parallel_texts": {"local": local_answer or "", "cloud": cloud_answer or "",
+                                "merge": merge_text or ""},
+             "parallel_stats": {"local": {"chars": len(local_answer), "elapsed_ms": _local_elapsed,
+                                          "token_stats": _local_ts},
+                                "cloud": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed,
+                                          "token_stats": _cloud_ts}},
+             }
+        if local_sources:
+            _assistant_msg["kb_sources"] = local_sources
         # 子任务C: 接入 session 压缩（复刻 local_pipeline/_base 范式）。
-        # 原并行模式根本没调 update_session_cache，历史无限堆积。
-        new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
+        _est = history_raw + [{"role": "user", "content": message, "ts": ts}, _assistant_msg]
+        new_cache, did_compress = update_session_cache(chat_file, _est, model_choice)
         if did_compress:
             yield sse_event("compress", {"msg": "正在压缩旧对话..."})
-        save_chat(chat_file, messages, context_cache=new_cache)
+        # M1-B 单写：只追加 assistant，user 消息开局已落盘
+        messages, _persist_mode = persist_turn(ctx, _assistant_msg, context_cache=new_cache)
         _saved = True
+        ctx._par_saved = True
     except Exception as e:
         log.warning("[PARALLEL] 保存对话失败: %s", str(e)[:80])
 
     # done 事件
     # P6 #13: 补本地/云端各自统计(chars + 耗时 + 词元),前端分属各自卡片展示
     # 词元：本地/云端引擎的真实 token_stats（drain 时捕获），无则 None（前端估算）
-    _local_elapsed = getattr(step_local_gen, "elapsed_ms", 0) or 0
-    _cloud_elapsed = getattr(step_cloud_gen, "elapsed_ms", 0) or 0
-    _local_ts = local_state.get("token_stats") if isinstance(local_state, dict) else None
-    _cloud_ts = cloud_state.get("token_stats") if isinstance(cloud_state, dict) else None
     yield sse_event("done", {
         "model": model_choice,
         "chars": len(final_response),
@@ -754,6 +822,8 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
         "speed": len(final_response) / elapsed if elapsed > 0 else 0,
         "task_type": "parallel",
         "agent_timeline": agent_timeline,
+        # M1-B：assistant 消息 id 回传，前端 enrich（card_data 视图态）凭 id 定向
+        "msg_id": (messages[-1].get("id") if messages else None),
         "local_stats": {"chars": len(local_answer), "elapsed_ms": _local_elapsed,
                         "token_stats": _local_ts},
         "cloud_stats": {"chars": len(cloud_answer), "elapsed_ms": _cloud_elapsed,

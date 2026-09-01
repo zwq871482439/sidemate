@@ -636,6 +636,7 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
         is_error_response = final_response.strip().startswith("[ERROR]")
         messages = None
         new_cache = None
+        from pipelines._base import persist_turn
         if final_response.strip() and not is_error_response:
             ts = time.strftime("%H:%M:%S")
             # Doc 模式 Phase1（仅生成提纲）：打标记，供前端刷新后重建确认栏
@@ -643,9 +644,10 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             _assistant_extra = {}
             if action_mode == "doc" and _doc_outline_only:
                 _assistant_extra = {"action_mode": "doc", "doc_phase": "outline"}
-            messages = history_raw + [
-                {"role": "user", "content": message, "ts": ts},
-                {"role": "assistant", "content": final_response,
+            # M1-B 单写：kb_sources 由后端直接持久化（原靠前端 enrich 回写）
+            if getattr(ctx, "kb_sources", None):
+                _assistant_extra["kb_sources"] = ctx.kb_sources
+            _assistant_msg = {"role": "assistant", "content": final_response,
                  "ts": time.strftime("%H:%M:%S"),
                  "think": (_clean_think(think_content) if think_folded and len(think_content.strip()) >= 20 else ""),
                  "model": model_choice,
@@ -653,26 +655,25 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                  "time": elapsed, "speed": speed,
                  "task_type": saved_task_type,
                  "token_stats": _token_stats,
-                 **_assistant_extra},
-            ]
-            new_cache, did_compress = update_session_cache(chat_file, messages, model_choice)
+                 **_assistant_extra}
+            # 先按 legacy 结构估算压缩（update_session_cache 只看内容长度），再落盘
+            _est = history_raw + [{"role": "user", "content": message, "ts": ts}, _assistant_msg]
+            new_cache, did_compress = update_session_cache(chat_file, _est, model_choice)
             if did_compress:
                 yield sse_event("compress", {"msg": "较早的对话已省略，只保留最近对话"})
-            save_chat(chat_file, messages, context_cache=new_cache)
+            messages, _persist_mode = persist_turn(ctx, _assistant_msg, context_cache=new_cache)
             _saved = True
         else:
-            ts = time.strftime("%H:%M:%S")
             error_note = final_response.strip() if is_error_response else ""
-            save_messages = history_raw + [
-                {"role": "user", "content": message, "ts": ts},
-            ]
             if error_note:
-                save_messages.append({
+                _err_msg = {
                     "role": "assistant", "content": "[生成失败，已保留用户消息]",
                     "ts": time.strftime("%H:%M:%S"), "model": model_choice,
                     "chars": 0, "time": elapsed, "task_type": saved_task_type,
-                })
-            save_chat(chat_file, save_messages)
+                }
+                messages, _persist_mode = persist_turn(ctx, _err_msg)
+            else:
+                messages, _persist_mode = persist_turn(ctx, None)
             _saved = True
             if is_error_response:
                 log.warning("[LOCAL] Model error (user msg saved): %s", error_note[:100])
@@ -716,6 +717,9 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
         }
         if _token_stats:
             done_payload["token_stats"] = _token_stats
+        # M1-B：assistant 消息 id 回传（前端 card_data 视图态 enrich 凭 id 定向）
+        if messages:
+            done_payload["msg_id"] = messages[-1].get("id")
         yield sse_event("done", done_payload)
         log.info("[LOCAL] === 完成 === model=%s type=%s chars=%d think=%d %.1fs",
                  model_choice, saved_task_type, response_chars, think_chars, elapsed)
@@ -728,7 +732,6 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 from session.context_cache import (
                     clean_think_content_wrapped as _clean_think_final,
                 )
-                from session.chat_store import save_chat as _save_chat_final
                 from pipelines._base import _sanitize_output as _sanitize_final
 
                 actual = response_text or raw_text
@@ -741,11 +744,9 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 )
                 if (actual.strip() or _clean_think_text) and not actual.strip().startswith("[ERROR]"):
                     _elapsed = time.time() - t0
-                    _ts = time.strftime("%H:%M:%S")
                     _speed = int(len(actual) / _elapsed) if _elapsed > 0 else 0
-                    save_msgs = history_raw + [
-                        {"role": "user", "content": message, "ts": _ts},
-                        {"role": "assistant",
+                    from pipelines._base import persist_turn as _persist_turn_final
+                    _abort_msg = {"role": "assistant",
                          "content": actual or "[思考已中断]",
                          "ts": time.strftime("%H:%M:%S"),
                          "think": _clean_think_text,
@@ -757,9 +758,8 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                          "action_mode": ctx.action_mode or "chat",
                          # P6 修复: 服务端终止保存必须带 _aborted 标记,否则前端重渲染丢失终止提示
                          "_aborted": True,
-                         "_abort_reason": "user_stop"},
-                    ]
-                    _save_chat_final(chat_file, save_msgs)
+                         "_abort_reason": "user_stop"}
+                    _persist_turn_final(ctx, _abort_msg)
                     log.info("[SAVE] 中途停止，已保存 %d 字 + think %d 字",
                              len(actual), len(_clean_think_text))
             except Exception as e:
