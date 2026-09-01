@@ -726,41 +726,17 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
         yield 'data: [DONE]\n\n'
 
     finally:
-        # 中途停止时保存已接收内容
+        # 中途停止时保存已接收内容（M1-C：收口到 _base.persist_abort 统一入口）
         if not _saved and (response_text or raw_text or think_content):
             try:
-                from session.context_cache import (
-                    clean_think_content_wrapped as _clean_think_final,
-                )
-                from pipelines._base import _sanitize_output as _sanitize_final
-
-                actual = response_text or raw_text
-                actual = mgr.strip_think(actual)
-                actual = _sanitize_final(actual)
-                _clean_think_text = (
-                    _clean_think_final(think_content)
-                    if think_content and len(think_content.strip()) >= 20
-                    else ""
-                )
-                if (actual.strip() or _clean_think_text) and not actual.strip().startswith("[ERROR]"):
-                    _elapsed = time.time() - t0
-                    _speed = int(len(actual) / _elapsed) if _elapsed > 0 else 0
-                    from pipelines._base import persist_turn as _persist_turn_final
-                    _abort_msg = {"role": "assistant",
-                         "content": actual or "[思考已中断]",
-                         "ts": time.strftime("%H:%M:%S"),
-                         "think": _clean_think_text,
-                         "model": model_choice,
-                         "chars": len(actual),
-                         "time": _elapsed,
-                         "speed": _speed,
-                         "task_type": saved_task_type or "text",
-                         "action_mode": ctx.action_mode or "chat",
-                         # P6 修复: 服务端终止保存必须带 _aborted 标记,否则前端重渲染丢失终止提示
-                         "_aborted": True,
-                         "_abort_reason": "user_stop"}
-                    _persist_turn_final(ctx, _abort_msg)
-                    log.info("[SAVE] 中途停止，已保存 %d 字 + think %d 字",
-                             len(actual), len(_clean_think_text))
+                from pipelines._base import persist_abort as _persist_abort
+                _elapsed = time.time() - t0
+                _actual = response_text or raw_text
+                _speed = int(len(_actual) / _elapsed) if _elapsed > 0 else 0
+                _persist_abort(
+                    ctx, _actual, think=think_content,
+                    model_choice=model_choice, task_type=saved_task_type or "text",
+                    elapsed=_elapsed, action_mode=ctx.action_mode or "chat",
+                    fallback_content="[思考已中断]", speed=_speed)
             except Exception as e:
                 log.warning("[SAVE] 中途保存失败: %s", str(e)[:100])

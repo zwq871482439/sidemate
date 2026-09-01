@@ -67,6 +67,60 @@ class StreamContext:
 #  单写持久化（0.10.1 M1-B：后端为消息唯一写入源）
 # ============================================================
 
+def persist_abort(ctx, content, think="", model_choice="", task_type="text",
+                  elapsed=0.0, action_mode="chat", fallback_content="[思考已中断]",
+                  speed=None, extra=None):
+    """中断兜底落盘（0.10.1 M1-C：三管道 finally 的统一入口）。
+
+    - content/think 为已接收的部分输出（会做 strip_think + _sanitize_output + think 清洗）
+    - 中断原因自动判定：stop 标志 → user_stop，否则 network_error
+    - 无有效内容（正文与思考都空）不落盘，返回 False
+    - extra：附加字段（如 parallel 的 parallel_texts/kb_sources）
+
+    Returns:
+        bool — 是否已落盘
+    """
+    import time as _t
+    try:
+        from session.context_cache import clean_think_content_wrapped as _clean_think
+        actual = content or ""
+        if ctx.mgr is not None:
+            actual = ctx.mgr.strip_think(actual)
+        actual = _sanitize_output(actual)
+        clean_think = _clean_think(think) if think and len(think.strip()) >= 20 else ""
+        if not actual.strip() and not clean_think:
+            return False
+        if actual.strip().startswith("[ERROR]"):
+            return False
+        _mgr = ctx.mgr
+        stopped = bool(_mgr and (getattr(_mgr, "stop_requested", False) or
+                                 getattr(_mgr, "_stop_generation", False)))
+        msg = {
+            "role": "assistant",
+            "content": actual or fallback_content,
+            "ts": _t.strftime("%H:%M:%S"),
+            "think": clean_think,
+            "model": model_choice or ctx.model_choice,
+            "chars": len(actual),
+            "time": elapsed,
+            "task_type": task_type,
+            "action_mode": action_mode,
+            "_aborted": True,
+            "_abort_reason": "user_stop" if stopped else "network_error",
+        }
+        if speed is not None:
+            msg["speed"] = speed
+        if extra:
+            msg.update(extra)
+        persist_turn(ctx, msg)
+        log.info("[SAVE] 中断兜底落盘 %d 字 + think %d 字 (reason=%s)",
+                 len(actual), len(clean_think), msg["_abort_reason"])
+        return True
+    except Exception as e:
+        log.warning("[SAVE] 中断兜底落盘失败: %s", str(e)[:100])
+        return False
+
+
 def persist_turn(ctx, assistant_msg, context_cache=None):
     """回合落盘：读盘 → 追加 assistant 消息 → 保存。
 

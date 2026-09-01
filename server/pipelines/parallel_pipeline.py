@@ -480,33 +480,20 @@ def run_parallel_pipeline(ctx) -> Generator[str, None, None]:
             _merge = (_p.get("merge") or "").strip()
             _content = _merge or _local or _cloud
             if _content:
-                try:
-                    from pipelines._base import persist_turn
-                    _mgr = ctx.mgr
-                    _stopped = bool(getattr(_mgr, "stop_requested", False) or
-                                    getattr(_mgr, "_stop_generation", False))
-                    _elapsed = time.time() - ctx.__dict__.get("_pipeline_t0", time.time())
-                    _msg = {
-                        "role": "assistant",
-                        "content": _content,
-                        "ts": time.strftime("%H:%M:%S"),
-                        "model": ctx.model_choice,
-                        "chars": len(_content),
-                        "time": _elapsed,
-                        "task_type": "parallel",
-                        "action_mode": ctx.action_mode or "chat",
-                        "_aborted": True,
-                        "_abort_reason": "user_stop" if _stopped else "network_error",
-                    }
-                    if _local or _cloud:
-                        _msg["parallel_texts"] = {"local": _local, "cloud": _cloud, "merge": _merge}
-                    if _p.get("sources"):
-                        _msg["kb_sources"] = _p["sources"]
-                    persist_turn(ctx, _msg)
-                    log.info("[PARALLEL] 中断兜底落盘 %d 字 (reason=%s)",
-                             len(_content), _msg["_abort_reason"])
-                except Exception as e:
-                    log.warning("[PARALLEL] 中断兜底落盘失败: %s", str(e)[:100])
+                # M1-C：收口到 _base.persist_abort 统一入口
+                from pipelines._base import persist_abort
+                _extra = {}
+                if _local or _cloud:
+                    _extra["parallel_texts"] = {"local": _local, "cloud": _cloud, "merge": _merge}
+                if _p.get("sources"):
+                    _extra["kb_sources"] = _p["sources"]
+                persist_abort(
+                    ctx, _content,
+                    model_choice=ctx.model_choice, task_type="parallel",
+                    elapsed=time.time() - ctx.__dict__.get("_pipeline_t0", time.time()),
+                    action_mode=ctx.action_mode or "chat",
+                    fallback_content="[用户已手动终止响应]",
+                    extra=_extra)
 
 
 def _run_parallel_pipeline_impl(ctx) -> Generator[str, None, None]:

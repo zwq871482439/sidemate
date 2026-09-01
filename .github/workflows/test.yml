@@ -60,3 +60,10 @@ jobs:
           npm run build
           if (-not (Test-Path server/static/js/v2/dist/bundle.js)) { Write-Error "v2 bundle 产物缺失"; exit 1 }
           Write-Host "v2 build OK"
+
+      # 0.10.1 M1-C 起：模式分支白名单（新文件引入 ai_mode 分支即挂红）
+      - name: 模式分支白名单检查
+        shell: pwsh
+        run: |
+          python tools/check_mode_branches.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }

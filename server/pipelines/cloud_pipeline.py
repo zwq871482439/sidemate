@@ -323,68 +323,25 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
         # M1-B：Agent Loop 路径的中断兜底（部分输出经 _agent_collect 实时透出）。
         # 用户中断/断连（GeneratorExit）时 agent 模式的 response_text 在外层恒为空，
         # 没有这条路，中断的 agent 回合整条丢失（旧版靠前端 append 兜底，已随单写拆除）。
+        # M1-C：收口到 _base.persist_abort 统一入口。
         if (not _saved and _agent_collect is not None
                 and not _agent_collect.get("_saved")
                 and (_agent_collect.get("response_text") or _agent_collect.get("think_content"))):
-            try:
-                from pipelines._base import persist_turn as _persist_turn_agent
-                from pipelines._base import _sanitize_output as _sanitize_agent
-                _actual = _sanitize_agent(mgr.strip_think(_agent_collect.get("response_text") or ""))
-                _think = _agent_collect.get("think_content") or ""
-                if _actual.strip() or _think.strip():
-                    _stopped = bool(getattr(mgr, "stop_requested", False) or
-                                    getattr(mgr, "_stop_generation", False))
-                    _persist_turn_agent(ctx, {
-                        "role": "assistant",
-                        "content": _actual or "[思考已中断]",
-                        "ts": time.strftime("%H:%M:%S"),
-                        "think": _think,
-                        "model": model_choice,
-                        "chars": len(_actual),
-                        "time": time.time() - t0,
-                        "task_type": _agent_collect.get("saved_task_type") or "agent",
-                        "action_mode": action_mode,
-                        "_aborted": True,
-                        "_abort_reason": "user_stop" if _stopped else "network_error",
-                    })
-                    log.info("[SAVE] Agent 中断兜底落盘 %d 字", len(_actual))
-            except Exception as e:
-                log.warning("[SAVE] Agent 中断兜底落盘失败: %s", str(e)[:100])
-        # 中途停止时保存已接收内容
+            from pipelines._base import persist_abort as _persist_abort_agent
+            _persist_abort_agent(
+                ctx, _agent_collect.get("response_text") or "",
+                think=_agent_collect.get("think_content") or "",
+                model_choice=model_choice,
+                task_type=_agent_collect.get("saved_task_type") or "agent",
+                elapsed=time.time() - t0, action_mode=action_mode)
+        # 中途停止时保存已接收内容（M1-C：收口到 _base.persist_abort 统一入口）
         if not _saved and (response_text or raw_text or think_content):
-            try:
-                from session.context_cache import (
-                    clean_think_content_wrapped as _clean_think_final,
-                )
-                from pipelines._base import _sanitize_output as _sanitize_final
-                from pipelines._base import persist_turn as _persist_turn_final
-
-                actual = response_text or raw_text
-                actual = mgr.strip_think(actual)
-                actual = _sanitize_final(actual)
-                _clean_think_text = (
-                    _clean_think_final(think_content)
-                    if think_content and len(think_content.strip()) >= 20
-                    else ""
-                )
-                if (actual.strip() or _clean_think_text) and not actual.strip().startswith("[ERROR]"):
-                    _elapsed = time.time() - t0
-                    _abort_msg = {"role": "assistant",
-                         "content": actual or "[用户已手动终止响应]",
-                         "ts": time.strftime("%H:%M:%S"),
-                         "think": _clean_think_text,
-                         "model": model_choice,
-                         "chars": len(actual),
-                         "time": _elapsed,
-                         "task_type": saved_task_type or "text",
-                         "action_mode": action_mode,
-                         # P6 #6: 终止标记,前端识别后渲染统一终止提示
-                         "_aborted": True, "_abort_reason": "user_stop"}
-                    _persist_turn_final(ctx, _abort_msg)
-                    log.info("[SAVE] 中途停止，已保存 %d 字 + think %d 字",
-                             len(actual), len(_clean_think_text))
-            except Exception as e:
-                log.warning("[SAVE] 中途保存失败: %s" % str(e)[:100])
+            from pipelines._base import persist_abort as _persist_abort
+            _persist_abort(
+                ctx, response_text or raw_text, think=think_content,
+                model_choice=model_choice, task_type=saved_task_type or "text",
+                elapsed=time.time() - t0, action_mode=action_mode,
+                fallback_content="[用户已手动终止响应]")
 
 
 def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
