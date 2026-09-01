@@ -20,14 +20,20 @@ body {
 #sidebar {
   width: 250px; background: var(--d1-accent); color: var(--d1-on-accent);
   display: flex; flex-direction: column; flex-shrink: 0;
-  transition: width var(--d1-dur-short) var(--d1-ease-out);
+  transition: width var(--d1-dur-short) var(--d1-ease-out), transform var(--d1-dur-short) var(--d1-ease-out);
 }
-#sidebar.collapsed { width: 56px; }
+/* 折叠 = 左上角悬浮条（原型 v14：168px 横排 logo + 模式切换 + 展开钮），
+   不是图标条——主内容区让出全宽 */
+#sidebar.collapsed {
+  position: absolute; left: 0; top: 0; width: auto; min-width: 168px; height: auto; z-index: 40;
+  border-radius: 0 0 14px 0; box-shadow: 0 4px 20px rgba(8,27,48,.45);
+}
 #sidebar.collapsed .sb-label, #sidebar.collapsed .sb-search,
-#sidebar.collapsed .sb-nav .sb-label, #sidebar.collapsed .sb-new .sb-label,
-#sidebar.collapsed .sb-sess-title, #sidebar.collapsed .sb-sessions { display: none; }
-#sidebar.collapsed .sb-top { padding: 12px; }
-#sidebar.collapsed .sb-new { padding: 9px 0; }
+#sidebar.collapsed .sb-nav, #sidebar.collapsed .sb-new,
+#sidebar.collapsed .sb-sess-title, #sidebar.collapsed .sb-sessions,
+#sidebar.collapsed .sb-back { display: none; }
+#sidebar.collapsed .sb-top { padding: 12px 12px 12px 14px; }
+#sidebar.collapsed .sb-collapse { margin-left: auto; }
 
 .sb-top { padding: 14px 14px 10px; display: flex; align-items: center; gap: 10px; }
 .sb-logo {
@@ -36,19 +42,20 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; color: #131B24; font-weight: 700;
 }
-.sb-title { font-size: 15px; font-weight: 700; color: var(--d1-paper); letter-spacing: .5px; }
 .sb-collapse {
-  margin-left: auto; background: none; border: none; color: var(--d1-ink-3);
-  cursor: pointer; font-size: 14px; padding: 4px; border-radius: 5px;
+  background: none; border: none; color: var(--d1-ink-3);
+  cursor: pointer; font-size: 14px; padding: 4px; border-radius: 5px; flex-shrink: 0;
 }
 .sb-collapse:hover { color: var(--d1-paper); background: rgba(255,255,255,.08); }
 
-.mode-mini { display: flex; background: rgba(255,255,255,.07); border-radius: 8px; padding: 2px; gap: 2px; margin: 0 14px 4px; }
+/* 模式切换在顶行与 logo 并排（原型 v14 结构） */
+.mode-mini { flex: 1; display: flex; background: rgba(255,255,255,.07); border-radius: 8px; padding: 2px; gap: 2px; }
 .mode-mini button {
   flex: 1; border: none; background: none; font-family: inherit;
   font-size: var(--d1-fs-small); color: var(--d1-ink-3);
   padding: 5px 4px; border-radius: 6px; cursor: pointer;
   transition: background var(--d1-dur-micro), color var(--d1-dur-micro);
+  white-space: nowrap;
 }
 .mode-mini button:hover { color: var(--d1-paper); }
 .mode-mini button.on { background: var(--d1-accent-3); color: var(--d1-paper); font-weight: 600; }
@@ -222,6 +229,69 @@ body {
 .wip-wrap p { font-size: var(--d1-fs-body); color: var(--d1-ink-2); line-height: 1.6; }
 .wip-wrap a { color: var(--d1-gold-2); font-weight: 600; text-decoration: none; }
 .wip-wrap a:hover { text-decoration: underline; }
+
+/* ---- 对话流（消息查看，原型 v14 气泡式） ---- */
+.chat-flow { max-width: 760px; margin: 0 auto; padding: 26px 28px 40px; display: flex; flex-direction: column; gap: 20px; }
+.msg { display: flex; gap: 12px; }
+.msg .m-av {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.msg.user .m-av { background: var(--d1-accent); color: var(--d1-gold); }
+.msg.ai .m-av {
+  background: linear-gradient(135deg, var(--d1-gold), #D99A2B); color: #131B24;
+}
+.m-body { max-width: 82%; min-width: 0; }
+.m-name { font-size: var(--d1-fs-small); color: var(--d1-ink-3); margin-bottom: 5px; }
+.m-bubble { font-size: var(--d1-fs-body); line-height: 1.7; }
+.msg.user .m-bubble {
+  background: var(--d1-accent); color: var(--d1-paper);
+  padding: 11px 15px; border-radius: 12px 12px 12px 3px;
+}
+.msg.ai .m-bubble { color: var(--d1-ink); }
+.m-bubble .fref {
+  display: inline-flex; align-items: center; gap: 6px; font-size: var(--d1-fs-small);
+  background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
+  color: var(--d1-accent-3); border-radius: 7px; padding: 3px 9px; margin-bottom: 8px;
+}
+.msg.user .m-bubble .fref { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.15); color: var(--d1-paper); }
+.m-think {
+  margin-bottom: 8px; border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-sm);
+  background: var(--d1-paper-2); font-size: var(--d1-fs-small);
+}
+.m-think summary { padding: 6px 10px; cursor: pointer; color: var(--d1-ink-3); }
+.m-think .m-think-body { padding: 4px 10px 8px; color: var(--d1-ink-2); line-height: 1.6; white-space: pre-wrap; }
+.m-aborted {
+  margin-top: 8px; font-size: var(--d1-fs-small); color: var(--d1-gold-2);
+  display: flex; align-items: center; gap: 6px;
+}
+.m-doc-bar { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+.m-doc-bar a {
+  font-size: var(--d1-fs-small); color: var(--d1-accent-3); text-decoration: none;
+  border: 1px solid var(--d1-n-line); border-radius: 7px; padding: 4px 10px;
+  background: var(--d1-paper-2);
+}
+.m-doc-bar a:hover { border-color: var(--d1-accent-3); }
+.m-stats { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); margin-top: 7px; font-family: var(--d1-outlier); }
+
+/* markdown 正文基础排版 */
+.m-bubble.md p { margin: 0 0 8px; }
+.m-bubble.md p:last-child { margin-bottom: 0; }
+.m-bubble.md ul, .m-bubble.md ol { padding-left: 20px; margin: 6px 0; }
+.m-bubble.md h1, .m-bubble.md h2, .m-bubble.md h3 { color: var(--d1-accent); margin: 12px 0 6px; }
+.m-bubble.md code {
+  font-family: var(--d1-outlier); font-size: .9em; background: var(--d1-paper-2);
+  border: 1px solid var(--d1-n-line); border-radius: 5px; padding: 1px 5px;
+}
+.m-bubble.md pre {
+  background: var(--d1-accent); color: var(--d1-paper); border-radius: var(--d1-r-md);
+  padding: 12px 14px; overflow-x: auto; margin: 8px 0;
+}
+.m-bubble.md pre code { background: none; border: none; padding: 0; color: inherit; }
+.m-bubble.md table { border-collapse: collapse; margin: 8px 0; }
+.m-bubble.md th, .m-bubble.md td { border: 1px solid var(--d1-n-line); padding: 5px 10px; font-size: var(--d1-fs-small); }
+.m-bubble.md blockquote { border-left: 3px solid var(--d1-gold); padding-left: 12px; color: var(--d1-ink-2); margin: 8px 0; }
+.msg.user .m-bubble code { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.2); color: var(--d1-paper); }
 
 /* ---- 右视窗（壳，M1-D 后续填预览/文件/轨迹） ---- */
 #viewer {

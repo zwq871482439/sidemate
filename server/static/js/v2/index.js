@@ -1,10 +1,11 @@
 // 桌伴 0.10.1 新版 UI 入口（M1-D 三栏骨架，按原型 v14）
-// 本版范围：三栏骨架 + 左栏（真数据）+ 空状态场景卡 + 右视窗壳。
-// 对话流/KB/设置的迁入在后续迭代（经典版 / 始终可用）。
+// 本版范围：三栏骨架 + 左栏（真数据）+ 空状态场景卡 + 会话消息查看（旧会话适配）。
+// 流式发送/KB/设置的迁入在后续迭代（经典版 / 始终可用）。
 import './styles.css';
 import { api, MODE_LABEL } from './api.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
 import { renderEmptyState } from './empty_state.js';
+import { renderChatFlow, loadMessages } from './chat_view.js';
 
 const state = {
   mode: 'cloud',      // 后端值：local/cloud/parallel
@@ -12,6 +13,7 @@ const state = {
   sessions: [],
   filter: '',
   collapsed: false,
+  messages: null,     // 当前会话消息（null=未加载/空状态）
 };
 
 const app = document.getElementById('app');
@@ -31,14 +33,18 @@ function render() {
     },
     onTab: (t) => { state.tab = t; render(); },
     onSelectSession: async (c) => {
-      if (c.current) return;
+      if (c.current && state.messages !== null) return;
       await api.switchChat(c.path);
       state.sessions = await loadSessions();
+      state.tab = 'chat';
+      await loadCurrentMessages();
       render();
     },
     onNewChat: async () => {
       await api.newChat();
       state.sessions = await loadSessions();
+      state.tab = 'chat';
+      state.messages = null;  // 新会话 → 空状态
       render();
     },
     onToggleCollapse: () => { state.collapsed = !state.collapsed; render(); },
@@ -59,7 +65,12 @@ function render() {
 
   const scroll = main.querySelector('#main-scroll');
   if (state.tab === 'chat') {
-    scroll.appendChild(renderEmptyState(state.mode, { onScene: onScene }));
+    if (state.messages && state.messages.length) {
+      // 旧会话适配：完整消息流渲染
+      renderChatFlow(scroll, state.messages);
+    } else {
+      scroll.appendChild(renderEmptyState(state.mode, { onScene: onScene }));
+    }
   } else {
     // KB / 设置：迁移中占位，给经典版直达链接（功能陆续迁入，不在这里做半吊子）
     const wip = document.createElement('div');
@@ -80,16 +91,29 @@ function render() {
   app.appendChild(viewer);
 }
 
+async function loadCurrentMessages() {
+  const cur = state.sessions.find(c => c.current);
+  if (!cur || !cur.msg_count) {
+    state.messages = null;
+    return;
+  }
+  try {
+    state.messages = await loadMessages(cur.name);
+  } catch (e) {
+    state.messages = null;
+  }
+}
+
 function onScene(scene) {
-  // 对话区迁入中：场景卡先给明确预期，不假装能用
+  // 对话发送迁入中：场景卡先给明确预期，不假装能用
   const scroll = document.getElementById('main-scroll');
   if (!scroll) return;
   const tip = document.createElement('div');
   tip.className = 'wip-wrap';
   tip.innerHTML = `
     <div class="w-ic">✦</div>
-    <h2>对话区迁移中</h2>
-    <p>「${esc(scene)}」场景入口已就位，对话区正在按原型迁移。<br>
+    <h2>对话发送迁移中</h2>
+    <p>「${esc(scene)}」场景入口已就位，发送/流式正在按原型迁移。<br>
     此刻请移步 <a href="/">经典版界面</a> 开始，数据完全互通。</p>
   `;
   scroll.innerHTML = '';
@@ -97,15 +121,18 @@ function onScene(scene) {
 }
 
 async function boot() {
+  // 先渲骨架（消除首屏白窗），数据到位再补齐
+  render();
   try {
     const m = await api.getMode();
     if (m && m.mode) state.mode = m.mode;
   } catch (e) { /* 模式读取失败就用默认在线 */ }
   try {
     state.sessions = await loadSessions();
+    await loadCurrentMessages();
   } catch (e) { /* 会话列表失败不阻断空状态 */ }
   render();
 }
 
-window.SidemateV2 = { version: '0.10.1-m1d1', mounted: true };
+window.SidemateV2 = { version: '0.10.1-m1d2', mounted: true };
 boot();
