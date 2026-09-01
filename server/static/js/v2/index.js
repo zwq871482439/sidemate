@@ -13,8 +13,24 @@ const state = {
   sessions: [],
   filter: '',
   collapsed: false,
+  userToggledSidebar: false,  // 用户手动折叠过 → 断点不再自动接管
   messages: null,     // 当前会话消息（null=未加载/空状态）
 };
+
+// 断点（原型 v14/PLAN 8.5）：≥1280 三栏；1100-1280 左栏默认折叠为悬浮条；
+// <1100 不允许（应用最小窗口 1100px 硬约束）。右视窗窄屏浮层态见 styles.css body.narrow。
+let _modeSeq = 0;  // 模式切换竞态守卫：只认最后一次点击的响应
+let _modePending = null;  // 在途目标模式（连点时第二次点击不被陈旧 state 吞掉）
+
+function applyBreakpoint() {
+  const narrow = window.innerWidth < 1280;
+  document.body.classList.toggle('narrow', narrow);
+  if (state.userToggledSidebar) return;
+  if (narrow !== state.collapsed) {
+    state.collapsed = narrow;
+    render();
+  }
+}
 
 const app = document.getElementById('app');
 
@@ -27,8 +43,13 @@ function render() {
   app.innerHTML = '';
   app.appendChild(renderSidebar(app, state, {
     onMode: async (m) => {
-      if (m === state.mode) return;
+      if (m === state.mode && !_modePending) return;
+      if (m === _modePending) return;  // 重复点击同一目标
+      _modePending = m;
+      const seq = ++_modeSeq;
       const r = await api.switchMode(m);
+      if (seq !== _modeSeq) return;  // 竞态守卫：旧响应丢弃
+      _modePending = null;
       if (r && r.ok) { state.mode = r.mode; render(); }
     },
     onTab: (t) => { state.tab = t; render(); },
@@ -47,7 +68,11 @@ function render() {
       state.messages = null;  // 新会话 → 空状态
       render();
     },
-    onToggleCollapse: () => { state.collapsed = !state.collapsed; render(); },
+    onToggleCollapse: () => {
+      state.collapsed = !state.collapsed;
+      state.userToggledSidebar = true;  // 手动操作后断点让位
+      render();
+    },
     onFilter: (v) => { state.filter = v; render(); },
   }));
 
@@ -123,6 +148,8 @@ function onScene(scene) {
 async function boot() {
   // 先渲骨架（消除首屏白窗），数据到位再补齐
   render();
+  window.addEventListener('resize', applyBreakpoint);
+  applyBreakpoint();
   try {
     const m = await api.getMode();
     if (m && m.mode) state.mode = m.mode;

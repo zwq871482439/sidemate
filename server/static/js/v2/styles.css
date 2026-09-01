@@ -301,6 +301,17 @@ body {
 }
 #viewer.open { width: 430px; }
 
+/* 窄屏（1100-1280）：右视窗浮层覆盖不挤对话区（原型 v14 断点体系） */
+body.narrow #viewer.open {
+  position: absolute; right: 0; top: 0; bottom: 0;
+  width: min(440px, 86%); box-shadow: var(--d1-shadow-pop); z-index: 30;
+}
+.vw-backdrop { display: none; }
+body.narrow #viewer.open ~ .vw-backdrop {
+  display: block; position: absolute; inset: 0;
+  background: rgba(15,43,70,.25); z-index: 20;
+}
+
 /* 空状态 stagger 入场（DNA-01 动效） */
 @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 .empty-wrap > * { animation: rise-in var(--d1-dur-long) var(--d1-ease-out) both; }
