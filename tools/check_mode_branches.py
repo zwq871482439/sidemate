@@ -31,6 +31,11 @@ ALLOWED = {
 
 
 def main():
+    # CI Windows runner 默认 GBK 控制台，中文/emoji 会 UnicodeEncodeError
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
     offenders = []
     seen = {}
     for root, dirs, files in os.walk(SERVER):
