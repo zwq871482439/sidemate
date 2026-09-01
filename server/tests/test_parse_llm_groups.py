@@ -40,17 +40,21 @@ def test_bug1_multiple_arrays_non_greedy():
     corrupting the JSON when LLM outputs extra text with brackets.
     The fix extracts individual valid objects, so both valid
     {"group":"...","members":[...]} objects are correctly parsed.
+
+    Note: the second object uses 2 members — single-member/empty groups
+    get folded by _postmerge_groups (P0 标签太散修复), which would mask
+    the parsing assertion this test protects.
     """
     raw = (
         '[{"group":"中医","members":["中医基础","中医理论"]}]\n'
-        '以上是分组结果。另外参考格式 [{"group":"其他","members":[]}]'
+        '以上是分组结果。另外参考格式 [{"group":"西医","members":["西医内科","西医外科"]}]'
     )
     result = _parse_llm_groups(raw, ALL_TAGS)
     # Both valid group objects should be extracted (no greedy merge corruption)
     assert len(result) == 2, f"BUG-1: expected 2 valid groups, got {len(result)}"
     groups_names = {g["group"] for g in result}
     assert "中医" in groups_names
-    assert "其他" in groups_names
+    assert "西医" in groups_names
 
 
 def test_bug1_text_with_explanation():

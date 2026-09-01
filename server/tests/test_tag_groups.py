@@ -72,9 +72,13 @@ class TestParseLLMGroups:
 
         The new Step 2 uses findall to extract individual {"group":...} objects,
         then joins them into a valid JSON array. No greedy cross-object corruption.
+
+        Note: 西医 uses 2 members — single-member groups get folded by
+        _postmerge_groups (P0 标签太散修复), which would mask the parsing
+        assertion this test protects.
         """
-        raw = '{"group": "中医", "members": ["中医基础", "中医诊断"]}\n{"group": "西医", "members": ["内科学"]}'
-        result = _parse_llm_groups(raw, ["中医基础", "中医诊断", "内科学"])
+        raw = '{"group": "中医", "members": ["中医基础", "中医诊断"]}\n{"group": "西医", "members": ["内科学", "外科学"]}'
+        result = _parse_llm_groups(raw, ["中医基础", "中医诊断", "内科学", "外科学"])
         assert len(result) == 2
         groups_found = {g["group"] for g in result}
         assert groups_found == {"中医", "西医"}
@@ -129,12 +133,38 @@ class TestParseLLMGroups:
         assert result[0]["members"] == ["only"]
 
     def test_many_groups(self):
-        """10 groups all parse correctly."""
-        groups_data = [{"group": f"G{i}", "members": [f"t{i}a", f"t{i}b"]} for i in range(10)]
+        """6 groups (the postmerge cap) all parse without folding.
+
+        _postmerge_groups keeps at most 6 groups; feeding it 10 used to
+        fail the old assertion — the fold is intended behavior, so this
+        test stays at the cap boundary instead.
+        """
+        groups_data = [{"group": f"G{i}", "members": [f"t{i}a", f"t{i}b"]} for i in range(6)]
         raw = json.dumps(groups_data)
-        all_tags = [f"t{i}{x}" for i in range(10) for x in ("a", "b")]
+        all_tags = [f"t{i}{x}" for i in range(6) for x in ("a", "b")]
         result = _parse_llm_groups(raw, all_tags)
-        assert len(result) == 10
+        assert len(result) == 6
+
+    def test_postmerge_folds_single_member_groups(self):
+        """_postmerge_groups: single-member groups fold into a similar group
+        or into 「其他」— the P0 标签太散 behavior (0.8B produced 20+ variants).
+
+        中医养生学 (single member) is bigram-similar to 中医 → folds in;
+        西医 with an unrelated member folds into 「其他」.
+        """
+        raw = json.dumps([
+            {"group": "中医", "members": ["中医基础", "中医诊断"]},
+            {"group": "中医养生学", "members": ["中医养生气血经络"]},
+            {"group": "西医", "members": ["内科学"]},
+        ])
+        result = _parse_llm_groups(raw, ["中医基础", "中医诊断", "中医养生气血经络", "内科学"])
+        groups_found = {g["group"] for g in result}
+        assert "中医养生学" not in groups_found  # folded away
+        zhongyi = next(g for g in result if g["group"] == "中医")
+        assert "中医养生气血经络" in zhongyi["members"]  # folded into similar group
+        assert "其他" in groups_found
+        other = next(g for g in result if g["group"] == "其他")
+        assert "内科学" in other["members"]  # dissimilar single member → 其他
 
     def test_llm_output_with_extra_fields(self):
         """JSON with extra fields (LLM hallucination) is still parsed."""
