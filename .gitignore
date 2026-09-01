@@ -17,8 +17,9 @@ data/
 20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9]*
 
 # docs/ 和 tests/ 已迁移到 sidemate-dev 私有仓库（本地保留但不跟踪）
-docs/
-tests/
+# 锚定根目录：不带斜杠会误伤 server/tests 等子层（CI 在跑的被跟踪测试）
+/docs/
+/tests/
 
 # 开发文档和脚本已迁移到 sidemate-dev（本地保留但不跟踪）
 requirements_gen.txt
