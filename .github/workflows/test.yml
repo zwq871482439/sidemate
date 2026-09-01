@@ -51,3 +51,12 @@ jobs:
           }
           if ($failed) { exit 1 }
           Write-Host "JS syntax OK"
+
+      # 0.10.1 M1-A 起：esbuild 构建链（仅 v2 新版 UI 源码；legacy 全局脚本不进链）
+      - name: v2 build（esbuild）
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+          if (-not (Test-Path server/static/js/v2/dist/bundle.js)) { Write-Error "v2 bundle 产物缺失"; exit 1 }
+          Write-Host "v2 build OK"

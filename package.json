@@ -1,0 +1,14 @@
+{
+  "name": "sidemate",
+  "version": "0.10.1",
+  "private": true,
+  "description": "桌伴 Sidemate — 前端构建链（M1-A 引入，仅服务于 static/js/v2 新版 UI；legacy 全局脚本不经 esbuild）",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "check": "node esbuild.config.mjs --check"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

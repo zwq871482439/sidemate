@@ -20,7 +20,9 @@
 <!-- marked.js：Markdown 增强渲染（表格/任务列表/脚注等） -->
 <script src="/static/vendor/marked.min.js"></script>
 <script src="/static/vendor/mermaid.min.js"></script>
-<link rel="stylesheet" href="/static/css/main.css?v=84f97042">
+<!-- 设计 tokens（0.10.1 M1-A：DNA-01 挂载 + 旧体系硬编码收编；必须先于 main.css） -->
+<link rel="stylesheet" href="/static/css/tokens.css?v=c4e57131">
+<link rel="stylesheet" href="/static/css/main.css?v=a452e11c">
 </head>
 <body>
 
@@ -952,10 +954,10 @@ window.addEventListener('load', function() {
 <!-- ===== 第三方库 ===== -->
 <script src="/static/js/lib/purify.min.js?v=3.2.6"></script>
 <!-- ===== 功能模块（按依赖顺序加载，版本号防缓存） ===== -->
-<script src="/static/js/core/api.js?v=3.00"></script>
-<script src="/static/js/core/utils.js?v=3.00"></script>
-<script src="/static/js/core/errors.js?v=3.00"></script>
-<script src="/static/js/core/app-state.js?v=3.00"></script>
+<script src="/static/js/core/api.js?v=1a0f86f3"></script>
+<script src="/static/js/core/utils.js?v=2920ecbb"></script>
+<script src="/static/js/core/errors.js?v=5ad796e9"></script>
+<script src="/static/js/core/app-state.js?v=811a3c0c"></script>
 <script src="/static/js/stream_renderer.js?v=ff76374a"></script>
 <script src="/static/js/settings.js?v=c4f88b19"></script>
 <script src="/static/js/qa.js?v=e57d1adf"></script>

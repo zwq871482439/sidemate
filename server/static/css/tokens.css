@@ -1,0 +1,163 @@
+/* ============================================================
+   桌伴 0.10.1 设计 Tokens（M1-A 引入）
+   两层结构：
+   ① DNA-01「深蓝金」— 新 UI / AI 产物的设计真源（本步只挂载不接线，
+      旧 UI 规则不引用 --d1-*，M1-D 按组件渐进切换）
+   ② 旧体系补全 — main.css 硬编码值的同值收编（值=现状精确值，
+      全部为双主题不变量，保证像素级一致）
+   加载顺序：必须先于 main.css（index.html 中 link 在其前）。
+   ============================================================ */
+
+/* ============ ① DNA-01 深蓝金（docs/DNA-01-DESIGN.md） ============ */
+:root {
+  /* Paper 层 — 基面（hex 兜底在前，OKLCH 主声明在后，不支持的引擎自动回落） */
+  --d1-paper:    #F7F9FB;
+  --d1-paper:    oklch(98.5% 0.004 230);
+  --d1-paper-2:  #EEF3F8;
+  --d1-paper-2:  oklch(96.5% 0.008 230);
+  /* Ink 层 — 正文 */
+  --d1-ink:      #22303C;
+  --d1-ink:      oklch(22% 0.02 230);
+  --d1-ink-2:    #5B6B7B;
+  --d1-ink-2:    oklch(38% 0.015 230);
+  --d1-ink-3:    #8899AA;
+  --d1-ink-3:    oklch(58% 0.012 230);
+  /* Neutral 层 */
+  --d1-n-line:   #E2E9F0;
+  --d1-n-line:   oklch(92% 0.01 230);
+  --d1-n-mid:    oklch(72% 0.012 230);
+  /* Accent 层 — 双角色 */
+  --d1-accent:   #0F2B46;   /* 主强调（按钮/选中态/标题） */
+  --d1-accent-2: #16405F;   /* 主强调 hover/渐深（原型实测值） */
+  --d1-accent-3: #1B4F72;   /* 主强调更浅一档 */
+  --d1-gold:     #E8B54D;   /* 金强调（进度/高亮/选中描边，占地 ≤3%） */
+  --d1-gold-2:   #B07E1E;   /* 深金（文字/图标上金） */
+  --d1-gold-soft:#F5DFA8;   /* 浅金（深底上的金文字） */
+  --d1-on-accent: oklch(90% 0.01 230);  /* 深色区域文字（偏蓝白） */
+
+  /* 字体（2+1 规则：display=body 同族靠字重拉开层级，outlier 仅代码/度量） */
+  --d1-display: "Microsoft YaHei", "PingFang SC", sans-serif;
+  --d1-body:    "Microsoft YaHei", "PingFang SC", sans-serif;
+  --d1-outlier: "JetBrains Mono", Consolas, monospace;
+  /* 字号阶梯（1.333 perfect fourth） */
+  --d1-fs-display: 44px;
+  --d1-fs-h1:      22px;
+  --d1-fs-h2:      16px;
+  --d1-fs-body:    13.5px;
+  --d1-fs-small:   11.5px;
+  --d1-fs-tiny:    10.5px;
+
+  /* 网格与间距（8px 基线） */
+  --d1-sp-1: 4px;  --d1-sp-2: 8px;  --d1-sp-3: 12px; --d1-sp-4: 16px;
+  --d1-sp-6: 24px; --d1-sp-8: 32px; --d1-sp-12: 48px; --d1-sp-16: 64px;
+  /* 圆角（原型实测） */
+  --d1-r-lg: 14px; --d1-r-md: 10px; --d1-r-sm: 7px;
+  /* 阴影 */
+  --d1-shadow-card: 0 1px 3px rgba(15,43,70,.07), 0 8px 24px rgba(15,43,70,.06);
+  --d1-shadow-pop:  0 4px 12px rgba(15,43,70,.12), 0 16px 48px rgba(15,43,70,.14);
+
+  /* 动效（三档时长 + 两条缓动；只动 transform/opacity） */
+  --d1-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --d1-ease-in:  cubic-bezier(0.7, 0, 0.84, 0);
+  --d1-dur-micro: 120ms;
+  --d1-dur-short: 220ms;
+  --d1-dur-long:  420ms;
+}
+
+/* ============ ② 旧体系补全（同值收编，双主题不变量） ============ */
+/* 命名约定：--pal-* 调色板 / --a-* 透明度叠层 / --shadow-* 阴影 /
+   --radius-* 圆角 / --fs-* 字号（px 数值入名，避免语义争议） */
+:root {
+  /* --- 调色板：第二色板（KB 星图/标签/明盒渲染器的靛紫橙系） --- */
+  --pal-indigo: #534AB7;        /* KB 星图节点/标签主紫（欢迎页渐变同用） */
+  --pal-indigo-soft: #AFA9EC;   /* 星图节点浅紫 */
+  --pal-indigo-bg: #F3F2FD;     /* 浅紫底（洞察徽章/置顶卡） */
+  --pal-indigo-bg-2: #EDECFA;   /* 浅紫底次档 */
+  --pal-indigo-line: #CFCDF0;   /* 浅紫描边/分割线 */
+  --pal-violet: #A78BFA;        /* 亮紫（暗色滚动条/欢迎页渐变） */
+  --pal-violet-2: #C4B5FD;      /* 亮紫次档 */
+  --pal-violet-3: #8B5CF6;      /* 中紫 */
+  --pal-violet-deep: #5B34C4;   /* 深紫 */
+  --pal-orange: #D85A30;        /* 橙（令牌/锁图标/热力 hot） */
+  --pal-orange-2: #E8806B;      /* 浅橙 */
+  --pal-amber-dark: #BA7517;    /* 深琥珀（警示文字/热力 warm） */
+  --pal-teal-2: #6BBF8A;        /* 浅绿 */
+  --pal-green: #16A34A;         /* 绿（diff 增行/对比点） */
+  --pal-green-2: #059669;       /* 绿次档（明盒滚动条；与 --success-color 亮色同值但双主题不变） */
+  --pal-green-deep: #047857;    /* 深绿 */
+  --pal-rose: #FB7185;          /* 玫红 */
+  --pal-kb-line: #E8ECF1;       /* KB 浮层描边 */
+  --pal-kb-line-2: #E8EDF2;     /* KB 浮层描边次档 */
+  --pal-scrollbar: #D1D5DB;     /* 滚动条灰（设置/KB/用量） */
+  --pal-danger: #EF4444;        /* 标准红 */
+  --pal-danger-strong: #DC2626; /* 深红 */
+  --pal-danger-deep: #A32D2D;   /* 更深红 */
+  --pal-danger-bg: #FEF2F2;     /* 浅红底（删除 hover/风险确认） */
+  --pal-danger-bg-2: #FCEBEB;   /* 浅红底次档 */
+  --pal-danger-text: #991B1B;   /* 深红文字 */
+  --pal-danger-border: #FCA5A5; /* 浅红描边 */
+  --pal-info-bg: #E6F1FB;       /* 浅蓝底（KB 标签选中；注意与 --color-background-info 暗色不同） */
+  --pal-info-text: #185FA5;     /* 信息蓝文字 */
+  --pal-info-line: #B5D4F4;     /* 信息蓝描边 */
+  --pal-white: #FFFFFF;         /* 纯白（滑块/摘要卡底；文字上白用既有 --text-on-accent） */
+  --pal-warn-alt: #F0AD4E;      /* 旧警示黄（遗留 bootstrap 色系） */
+  --pal-danger-alt: #DC3545;    /* 旧危险红（遗留 bootstrap 色系） */
+  --pal-navy-deep: #1A2B42;     /* 深藏青 */
+  --pal-primary-600: #4A6A8A;   /* 品牌蓝中间档 */
+  --pal-ink-black: #1A1A1A;     /* 近黑 */
+  --pal-gray-3: #888888;        /* 中灰（#888） */
+
+  /* --- 透明度叠层（出现 ≥2 次的收编；单次出现的保留原位） --- */
+  --a-black-03: rgba(0,0,0,.03);
+  --a-black-06: rgba(0,0,0,.06);
+  --a-black-08: rgba(0,0,0,.08);   /* 与 --shadow-color 亮色同值但双主题不变 */
+  --a-black-12: rgba(0,0,0,.12);
+  --a-black-15: rgba(0,0,0,.15);
+  --a-black-18: rgba(0,0,0,.18);
+  --a-black-35: rgba(0,0,0,.35);
+  --a-black-5:  rgba(0,0,0,.5);
+  --a-white-06: rgba(255,255,255,.06);
+  --a-white-85: rgba(255,255,255,.85);
+  --a-indigo-15: rgba(83,74,183,.15);
+  --a-indigo-06: rgba(127,119,221,.06);
+  --a-error-15: rgba(248,113,113,.15);
+  --a-warn-12: rgba(217,119,6,.12);
+  --a-info-12: rgba(24,95,165,.12);
+
+  /* --- 阴影（现状值原样收编） --- */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.05);
+  --shadow-faint: 0 1px 3px rgba(0,0,0,.03);
+  --shadow-faint-2: 0 1px 2px rgba(0,0,0,.03);
+  --shadow-tight: 0 1px 2px rgba(0,0,0,.15);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.12);
+  --shadow-md-2: 0 4px 12px rgba(0,0,0,.18);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.18);
+  --shadow-menu: 0 4px 16px rgba(0,0,0,.12);
+  --shadow-pop: 0 4px 16px rgba(0,0,0,.15);
+  --shadow-up: 0 -2px 12px rgba(0,0,0,.1);
+  --shadow-up-sm: 0 -2px 8px rgba(0,0,0,.06);
+  --shadow-card: 0 2px 24px rgba(30,58,95,.06), 0 0 0 1px rgba(30,58,95,.04);
+  --shadow-navy-md: 0 4px 12px rgba(30,58,95,.08);
+  --shadow-navy-lg: 0 8px 24px rgba(30,58,95,.15);
+  --shadow-deep: 0 8px 28px rgba(26,43,66,.13);
+  --shadow-deep-2: 0 8px 28px rgba(26,43,66,.15);
+  --shadow-welcome: 0 4px 32px rgba(0,0,0,.35), 0 0 0 1px rgba(201,151,108,.08);
+  --shadow-glow-indigo: 0 0 6px rgba(83,74,183,.4);
+  --shadow-focus: 0 2px 12px rgba(0,0,0,.08), 0 0 0 3px rgba(24,95,165,.12);
+  --shadow-focus-2: 0 2px 12px rgba(0,0,0,.08), 0 0 0 5px rgba(24,95,165,.16);
+
+  /* --- 圆角阶梯 + 补齐被引用未定义的 3 个变量 --- */
+  --radius-2: 2px; --radius-3: 3px; --radius-4: 4px; --radius-5: 5px;
+  --radius-6: 6px; --radius-8: 8px; --radius-9: 9px; --radius-10: 10px;
+  --radius-12: 12px; --radius-16: 16px; --radius-20: 20px; --radius-22: 22px;
+  --radius-pill: 999px;
+  --border-radius-md: 8px;   /* main.css 引用处带 fallback 8px，值一致 */
+  --border-radius-lg: 14px;  /* 引用处 fallback 14px，值一致 */
+  --card-radius: 12px;       /* 引用处 fallback 12px，值一致 */
+
+  /* --- 字号补档（现有 --font-xs/sm/md/lg = 11/13/15/18 在 main.css 保持不变） --- */
+  --fs-8: 8px; --fs-9: 9px; --fs-10: 10px; --fs-12: 12px;
+  --fs-12h: 12.5px; --fs-14: 14px; --fs-16: 16px;
+  --fs-20: 20px; --fs-22: 22px; --fs-28: 28px;
+}
