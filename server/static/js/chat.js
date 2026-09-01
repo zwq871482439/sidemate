@@ -175,7 +175,11 @@ function _buildStats(m) {
   }
   // 模型短名（去掉 :latest / :tag 后缀）+ 离线/在线前缀
   var _shortModel = (m.model || '').replace(/:.*$/, '');
-  var _prefix = (m.action_mode === 'agent') ? '在线 AI' : '离线 AI';
+  // 0.10.1 起后端随消息落盘 engine 字段（local/cloud/parallel），直读即可；
+  // 旧消息无 engine，回退 action_mode 启发式（云 agent 路径 action_mode='chat' 会猜错，仅作兼容兜底）
+  var _prefix = m.engine
+    ? (m.engine === 'local' ? '离线 AI' : '在线 AI')
+    : ((m.action_mode === 'agent') ? '在线 AI' : '离线 AI');
   var modelTag = '<span class="action-tag">' + _prefix + ' · ' + esc(_shortModel) + '</span>';
   // 核心数字（summary 里显示）
   var _timeStr = Number(m.time).toFixed(1) + 's';

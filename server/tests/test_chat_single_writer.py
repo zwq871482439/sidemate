@@ -152,6 +152,22 @@ class TestPersistTurnAppend:
         assert msgs[1]["_abort_reason"] == "user_stop"
         assert msgs[1]["content"] == "半截回答"
 
+    def test_engine_field_stamped(self, chat_dir):
+        """engine 字段由管道按 ai_mode 打标（修「云端模型显示成离线 AI」）"""
+        path = new_chat_file()
+        user = append_message(path, {"role": "user", "content": "q", "ts": "08:00:00"})
+        ctx = _ctx(path, message="q", saved=True, uid=user["id"])
+        ctx.ai_mode = "cloud"
+        persist_turn(ctx, {"role": "assistant", "content": "a", "ts": "08:00:01"})
+        msgs = load_chat(path)
+        assert msgs[1]["engine"] == "cloud"
+        # 已带 engine 的不覆盖
+        ctx2 = _ctx(path, message="q2", saved=False)
+        ctx2.ai_mode = "local"
+        messages, _ = persist_turn(ctx2, {"role": "assistant", "content": "b",
+                                          "ts": "08:02:00", "engine": "custom"})
+        assert messages[-1]["engine"] == "custom"
+
 
 # ---------- persist_turn legacy 回退（双轨兼容） ----------
 

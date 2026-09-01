@@ -108,6 +108,7 @@ def persist_abort(ctx, content, think="", model_choice="", task_type="text",
             "_aborted": True,
             "_abort_reason": "user_stop" if stopped else "network_error",
         }
+        msg.setdefault("engine", ctx.ai_mode or "")
         if speed is not None:
             msg["speed"] = speed
         if extra:
@@ -141,6 +142,12 @@ def persist_turn(ctx, assistant_msg, context_cache=None):
         (messages, mode) — mode: "append"（单写）/ "legacy"（回退重建）
     """
     from session.chat_store import save_chat, load_chat, _next_msg_id
+
+    # 引擎标记（0.10.1：修复"云端模型显示成离线 AI"——footer 的离线/在线前缀
+    # 此前靠 action_mode=='agent' 猜，云 agent 路径 action_mode='chat' 必猜错。
+    # 由管道统一打 engine=local/cloud/parallel，前端直读不再猜）
+    if assistant_msg is not None:
+        assistant_msg.setdefault("engine", ctx.ai_mode or "")
 
     if ctx.user_msg_saved and ctx.user_msg_id:
         try:
