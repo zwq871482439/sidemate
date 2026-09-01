@@ -30,7 +30,7 @@ export function renderSidebar(root, state, events) {
 
   sb.innerHTML = `
     <div class="sb-top">
-      <div class="sb-logo">桌</div>
+      <div class="sb-logo"><img src="/static/img/logo.jpg" alt="桌伴"></div>
       <div class="mode-mini">
         ${modes.map(m => `
           <button data-mode="${m}" class="${m === 'parallel' ? 'experimental ' : ''}${state.mode === m ? 'on' : ''}">

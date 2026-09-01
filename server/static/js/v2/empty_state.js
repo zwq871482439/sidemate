@@ -48,7 +48,7 @@ export function renderEmptyState(mode, events) {
   if (mode === 'local') {
     wrap.innerHTML = `
       <div class="empty-hero">
-        <div class="mark">桌</div>
+        <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>离线模式 · 数据不出本机</h1>
         <p>本地模型运行，无需联网 —— 适合隐私敏感场景</p>
       </div>
@@ -64,7 +64,7 @@ export function renderEmptyState(mode, events) {
     const hero = ONLINE_SCENES.hero;
     wrap.innerHTML = `
       <div class="empty-hero">
-        <div class="mark">桌</div>
+        <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>开始一段新对话</h1>
         <p>选择一个场景，或直接输入 —— 想做什么，随时切随</p>
       </div>

@@ -22,6 +22,18 @@ body {
   display: flex; flex-direction: column; flex-shrink: 0;
   transition: width var(--d1-dur-short) var(--d1-ease-out), transform var(--d1-dur-short) var(--d1-ease-out);
 }
+/* 细滚动条（沿用经典版风格：5px 细条+圆角；深底上用亮调） */
+.sb-sessions::-webkit-scrollbar { width: 5px; }
+.sb-sessions::-webkit-scrollbar-track { background: transparent; }
+.sb-sessions::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); border-radius: var(--radius-3); }
+.sb-sessions::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.35); }
+.sb-sessions { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent; }
+/* 中栏滚动条：与经典版 #messages 同款浅蓝 */
+#main-scroll::-webkit-scrollbar { width: 5px; }
+#main-scroll::-webkit-scrollbar-track { background: transparent; }
+#main-scroll::-webkit-scrollbar-thumb { background: #BFDBFE; border-radius: var(--radius-3); }
+#main-scroll::-webkit-scrollbar-thumb:hover { background: #93C5FD; }
+#main-scroll { scrollbar-width: thin; scrollbar-color: #BFDBFE transparent; }
 /* 折叠 = 左上角悬浮条（原型 v14：168px 横排 logo + 模式切换 + 展开钮），
    不是图标条——主内容区让出全宽 */
 #sidebar.collapsed {
@@ -38,10 +50,10 @@ body {
 .sb-top { padding: 14px 14px 10px; display: flex; align-items: center; gap: 10px; }
 .sb-logo {
   width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--d1-gold), #D99A2B);
   display: flex; align-items: center; justify-content: center;
-  font-size: 15px; color: #131B24; font-weight: 700;
+  overflow: hidden;
 }
+.sb-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .sb-collapse {
   background: none; border: none; color: var(--d1-ink-3);
   cursor: pointer; font-size: 14px; padding: 4px; border-radius: 5px; flex-shrink: 0;
@@ -116,7 +128,7 @@ body {
 .sb-back:hover { color: var(--d1-paper); }
 
 /* ---- 中栏 ---- */
-#main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; height: 100%; overflow: hidden; }
 .topbar {
   height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 18px;
   border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0;
@@ -137,9 +149,11 @@ body {
 .empty-hero .mark {
   width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 16px;
   background: linear-gradient(135deg, var(--d1-accent), var(--d1-accent-3));
-  display: flex; align-items: center; justify-content: center; font-size: 26px;
-  color: var(--d1-gold); box-shadow: var(--d1-shadow-card); position: relative;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--d1-shadow-card); position: relative;
+  overflow: visible;
 }
+.empty-hero .mark img { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; }
 .empty-hero .mark::after {
   content: ""; position: absolute; right: -6px; bottom: -6px; width: 18px; height: 18px;
   border-radius: 6px; background: var(--d1-gold); border: 3px solid var(--d1-paper);
@@ -238,9 +252,7 @@ body {
   display: flex; align-items: center; justify-content: center; font-size: 15px;
 }
 .msg.user .m-av { background: var(--d1-accent); color: var(--d1-gold); }
-.msg.ai .m-av {
-  background: linear-gradient(135deg, var(--d1-gold), #D99A2B); color: #131B24;
-}
+.msg.ai .m-av { background: none; overflow: hidden; }
 .m-body { max-width: 82%; min-width: 0; }
 .m-name { font-size: var(--d1-fs-small); color: var(--d1-ink-3); margin-bottom: 5px; }
 .m-bubble { font-size: var(--d1-fs-body); line-height: 1.7; }

@@ -189,7 +189,7 @@ function renderStreamingBubble(st) {
     el.className = 'msg ai streaming';
     el.id = 'v2-stream-msg';
     el.innerHTML = `
-      <div class="m-av">桌</div>
+      <div class="m-av"><img src="/static/img/logo.jpg" alt="桌伴" style="width:100%;height:100%;object-fit:cover;border-radius:9px"></div>
       <div class="m-body">
         <div class="m-name">桌伴 · 生成中…</div>
         <div class="stream-status"></div>

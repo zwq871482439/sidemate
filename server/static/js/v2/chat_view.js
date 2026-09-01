@@ -44,7 +44,7 @@ const ABORT_LABEL = {
 
 function _renderMsg(m) {
   const isUser = m.role === 'user';
-  const av = isUser ? '我' : '桌';
+  const av = isUser ? '我' : '<img src="/static/img/logo.jpg" alt="桌伴" style="width:100%;height:100%;object-fit:cover;border-radius:9px">';
   const name = isUser ? ('我' + (m.ts ? ' · ' + m.ts : '')) : ('桌伴' + (m.ts ? ' · ' + m.ts : ''));
 
   let bubbleInner = '';
