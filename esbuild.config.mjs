@@ -3,7 +3,6 @@
 // （static/js/*.js、core/、lib/）保持原样由 bump_assets.py 指纹管理，不进本链。
 // 用法：node esbuild.config.mjs [--watch] [--check]
 import * as esbuild from 'esbuild';
-import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -23,32 +22,17 @@ const jsOptions = {
   minify: !watch,
   outfile: join(outdir, 'bundle.js'),
   logLevel: 'info',
+  // index.js import './styles.css' → esbuild 自动产出伴随 bundle.css
 };
-
-// CSS 入口预留（M1-D 三栏组件迁移时填充 v2/styles.css）
-const cssEntry = join(v2, 'styles.css');
-/** @type {import('esbuild').BuildOptions | null} */
-const cssOptions = existsSync(cssEntry)
-  ? {
-      entryPoints: [cssEntry],
-      bundle: true,
-      minify: !watch,
-      outfile: join(outdir, 'bundle.css'),
-      logLevel: 'info',
-    }
-  : null;
 
 if (checkOnly) {
   // CI 用：构建到内存不落盘，验证编译通过即可
   await esbuild.build({ ...jsOptions, write: false });
-  if (cssOptions) await esbuild.build({ ...cssOptions, write: false });
   console.log('[check] v2 源码编译通过');
 } else if (watch) {
-  const ctxs = [await esbuild.context(jsOptions)];
-  if (cssOptions) ctxs.push(await esbuild.context(cssOptions));
-  await Promise.all(ctxs.map((c) => c.watch()));
+  const ctx = await esbuild.context(jsOptions);
+  await ctx.watch();
   console.log('[watch] 监听 v2 源码变动…');
 } else {
   await esbuild.build(jsOptions);
-  if (cssOptions) await esbuild.build(cssOptions);
 }

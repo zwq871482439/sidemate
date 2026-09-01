@@ -392,6 +392,13 @@
                 <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode(this.checked)" style="width:15px;height:15px">
               </label>
             </div>
+            <div class="row">
+              <span class="lbl">界面版本 <span title="0.10.1 新版三栏界面（预览中），与经典版数据完全互通，随时可切回" style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span></span>
+              <span class="val" style="display:flex;gap:6px">
+                <button class="settings-btn" id="uiVerClassic" style="font-size:12px;padding:4px 12px;border-color:var(--accent-color);color:var(--accent-color);font-weight:600" title="当前正在使用经典版">经典（当前）</button>
+                <button class="settings-btn" id="uiVerNew" style="font-size:12px;padding:4px 12px" onclick="location.href='/newUI.html'">新版（预览）</button>
+              </span>
+            </div>
             <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border-color)">
               <div class="row"><span class="lbl">当前模型</span><span id="settingsModelTag" class="val muted">未加载</span></div>
               <div class="row"><span class="lbl">最大输入 <span title="模型单次能接收的最大输入 token 数" style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span></span><span class="val" id="settingsTokenBudget" style="font-size:12px">--</span></div>

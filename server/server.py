@@ -585,6 +585,13 @@ def index():
     with open(os.path.join(WORKSPACE_DIR, "index.html"), "r", encoding="utf-8") as f:
         return f.read()
 
+
+@app.get("/newUI.html", response_class=HTMLResponse)
+def new_ui():
+    """0.10.1 新版 UI 入口（M1-D 新旧并行：经典版 / 不动，新版打磨后再切换）"""
+    with open(os.path.join(WORKSPACE_DIR, "newUI.html"), "r", encoding="utf-8") as f:
+        return f.read()
+
 # 静态文件服务 — 加 no-cache 中间件
 _static_dir = os.path.join(WORKSPACE_DIR, "static")
 
