@@ -10,6 +10,8 @@ FOS_PICKFOLDERS），失败时回落 SHBrowseForFolder（旧式树形对话框�
 仅 Windows 有意义；其他平台 pick_directory 返回 None（调用方按取消处理）。
 """
 import ctypes
+import threading
+import time
 from ctypes import wintypes
 
 # FOS flags
@@ -68,6 +70,26 @@ def _vt_call(obj, index, restype, *args):
     return fn(obj, *args)
 
 
+_HWND_TOPMOST = -1
+_SWP_NOSIZE = 0x0001
+_SWP_NOMOVE = 0x0002
+
+
+def _topmost_bomber(title, stop):
+    """服务端是无窗口后台进程，Show() 出的对话框会被当前前台窗口（浏览器/ZCode）
+    压在下面——用户以为没弹窗，页面请求又挂着，看起来像「UI 不更新」。
+    在 Show 期间轮询找到对话框窗口并提为 TOPMOST，让它浮到最前。"""
+    user32 = ctypes.windll.user32
+    while not stop.is_set():
+        hwnd = user32.FindWindowW(None, title)
+        if hwnd:
+            user32.SetWindowPos(hwnd, _HWND_TOPMOST, 0, 0, 0, 0,
+                                _SWP_NOSIZE | _SWP_NOMOVE)
+            user32.SetForegroundWindow(hwnd)
+            return
+        time.sleep(0.05)
+
+
 def _pick_folder_modern(title):
     """IFileOpenDialog + FOS_PICKFOLDERS。返回 (status, path)：
     status: 'ok' | 'cancelled' | 'error'
@@ -92,9 +114,17 @@ def _pick_folder_modern(title):
                      ctypes.c_ulong(opts.value | _FOS_PICKFOLDERS | _FOS_FORCEFILESYSTEM))
         if title:
             _vt_call(dlg, _VT_SETTITLE, ctypes.c_long, ctypes.c_wchar_p(title))
-        # owner = 当前前台窗口（通常是发起点击的浏览器），保证对话框压在它上面
+        # owner = 当前前台窗口（通常是发起点击的浏览器），保证对话框归在它名下；
+        # 同时起 topmost 线程兜底——后台进程弹窗很容易被前台窗口压住
         hwnd = ctypes.windll.user32.GetForegroundWindow()
-        hr = _vt_call(dlg, _VT_SHOW, ctypes.c_long, ctypes.c_void_p(hwnd))
+        stop = threading.Event()
+        bomber = threading.Thread(target=_topmost_bomber,
+                                  args=(title or "选择工作目录", stop), daemon=True)
+        bomber.start()
+        try:
+            hr = _vt_call(dlg, _VT_SHOW, ctypes.c_long, ctypes.c_void_p(hwnd))
+        finally:
+            stop.set()
         if hr == _ERROR_CANCELLED:
             return ("cancelled", None)
         if hr != _S_OK:

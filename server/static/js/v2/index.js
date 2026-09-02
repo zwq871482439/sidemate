@@ -464,11 +464,6 @@ function maybeShowWorkdirTip() {
   });
 }
 
-async function pickDir() {
-  const r = await api.pickDirectory();
-  return (r && r.ok && r.path) ? r.path : null;
-}
-
 // 工作目录弹出菜单（sess-menu 同款 fixed 浮层；scope='project'|'chat'）
 let _wdMenuEl = null;
 function showWorkdirMenu(anchorEl, info) {
@@ -515,14 +510,27 @@ function showWorkdirMenu(anchorEl, info) {
   const bindBtn = menuEl.querySelector('[data-a="bind"]');
   if (bindBtn) bindBtn.addEventListener('click', async () => {
     menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    const path = await pickDir();
+    let path = null;
+    try {
+      const r = await api.pickDirectory();
+      if (r && r.error) { alert(r.error); return; }
+      path = (r && r.ok && r.path) ? r.path : null;
+    } catch (e) {
+      alert('打开目录选择失败：' + (e && e.message ? e.message : '未知错误'));
+      return;
+    }
     if (!path) return;
-    if (isProject) {
-      await api.setProjectWorkdir(info.group, path);
-    } else {
-      const cur = state.sessions.find(c => c.current);
-      if (!cur) return;
-      await api.setChatWorkdir(cur.name, path);
+    try {
+      if (isProject) {
+        await api.setProjectWorkdir(info.group, path);
+      } else {
+        const cur = state.sessions.find(c => c.current);
+        if (!cur) return;
+        await api.setChatWorkdir(cur.name, path);
+      }
+    } catch (e) {
+      alert('绑定失败：' + (e && e.message ? e.message : '目录不可用'));
+      return;
     }
     await after();
     maybeShowWorkdirTip();

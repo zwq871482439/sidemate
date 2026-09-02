@@ -16,6 +16,7 @@ M1 只读边界：只绑定/展示/打开，任何文件写操作不在此暴露
 import os
 import logging
 import subprocess
+import threading
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -26,6 +27,9 @@ from session import projects
 
 router = APIRouter()
 log = logging.getLogger("routers.workdir")
+
+# 目录对话框全局只许一个在开（模态框叠模态框会把用户搞晕）
+_pick_lock = threading.Lock()
 
 
 def _guard(request):
@@ -51,11 +55,23 @@ def api_pick_directory(request: Request):
     denied = _guard(request)
     if denied:
         return denied
-    from core.dir_dialog import pick_directory
-    path = pick_directory("选择工作目录")
+    if not _pick_lock.acquire(blocking=False):
+        return JSONResponse({"error": "目录选择对话框已打开，请先完成或关闭它"}, status_code=409)
+    try:
+        from core.dir_dialog import pick_directory
+        path = pick_directory("选择工作目录")
+    finally:
+        _pick_lock.release()
     if not path:
+        log.info("[WORKDIR] 目录选择取消/失败")
         return {"ok": False, "cancelled": True}
-    return {"ok": True, "path": os.path.normpath(path)}
+    p = os.path.normpath(path)
+    if not os.path.isabs(p) or not os.path.isdir(p):
+        # 选了「库」/快速访问等非文件系统位置：IFileOpenDialog 返回的不是本地路径
+        log.info("[WORKDIR] 选定位置无效（非本地目录）: %s", path)
+        return {"ok": False, "error": "所选位置不是本地文件夹（「库」和快速访问不可用），请选具体磁盘上的目录"}
+    log.info("[WORKDIR] 用户选定目录: %s", p)
+    return {"ok": True, "path": p}
 
 
 @router.get("/api/chats/{chat_name}/workdir")
