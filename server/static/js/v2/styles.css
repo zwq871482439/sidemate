@@ -677,6 +677,43 @@ body {
   transition: width var(--d1-dur-long) var(--d1-ease-out); overflow: hidden;
 }
 #viewer.open { width: 430px; }
+.vw-head { height: 52px; display: flex; align-items: center; padding: 0 8px 0 16px; border-bottom: 1px solid var(--d1-n-line); flex-shrink: 0; gap: 4px; }
+.vw-tab {
+  border: none; background: none; font-family: inherit; font-size: 12.5px;
+  color: var(--d1-ink-3); padding: 7px 12px; border-radius: 7px; cursor: pointer;
+}
+.vw-tab:hover { color: var(--d1-ink); background: var(--d1-paper); }
+.vw-tab.on { color: var(--d1-accent); background: rgba(15,43,70,.07); font-weight: 600; }
+.vw-close {
+  margin-left: auto; border: none; background: none; color: var(--d1-ink-3);
+  font-size: 15px; cursor: pointer; width: 30px; height: 30px; border-radius: 7px;
+}
+.vw-close:hover { background: var(--d1-paper); color: var(--d1-ink); }
+.vw-body { flex: 1; overflow-y: auto; }
+.vw-empty { padding: 60px 24px; text-align: center; font-size: var(--d1-fs-body); color: var(--d1-ink-3); line-height: 1.8; }
+.vw-files { padding: 14px 16px; }
+.vw-sec { font-size: 11px; color: var(--d1-ink-3); letter-spacing: 1px; margin: 6px 0 8px; }
+.vw-file {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+  border-radius: 8px; cursor: pointer; text-decoration: none;
+}
+.vw-file:hover { background: var(--d1-paper); }
+.vw-file .fi {
+  width: 30px; height: 30px; border-radius: 7px; background: var(--d1-paper);
+  display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
+}
+.vw-file .ftx { min-width: 0; }
+.vw-file .fn { display: block; font-size: 12.5px; color: var(--d1-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vw-file .fm { display: block; font-size: 10.5px; color: var(--d1-ink-3); margin-top: 2px; }
+/* 顶栏视窗开关 */
+.tb-viewer {
+  font-family: inherit; font-size: var(--d1-fs-small); color: var(--d1-ink-2);
+  background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
+  border-radius: var(--d1-r-sm); padding: 4px 11px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.tb-viewer:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.tb-viewer.on { background: var(--d1-accent); color: var(--d1-paper); border-color: var(--d1-accent); }
 
 /* 窄屏（1100-1280）：右视窗浮层覆盖不挤对话区（原型 v14 断点体系） */
 body.narrow #viewer.open {

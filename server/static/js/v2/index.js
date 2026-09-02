@@ -10,6 +10,7 @@ import { renderComposer, loadLocalActions, estimateTokens } from './composer.js'
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
 import { createSettingsView } from './settings.js';
+import { createViewer } from './viewer.js';
 
 const state = {
   mode: 'cloud',      // 后端值：local/cloud/parallel
@@ -113,6 +114,7 @@ function render() {
       state.sessions = await loadSessions();
       state.tab = 'chat';
       await loadCurrentMessages();
+      if (_viewer) _viewer.onSessionChange();
       render();
     },
     onNewChat: async () => {
@@ -138,6 +140,7 @@ function render() {
       ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model">${esc(state.modelTag)}</span>` : ''}
       ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
+      <button class="tb-viewer ${_viewer && _viewer.isOpen ? 'on' : ''}" id="tbViewerBtn" title="视窗（预览/文件/轨迹）">◧ 视窗</button>
       <a class="tb-link" href="/" title="回经典版界面">经典版 ↗</a>
     </div>
     <div id="main-scroll"></div>
@@ -174,11 +177,21 @@ function render() {
     scroll.appendChild(_settingsView.el);
   }
 
-  // 右视窗壳（M1-D 后续：SVG PPT 预览 / 文件 / 轨迹 tab）
-  const viewer = document.createElement('div');
-  viewer.id = 'viewer';
-  app.appendChild(viewer);
+  // 右视窗（预览/文件/轨迹）
+  if (!_viewer) {
+    _viewer = createViewer({ getCurrentChat: () => state.sessions.find(c => c.current) });
+  }
+  app.appendChild(_viewer.el);
+  const vb = document.getElementById('tbViewerBtn');
+  if (vb) vb.addEventListener('click', () => { _viewer.toggle(); });
 }
+
+let _viewer = null;
+
+// Escape 收起视窗（PLAN 定稿）
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && _viewer && _viewer.isOpen) _viewer.setOpen(false);
+});
 
 // 中栏对话区：消息流 + 输入区（生成中时含流式气泡）
 function renderChatArea() {
