@@ -566,6 +566,7 @@ from routers import files as _r_files
 from routers.backup import router as backup_router
 from routers import diagnostics as _r_diag
 from routers import download as _r_download
+from routers import workdir as _r_workdir
 
 app.include_router(_r_chat.router)
 app.include_router(_r_kb.router)
@@ -577,6 +578,7 @@ app.include_router(_r_files.router)
 app.include_router(backup_router)
 app.include_router(_r_diag.router)
 app.include_router(_r_download.router)
+app.include_router(_r_workdir.router)
 
 # ===== 静态页面路由 =====
 

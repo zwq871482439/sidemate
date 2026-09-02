@@ -46,6 +46,7 @@ export function renderComposer(state, events) {
         </div>
       </div>
     </div>
+    <div class="workdir-strip"></div>
     <div class="quick-chips"></div>
     <div class="attach-tray" style="display:none"></div>
     <div class="composer-box">
@@ -114,6 +115,27 @@ export function renderComposer(state, events) {
     }
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); events.onAttachChange(null); });
   }
+
+  // ---- 工作目录 chip（M1 只读版：绑定/查看入口；popover 由 index.js 承接） ----
+  const wdStrip = wrap.querySelector('.workdir-strip');
+  function renderWorkdirChip() {
+    // 无会话（空状态未开聊）不显示——会话级绑定无处附着，项目级走左栏
+    const hasSession = !!(events.getSession && events.getSession());
+    const wd = state.workdir;
+    if (!hasSession) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
+    wdStrip.style.display = '';
+    if (wd && wd.workdir) {
+      const base = wd.workdir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || wd.workdir;
+      const src = wd.source === 'session' ? '本会话' : '项目「' + wd.group + '」';
+      wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.workdir)}">📂 ${esc(base)}<span class="wd-src">${esc(src)}</span></button>`;
+    } else {
+      wdStrip.innerHTML = `<button class="wd-chip ghost" title="绑定一个本地目录，AI 可读、视窗可看（M1 只读）">📂 绑定工作目录…</button>`;
+    }
+    wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
+      events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
+    });
+  }
+  renderWorkdirChip();
 
   // ---- 快捷 chips：按模式照搬经典版 ----
   function renderChips() {

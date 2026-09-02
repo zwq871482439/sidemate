@@ -90,12 +90,19 @@ export function renderSidebar(root, state, events) {
     // 「日常」排最前，其余按名称
     order.sort((a, b) => a === '日常' ? -1 : b === '日常' ? 1 : a.localeCompare(b, 'zh'));
     const collapsedGroups = state.collapsedGroups || {};
+    const projDirs = state.projectWorkdirs || {};
     for (const g of order) {
       const grp = document.createElement('div');
       grp.className = 'proj-group' + (collapsedGroups[g] ? ' closed' : '');
-      grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>📁 ${esc(g)}</span><span class="cnt">${groups[g].length}</span></div>
+      const dirPath = projDirs[g] || '';
+      grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>📁 ${esc(g)}</span><span class="cnt">${groups[g].length}</span>
+        <button class="proj-dir ${dirPath ? 'on' : ''}" title="${dirPath ? '工作目录：' + esc(dirPath) + '（点击更换/解除）' : '为项目「' + esc(g) + '」绑定工作目录'}">📂</button></div>
         <div class="proj-sess"></div>`;
       grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup(g));
+      grp.querySelector('.proj-dir').addEventListener('click', (e) => {
+        e.stopPropagation();
+        events.onProjectDir(g, e.target.closest('.proj-dir'));
+      });
       const box = grp.querySelector('.proj-sess');
       for (const c of groups[g]) {
         const item = document.createElement('div');

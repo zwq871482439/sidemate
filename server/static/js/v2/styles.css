@@ -142,6 +142,13 @@ body {
 .proj-group.closed .arrow { transform: rotate(-90deg); }
 .proj-group.closed .proj-sess { display: none; }
 .proj-head .cnt { margin-left: auto; font-size: 10px; color: var(--d1-ink-3); }
+.proj-dir {
+  border: none; background: none; font-size: 11px; cursor: pointer; padding: 1px 3px;
+  border-radius: 5px; opacity: 0; transition: opacity var(--d1-dur-micro); filter: grayscale(1);
+}
+.proj-head:hover .proj-dir, .proj-dir.on { opacity: 1; }
+.proj-dir.on { filter: none; }
+.proj-dir:hover { background: rgba(255,255,255,.12); }
 .proj-sess { padding-left: 8px; }
 .sess-item .si-bar { display: flex; align-items: center; }
 .sess-item .si-bar .st { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -376,6 +383,47 @@ body {
 .tb-tag-status.status-over { background: rgba(185,28,28,.12); color: var(--pal-danger); }
 
 .quick-chips { max-width: 760px; margin: 0 auto 7px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 0 2px; }
+
+/* ---- 工作目录（M1 只读版） ---- */
+.workdir-strip { max-width: 760px; margin: 0 auto 6px; display: flex; padding: 0 2px; }
+.workdir-strip:empty, .workdir-strip[style*="none"] { margin: 0; }
+.wd-chip {
+  font-family: inherit; font-size: var(--d1-fs-tiny); color: var(--d1-ink-2);
+  background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
+  border-radius: 12px; padding: 3px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: border-color var(--d1-dur-micro), color var(--d1-dur-micro);
+}
+.wd-chip:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.wd-chip .wd-src {
+  font-size: 10px; color: var(--d1-gold-2); background: rgba(232,181,77,.12);
+  border-radius: 8px; padding: 1px 7px;
+}
+.wd-chip.ghost { color: var(--d1-ink-3); border-style: dashed; }
+.wd-chip.ghost:hover { color: var(--d1-accent); }
+.wd-menu { min-width: 260px; max-width: 340px; }
+.wd-menu .wd-path {
+  font-size: 10.5px; color: var(--d1-ink-3); padding: 4px 10px 6px;
+  word-break: break-all; border-bottom: 1px solid var(--d1-n-line); margin-bottom: 4px;
+}
+.wd-tip p { font-size: var(--d1-fs-body); color: var(--d1-ink-2); margin: 0 0 8px; line-height: 1.6; }
+.wd-tip strong { color: var(--d1-accent); }
+.vw-dir { margin-top: 14px; border-top: 1px solid var(--d1-n-line); padding-top: 10px; }
+.vw-dir-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.vw-dir-title { flex: 1; min-width: 0; }
+.vw-dir-path {
+  font-size: 10.5px; color: var(--d1-ink-3); padding: 0 12px 8px;
+  word-break: break-all; line-height: 1.5;
+}
+.vw-dir-open {
+  flex-shrink: 0; font-family: inherit; font-size: 10.5px; cursor: pointer;
+  border: 1px solid var(--d1-n-line); background: var(--d1-paper-2); color: var(--d1-accent-3);
+  border-radius: 6px; padding: 2px 8px;
+}
+.vw-dir-open:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.vw-file-ro { cursor: default; }
+
 .qc-btn {
   font-family: inherit; font-size: var(--d1-fs-small); color: var(--d1-ink-2);
   background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);

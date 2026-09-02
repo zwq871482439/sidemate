@@ -1,7 +1,9 @@
 // 桌伴 0.10.1 新版 UI — 右视窗（M1-D：预览/文件/轨迹 三 tab）
-// 本增量实装：壳 + 「文件」tab（当前会话工作区文件列表，真后端）。
+// 本增量实装：壳 + 「文件」tab（当前会话工作区文件列表 + 绑定工作目录只读展示，真后端）。
 // 「预览」随 M1-E（SVG PPT/报告）、「轨迹」随 0.9.10 调用轨迹实装，先给诚实占位。
 // Escape 收起；窄屏浮层态见 styles.css body.narrow。
+
+import { api } from './api.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -17,16 +19,22 @@ export function createViewer(opts) {
   let tab = 'files';   // preview | files | trace
   let files = null;    // null=未加载
   let filesFor = '';   // 当前列表属于哪个会话
+  let wd = null;       // 工作目录：{ files, workdir, source, group } | null=未加载 | false=未绑定
 
   async function loadFiles() {
     const cur = opts.getCurrentChat();
-    if (!cur) { files = []; filesFor = ''; return; }
+    if (!cur) { files = []; filesFor = ''; wd = false; return; }
     try {
       const r = await fetch('/api/chat/' + encodeURIComponent(cur.name) + '/workspace');
       const d = await r.json();
       files = d.files || [];
       filesFor = cur.name;
     } catch (e) { files = []; filesFor = cur.name; }
+    // 工作目录（M1 只读版：绑定 + 展示）
+    try {
+      const w = await api.listWorkdirFiles(cur.name);
+      wd = w.workdir ? w : false;
+    } catch (e) { wd = false; }
   }
 
   function render() {
@@ -55,18 +63,38 @@ export function createViewer(opts) {
         loadFiles().then(renderBody);
         return;
       }
+      let html = '';
       if (!files.length) {
-        body.innerHTML = '<div class="vw-empty">当前会话工作区还没有文件<br><small>AI 产出的文件（文档/表格/PPT）会出现在这里</small></div>';
-        return;
+        html += '<div class="vw-empty">当前会话工作区还没有文件<br><small>AI 产出的文件（文档/表格/PPT）会出现在这里</small></div>';
+      } else {
+        html += `<div class="vw-files">
+          <div class="vw-sec">工作区文件 · ${esc(filesFor)}</div>
+          ${files.map(f => `
+            <a class="vw-file" href="/api/chat/${encodeURIComponent(filesFor)}/workspace/download?path=${encodeURIComponent(f.name)}" title="下载 ${esc(f.name)}">
+              <span class="fi">${_icon(f.name)}</span>
+              <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${_fmtSize(f.size)}</span></span>
+            </a>`).join('')}
+        </div>`;
       }
-      body.innerHTML = `<div class="vw-files">
-        <div class="vw-sec">工作区文件 · ${esc(filesFor)}</div>
-        ${files.map(f => `
-          <a class="vw-file" href="/api/chat/${encodeURIComponent(filesFor)}/workspace/download?path=${encodeURIComponent(f.name)}" title="下载 ${esc(f.name)}">
-            <span class="fi">${_icon(f.name)}</span>
-            <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${_fmtSize(f.size)}</span></span>
-          </a>`).join('')}
-      </div>`;
+      // 绑定工作目录（只读展示：名称/大小/修改时间 + 打开文件夹）
+      if (wd && wd.workdir) {
+        html += `<div class="vw-files vw-dir">
+          <div class="vw-sec vw-dir-head"><span class="vw-dir-title">工作目录${wd.source === 'session' ? '（本会话绑定）' : '（项目「' + esc(wd.group) + '」绑定）'}</span>
+            <button class="vw-dir-open" title="在资源管理器中打开">打开文件夹</button></div>
+          <div class="vw-dir-path" title="${esc(wd.workdir)}">${esc(wd.workdir)}</div>
+          ${wd.files.length ? wd.files.map(f => `
+            <div class="vw-file vw-file-ro" title="${f.is_dir ? '目录' : '文件'}（只读展示）">
+              <span class="fi">${f.is_dir ? '📁' : _icon(f.name)}</span>
+              <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${f.is_dir ? '目录' : _fmtSize(f.size)} · ${esc(f.mtime)}</span></span>
+            </div>`).join('') : '<div class="vw-empty"><small>目录是空的</small></div>'}
+        </div>`;
+      }
+      body.innerHTML = html;
+      const openBtn = body.querySelector('.vw-dir-open');
+      if (openBtn) openBtn.addEventListener('click', async () => {
+        const cur = opts.getCurrentChat();
+        if (cur) { try { await api.openWorkdir(cur.name); } catch (e) { /* 失败无感 */ } }
+      });
     } else if (tab === 'preview') {
       body.innerHTML = `<div class="vw-empty">预览视窗随 PPT/报告生成实装（M1-E）<br><small>到时候 AI 逐页设计的 SVG 会实时出现在这里</small></div>`;
     } else {
@@ -87,12 +115,12 @@ export function createViewer(opts) {
 
   function setOpen(v) {
     open = v;
-    if (v) files = null;  // 每次展开重新拉
+    if (v) { files = null; wd = null; }  // 每次展开重新拉
     render();
   }
 
-  // 会话切换后刷新
-  function onSessionChange() { files = null; if (open) renderBody(); }
+  // 会话切换/目录绑定变化后刷新
+  function onSessionChange() { files = null; wd = null; if (open) renderBody(); }
 
   return {
     el,

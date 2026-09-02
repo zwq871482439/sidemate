@@ -33,6 +33,42 @@ export const api = {
       body: JSON.stringify({ path }),
     }));
   },
+  // ---- 工作目录（M1 只读版） ----
+  // 弹系统原生目录对话框（阻塞至用户选完）：{ ok, path } | { cancelled }
+  async pickDirectory() {
+    return _json(await fetch('/api/system/pick-directory', { method: 'POST' }));
+  },
+  // 解析会话生效目录：{ workdir, source: 'session'|'group'|null, group }
+  async getWorkdir(chatName) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir'));
+  },
+  // 会话级绑定/解除（path=null 解除）
+  async setChatWorkdir(chatName, path) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }));
+  },
+  // 项目级绑定/解除（path=null 解除）
+  async setProjectWorkdir(group, path) {
+    return _json(await fetch('/api/projects/' + encodeURIComponent(group) + '/workdir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }));
+  },
+  // 全部项目 → 目录映射（侧栏图标态）
+  async getProjectWorkdirs() {
+    return _json(await fetch('/api/projects/workdirs'));
+  },
+  // 只读列目录：{ files: [{name,is_dir,size,mtime}], workdir, source, group }
+  async listWorkdirFiles(chatName) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/files'));
+  },
+  async openWorkdir(chatName) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/open', { method: 'POST' }));
+  },
 };
 
 // 模式映射：后端值 ↔ 新版 UI 显示
