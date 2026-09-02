@@ -3,6 +3,7 @@
 // 流式发送/卡片回放（CardRenderer）随对话区迁入增量补上。
 
 import { api } from './api.js';
+import { renderCardHistory } from './cards.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -59,6 +60,14 @@ function _renderMsg(m) {
   if (m.think && String(m.think).trim()) {
     thinkHtml = `<details class="m-think"><summary>思考过程（${(m.think_chars || String(m.think).length)}字）</summary><div class="m-think-body">${esc(m.think)}</div></details>`;
   }
+  // 明盒卡片回放（card_data，与流式固化同构）
+  const cardsHtml = renderCardHistory(m);
+  // 并行双列回放（local/cloud 原文折叠卡）
+  let parHtml = '';
+  if (m.parallel_texts && (m.parallel_texts.local || m.parallel_texts.cloud)) {
+    const col = (label, txt) => txt ? `<details class="cb-par"><summary>${label}</summary><div class="cb-par-body md">${md(txt)}</div></details>` : '';
+    parHtml = '<div class="cb-par-wrap">' + col('离线列', m.parallel_texts.local) + col('在线列', m.parallel_texts.cloud) + '</div>';
+  }
   // 中断标记
   const abortedHtml = m._aborted
     ? `<div class="m-aborted">■ ${ABORT_LABEL[m._abort_reason] || '已终止'}</div>` : '';
@@ -80,6 +89,7 @@ function _renderMsg(m) {
     <div class="m-body">
       <div class="m-name">${esc(name)}</div>
       ${thinkHtml}
+      ${cardsHtml}${parHtml}
       <div class="m-bubble ${isUser ? '' : 'md'}">${bubbleInner}</div>
       ${abortedHtml}${docBar}${statsHtml}
     </div>

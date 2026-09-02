@@ -11,6 +11,7 @@ import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
 import { createSettingsView } from './settings.js';
 import { createViewer } from './viewer.js';
+import { createCardArea } from './cards.js';
 
 const state = {
   mode: 'cloud',      // 后端值：local/cloud/parallel
@@ -86,12 +87,33 @@ const chatStream = createChatStream({
   getSession: () => state.sessions.find(c => c.current),
   onUserMsg: (msg) => {
     state.messages = (state.messages || []).concat([msg]);
+    _cards = createCardArea();
+    _doneData = null;
     renderChatArea();
   },
   onStreamTick: (st, phase) => { _streamState = st; renderStreamingBubble(st); },
+  onCardEvent: (d) => { if (_cards) _cards.handleEvent(d); },
+  onDoneData: (d) => { _doneData = d; },
   onDone: async () => {
     state.generating = false;
     _streamState = null;
+    // card_data 视图态回写（唯一前端写通道，msg_id 定向；M1-B 边界）
+    if (_cards && _doneData && _doneData.msg_id) {
+      try {
+        const cardData = _cards.finalize();
+        if (cardData.length) {
+          const cur = state.sessions.find(c => c.current);
+          if (cur) {
+            await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/enrich', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ msg_id: _doneData.msg_id, card_data: cardData }),
+            });
+          }
+        }
+      } catch (e) { /* 视图态回写失败不影响消息正文 */ }
+    }
+    _cards = null;
+    _doneData = null;
     state.sessions = await loadSessions();   // 先刷新列表（msg_count 已变）
     await loadCurrentMessages();             // 后端快照 = 真相
     render();
@@ -99,6 +121,8 @@ const chatStream = createChatStream({
 });
 let _streamState = null;
 let _composer = null;
+let _cards = null;      // 本轮明盒卡片区
+let _doneData = null;   // done 事件数据（含 msg_id）
 let _kbView = null;  // KB 视图单例（切走销毁，切回新建）
 let _settingsView = null;  // 设置视图单例（无后台资源，常驻即可）
 
@@ -312,10 +336,13 @@ function renderStreamingBubble(st) {
         <div class="m-name">桌伴 · 生成中…</div>
         <div class="stream-status"></div>
         <div class="m-sources" style="display:none"></div>
+        <div class="v2-card-slot"></div>
         <div class="m-bubble md"></div>
       </div>`;
     flow.appendChild(el);
   }
+  const slot = el.querySelector('.v2-card-slot');
+  if (slot && _cards && !_cards.isEmpty() && !slot.contains(_cards.el)) slot.appendChild(_cards.el);
   const bubble = el.querySelector('.m-bubble');
   const statusEl = el.querySelector('.stream-status');
   const srcEl = el.querySelector('.m-sources');

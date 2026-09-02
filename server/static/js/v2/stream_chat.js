@@ -103,8 +103,12 @@ export function createChatStream(hooks) {
 
 function _now() { return new Date().toTimeString().slice(0, 8); }
 
-// SSE 事件子集（经典版 56 种里的核心集；其余类型本版忽略，流末快照兜底一致性）
+// SSE 事件子集（经典版 56 种里的核心集；卡片类事件转发给 hooks.onCardEvent）
 function _handleEvent(d, st, hooks) {
+  // 明盒卡片事件（agent_timeline/agent_status/doc_loaded/agent_summary/fetch_hint）
+  if (hooks.onCardEvent && ['agent_timeline', 'agent_status', 'doc_loaded', 'agent_summary', 'fetch_hint'].includes(d.type)) {
+    hooks.onCardEvent(d);
+  }
   switch (d.type) {
     case 'token':
       st.text += d.content || '';
@@ -116,6 +120,7 @@ function _handleEvent(d, st, hooks) {
       break;
     case 'agent_think':
       st.think += (d.content && d.content.content) || '';
+      if (hooks.onCardEvent) hooks.onCardEvent(d);
       hooks.onStreamTick(st, 'think');
       break;
     case 'stream':
@@ -149,6 +154,7 @@ function _handleEvent(d, st, hooks) {
       hooks.onStreamTick(st, 'error');
       break;
     case 'done':
+      if (hooks.onDoneData) hooks.onDoneData(d);
       break;
     default:
       break;  // 卡片/时间线类事件（agent_timeline 等）随对话区卡片化增量再接
