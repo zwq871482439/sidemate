@@ -123,6 +123,7 @@ function render() {
     <div class="topbar">
       <span class="tb-title">${state.tab === 'chat' ? '对话' : state.tab === 'kb' ? '知识库' : '设置'}</span>
       ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model">${esc(state.modelTag)}</span>` : ''}
+      ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
       <a class="tb-link" href="/" title="回经典版界面">经典版 ↗</a>
     </div>
@@ -149,6 +150,7 @@ function render() {
       _kbView.mount();
     }
     scroll.appendChild(_kbView.el);
+    _kbView.renderTopbar();  // KB 工具区在顶栏（星图覆盖内容区也可切回清单）
   } else {
     // 设置：壳 + 常规子页已迁入；其余子页在设置内占位逐页迁
     const scroll = main.querySelector('#main-scroll');

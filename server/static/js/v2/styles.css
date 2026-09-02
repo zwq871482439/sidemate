@@ -135,6 +135,7 @@ body {
 }
 .topbar .tb-title { font-size: var(--d1-fs-h2); font-weight: 600; color: var(--d1-accent); }
 .topbar .tb-spacer { flex: 1; }
+.tb-slot { display: flex; align-items: center; gap: 10px; }
 .tb-model {
   font-size: var(--d1-fs-small); color: var(--d1-ink-2); background: var(--d1-paper-2);
   border: 1px solid var(--d1-n-line); border-radius: 12px; padding: 2px 10px;

@@ -96,20 +96,6 @@ export function createKBView(events) {
     }
 
     el.innerHTML = `
-      <div class="kb-toprow">
-        <h1 class="kb-h1">知识库</h1>
-        <button class="kb-tool-btn" id="kbUploadBtn">⬆ 上传文档</button>
-        <div class="kb-view-toggle">
-          <button data-v="card" class="${state.view === 'card' ? 'on' : ''}" title="卡片视图">▦</button>
-          <button data-v="list" class="${state.view === 'list' ? 'on' : ''}" title="列表视图">☰</button>
-        </div>
-        <div class="kb-view-toggle" title="清单/星图">
-          <button data-p="list" class="${state.pane === 'list' ? 'on' : ''}" title="清单">▤ 清单</button>
-          <button data-p="star" class="${state.pane === 'star' ? 'on' : ''}" title="星图">✦ 星图</button>
-        </div>
-        <input class="kb-search" placeholder="搜索文件名…" value="${esc(state.search)}">
-        <span class="kb-stat" id="kbStatLine"></span>
-      </div>
       <div class="kb-chips" id="kbChips"></div>
       <div class="kb-batch" id="kbBatch" style="display:none"></div>
       <div class="kb-overview" id="kbOverview"></div>
@@ -128,8 +114,10 @@ export function createKBView(events) {
     renderFloat();
     bindTop();
 
-    // 星图 pane（全幅覆盖中栏内容区）
+    // 星图 pane（全幅覆盖中栏内容区；顶栏在外层不受影响，随时可切回）
     if (state.pane === 'star') _mountStar(); else _unmountStar();
+    const slot = document.getElementById('kb-topbar-slot');
+    if (slot) renderTopbar(slot);
   }
 
   // ---- 星图挂载（数据：overview.graph 服务端沉降终态直出） ----
@@ -170,18 +158,37 @@ export function createKBView(events) {
     _star = null;
   }
 
-  function bindTop() {
-    el.querySelector('#kbUploadBtn').addEventListener('click', () => el.querySelector('#kbFile').click());
-    el.querySelector('#kbFile').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
-    el.querySelectorAll('.kb-view-toggle button[data-v]').forEach(b =>
-      b.addEventListener('click', () => { state.view = b.dataset.v; render(); }));
-    el.querySelectorAll('.kb-view-toggle button[data-p]').forEach(b =>
+  // 顶栏工具区渲染（用户定稿：清单/星图 → 卡片/列表（仅清单态）→ 上传 → 搜索 → 统计；
+  // 全部进顶栏，星图全幅覆盖时也能切回清单）
+  function renderTopbar(slot) {
+    slot.innerHTML = `
+      <div class="kb-view-toggle" title="清单/星图">
+        <button data-p="list" class="${state.pane === 'list' ? 'on' : ''}">▤ 清单</button>
+        <button data-p="star" class="${state.pane === 'star' ? 'on' : ''}">✦ 星图</button>
+      </div>
+      ${state.pane === 'list' ? `
+      <div class="kb-view-toggle" title="卡片/列表">
+        <button data-v="card" class="${state.view === 'card' ? 'on' : ''}" title="卡片视图">▦</button>
+        <button data-v="list" class="${state.view === 'list' ? 'on' : ''}" title="列表视图">☰</button>
+      </div>` : ''}
+      <button class="kb-tool-btn" id="kbUploadBtn">⬆ 上传文档</button>
+      <input class="kb-search" placeholder="搜索文件名…" value="${esc(state.search)}" style="max-width:180px">
+      <span class="kb-stat">${state.docs.length} 篇</span>
+    `;
+    slot.querySelectorAll('button[data-p]').forEach(b =>
       b.addEventListener('click', () => { state.pane = b.dataset.p; render(); }));
+    slot.querySelectorAll('button[data-v]').forEach(b =>
+      b.addEventListener('click', () => { state.view = b.dataset.v; render(); }));
+    slot.querySelector('#kbUploadBtn').addEventListener('click', () => el.querySelector('#kbFile').click());
     let deb = null;
-    el.querySelector('.kb-search').addEventListener('input', (e) => {
+    slot.querySelector('.kb-search').addEventListener('input', (e) => {
       clearTimeout(deb);
       deb = setTimeout(() => { state.search = e.target.value.trim().toLowerCase(); renderGrid(); }, 300);
     });
+  }
+
+  function bindTop() {
+    el.querySelector('#kbFile').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
     // 拖拽上传
     el.ondragover = (e) => { e.preventDefault(); el.classList.add('drag-over'); };
     el.ondragleave = () => el.classList.remove('drag-over');
@@ -584,5 +591,9 @@ export function createKBView(events) {
     _unmountStar();
   }
 
-  return { el, mount, destroy };
+  return { el, mount, destroy,
+    renderTopbar: () => {
+      const slot = document.getElementById('kb-topbar-slot');
+      if (slot && state.moduleReady) renderTopbar(slot);
+    } };
 }
