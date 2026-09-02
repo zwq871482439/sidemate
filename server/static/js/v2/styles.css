@@ -492,6 +492,33 @@ body {
 .wd-lock-note {
   font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); padding: 7px 10px;
 }
+.sess-menu button.cur { color: var(--d1-gold-2); font-weight: 600; }
+.sess-menu button:disabled { opacity: .45; cursor: default; }
+.proj-missing {
+  font-size: 10px; color: var(--pal-danger); background: rgba(185,28,28,.14);
+  border-radius: 8px; padding: 1px 7px; margin-left: 4px;
+}
+.proj-group.legacy .proj-head { color: #7A8FA5; }
+.wd-chip.legacy { border-style: dashed; color: var(--d1-ink-3); }
+.legacy-empty { text-align: center; margin-top: 15vh; color: var(--d1-ink-3); }
+.legacy-empty-ic { font-size: 34px; margin-bottom: 10px; }
+.legacy-empty-t { font-size: var(--d1-fs-h2); font-weight: 600; color: var(--d1-ink-2); margin-bottom: 8px; }
+.legacy-empty-d { font-size: var(--d1-fs-body); line-height: 1.8; }
+.vw-card-legacy { border-color: var(--d1-gold-2); }
+.vw-missing { color: var(--pal-danger); font-size: var(--d1-fs-tiny); padding-left: 42px; }
+.vw-sub {
+  font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); padding: 8px 12px 4px;
+  border-top: 1px dashed var(--d1-n-line); margin-top: 6px;
+}
+.vw-mini {
+  font-family: inherit; font-size: var(--d1-fs-tiny); cursor: pointer;
+  border: 1px solid var(--d1-n-line); background: var(--d1-paper-2); color: var(--d1-accent-3);
+  border-radius: 6px; padding: 2px 9px; margin-left: 8px;
+}
+.vw-mini:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.vw-mini.danger { color: var(--pal-danger); margin-left: 0; }
+.vw-mini.danger:hover { border-color: var(--pal-danger); }
+
 
 .vw-ref {
   flex-shrink: 0; font-family: inherit; font-size: 10.5px; cursor: pointer;

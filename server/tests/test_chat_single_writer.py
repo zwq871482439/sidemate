@@ -23,7 +23,7 @@ from pipelines._base import StreamContext, persist_turn
 
 @pytest.fixture()
 def chat_dir(tmp_path, monkeypatch):
-    """隔离的 CHAT_DIR
+    """隔离的 CHAT_DIR + 默认项目目录
 
     注意：new_chat_file 会调 set_current_chat（routers.deps → import server），
     测试环境必须屏蔽，否则会把整个 server.py（含看门狗）拉起来。
@@ -31,6 +31,9 @@ def chat_dir(tmp_path, monkeypatch):
     d = str(tmp_path / "chats")
     os.makedirs(d, exist_ok=True)
     monkeypatch.setattr(chat_store, "CHAT_DIR", d)
+    # 0.10.1 项目即文件夹：new_chat_file 会建默认项目目录，隔离之
+    import config as _cfg
+    monkeypatch.setattr(_cfg, "DEFAULT_PROJECT_DIR", str(tmp_path / "projects" / "默认项目"))
     # 迁移标记全局只跑一次，测试间互不影响（tmp 目录无旧文件，迁移是 no-op）
     monkeypatch.setattr(chat_store, "_migration_done", True)
     monkeypatch.setattr(chat_store, "set_current_chat", lambda p: None)
@@ -169,39 +172,39 @@ class TestPersistTurnAppend:
         assert messages[-1]["engine"] == "custom"
 
 
-# ---------- 项目分组（0.10.1 M1-D） ----------
+# ---------- 项目归属（0.10.1「项目即文件夹」四次定稿） ----------
 
-def _group_of(path):
-    """直读 meta.json 的 group（不用 list_chats——它经 routers.deps 会 import server）"""
-    meta = json.load(open(os.path.join(path, "meta.json"), encoding="utf-8"))
-    return meta.get("group")
+def _meta_of(path):
+    """直读 meta.json（不用 list_chats——它经 routers.deps 会 import server）"""
+    return json.load(open(os.path.join(path, "meta.json"), encoding="utf-8"))
 
 
 class TestChatGroup:
     def test_default_group_and_set(self, chat_dir):
-        """新会话默认「日常」；set_chat_group 换组持久化"""
-        from session.chat_store import set_chat_group
+        """新会话 meta 带 project_dir（默认项目），不再写 group；无 project_dir=旧版"""
         path = new_chat_file()
-        assert _group_of(path) == "日常"
-        r = set_chat_group(os.path.basename(path), "产品发布")
-        assert r["ok"] and r["group"] == "产品发布"
-        assert _group_of(path) == "产品发布"
+        meta = _meta_of(path)
+        assert meta.get("project_dir")  # 新模型：归属=项目目录
+        assert "group" not in meta      # group 字段退役
+        from session import projects
+        assert not projects.is_legacy_chat(os.path.basename(path))
 
     def test_invalid_group_falls_back(self, chat_dir):
-        """非法分组名回落「日常」"""
+        """set_chat_group（旧分组 API 保留给存量）仍工作"""
         from session.chat_store import set_chat_group
         path = new_chat_file()
-        r = set_chat_group(os.path.basename(path), "非法/名称")
-        assert r["ok"] and r["group"] == "日常"
-        assert _group_of(path) == "日常"
+        r = set_chat_group(os.path.basename(path), "产品发布")
+        assert r["ok"] and r["group"] == "产品发布"
+        assert _meta_of(path).get("group") == "产品发布"
+        r2 = set_chat_group(os.path.basename(path), "非法/名称")
+        assert r2["ok"] and r2["group"] == "日常"
 
     def test_group_persists_across_save(self, chat_dir):
-        """分组不被消息保存覆盖（meta.json 独立字段）"""
-        from session.chat_store import set_chat_group
+        """project_dir 不被消息保存覆盖（meta.json 独立字段）"""
         path = new_chat_file()
-        set_chat_group(os.path.basename(path), "项目A")
+        pd = _meta_of(path)["project_dir"]
         append_message(path, {"role": "user", "content": "hi", "ts": "10:00:00"})
-        assert _group_of(path) == "项目A"
+        assert _meta_of(path)["project_dir"] == pd
 
 class TestPersistTurnLegacy:
     def test_rebuild_when_no_early_save(self, chat_dir):

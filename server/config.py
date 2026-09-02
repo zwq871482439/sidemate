@@ -47,6 +47,12 @@ EXTENSIONS_DIR = os.path.join(DATA_DIR, "extensions")            # 扩展注册 
 RECORDER_DATA_DIR = os.path.join(DATA_DIR, "recorder")           # 录音数据
 WORKSPACE_DIR = ROOT_DIR  # 保持向后兼容
 
+# 0.10.1 项目即文件夹（PLAN 1.5 四次定稿）：项目=文件夹本体，无换绑无锁定
+PROJECTS_ROOT = os.path.join(DATA_DIR, "projects")               # 项目注册表+默认根
+DEFAULT_PROJECT_NAME = "默认项目"
+DEFAULT_PROJECT_DIR = os.path.join(PROJECTS_ROOT, DEFAULT_PROJECT_NAME)
+PROJECT_ARTIFACT_DIR = ".sidemate"   # 项目目录下的产物区子目录（与用户材料分离）
+
 def ensure_dirs():
     """确保所有运行时目录存在"""
     for d in [DATA_DIR, CHAT_DIR, LOG_DIR, CACHE_DIR, UPLOAD_DIR, FILES_DIR, DOCS_DIR,

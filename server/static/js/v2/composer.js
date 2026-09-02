@@ -116,19 +116,29 @@ export function renderComposer(state, events) {
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); events.onAttachChange(null); });
   }
 
-  // ---- 工作目录 chip（项目 ↔ 目录 1:1：永远显示当前项目目录；popover 由 index.js 承接） ----
+  // ---- 项目 chip（项目即文件夹：显示所属项目；0 消息会话可点开选择器换项目；
+  // 旧版会话显示只读徽标；popover 由 index.js 承接） ----
   const wdStrip = wrap.querySelector('.workdir-strip');
   function renderWorkdirChip() {
-    // 无会话（空状态未开聊）不显示——项目是随着会话出现的
     const hasSession = !!(events.getSession && events.getSession());
     const wd = state.workdir;
-    if (!hasSession || !wd || !wd.workdir) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
+    if (!hasSession || !wd) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
     wdStrip.style.display = '';
-    const base = wd.workdir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || wd.workdir;
-    const src = wd.source === 'external' ? '项目「' + wd.group + '」' : '默认目录';
-    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.workdir)}">📂 ${esc(base)}<span class="wd-src">${esc(src)}</span></button>`;
+    if (wd.legacy) {
+      wdStrip.innerHTML = `<button class="wd-chip legacy" title="旧版本会话：只读存档，可查看/导出/下载产物">🗄 旧版本会话</button>`;
+      wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
+        events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
+      });
+      return;
+    }
+    if (!wd.dir) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
+    const fresh = !state.hasMessages;  // 归属在创建窗口定型：有消息后不可换项目
+    const name = wd.display || '默认项目';
+    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.dir)}">📂 ${esc(name)}${fresh ? '<span class="wd-src">选择项目 ▾</span>' : ''}</button>`;
     wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
-      events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
+      const anchor = e.target.closest('.wd-chip');
+      if (fresh && events.onProjectPick) events.onProjectPick(anchor);
+      else if (events.onWorkdirClick) events.onWorkdirClick(anchor);
     });
   }
   renderWorkdirChip();
@@ -205,8 +215,19 @@ export function renderComposer(state, events) {
   }
   updateTokenBar();
 
+  // 旧版会话只读：禁用输入与发送（PLAN 1.5：旧版会话只看/导出/下载产物）
+  const isLegacy = !!(state.workdir && state.workdir.legacy);
+  if (isLegacy) {
+    textarea.disabled = true;
+    textarea.placeholder = '旧版本会话已转为只读存档——可查看、导出或下载产物；要聊新内容请点「新建任务」';
+    sendBtn.disabled = true;
+    sendBtn.style.opacity = '.5';
+    sendBtn.style.cursor = 'not-allowed';
+  }
+
   // ---- 发送/停止 ----
   function doSend() {
+    if (isLegacy) return;
     const text = textarea.value.trim();
     if (!text && !attach) return;
     const payload = {
@@ -300,11 +321,11 @@ export function renderComposer(state, events) {
     });
   }
 
-  // 生成中切换发送/停止
+  // 生成中切换发送/停止（旧版会话恒禁用，不被 setRunning 复活）
   function setRunning(running) {
     sendBtn.style.display = running ? 'none' : '';
     stopBtn.style.display = running ? '' : 'none';
-    textarea.disabled = running;
+    textarea.disabled = running || isLegacy;
   }
 
   // 外部注入附件（工作目录「引用」：import 返回与上传同构的 {path, filename, tokens}）

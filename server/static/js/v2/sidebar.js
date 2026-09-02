@@ -45,7 +45,7 @@ export function renderSidebar(root, state, events) {
       <button class="sb-nav-item ${state.tab === 'kb' ? 'on' : ''}" data-tab="kb"><span class="ic">${ICONS.kb}</span><span class="sb-label">知识库</span></button>
       <button class="sb-nav-item ${state.tab === 'settings' ? 'on' : ''}" data-tab="settings"><span class="ic">${ICONS.settings}</span><span class="sb-label">设置</span></button>
     </nav>
-    <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建项目</span></button>
+    <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建任务</span></button>
     ${state.tab === 'kb' && state.kbTree
       ? '<div class="sb-sess-title sb-label">文档范围</div><div class="sb-sessions kb-tree"></div>'
       : '<div class="sb-sess-title sb-label">会话</div><div class="sb-sessions"></div>'}
@@ -73,67 +73,89 @@ export function renderSidebar(root, state, events) {
     return _bindCommon(sb, state, events);
   }
 
-  // 会话列表（搜索过滤）+ 项目分组（项目 ↔ 目录 1:1；组底「新建会话」= 在该项目下建会话）
+  // 会话列表（搜索过滤）+ 项目树（项目即文件夹，PLAN 1.5 四次定稿：
+  // 组按 project_dir 归集；无 project_dir 的进「旧版本会话」只读桶）
   const filter = (state.filter || '').toLowerCase();
   const sessions = state.sessions.filter(c => !filter || (c.name || '').toLowerCase().includes(filter));
-  // 项目集合 = 会话出现的组 ∪ 已注册的空项目
-  const projSet = new Set(state.projects || []);
-  for (const c of state.sessions) projSet.add(c.group || '日常');
-  const projOrder = [...projSet].sort((a, b) => a === '日常' ? -1 : b === '日常' ? 1 : a.localeCompare(b, 'zh'));
-  if (!projOrder.length) {
-    listEl.innerHTML = `<div class="sess-empty">${filter ? '无匹配会话' : '还没有项目，点上方「新建项目」开始'}</div>`;
-  } else {
-    // 按项目分组（免迁移：无 group 的旧会话归「日常」）
-    const groups = {};
-    for (const c of sessions) {
-      const g = c.group || '日常';
-      if (!groups[g]) groups[g] = [];
-      groups[g].push(c);
+  const projects = state.projects || [];   // [{dir, display, is_default, status}]
+  const sessionsByDir = {};
+  const legacySess = [];
+  for (const c of sessions) {
+    if (c.legacy) { legacySess.push(c); continue; }
+    const d = c.project_dir || '';
+    if (!sessionsByDir[d]) sessionsByDir[d] = [];
+    sessionsByDir[d].push(c);
+  }
+  // 有会话但目录已不在注册表的项目（比如注册表丢了）也要显示
+  const knownDirs = new Set(projects.map(p => p.dir));
+  for (const d of Object.keys(sessionsByDir)) {
+    if (d && !knownDirs.has(d)) {
+      projects.push({ dir: d, display: d.split(/[\\/]/).filter(Boolean).pop() || d, is_default: false, status: 'missing' });
+      knownDirs.add(d);
     }
-    const collapsedGroups = state.collapsedGroups || {};
-    const projDirs = state.projectWorkdirs || {};
-    for (const g of projOrder) {
-      const grpSess = groups[g] || [];
-      // 搜索过滤时隐藏空项目组
-      if (filter && !grpSess.length) continue;
-      const grp = document.createElement('div');
-      grp.className = 'proj-group' + (collapsedGroups[g] ? ' closed' : '');
-      const wd = projDirs[g] || null;  // {workdir, source: 'external'|'default', locked, session_count}
-      const dirTip = wd
-        ? (wd.source === 'external' ? '工作目录：' : '默认工作目录：') + wd.workdir + (wd.locked ? '（已锁定）' : '（点击更换）')
-        : '查看/更换项目「' + g + '」的工作目录';
-      grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>📁 ${esc(g)}</span><span class="cnt">${grpSess.length}</span>
-        <button class="proj-dir ${wd && wd.source === 'external' ? 'on' : ''}" title="${esc(dirTip)}">📂</button></div>
-        <div class="proj-sess"></div>`;
-      grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup(g));
-      grp.querySelector('.proj-dir').addEventListener('click', (e) => {
-        e.stopPropagation();
-        events.onProjectDir(g, e.target.closest('.proj-dir'));
-      });
-      const box = grp.querySelector('.proj-sess');
-      for (const c of grpSess) {
-        const item = document.createElement('div');
-        item.className = 'sess-item' + (c.current ? ' on' : '');
-        item.innerHTML = `<div class="si-bar"><div class="st">${esc(c.name)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息</div>`;
-        item.addEventListener('click', (e) => {
-          if (e.target.closest('.sess-more')) return;
-          events.onSelectSession(c);
-        });
-        item.querySelector('.sess-more').addEventListener('click', (e) => {
-          e.stopPropagation();
-          events.onSessionMenu(c, e.target.closest('.sess-more'));
-        });
-        box.appendChild(item);
-      }
-      // 组底：在该项目下新建会话（项目层级的最后一行）
-      const newIn = document.createElement('div');
-      newIn.className = 'sess-new-in';
-      newIn.innerHTML = `<span class="ic">＋</span> 新建会话`;
-      newIn.title = `在项目「${g}」下新建会话`;
-      newIn.addEventListener('click', () => events.onNewChatInGroup(g));
-      box.appendChild(newIn);
-      listEl.appendChild(grp);
-    }
+  }
+  const collapsedGroups = state.collapsedGroups || {};
+
+  const renderSessItem = (c) => {
+    const item = document.createElement('div');
+    item.className = 'sess-item' + (c.current ? ' on' : '');
+    item.innerHTML = `<div class="si-bar"><div class="st">${esc(c.name)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息</div>`;
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.sess-more')) return;
+      events.onSelectSession(c);
+    });
+    item.querySelector('.sess-more').addEventListener('click', (e) => {
+      e.stopPropagation();
+      events.onSessionMenu(c, e.target.closest('.sess-more'));
+    });
+    return item;
+  };
+
+  const renderNewInRow = (dir) => {
+    const newIn = document.createElement('div');
+    newIn.className = 'sess-new-in';
+    newIn.innerHTML = `<span class="ic">＋</span> 新建会话`;
+    newIn.title = '在该项目下新建会话';
+    newIn.addEventListener('click', () => events.onNewChatInProject(dir));
+    return newIn;
+  };
+
+  let rendered = 0;
+  for (const p of projects) {
+    const grpSess = sessionsByDir[p.dir] || [];
+    if (filter && !grpSess.length) continue;  // 搜索时隐藏无命中项目组
+    rendered++;
+    const missing = p.status === 'missing';
+    const grp = document.createElement('div');
+    grp.className = 'proj-group' + (collapsedGroups[p.dir] ? ' closed' : '');
+    grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>📁 ${esc(p.display)}</span>
+      ${missing ? '<span class="proj-missing">目录丢失</span>' : ''}<span class="cnt">${grpSess.length}</span>
+      <button class="proj-dir ${p.is_default ? '' : 'on'}" title="项目信息（${esc(p.dir)}）">📂</button></div>
+      <div class="proj-sess"></div>`;
+    grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup(p.dir));
+    grp.querySelector('.proj-dir').addEventListener('click', (e) => {
+      e.stopPropagation();
+      events.onProjectInfo(p);
+    });
+    const box = grp.querySelector('.proj-sess');
+    for (const c of grpSess) box.appendChild(renderSessItem(c));
+    if (!missing) box.appendChild(renderNewInRow(p.dir));
+    listEl.appendChild(grp);
+  }
+  // 旧版本会话只读桶（看/导出/下载产物，不可发送）
+  if (legacySess.length) {
+    rendered++;
+    const grp = document.createElement('div');
+    grp.className = 'proj-group legacy' + (collapsedGroups.__legacy__ ? ' closed' : '');
+    grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>🗄 旧版本会话</span><span class="cnt">${legacySess.length}</span></div>
+      <div class="proj-sess"></div>`;
+    grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup('__legacy__'));
+    const box = grp.querySelector('.proj-sess');
+    for (const c of legacySess) box.appendChild(renderSessItem(c));
+    listEl.appendChild(grp);
+  }
+  if (!rendered) {
+    listEl.innerHTML = `<div class="sess-empty">${filter ? '无匹配会话' : '还没有会话，点上方「新建任务」开始'}</div>`;
   }
 
   return _bindCommon(sb, state, events);
@@ -145,7 +167,7 @@ function _bindCommon(sb, state, events) {
     b.addEventListener('click', () => events.onMode(b.dataset.mode)));
   sb.querySelectorAll('.sb-nav-item').forEach(b =>
     b.addEventListener('click', () => events.onTab(b.dataset.tab)));
-  sb.querySelector('.sb-new').addEventListener('click', () => events.onNewProject());
+  sb.querySelector('.sb-new').addEventListener('click', () => events.onNewTask());
   sb.querySelector('.sb-back').addEventListener('click', () => { location.href = '/'; });
   const searchInput = sb.querySelector('.sb-search input');
   if (searchInput) searchInput.addEventListener('input', (e) => events.onFilter(e.target.value));

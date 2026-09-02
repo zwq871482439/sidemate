@@ -1,16 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-session/projects.py — 项目（分组）级配置存储（0.10.1 工作目录 M1 只读版）
+session/projects.py — 项目注册表与目录服务（0.10.1「项目即文件夹」四次定稿）
 
-模型（PLAN 1.5 二次定稿 2026-09-02）：**项目 ↔ 目录 1:1**。
-- 目录是纯项目属性，会话级绑定不存在；项目下所有会话共用项目目录。
-- 每个项目必有目录：外部换绑（data/projects.json）优先，否则默认
-  data/projects/<项目名>/（首次解析时自动创建）。「未绑定」态不存在。
-- 目录内容不向量化（与 KB 边界）；消费方式=在线 agent 工具锚定（M2）/
-  离线引用注入（import_file 复制进会话 workspace 后走既有附件管道）。
+核心模型：项目 = 文件夹。文件夹即项目本体——无换绑（换文件夹=另一个项目）、
+无锁定（目录不变性由模型保证）。项目名=文件夹名，显示名可改（存注册表）。
 
-data/projects.json 只存外部换绑：
-  { "项目名": {"workdir": "C:\\abs\\path", "updated_at": "..."} }
+存储分层：
+  data/               只存会话记录（messages/meta）+ 工具链记录
+  data/projects/默认项目/   默认项目目录（不可删，永远默认）
+  <项目目录>/.sidemate/     产物区（AI 产物/生成物，与用户材料分离）
+  用户上传的材料进项目根（用户的架子）
+
+注册表 data/projects.json（v2）：
+  {"version": 2, "projects": [{"dir": 绝对路径, "display": 显示名, "created_at": ...}]}
+  旧 v1（项目名 keyed dict）加载时自动迁移：dir=外部 workdir 或 默认根/<名>。
+
+旧版会话：meta 无 project_dir（有 group 或都没有）→ 只读桶，见 is_legacy_chat。
 """
 import os
 import json
@@ -19,208 +24,290 @@ import time
 import logging
 import threading
 
-from config import DATA_DIR, CHAT_DIR
+from config import (
+    DATA_DIR, CHAT_DIR, PROJECTS_ROOT,
+    DEFAULT_PROJECT_NAME, DEFAULT_PROJECT_DIR, PROJECT_ARTIFACT_DIR,
+)
 from common.utils import atomic_write_json
 
 log = logging.getLogger(__name__)
 
 PROJECTS_FILE = os.path.join(DATA_DIR, "projects.json")
-DEFAULT_ROOT = os.path.join(DATA_DIR, "projects")
 _lock = threading.Lock()
 
 # 与 /api/file_upload 同一份白名单（能被 LLM 消费的类型）
-ALLOWED_IMPORT_EXTS = {
+ALLOWED_REF_EXTS = {
     ".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf",
     ".epub", ".html", ".htm", ".srt",
 }
 
 
+# ============================================================
+#  注册表读写（含 v1 → v2 迁移）
+# ============================================================
+
+def _norm(path):
+    if not path or not isinstance(path, str):
+        return None
+    p = os.path.normpath(path.strip().strip('"'))
+    return p if os.path.isabs(p) else None
+
+
 def _load():
+    """读注册表；旧 v1 格式（{项目名: {workdir}}）自动迁移为 v2。"""
     try:
         with open(PROJECTS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
     except Exception:
-        return {}
+        return {"version": 2, "projects": []}
+    if isinstance(data, dict) and data.get("version") == 2:
+        lst = data.get("projects")
+        return {"version": 2, "projects": lst if isinstance(lst, list) else []}
+    if isinstance(data, dict):  # v1 迁移
+        migrated = []
+        for name, entry in data.items():
+            if not isinstance(entry, dict):
+                continue
+            ext = _norm(entry.get("workdir"))
+            d = ext if (ext and os.path.isdir(ext)) else os.path.join(PROJECTS_ROOT, name)
+            migrated.append({
+                "dir": d,
+                "display": name,
+                "created_at": entry.get("created_at") or entry.get("updated_at") or "",
+            })
+        out = {"version": 2, "projects": migrated}
+        _save(out)
+        log.info("[PROJECT] 注册表 v1→v2 迁移：%d 个项目", len(migrated))
+        return out
+    return {"version": 2, "projects": []}
 
 
 def _save(data):
     atomic_write_json(PROJECTS_FILE, data)
 
 
-def _norm_dir(path):
-    """规范化 + 校验目录路径；非法/不存在返回 None。"""
-    if not path or not isinstance(path, str):
-        return None
-    p = os.path.normpath(path.strip().strip('"'))
-    if not os.path.isabs(p):
-        return None
-    if not os.path.isdir(p):
-        return None
-    return p
+def _find(data, dir_path):
+    """按目录找注册条目（realpath 比较，容忍大小写/斜杠差异）。"""
+    target = os.path.normcase(os.path.realpath(dir_path))
+    for p in data["projects"]:
+        d = _norm(p.get("dir"))
+        if d and os.path.normcase(os.path.realpath(d)) == target:
+            return p
+    return None
 
 
-def _default_dir(group):
-    """项目默认目录（data/projects/<项目名>/），不存在则创建。"""
-    from session.chat_store import safe_chat_name
-    safe = safe_chat_name(group) or "日常"
-    p = os.path.join(DEFAULT_ROOT, safe)
-    try:
-        os.makedirs(p, exist_ok=True)
-    except OSError:
-        return None
-    return p
+# ============================================================
+#  项目 CRUD
+# ============================================================
 
+def list_projects():
+    """全部项目：默认项目永远在最前。每项 {dir, display, is_default, status}。
 
-def resolve_project_workdir(group):
-    """项目生效目录：外部换绑 > 默认目录（自动创建）。
-
-    返回 {"workdir", "source": "external"|"default", "group",
-          "locked": 是否有会话锁定, "session_count": 会话数}
-    group 为空按「日常」处理。
+    status: ok | missing（目录在磁盘上被删/挪动 → 失效态）
     """
-    group = (group or "").strip() or "日常"
-    n = count_project_sessions(group)
-    base = {"workdir": None, "source": "default", "group": group,
-            "locked": n > 0, "session_count": n}
-    entry = _load().get(group)
-    if isinstance(entry, dict):
-        ext = _norm_dir(entry.get("workdir"))
-        if ext:
-            base.update({"workdir": ext, "source": "external"})
-            return base
-    base["workdir"] = _default_dir(group)
-    return base
-
-
-def get_project_workdir(group):
-    """兼容旧调用：返回外部换绑路径或 None（不触发默认目录创建）。"""
-    if not group:
-        return None
-    entry = _load().get(group)
-    if not isinstance(entry, dict):
-        return None
-    return _norm_dir(entry.get("workdir"))
-
-
-def count_project_sessions(group):
-    """项目下的会话数（folder 格式按 meta.group 计；「日常」兼计旧 .json 格式）。"""
-    group = (group or "").strip() or "日常"
-    n = 0
     try:
-        entries = os.listdir(CHAT_DIR)
+        os.makedirs(DEFAULT_PROJECT_DIR, exist_ok=True)
     except OSError:
-        return 0
-    for entry in entries:
-        ep = os.path.join(CHAT_DIR, entry)
-        if os.path.isdir(ep):
-            meta_path = os.path.join(ep, "meta.json")
-            g = "日常"
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    g = (json.load(f).get("group") or "日常")
-            except Exception:
-                pass
-            if g == group:
-                n += 1
-        elif group == "日常" and entry.endswith(".json") and not entry.endswith(".tmp"):
-            n += 1  # 旧格式无 group 概念，归「日常」
-    return n
+        pass
+    out = [{
+        "dir": DEFAULT_PROJECT_DIR,
+        "display": DEFAULT_PROJECT_NAME,
+        "is_default": True,
+        "status": "ok" if os.path.isdir(DEFAULT_PROJECT_DIR) else "missing",
+    }]
+    for p in _load()["projects"]:
+        d = _norm(p.get("dir"))
+        if not d:
+            continue
+        out.append({
+            "dir": d,
+            "display": p.get("display") or os.path.basename(d),
+            "is_default": False,
+            "status": "ok" if os.path.isdir(d) else "missing",
+            "created_at": p.get("created_at", ""),
+        })
+    return out
 
 
-def registered_projects():
-    """已注册的项目名列表（含无外部换绑的空项目）。"""
-    return [g for g, e in _load().items() if isinstance(e, dict)]
-
-
-def create_project(name):
-    """注册新项目（空项目，无会话；目录先走默认，换绑需在首个会话之前）。
-
-    返回 {"ok", "name"} 或 {"error"}。
-    """
+def create_project_blank(name):
+    """新建空白项目：默认根下建文件夹，文件夹名即项目名。返回 {ok, project} 或 {error}。"""
     from session.chat_store import safe_chat_name
     safe = safe_chat_name((name or "").strip())
-    if not safe:
-        return {"error": "项目名不能为空或含非法字符"}
+    if not safe or safe == DEFAULT_PROJECT_NAME:
+        return {"error": "项目名不能为空、非法或与默认项目重名"}
+    d = os.path.join(PROJECTS_ROOT, safe)
+    if os.path.exists(d):
+        return {"error": "已存在同名文件夹「%s」" % safe}
     with _lock:
         data = _load()
-        if safe in data:
+        if _find(data, d):
             return {"error": "项目「%s」已存在" % safe}
-        if count_project_sessions(safe) > 0:
-            return {"error": "已有同名的会话分组「%s」" % safe}
-        data[safe] = {
-            "workdir": None,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
+        try:
+            os.makedirs(d)
+            os.makedirs(os.path.join(d, PROJECT_ARTIFACT_DIR), exist_ok=True)
+        except OSError as e:
+            return {"error": "创建目录失败: %s" % e}
+        entry = {"dir": d, "display": safe,
+                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+        data["projects"].append(entry)
         _save(data)
-        _default_dir(safe)  # 默认目录随注册建好，用户可立即往里放材料
-        log.info("[PROJECT] 新建项目: %s", safe)
-        return {"ok": True, "name": safe}
+        log.info("[PROJECT] 新建空白项目: %s", d)
+        return {"ok": True, "project": {"dir": d, "display": safe}}
 
 
-def set_project_workdir(group, path):
-    """设置/解除项目外部目录。path 为 None/空串 = 解除（回落默认目录）。
-
-    锁定规则（PLAN 1.5 三次定稿）：项目已有会话则目录冻结，换绑/回落都拒绝。
-    """
-    group = (group or "").strip()
-    if not group:
-        return {"error": "项目名不能为空"}
-    n = count_project_sessions(group)
-    if n > 0:
-        return {"error": "项目「%s」已有 %d 个会话，目录已锁定（新项目在开始对话前可换绑）" % (group, n)}
+def create_project_external(path):
+    """使用现有文件夹作为项目：文件夹名=项目名。返回 {ok, project} 或 {error}。"""
+    d = _norm(path)
+    if not d or not os.path.isdir(d):
+        return {"error": "目录不存在或不是绝对路径"}
+    if os.path.normcase(os.path.realpath(d)) == os.path.normcase(os.path.realpath(DEFAULT_PROJECT_DIR)):
+        return {"error": "该目录就是默认项目"}
     with _lock:
         data = _load()
-        if not path:
-            # 保留条目（空项目注册表语义），仅清外部换绑
-            if group in data:
-                data[group]["workdir"] = None
-                data[group]["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                _save(data)
-            log.info("[PROJECT] 解除项目目录换绑（回落默认）: %s", group)
-            return {"ok": True, "workdir": None}
-        p = _norm_dir(path)
-        if not p:
-            return {"error": "目录不存在或不是绝对路径"}
-        data[group] = {
-            "workdir": p,
-            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
+        if _find(data, d):
+            return {"error": "该文件夹已经是项目「%s」" % _find(data, d).get("display", "")}
+        entry = {"dir": d, "display": os.path.basename(d.rstrip("\\/")) or d,
+                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+        data["projects"].append(entry)
         _save(data)
-        log.info("[PROJECT] 项目 %s 换绑目录: %s", group, p)
-        return {"ok": True, "workdir": p}
+    try:
+        os.makedirs(os.path.join(d, PROJECT_ARTIFACT_DIR), exist_ok=True)
+    except OSError:
+        pass
+    log.info("[PROJECT] 注册现有文件夹为项目: %s", d)
+    return {"ok": True, "project": {"dir": d, "display": entry["display"]}}
 
 
-def all_workdirs(groups=None):
-    """各项目的生效目录映射。groups 为 None 时只返回外部换绑（旧行为）。"""
-    if groups is None:
-        out = {}
-        for group, entry in _load().items():
-            if isinstance(entry, dict):
-                p = _norm_dir(entry.get("workdir"))
-                if p:
-                    out[group] = {"workdir": p, "source": "external"}
-        return out
-    return {g: resolve_project_workdir(g) for g in groups}
+def rename_project(dir_path, display):
+    """改项目显示名（不改目录名——目录是项目本体）。"""
+    display = (display or "").strip()
+    if not display:
+        return {"error": "显示名不能为空"}
+    d = _norm(dir_path)
+    if not d:
+        return {"error": "非法项目目录"}
+    if os.path.normcase(os.path.realpath(d)) == os.path.normcase(os.path.realpath(DEFAULT_PROJECT_DIR)):
+        return {"error": "默认项目不可改名"}
+    with _lock:
+        data = _load()
+        entry = _find(data, d)
+        if not entry:
+            return {"error": "项目未注册"}
+        entry["display"] = display
+        _save(data)
+    return {"ok": True, "display": display}
 
 
-def resolve_workdir(chat_name):
-    """解析某会话的生效工作目录 = 其所属项目的目录（项目 ↔ 目录 1:1）。
+def delete_project(dir_path):
+    """删除项目：注册表移除 + 返回该项目下的会话名列表（级联删记录由调用方做）。
 
-    返回 {"workdir": path, "source": "external"|"default", "group": 组名}
+    目录与文件一个字节不动。默认项目拒绝。
     """
-    from session import chat_store  # 延迟 import，避免模块级环
-    group = "日常"
-    meta = chat_store.read_meta(chat_name) if hasattr(chat_store, "read_meta") else None
-    if meta:
-        group = meta.get("group") or "日常"
-    return resolve_project_workdir(group)
+    d = _norm(dir_path)
+    if not d:
+        return {"error": "非法项目目录"}
+    if os.path.normcase(os.path.realpath(d)) == os.path.normcase(os.path.realpath(DEFAULT_PROJECT_DIR)):
+        return {"error": "默认项目不可删除"}
+    with _lock:
+        data = _load()
+        entry = _find(data, d)
+        data["projects"] = [p for p in data["projects"] if p is not entry]
+        _save(data)
+    # 找该项目的会话（新模型按 meta.project_dir）
+    sessions = []
+    try:
+        for e in os.listdir(CHAT_DIR):
+            meta_path = os.path.join(CHAT_DIR, e, "meta.json")
+            if not os.path.isfile(meta_path):
+                continue
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except Exception:
+                continue
+            pd = meta.get("project_dir")
+            if pd and os.path.normcase(os.path.realpath(pd)) == os.path.normcase(os.path.realpath(d)):
+                sessions.append(e)
+    except OSError:
+        pass
+    log.info("[PROJECT] 删除项目: %s（%d 个会话记录待级联删）", d, len(sessions))
+    return {"ok": True, "sessions": sessions, "display": (entry or {}).get("display", "")}
 
+
+# ============================================================
+#  会话 ↔ 项目解析
+# ============================================================
+
+def read_chat_meta(chat_name):
+    from session import chat_store
+    return chat_store.read_meta(chat_name)
+
+
+def is_legacy_chat(chat_name):
+    """旧版会话：meta 无 project_dir（旧模型 group 或更老格式）→ 只读桶。"""
+    meta = read_chat_meta(chat_name)
+    if not meta:
+        return False  # 读不到 meta 的不算（新建流程中）
+    return not meta.get("project_dir")
+
+
+def resolve_chat_project(chat_name):
+    """解析会话所属项目。
+
+    返回 {"dir", "display", "is_default", "status", "legacy": False}
+    旧版会话返回 {"legacy": True}。
+    """
+    meta = read_chat_meta(chat_name)
+    if not meta:
+        return {"legacy": False, "dir": None, "display": "", "is_default": False,
+                "status": "missing"}
+    pd = meta.get("project_dir")
+    if not pd:
+        return {"legacy": True}
+    d = _norm(pd) or DEFAULT_PROJECT_DIR
+    is_default = os.path.normcase(os.path.realpath(d)) == os.path.normcase(os.path.realpath(DEFAULT_PROJECT_DIR))
+    if is_default:
+        try:
+            os.makedirs(d, exist_ok=True)  # 默认项目目录永远存在
+        except OSError:
+            pass
+    display = DEFAULT_PROJECT_NAME if is_default else os.path.basename(d.rstrip("\\/"))
+    if not is_default:
+        entry = _find(_load(), d)
+        if entry and entry.get("display"):
+            display = entry["display"]
+    return {
+        "legacy": False,
+        "dir": d,
+        "display": display,
+        "is_default": is_default,
+        "status": "ok" if os.path.isdir(d) else "missing",
+    }
+
+
+def is_in_any_project_dir(path):
+    """path（realpath）是否落在默认项目或任一注册项目目录内（chat.py file_path 白名单用）。"""
+    try:
+        rp = os.path.normcase(os.path.realpath(path))
+    except Exception:
+        return False
+    for p in list_projects():
+        if p["status"] != "ok":
+            continue
+        base = os.path.normcase(os.path.realpath(p["dir"]))
+        if rp == base or rp.startswith(base + os.sep):
+            return True
+    return False
+
+
+# ============================================================
+#  目录内容（只读列举 / 引用直读 / 上传）
+# ============================================================
 
 def list_dir_entries(path, limit=500):
     """只读列目录（顶层）：名称/大小/修改时间/是否目录。目录优先，按名称排。"""
-    p = _norm_dir(path)
-    if not p:
+    p = _norm(path)
+    if not p or not os.path.isdir(p):
         return None
     entries = []
     try:
@@ -266,8 +353,8 @@ def browse_dirs(path):
             if os.path.isdir(d):
                 drives.append({"name": c + ":", "path": d})
         return {"path": None, "parent": None, "quick": _quick_links(), "entries": drives}
-    p = _norm_dir(path)
-    if not p:
+    p = _norm(path)
+    if not p or not os.path.isdir(p):
         return None
     entries = []
     try:
@@ -287,16 +374,53 @@ def browse_dirs(path):
     return {"path": p, "parent": parent, "quick": _quick_links(), "entries": entries}
 
 
-def upload_to_project(chat_name, filename, content):
-    """用户显式上传材料到项目目录（不受 M1 只读边界限制——只读约束的是 AI）。
+def reference_file(chat_name, name):
+    """引用项目目录文件（直读不复制）：校验 + token 实估，返回原路径。
 
-    不限扩展名（这是用户的材料架，能否被 LLM 消费是「引用」时的事），
-    同名覆盖（与 /api/file_upload 一致）。返回 {ok, name, size} 或 {error}。
+    name 支持顶层文件名或 ".sidemate/xxx"（产物区）。
+    返回 {path（原始路径）, filename, size, tokens} 或 {error}。
+    发送时 chat.py 的 file_path 白名单由 is_in_any_project_dir 放行。
     """
-    resolved = resolve_workdir(chat_name)
-    root = resolved["workdir"]
-    if not root:
-        return {"error": "项目目录不可用"}
+    proj = resolve_chat_project(chat_name)
+    if proj.get("legacy") or not proj.get("dir"):
+        return {"error": "旧版会话不支持引用项目目录"}
+    root = proj["dir"]
+    rel = (name or "").replace("/", os.sep).lstrip(os.sep)
+    base_check = rel.split(os.sep)
+    if any(seg in ("", ".", "..") for seg in base_check):
+        return {"error": "非法文件名"}
+    if len(base_check) > 2 or (len(base_check) == 2 and base_check[0] != PROJECT_ARTIFACT_DIR):
+        return {"error": "只能引用项目目录顶层或产物区文件"}
+    src = os.path.normpath(os.path.join(root, rel))
+    if not src.startswith(os.path.normpath(root) + os.sep) or not os.path.isfile(src):
+        return {"error": "文件不存在"}
+    ext = os.path.splitext(src)[1].lower()
+    if ext not in ALLOWED_REF_EXTS:
+        return {"error": "不支持的文件类型: %s" % (ext or "(无扩展名)")}
+    size = os.path.getsize(src)
+    tokens = 0
+    try:
+        from knowledge.file_extractor import process_uploaded_file
+        info = process_uploaded_file(src, "", max_chars=10**9)
+        if info.get("status") in ("ok", "truncated"):
+            text = info.get("text", "")
+            cn = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+            tokens = int(cn / 1.5 + (len(text) - cn) / 4.0)
+    except Exception as e:
+        log.warning("[PROJECT] 引用 token 估算失败: %s", str(e)[:80])
+    log.info("[PROJECT] 引用目录文件（直读）: %s ← 会话 %s", rel, chat_name)
+    return {"path": src, "filename": os.path.basename(src), "size": size, "tokens": tokens}
+
+
+def upload_to_project(chat_name, filename, content):
+    """用户显式上传材料到项目根（用户的架子；AI 产物才进 .sidemate/）。
+
+    不限扩展名，50MB 上限，同名覆盖。返回 {ok, name, size} 或 {error}。
+    """
+    proj = resolve_chat_project(chat_name)
+    if proj.get("legacy") or not proj.get("dir"):
+        return {"error": "旧版会话不支持上传到项目目录"}
+    root = proj["dir"]
     base = os.path.basename(filename or "").strip()
     if not base or base != filename or base in (".", ".."):
         return {"error": "非法文件名"}
@@ -313,50 +437,3 @@ def upload_to_project(chat_name, filename, content):
         return {"error": "写入失败"}
     log.info("[PROJECT] 上传到项目目录: %s → %s（会话 %s）", base, root, chat_name)
     return {"ok": True, "name": base, "size": len(content)}
-
-
-def import_file(chat_name, name):
-    """把项目目录内的文件「引用」进会话：复制到会话 workspace，走既有附件管道。
-
-    返回与 /api/file_upload 同构的 {path, filename, size, tokens}，或 {error}。
-    安全：name 只能是纯文件名（防穿越）；扩展名白名单与上传一致。
-    """
-    from session import chat_store
-    resolved = resolve_workdir(chat_name)
-    root = resolved["workdir"]
-    if not root:
-        return {"error": "项目目录不可用"}
-    base = os.path.basename(name or "")
-    if not base or base != name:
-        return {"error": "非法文件名"}
-    src = os.path.normpath(os.path.join(root, base))
-    # 双重防穿越：basename 之后仍确认落在根内
-    if os.path.dirname(src) != os.path.normpath(root) or not os.path.isfile(src):
-        return {"error": "文件不存在"}
-    ext = os.path.splitext(base)[1].lower()
-    if ext not in ALLOWED_IMPORT_EXTS:
-        return {"error": "不支持的文件类型: %s" % (ext or "(无扩展名)")}
-    chat_path = os.path.join(CHAT_DIR, chat_name)
-    if not os.path.isdir(chat_path):
-        return {"error": "会话不存在"}
-    chat_store.ensure_chat_subdirs(chat_name)
-    ws_dir = os.path.join(chat_path, "workspace")
-    dst = os.path.join(ws_dir, base)
-    try:
-        shutil.copy2(src, dst)
-    except OSError as e:
-        log.warning("[PROJECT] 引用复制失败: %s", e)
-        return {"error": "复制失败"}
-    size = os.path.getsize(dst)
-    tokens = 0
-    try:
-        from knowledge.file_extractor import process_uploaded_file
-        info = process_uploaded_file(dst, "", max_chars=10**9)
-        if info.get("status") in ("ok", "truncated"):
-            text = info.get("text", "")
-            cn = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-            tokens = int(cn / 1.5 + (len(text) - cn) / 4.0)
-    except Exception as e:
-        log.warning("[PROJECT] 引用 token 估算失败: %s", str(e)[:80])
-    log.info("[PROJECT] 引用目录文件: %s → 会话 %s", base, chat_name)
-    return {"path": dst, "filename": base, "size": size, "tokens": tokens}

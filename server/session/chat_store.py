@@ -110,9 +110,19 @@ def today_str():
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def new_chat_file():
-    """创建一个新的对话文件夹（线程安全）"""
+def new_chat_file(project_dir: str = None):
+    """创建一个新的对话文件夹（线程安全）
+
+    0.10.1「项目即文件夹」：meta 写 project_dir（默认=默认项目目录）。
+    """
     _ensure_migrated()
+    from config import DEFAULT_PROJECT_DIR
+    pd = project_dir or DEFAULT_PROJECT_DIR
+    try:
+        os.makedirs(pd, exist_ok=True)  # 默认项目/新建项目目录防御性创建
+    except OSError:
+        pd = DEFAULT_PROJECT_DIR
+        os.makedirs(pd, exist_ok=True)
 
     with _new_chat_lock:
         today = today_str()
@@ -150,7 +160,7 @@ def new_chat_file():
         meta = {
             "id": folder_name,
             "title": folder_name,
-            "group": "日常",  # 0.10.1 项目分组：默认进「日常」
+            "project_dir": pd,  # 0.10.1 项目即文件夹：会话归属=项目目录（无此字段=旧版只读会话）
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "message_count": 0,
@@ -513,6 +523,7 @@ def list_chats():
             msg_count = 0
             has_cache = False
             chat_group = "日常"  # 旧会话 meta 无 group → 默认「日常」（免迁移）
+            chat_project_dir = None  # 0.10.1 项目即文件夹：无 project_dir = 旧版只读会话
             try:
                 meta_path = os.path.join(entry_path, "meta.json")
                 if os.path.exists(meta_path):
@@ -520,6 +531,7 @@ def list_chats():
                         meta = json.load(f)
                     msg_count = meta.get("message_count", 0)
                     chat_group = meta.get("group") or "日常"
+                    chat_project_dir = meta.get("project_dir") or None
                 else:
                     # fallback: 读 messages.json 计数
                     msgs_path = os.path.join(entry_path, "messages.json")
@@ -540,6 +552,8 @@ def list_chats():
                 "current": (entry_path == current_file),
                 "msg_count": msg_count,
                 "group": chat_group,
+                "project_dir": chat_project_dir,
+                "legacy": not chat_project_dir,
             })
 
     # 第二遍：扫描旧 .json 格式，跳过已被同名文件夹占用的
@@ -572,6 +586,8 @@ def list_chats():
                 "label": label,
                 "current": (filepath == current_file),
                 "msg_count": msg_count,
+                "project_dir": None,
+                "legacy": True,
             })
 
     # 按修改时间倒序

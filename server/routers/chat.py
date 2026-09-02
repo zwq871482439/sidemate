@@ -232,6 +232,21 @@ async def api_chat_stream(request: Request):
     action_mode = body.get("action_mode", "chat") or "chat"
     file_path = body.get("file_path")
     override_task_type = body.get("override_task_type")
+
+    # ===== 0.10.1 项目即文件夹：旧版会话（meta 无 project_dir）只读，拒绝发送 =====
+    # 必须在 M1-B 落盘 user 消息之前——只读会话一个字节都不写
+    if chat_file and not body.get("doc_continue"):
+        _cf_name = os.path.basename(chat_file.rstrip("\\/")).replace(".json", "")
+        try:
+            from session import projects as _proj
+            if _proj.is_legacy_chat(_cf_name):
+                log.info("[CHAT] 拒绝向旧版会话发送: %s", _cf_name)
+                def _legacy_gen():
+                    yield 'data: {"type": "error", "content": "这是旧版本会话，已转为只读存档——可以查看、导出或下载产物；要聊新内容请新建会话"}\n\n'
+                    yield 'data: [DONE]\n\n'
+                return StreamingResponse(_legacy_gen(), media_type="text/event-stream")
+        except Exception:
+            pass  # 判定失败不阻断正常会话
     log.info("[CHAT] stream request: chat=%s model=%s action=%s msg_len=%d ai_mode=%s" % (
         os.path.basename(chat_file) if chat_file else "none", model_name, action_mode, len(message or ""),
         _ai_mode))
@@ -279,6 +294,7 @@ async def api_chat_stream(request: Request):
     if file_path:
         # BUG-7 修复：file_path 仅接受位于会话目录(CHAT_DIR)或上传缓存(UPLOAD_DIR)内的真实路径，
         # 防止传入任意本机绝对路径读取服务器文件（如 C:\Windows\...）。越界路径落入下方 KB doc_id 分支。
+        # 0.10.1 项目即文件夹：注册项目目录（含默认项目）也放行（引用直读不复制）
         _fp_is_local_file = False
         if os.path.exists(file_path):
             try:
@@ -288,10 +304,13 @@ async def api_chat_stream(request: Request):
                     if _rp == _rb or _rp.startswith(_rb + os.sep):
                         _fp_is_local_file = True
                         break
+                if not _fp_is_local_file:
+                    from session import projects as _proj
+                    _fp_is_local_file = _proj.is_in_any_project_dir(_rp)
             except Exception:
                 _fp_is_local_file = False
             if not _fp_is_local_file:
-                log.warning("[CHAT] 拒绝越界 file_path（不在会话/上传目录内）: %s" % file_path)
+                log.warning("[CHAT] 拒绝越界 file_path（不在会话/上传/项目目录内）: %s" % file_path)
         if _fp_is_local_file:
             # Patch5 G：上传文件不再截断，前端预检已确保 token 在预算内
             from knowledge.file_extractor import process_uploaded_file
@@ -441,20 +460,27 @@ def api_chats_list():
 
 @router.post("/api/chats/new")
 async def api_chats_new(request: Request):
-    """创建新对话；可选 body {"group": "项目名"} 直接归入项目（0.10.1 项目层级入口）"""
-    filepath = _new_chat_file()
-    name = os.path.basename(filepath)
-    # 兼容：如果路径是文件夹，name 就是文件夹名（无 .json 后缀）
-    group = None
+    """创建新对话；可选 body {"project_dir": "..."} 归入项目（0.10.1 项目即文件夹）"""
+    project_dir = None
     try:
         body = await request.json()
-        group = (body.get("group") or "").strip() or None
+        project_dir = (body.get("project_dir") or "").strip() or None
     except Exception:
         pass
-    if group:
-        from session.chat_store import set_chat_group
-        set_chat_group(name, group)
-    return {"path": filepath, "name": name, "group": group or "日常"}
+    if project_dir:
+        # 只允许默认项目或已注册项目目录（防任意路径写入 meta）
+        from session import projects as _proj
+        ok = False
+        for p in _proj.list_projects():
+            if os.path.normcase(os.path.realpath(p["dir"])) == os.path.normcase(os.path.realpath(project_dir)):
+                ok = p["status"] == "ok"
+                break
+        if not ok:
+            return JSONResponse({"error": "项目目录不存在或未注册"}, status_code=400)
+    filepath = _new_chat_file(project_dir)
+    name = os.path.basename(filepath)
+    # 兼容：如果路径是文件夹，name 就是文件夹名（无 .json 后缀）
+    return {"path": filepath, "name": name}
 
 
 @router.post("/api/chats/switch")

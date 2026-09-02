@@ -1,6 +1,8 @@
-// 桌伴 0.10.1 新版 UI — 右视窗（M1-D：会话/预览/文件/轨迹 四 tab）
-// 「会话」tab = 会话信息管理（PLAN 1.5 三次定稿）：项目/harness 信息卡 +
-//   同项目会话（点击切换，离线人肉互查载体）+ 项目目录文件（引用/上传/在资源管理器中打开）。
+// 桌伴 0.10.1 新版 UI — 右视窗（会话/预览/文件/轨迹 四 tab）
+// 「会话」tab = 项目信息卡（项目即文件夹，PLAN 1.5 四次定稿）：
+//   项目卡（显示名可改/目录/失效态/删除项目）+ 同项目会话（点击切换）+
+//   项目目录（材料区 + .sidemate 产物区；引用直读/上传/在资源管理器中打开）。
+// 旧版会话（meta 无 project_dir）显示只读存档卡。
 // 「文件」tab = 当前会话工作区（AI 产物）文件列表。
 // 「预览」随 M1-E（SVG PPT/报告）、「轨迹」随 0.9.10 调用轨迹实装，先给诚实占位。
 // Escape 收起；窄屏浮层态见 styles.css body.narrow。
@@ -15,16 +17,17 @@ function esc(s) {
 
 export function createViewer(opts) {
   // opts: { getCurrentChat() -> {name, path} | null,
-  //         getSessions() -> [{name, msg_count, current, group}],
+  //         getSessions() -> [{name, msg_count, current, project_dir, legacy}],
   //         getHarness() -> { modeLabel, modelTag },
-  //         onImportFile(name, btn), onSwitchSession(chat) }
+  //         onReferenceFile(name, btn), onSwitchSession(chat),
+  //         onDeleteProject(project), onRenameProject(project) }
   const el = document.createElement('div');
   el.id = 'viewer';
   let open = false;
   let tab = 'session';   // session | preview | files | trace
   let files = null;    // null=未加载（工作区文件）
   let filesFor = '';   // 当前列表属于哪个会话
-  let wd = null;       // 项目目录：{ files, workdir, source, group, locked, session_count } | null=未加载
+  let wd = null;       // 项目：{ files, artifacts, dir, display, is_default, status } | {legacy:true} | null=未加载
   let uploading = false;
 
   async function loadFiles() {
@@ -39,16 +42,20 @@ export function createViewer(opts) {
   }
 
   async function loadWd() {
+    // 跨项目查看（侧栏 📂 点了非当前会话的项目）：只读信息态，无引用/上传
+    const vp = opts.getViewedProject && opts.getViewedProject();
+    if (vp) {
+      try {
+        wd = await api.listProjectFiles(vp.dir);
+        wd._cross = true;
+      } catch (e) { wd = false; }
+      return;
+    }
     const cur = opts.getCurrentChat();
     if (!cur) { wd = false; return; }
     try {
-      const w = await api.listWorkdirFiles(cur.name);
-      wd = w.workdir ? w : false;
+      wd = await api.listWorkdirFiles(cur.name);
     } catch (e) { wd = false; }
-  }
-
-  async function loadAll() {
-    await Promise.all([loadFiles(), loadWd()]);
   }
 
   function render() {
@@ -69,28 +76,35 @@ export function createViewer(opts) {
     renderBody();
   }
 
-  function _harnessCard() {
+  function _projectCard() {
     const h = opts.getHarness ? opts.getHarness() : {};
     const cur = opts.getCurrentChat();
-    if (!cur) return '<div class="vw-empty">还没有会话，先开始一段对话</div>';
-    const srcLabel = wd && wd.source === 'external' ? '外部目录' : '默认目录';
-    const lockLabel = wd
-      ? (wd.locked ? `🔒 目录已锁定（${wd.session_count} 个会话）` : '开始对话后目录将锁定')
-      : '';
+    if (!cur && !(wd && wd._cross)) return '<div class="vw-empty">还没有会话，先开始一段对话</div>';
+    if (wd && wd.legacy) {
+      return `<div class="vw-card vw-card-legacy">
+        <div class="vw-card-t">🗄 旧版本会话</div>
+        <div class="vw-card-r">该会话来自旧版本，已转为只读存档：可以查看、导出（会话 ⋯ 菜单）、在「文件」tab 下载产物。</div>
+        <div class="vw-card-r">要聊新内容，请用「新建任务」开一个新会话。</div>
+      </div>`;
+    }
+    const missing = wd && wd.status === 'missing';
+    const cross = wd && wd._cross;
     return `<div class="vw-card">
-      <div class="vw-card-t">项目「${esc(wd && wd.group ? wd.group : (cur.group || '日常'))}」</div>
-      <div class="vw-card-r"><span class="vw-k">模式</span>${esc(h.modelTag || h.modeLabel || '')}</div>
-      <div class="vw-card-r"><span class="vw-k">会话</span>${esc(cur.name)} · ${cur.msg_count || 0} 条消息</div>
-      ${wd && wd.workdir ? `<div class="vw-card-r"><span class="vw-k">目录</span>${srcLabel}</div>
-      <div class="vw-card-r vw-path" title="${esc(wd.workdir)}">${esc(wd.workdir)}</div>
-      <div class="vw-card-r vw-lock">${lockLabel}</div>` : ''}
+      <div class="vw-card-t">项目「${esc(wd && wd.display ? wd.display : '默认项目')}」
+        ${wd && !wd.is_default && !cross ? '<button class="vw-mini" data-a="rename" title="改显示名（不改文件夹名）">改名</button>' : ''}</div>
+      ${cross ? '' : `<div class="vw-card-r"><span class="vw-k">模式</span>${esc(h.modelTag || h.modeLabel || '')}</div>
+      <div class="vw-card-r"><span class="vw-k">会话</span>${esc(cur.name)} · ${cur.msg_count || 0} 条消息</div>`}
+      ${wd && wd.dir ? `<div class="vw-card-r"><span class="vw-k">目录</span>${wd.is_default ? '默认项目目录' : '项目文件夹'}</div>
+      <div class="vw-card-r vw-path" title="${esc(wd.dir)}">${esc(wd.dir)}</div>` : ''}
+      ${missing ? '<div class="vw-card-r vw-missing">⚠️ 目录丢失——文件夹在磁盘上被删除或移动，会话只读可看</div>' : ''}
+      ${wd && !wd.is_default ? '<div class="vw-card-r"><button class="vw-mini danger" data-a="delproj" title="删除项目：会话记录级联删除，目录文件永不动">删除项目…</button></div>' : ''}
     </div>`;
   }
 
   function _sessionList() {
+    if (!wd || wd.legacy || !wd.dir) return '';
     const sessions = (opts.getSessions ? opts.getSessions() : []);
-    const group = wd && wd.group ? wd.group : null;
-    const peers = group ? sessions.filter(s => (s.group || '日常') === group) : sessions;
+    const peers = sessions.filter(s => s.project_dir === wd.dir);
     if (!peers.length) return '';
     return `<div class="vw-sec">同项目会话 · ${peers.length}</div>
       <div class="vw-peers">
@@ -101,20 +115,32 @@ export function createViewer(opts) {
       </div>`;
   }
 
+  function _fileRow(f, prefix, canRef) {
+    return `<div class="vw-file vw-file-ro" title="${f.is_dir ? '目录' : '文件'}">
+      <span class="fi">${f.is_dir ? '📁' : _icon(f.name)}</span>
+      <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${f.is_dir ? '目录' : _fmtSize(f.size) + ' · ' + esc(f.mtime)}</span></span>
+      ${f.is_dir || !canRef ? '' : `<button class="vw-ref" data-name="${esc(prefix + f.name)}" title="引用到输入区（直读，AI 可读原文件）">引用</button>`}
+    </div>`;
+  }
+
   function _wdFiles() {
-    if (!wd || !wd.workdir) return '';
-    const srcLabel = wd.source === 'external' ? '（项目「' + esc(wd.group) + '」）' : '（默认目录）';
-    return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">项目目录${srcLabel}</span>
+    if (!wd || wd.legacy || !wd.dir) return '';
+    const cross = !!wd._cross;  // 跨项目查看：只读，不出引用/上传
+    const canWrite = wd.status === 'ok' && !cross;
+    const canRef = !cross && wd.status === 'ok';
+    const materials = wd.files || [];
+    const artifacts = wd.artifacts || [];
+    return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">项目目录${cross ? '（跨项目查看·只读）' : ''}</span>
         <span class="vw-dir-acts">
-          <button class="vw-dir-open" data-a="upload" title="上传材料到项目目录">上传</button>
+          ${canWrite ? '<button class="vw-dir-open" data-a="upload" title="上传材料到项目目录">上传</button>' : ''}
           <button class="vw-dir-open" data-a="open" title="在资源管理器中打开">在资源管理器中打开</button>
         </span></div>
-      ${wd.files.length ? wd.files.map(f => `
-        <div class="vw-file vw-file-ro" title="${f.is_dir ? '目录' : '文件'}">
-          <span class="fi">${f.is_dir ? '📁' : _icon(f.name)}</span>
-          <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${f.is_dir ? '目录' : _fmtSize(f.size) + ' · ' + esc(f.mtime)}</span></span>
-          ${f.is_dir ? '' : `<button class="vw-ref" data-name="${esc(f.name)}" title="引用到输入区（复制进会话，AI 可读）">引用</button>`}
-        </div>`).join('') : '<div class="vw-empty"><small>目录是空的——点「上传」把材料放进来，就能引用给 AI</small></div>'}`;
+      <div class="vw-sub">材料</div>
+      ${materials.length ? materials.map(f => _fileRow(f, '', canRef)).join('')
+        : '<div class="vw-empty"><small>还没有材料——点「上传」放进来，或往文件夹里直接丢文件</small></div>'}
+      <div class="vw-sub">产物（.sidemate）</div>
+      ${artifacts.length ? artifacts.map(f => _fileRow(f, '.sidemate/', canRef)).join('')
+        : '<div class="vw-empty"><small>AI 产出的文件会出现在这里</small></div>'}`;
   }
 
   function renderBody() {
@@ -127,7 +153,7 @@ export function createViewer(opts) {
         return;
       }
       body.innerHTML = `<div class="vw-files">
-        ${_harnessCard()}
+        ${_projectCard()}
         ${_sessionList()}
         ${_wdFiles()}
       </div>
@@ -143,6 +169,14 @@ export function createViewer(opts) {
       if (openBtn) openBtn.addEventListener('click', async () => {
         const cur = opts.getCurrentChat();
         if (cur) { try { await api.openWorkdir(cur.name); } catch (e) { /* 失败无感 */ } }
+      });
+      const renameBtn = body.querySelector('[data-a="rename"]');
+      if (renameBtn) renameBtn.addEventListener('click', () => {
+        if (opts.onRenameProject && wd) opts.onRenameProject(wd);
+      });
+      const delBtn = body.querySelector('[data-a="delproj"]');
+      if (delBtn) delBtn.addEventListener('click', () => {
+        if (opts.onDeleteProject && wd) opts.onDeleteProject(wd);
       });
       const upBtn = body.querySelector('[data-a="upload"]');
       const upInput = body.querySelector('.vw-up-input');
@@ -172,7 +206,7 @@ export function createViewer(opts) {
       }
       body.querySelectorAll('.vw-ref').forEach(b =>
         b.addEventListener('click', () => {
-          if (opts.onImportFile) opts.onImportFile(b.dataset.name, b);
+          if (opts.onReferenceFile) opts.onReferenceFile(b.dataset.name, b);
         }));
     } else if (tab === 'files') {
       if (files === null) {
@@ -181,7 +215,7 @@ export function createViewer(opts) {
         return;
       }
       if (!files.length) {
-        body.innerHTML = '<div class="vw-empty">当前会话工作区还没有文件<br><small>AI 产出的文件（文档/表格/PPT）会出现在这里</small></div>';
+        body.innerHTML = '<div class="vw-empty">当前会话工作区还没有文件<br><small>旧版会话的产物会出现在这里</small></div>';
         return;
       }
       body.innerHTML = `<div class="vw-files">
@@ -220,7 +254,7 @@ export function createViewer(opts) {
     render();
   }
 
-  // 会话切换/目录绑定变化后刷新
+  // 会话切换/项目变化后刷新
   function onSessionChange() { files = null; wd = null; if (open) renderBody(); }
 
   return {

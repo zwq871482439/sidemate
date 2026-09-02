@@ -23,11 +23,11 @@ export const api = {
   async listChats() {
     return _json(await fetch('/api/chats'));
   },
-  async newChat(group) {
+  async newChat(projectDir) {
     return _json(await fetch('/api/chats/new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(group ? { group } : {}),
+      body: JSON.stringify(projectDir ? { project_dir: projectDir } : {}),
     }));
   },
   async switchChat(path) {
@@ -37,43 +37,61 @@ export const api = {
       body: JSON.stringify({ path }),
     }));
   },
-  // ---- 工作目录（M1 只读版；项目 ↔ 目录 1:1，目录=项目属性） ----
+  // ---- 项目（项目即文件夹，PLAN 1.5 四次定稿） ----
   // 内联文件浏览器（目录选择器）：path 空=根视图（快捷入口+盘符），否则列子目录
   async browseDirs(path) {
     return _json(await fetch('/api/system/browse' + (path ? '?path=' + encodeURIComponent(path) : '')));
   },
-  // 解析会话生效目录（= 所属项目目录）：{ workdir, source: 'external'|'default', group }
-  async getWorkdir(chatName) {
-    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir'));
+  // 项目列表：{ projects: [{dir, display, is_default, status}] }（默认项目恒在首位）
+  async listProjects() {
+    return _json(await fetch('/api/projects/list'));
   },
-  // 项目外部换绑/解除（path=null 解除，回落默认目录）
-  async setProjectWorkdir(group, path) {
-    return _json(await fetch('/api/projects/' + encodeURIComponent(group) + '/workdir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }));
-  },
-  // 新建项目（注册空项目；首个会话前可换绑目录）
-  async createProject(name) {
-    return _json(await fetch('/api/projects/new', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+  async createProjectBlank(name) {
+    return _json(await fetch('/api/projects/new_blank', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     }));
   },
-  // 各项目生效目录 + 已注册项目列表：{ workdirs: {组名: {workdir, source, locked, session_count}}, projects: [] }
-  async getProjectWorkdirs(groups) {
-    const q = groups && groups.length ? '?groups=' + groups.map(encodeURIComponent).join(',') : '';
-    return _json(await fetch('/api/projects/workdirs' + q));
+  async createProjectExternal(path) {
+    return _json(await fetch('/api/projects/new_external', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }));
   },
-  // 只读列目录：{ files: [{name,is_dir,size,mtime}], workdir, source, group }
+  async renameProject(dir, display) {
+    return _json(await fetch('/api/projects/rename', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir, display }),
+    }));
+  },
+  async deleteProject(dir) {
+    return _json(await fetch('/api/projects', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir }),
+    }));
+  },
+  // 会话归项目（仅 0 消息会话）
+  async setChatProject(chatName, dir) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/project', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir }),
+    }));
+  },
+  // 列指定项目目录（跨项目查看用，只读）：{ files, artifacts, dir, display, status, is_default }
+  async listProjectFiles(dir) {
+    return _json(await fetch('/api/projects/files?dir=' + encodeURIComponent(dir)));
+  },
+  // 解析会话所属项目：{ legacy } | { dir, display, is_default, status }
+  async getWorkdir(chatName) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir'));
+  },
+  // 列项目目录：{ files: 顶层材料, artifacts: .sidemate 产物, dir, display, status, legacy? }
   async listWorkdirFiles(chatName) {
     return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/files'));
   },
-  // 引用目录文件进会话（复制到 workspace，返回与上传同构的 {path, filename, size, tokens}）
-  async importWorkdirFile(chatName, name) {
-    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/import', {
+  // 引用目录文件（直读不复制）：{ path（原路径）, filename, size, tokens }
+  async referenceWorkdirFile(chatName, name) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/reference', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),

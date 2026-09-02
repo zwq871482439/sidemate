@@ -27,10 +27,9 @@ const state = {
   modelTag: '',
   scene: '',          // 场景占位符 tag（空状态场景卡落 tag，不打字进输入框）
   kbTree: null,       // KB 模式下左栏文档范围树
-  collapsedGroups: {},     // 项目分组折叠态
-  projectWorkdirs: {},     // 项目 → {workdir, source, locked, session_count}
-  projects: [],            // 已注册项目名（含无会话的空项目）
-  workdir: null,           // 当前会话生效目录 {workdir, source, group, locked, session_count} | null
+  collapsedGroups: {},     // 项目分组折叠态（key=项目目录 / __legacy__）
+  projects: [],            // 项目列表 [{dir, display, is_default, status}]（默认项目恒在）
+  workdir: null,           // 当前会话所属项目 {legacy} | {dir, display, is_default, status}
   parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
   generating: false,
   switching: false,   // 模式切换骨架屏态
@@ -169,6 +168,7 @@ function render() {
     },
     onSelectSession: async (c) => {
       if (c.current && state.messages !== null) return;
+      _viewedProject = null;  // 切会话清掉跨项目查看
       await api.switchChat(c.path);
       state.sessions = await loadSessions();
       state.tab = 'chat';
@@ -177,26 +177,31 @@ function render() {
       if (_viewer) _viewer.onSessionChange();
       render();
     },
-    onNewProject: async () => {
-      const name = await v2Prompt('新建项目（开始对话前可换绑目录）', '');
-      if (!name) return;
-      try {
-        await api.createProject(name);
-      } catch (e) {
-        alert('新建项目失败：' + (e && e.message ? e.message : '名称不可用'));
-        return;
-      }
-      state.sessions = await loadSessions();
-      await loadProjectWorkdirs();
-      render();
-    },
-    onNewChatInGroup: async (g) => {
-      await api.newChat(g);
+    onNewTask: async () => {
+      // 新建任务：默认项目下建会话，空状态里可用项目选择器换项目（0 消息窗口）
+      _viewedProject = null;
+      await api.newChat();
       state.sessions = await loadSessions();
       state.tab = 'chat';
       state.messages = null;  // 新会话 → 空状态
-      await loadProjectWorkdirs();  // 项目会话数/锁定态变化
       await loadWorkdir();
+      render();
+    },
+    onNewChatInProject: async (dir) => {
+      _viewedProject = null;
+      await api.newChat(dir);
+      state.sessions = await loadSessions();
+      state.tab = 'chat';
+      state.messages = null;
+      await loadWorkdir();
+      render();
+    },
+    onProjectInfo: (p) => {
+      // 📂 = 打开项目信息（右视窗会话 tab）；支持跨项目查看（只读）
+      const cur = state.sessions.find(c => c.current);
+      if (cur && cur.project_dir === p.dir) _viewedProject = null;
+      else _viewedProject = p;
+      if (_viewer) _viewer.setOpen(true, 'session');
       render();
     },
     onToggleCollapse: () => {
@@ -227,10 +232,6 @@ function render() {
       render();
     },
     onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
-    onProjectDir: (g, anchorEl) => {
-      const wd = state.projectWorkdirs[g] || {};
-      showWorkdirMenu(anchorEl, { group: g, workdir: wd.workdir || null, source: wd.source || 'default', locked: !!wd.locked, session_count: wd.session_count || 0 });
-    },
     onKbFilter: (kf) => {
       if (!_kbView) return;
       _kbView.setFilter(kf);
@@ -295,7 +296,9 @@ function render() {
       getCurrentChat: () => state.sessions.find(c => c.current),
       getSessions: () => state.sessions,
       getHarness: () => ({ modeLabel: MODE_LABEL[state.mode] || state.mode, modelTag: state.modelTag }),
+      getViewedProject: () => _viewedProject,
       onSwitchSession: async (c) => {
+        _viewedProject = null;
         await api.switchChat(c.path);
         state.sessions = await loadSessions();
         state.tab = 'chat';
@@ -304,14 +307,14 @@ function render() {
         if (_viewer) _viewer.onSessionChange();
         render();
       },
-      onImportFile: async (name, btn) => {
+      onReferenceFile: async (name, btn) => {
         const cur = state.sessions.find(c => c.current);
         if (!cur) return;
         if (btn) { btn.disabled = true; btn.textContent = '…'; }
         try {
-          const r = await api.importWorkdirFile(cur.name, name);
+          const r = await api.referenceWorkdirFile(cur.name, name);
           if (r && r.path) {
-            // 与上传附件同构：进输入区附件栏，发送时走既有管道
+            // 直读不复制：附件栏指向项目目录里的原文件，发送走既有管道
             if (_composer) _composer.setAttach({ kind: 'upload', name: r.filename, path: r.path, tokens: r.tokens });
           } else {
             alert((r && r.error) || '引用失败');
@@ -321,6 +324,8 @@ function render() {
         }
         if (btn) { btn.disabled = false; btn.textContent = '引用'; }
       },
+      onDeleteProject: (proj) => deleteProject(proj),
+      onRenameProject: (proj) => renameProject(proj),
     });
   }
   app.appendChild(_viewer.el);
@@ -348,6 +353,13 @@ function renderChatArea() {
       '<div class="skel-line" style="width:30%"></div></div>';
   } else if (state.messages && state.messages.length) {
     renderChatFlow(scroll, state.messages);
+  } else if (state.workdir && state.workdir.legacy) {
+    // 旧版 0 消息会话不出场景卡（点了也发不出去），给只读存档说明
+    scroll.innerHTML = `<div class="legacy-empty">
+      <div class="legacy-empty-ic">🗄</div>
+      <div class="legacy-empty-t">旧版本会话 · 只读存档</div>
+      <div class="legacy-empty-d">这条会话来自旧版本，没有对话内容。可以看、导出、下载产物；<br>要聊新内容，点左侧「新建任务」。</div>
+    </div>`;
   } else {
     scroll.innerHTML = '';
     scroll.appendChild(renderEmptyState(state.mode, { onScene: onScene }));
@@ -376,10 +388,13 @@ function renderChatArea() {
     onSceneClear: () => { state.scene = ''; state.actionMode = 'chat'; renderChatArea(); },
     onChipMode: (m) => { state.actionMode = m; },
     onAttachChange: () => {},
-    onWorkdirClick: (anchorEl) => {
-      if (!state.workdir) return;
-      showWorkdirMenu(anchorEl, { group: state.workdir.group, workdir: state.workdir.workdir, source: state.workdir.source, locked: !!state.workdir.locked, session_count: state.workdir.session_count || 0 });
+    onWorkdirClick: () => {
+      // chip（有消息的会话/旧版会话）→ 打开项目信息卡
+      _viewedProject = null;
+      if (_viewer) _viewer.setOpen(true, 'session');
+      render();
     },
+    onProjectPick: (anchorEl) => showProjectPicker(anchorEl),  // 0 消息会话：选择项目
     getSession: () => state.sessions.find(c => c.current),
   });
   _composer.setRunning(state.generating || state.switching);
@@ -433,6 +448,11 @@ function mdStream(text) {
 
 async function onSend(payload) {
   if (state.generating) return;
+  // 旧版会话只读（后端 stream 同样拒绝，这里是前置提示）
+  if (state.workdir && state.workdir.legacy) {
+    alert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建任务」。');
+    return;
+  }
   // 无会话则先建（零摩擦开始：空状态直达）
   if (!state.sessions.find(c => c.current)) {
     await api.newChat();
@@ -477,7 +497,10 @@ async function loadCurrentMessages() {
   }
 }
 
-// ===== 工作目录（M1 只读版：项目 ↔ 目录 1:1，目录=项目属性） =====
+// ===== 项目（项目即文件夹，PLAN 1.5 四次定稿） =====
+// 目录=项目本体：无换绑/无锁定/无移到项目。chip/📂 直达项目信息卡（右视窗会话 tab）。
+let _viewedProject = null;  // 跨项目查看（📂 点别的项目）时的覆盖对象
+
 async function loadWorkdir() {
   const cur = state.sessions.find(c => c.current);
   if (!cur) { state.workdir = null; return; }
@@ -486,35 +509,25 @@ async function loadWorkdir() {
   } catch (e) { state.workdir = null; }
 }
 
-async function loadProjectWorkdirs() {
+async function loadProjects() {
   try {
-    const groups = [...new Set(state.sessions.map(c => c.group || '日常').concat(state.projects))];
-    const d = await api.getProjectWorkdirs(groups);
+    const d = await api.listProjects();
     state.projects = d.projects || [];
-    // 新注册的空项目首轮不在 groups 里，补一轮拿它的默认目录
-    const missing = state.projects.filter(p => !(d.workdirs || {})[p]);
-    if (missing.length) {
-      const d2 = await api.getProjectWorkdirs([...new Set(groups.concat(missing))]);
-      state.projectWorkdirs = d2.workdirs || {};
-      state.projects = d2.projects || state.projects;
-    } else {
-      state.projectWorkdirs = d.workdirs || {};
-    }
-  } catch (e) { state.projectWorkdirs = {}; state.projects = []; }
+  } catch (e) { state.projects = []; }
 }
 
-// 换绑成功后的首次说明卡（PLAN 一次性提示，M1 只读口径）
+// 首次项目动作后的说明卡（项目即文件夹口径）
 function maybeShowWorkdirTip() {
   try { if (localStorage.getItem('v2WdTipSeen')) return; } catch (e) { /* 隐私模式 */ }
   const ov = document.createElement('div');
   ov.className = 'kb-pk-overlay';
   ov.innerHTML = `<div class="kb-pk" style="width:440px">
-    <div class="kb-pk-title">工作目录已换绑</div>
+    <div class="kb-pk-title">项目就是这个文件夹</div>
     <div class="wd-tip">
-      <p>· 当前为<strong>只读</strong>版本：界面只读取展示该目录，AI 与软件都不会写入、修改或删除其中的任何文件。</p>
-      <p>· 与知识库<strong>完全独立</strong>：目录里的文件不会进知识库、不会被向量化。</p>
-      <p>· 对话记录仍保存在软件内部，不会迁移到该目录。</p>
-      <p>· 项目下<strong>所有会话共用</strong>这个目录；在视窗里点「引用」，文件就会作为材料进入当前对话。</p>
+      <p>· 项目 = 一个文件夹：材料放项目根目录，AI 产出的东西在 <strong>.sidemate</strong> 子目录。</p>
+      <p>· 对话记录保存在软件内部（data/），不往项目文件夹里写。</p>
+      <p>· 与知识库<strong>完全独立</strong>：项目里的文件不会进知识库、不会被向量化。</p>
+      <p>· 当前为<strong>只读</strong>版本：AI 不会写入、修改或删除项目里的任何文件；点「引用」把文件交给 AI 读。</p>
     </div>
     <div class="kb-pk-acts"><button class="kb-pk-ok">知道了</button></div>
   </div>`;
@@ -625,77 +638,120 @@ function showDirPicker(onPick) {
   nav(null);
 }
 
-// 工作目录弹出菜单（sess-menu 同款 fixed 浮层；侧栏 📂 与输入区 chip 共用）
-// info: { group, workdir, source: 'external'|'default' }
-let _wdMenuEl = null;
-function showWorkdirMenu(anchorEl, info) {
-  if (_wdMenuEl) _wdMenuEl.remove();
+// 项目选择器（Kimi Work 式，0 消息会话的 chip 点开）：已有项目 / 新建空白项目 /
+// 使用现有文件夹 / 默认项目（不使用文件夹之外的自建项目=回默认）
+let _pkMenuEl = null;
+function showProjectPicker(anchorEl) {
+  if (_pkMenuEl) _pkMenuEl.remove();
+  const cur = state.sessions.find(c => c.current);
+  if (!cur) return;
   const menuEl = document.createElement('div');
-  _wdMenuEl = menuEl;
+  _pkMenuEl = menuEl;
   menuEl.className = 'sess-menu wd-menu';
-  const srcLabel = info.source === 'external' ? '外部目录' : '默认目录';
-  const locked = !!info.locked;
+  const curDir = state.workdir && state.workdir.dir;
+  const others = (state.projects || []);
   menuEl.innerHTML =
-    `<span class="sess-menu-sub-h">项目「${esc(info.group)}」工作目录（${srcLabel}）</span>` +
-    (info.workdir ? `<div class="wd-path" title="${esc(info.workdir)}">${esc(info.workdir)}</div>` : '') +
-    (locked
-      ? `<div class="wd-lock-note">🔒 目录已锁定（${info.session_count || 0} 个会话）</div>`
-      : `<button data-a="bind">更换目录…（开始对话后锁定）</button>`) +
-    (!locked && info.source === 'external' ? `<button data-a="unbind" class="danger">改回默认目录</button>` : '') +
-    `<button data-a="open">在资源管理器中打开</button><button data-a="view">在视窗查看</button>`;
+    `<span class="sess-menu-sub-h">选择项目（发出第一条消息后定型）</span>` +
+    others.map(p =>
+      `<button data-dir="${esc(p.dir)}" class="${curDir === p.dir ? 'cur' : ''}" ${p.status === 'missing' ? 'disabled' : ''}>
+        📁 ${esc(p.display)}${p.status === 'missing' ? '（目录丢失）' : ''}</button>`).join('') +
+    `<div class="sess-menu-sub">
+      <button data-a="new_blank">＋ 新建空白项目…</button>
+      <button data-a="new_ext">📂 使用现有文件夹…</button>
+    </div>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
   menuEl.style.left = Math.min(r.left, window.innerWidth - 300) + 'px';
   menuEl.style.top = (r.bottom + 4) + 'px';
-  // 锚点近屏幕底（composer chip）时向上翻，避免菜单伸出视口点不到
-  const wdMh = menuEl.offsetHeight;
-  if (r.bottom + 4 + wdMh > window.innerHeight) menuEl.style.top = Math.max(8, r.top - wdMh - 4) + 'px';
-  // 身份守卫：旧菜单的 document 监听可能残留，只允许关闭“当前”菜单，
-  // 否则开新菜单的同一次点击（冒泡到 document）会把新菜单瞬间删掉
+  const mh = menuEl.offsetHeight;
+  if (r.bottom + 4 + mh > window.innerHeight) menuEl.style.top = Math.max(8, r.top - mh - 4) + 'px';
   const close = (e) => {
-    if (_wdMenuEl !== menuEl) { document.removeEventListener('click', close); return; }
-    if (!menuEl.contains(e.target)) { menuEl.remove(); _wdMenuEl = null; document.removeEventListener('click', close); }
+    if (_pkMenuEl !== menuEl) { document.removeEventListener('click', close); return; }
+    if (!menuEl.contains(e.target)) { menuEl.remove(); _pkMenuEl = null; document.removeEventListener('click', close); }
   };
   setTimeout(() => document.addEventListener('click', close), 0);
 
-  const after = async () => {
-    await loadProjectWorkdirs();
+  const assign = async (dir) => {
+    try {
+      await api.setChatProject(cur.name, dir);
+    } catch (e) {
+      alert('设置项目失败：' + (e && e.message ? e.message : ''));
+      return;
+    }
+    state.sessions = await loadSessions();  // 会话换了组，侧栏要重排
     await loadWorkdir();
     if (_viewer) _viewer.onSessionChange();
     render();
   };
-  const bindBtn = menuEl.querySelector('[data-a="bind"]');
-  if (bindBtn) bindBtn.addEventListener('click', () => {
-    menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    if (!confirm('项目「' + info.group + '」现在还没有会话，可以换绑目录。\n注意：开始对话后目录将锁定，不能再更换。继续？')) return;
+  menuEl.querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
+    if (b.disabled) return;
+    menuEl.remove(); if (_pkMenuEl === menuEl) _pkMenuEl = null;
+    await assign(b.dataset.dir);
+  }));
+  menuEl.querySelector('[data-a="new_blank"]').addEventListener('click', async () => {
+    menuEl.remove(); if (_pkMenuEl === menuEl) _pkMenuEl = null;
+    const name = await v2Prompt('新建空白项目（文件夹名即项目名）', '');
+    if (!name) return;
+    try {
+      const r = await api.createProjectBlank(name);
+      await loadProjects();
+      await assign(r.project.dir);
+      maybeShowWorkdirTip();
+    } catch (e) {
+      alert('新建项目失败：' + (e && e.message ? e.message : '名称不可用'));
+    }
+  });
+  menuEl.querySelector('[data-a="new_ext"]').addEventListener('click', () => {
+    menuEl.remove(); if (_pkMenuEl === menuEl) _pkMenuEl = null;
     showDirPicker(async (path) => {
       try {
-        await api.setProjectWorkdir(info.group, path);
+        const r = await api.createProjectExternal(path);
+        await loadProjects();
+        await assign(r.project.dir);
+        maybeShowWorkdirTip();
       } catch (e) {
-        alert('换绑失败：' + (e && e.message ? e.message : '目录不可用'));
-        return;
+        alert('设置失败：' + (e && e.message ? e.message : '目录不可用'));
       }
-      await after();
-      maybeShowWorkdirTip();
     });
   });
-  const unbindBtn = menuEl.querySelector('[data-a="unbind"]');
-  if (unbindBtn) unbindBtn.addEventListener('click', async () => {
-    menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    await api.setProjectWorkdir(info.group, null);
-    await after();
-  });
-  const openBtn = menuEl.querySelector('[data-a="open"]');
-  if (openBtn) openBtn.addEventListener('click', async () => {
-    menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    const cur = state.sessions.find(c => c.current);
-    if (cur) { try { await api.openWorkdir(cur.name); } catch (e) { /* 失败无感 */ } }
-  });
-  const viewBtn = menuEl.querySelector('[data-a="view"]');
-  if (viewBtn) viewBtn.addEventListener('click', () => {
-    menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    if (_viewer) _viewer.setOpen(true, 'session');
-  });
+}
+
+// 删除项目（信息卡上的危险动作）：级联删会话记录，目录文件永不动
+async function deleteProject(proj) {
+  const peers = state.sessions.filter(c => c.project_dir === proj.dir);
+  const fileCount = (proj.files || []).length + (proj.artifacts || []).length;
+  if (!confirm('删除项目「' + proj.display + '」？\n\n· 将删除 ' + peers.length +
+    ' 个会话的记录（消息/卡片/轨迹）\n· 文件夹和里面的 ' + fileCount +
+    ' 个文件（材料/产物/上传）原处保留：' + proj.dir + '\n\n需要对话原文可先在该会话 ⋯ 菜单导出 txt。此操作不可撤销。')) return;
+  try {
+    await api.deleteProject(proj.dir);
+  } catch (e) {
+    alert('删除失败：' + (e && e.message ? e.message : ''));
+    return;
+  }
+  _viewedProject = null;
+  state.sessions = await loadSessions();
+  await loadProjects();
+  await loadCurrentMessages();
+  await loadWorkdir();
+  if (_viewer) _viewer.onSessionChange();
+  render();
+}
+
+// 改项目显示名（不改文件夹名）
+async function renameProject(proj) {
+  const nv = await v2Prompt('改项目显示名（文件夹名不变）', proj.display || '');
+  if (!nv || nv === proj.display) return;
+  try {
+    await api.renameProject(proj.dir, nv);
+  } catch (e) {
+    alert('改名失败：' + (e && e.message ? e.message : ''));
+    return;
+  }
+  await loadProjects();
+  await loadWorkdir();
+  if (_viewer) _viewer.onSessionChange();
+  render();
 }
 
 function onScene(scene) {
@@ -830,7 +886,7 @@ async function boot() {
     if (state.mode === 'local') state.localActions = await loadLocalActions();
     state.sessions = await loadSessions();
     await loadCurrentMessages();
-    await loadProjectWorkdirs();
+    await loadProjects();
     await loadWorkdir();
   } catch (e) { /* 会话列表失败不阻断空状态 */ }
   render();
