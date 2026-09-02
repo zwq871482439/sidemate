@@ -684,6 +684,29 @@ body {
 .switch.on { background: var(--d1-accent); }
 .switch.on::after { left: 20px; }
 
+/* 模型下载 + 环境检查 */
+.dl-card {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md);
+  margin-bottom: 8px; background: var(--d1-paper);
+}
+.dl-badge-ok {
+  font-size: 10.5px; padding: 1px 6px; background: rgba(5,150,105,.12);
+  color: var(--pal-green-2); border-radius: 3px;
+}
+.dl-track { background: var(--d1-n-line); border-radius: 6px; overflow: hidden; height: 10px; }
+.dl-fill { height: 100%; background: var(--d1-accent-3); border-radius: 6px; transition: width .3s ease; }
+.env-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: var(--d1-r-sm); font-size: 12.5px;
+}
+.env-item.bad { background: rgba(239,68,68,.06); }
+.env-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.env-dot.ok { background: var(--pal-green-2); }
+.env-dot.bad { background: var(--pal-danger); }
+.env-name { font-weight: 600; color: var(--d1-ink); }
+.env-msg { color: var(--d1-ink-3); font-size: 11.5px; flex: 1; }
+
 /* ---- 右视窗（壳，M1-D 后续填预览/文件/轨迹） ---- */
 #viewer {
   width: 0; flex-shrink: 0; background: var(--d1-paper-2);

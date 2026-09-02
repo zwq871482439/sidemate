@@ -39,6 +39,8 @@ export function createSettingsView(events) {
     else if (cur === 'cloud') await renderCloud(body);
     else if (cur === 'kb') await renderKbSettings(body);
     else if (cur === 'privacy') await renderPrivacy(body);
+    else if (cur === 'download') await renderDownload(body);
+    else if (cur === 'env') await renderEnvCheck(body);
     else if (cur === 'about') await renderAbout(body);
     else renderWip(body, SUBPAGES.find(p => p.id === cur).label);
   }
@@ -513,6 +515,273 @@ export function createSettingsView(events) {
         a.download = 'sidemate_diagnostic.txt';
         document.body.appendChild(a); a.click(); a.remove();
       }).catch(() => {});
+    });
+  }
+
+  // ============ 模型下载子页 ============
+  async function renderDownload(body) {
+    body.innerHTML = '<div class="kb-loading" style="padding:30px">加载模型目录…</div>';
+    const [catalog, all, running] = await Promise.all([
+      fetch('/api/models/catalog').then(r => r.json()).catch(() => null),
+      fetch('/api/config').then(r => r.json()).catch(() => ({})),
+      fetch('/api/models/download/status').then(r => r.json()).catch(() => null),
+    ]);
+    const cfg = (all && all.config) || {};
+    let _dlSrc = cfg.dl_source || 'modelscope';
+    const dlSource = _dlSrc;
+
+    if (!catalog) {
+      body.innerHTML = '<div class="kb-loading" style="padding:30px;color:var(--pal-danger)">模型目录加载失败</div>';
+      return;
+    }
+
+    const llmHtml = (catalog.llm || []).map(m => {
+      const sizeGB = (m.gguf_size_bytes / 1e9).toFixed(2);
+      const ramTxt = m.min_ram_gb ? `建议 ${m.min_ram_gb}GB 内存` : '';
+      return `<div class="dl-card" data-id="${esc(m.model_id)}">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+            <b style="font-size:14px;color:var(--d1-ink)">${esc(m.display_name)}</b>
+            ${m.installed ? '<span class="dl-badge-ok">已安装</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:var(--d1-ink-3)">${sizeGB}GB${ramTxt ? ' · ' + ramTxt : ''}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          ${m.installed
+            ? `<button class="kb-tool-btn" data-dl="${esc(m.model_id)}">重新下载</button>
+               <button class="kb-tool-btn" style="color:var(--pal-danger)" data-del="${esc(m.model_id)}" data-name="${esc(m.display_name)}">删除</button>`
+            : `<button class="btn-primary-v2" data-dl="${esc(m.model_id)}">下载</button>`}
+        </div>
+      </div>`;
+    }).join('');
+
+    const kb = catalog.kb || {};
+    const comps = (kb.components || []);
+    const compTxt = comps.map(c => `${c.name} ${c.size_gb ? c.size_gb + 'GB' : ''}`).join(' + ');
+    const totalGb = comps.reduce((s, c) => s + (c.size_gb || 0), 0).toFixed(1);
+    const kbMissing = [];
+    if (!kb.installed) {
+      if (!kb.embedding_ready) kbMissing.push('向量化模型');
+      if (!kb.reranker_ready) kbMissing.push('重排序模型');
+    }
+
+    body.innerHTML = `
+      <div class="set-group">
+        <h2>下载设置</h2>
+        <div class="set-row"><div class="stx"><b>下载源</b><p>大文件下载，建议保持网络稳定。支持断点续传，中断后重新点击下载可继续</p></div>
+          <select class="set-input" id="dlSrc" style="width:auto">
+            <option value="modelscope" ${dlSource === 'modelscope' ? 'selected' : ''}>魔搭 ModelScope（国内推荐）</option>
+            <option value="huggingface" ${dlSource === 'huggingface' ? 'selected' : ''}>HuggingFace（国际源，需代理）</option>
+          </select></div>
+      </div>
+      <div class="set-group" id="dlProgGroup" style="display:none">
+        <h2>下载进度</h2>
+        <div class="dl-track"><div class="dl-fill" id="dlFill" style="width:0%"></div></div>
+        <div class="sub" id="dlText" style="margin-top:6px">准备中…</div>
+        <button class="kb-tool-btn" id="dlCancel" style="color:var(--pal-danger)">取消下载</button>
+      </div>
+      <div class="set-group">
+        <h2>对话模型（LLM）</h2>
+        <div class="sub">本地运行的 AI 对话模型，越大能力越强但占用内存越多。按需下载。</div>
+        ${llmHtml || '<div class="sub">暂无可下载的模型</div>'}
+      </div>
+      <div class="set-group">
+        <h2>知识库模型</h2>
+        <div class="sub">知识库检索所需的向量化与重排序模型，使用知识库功能前需安装</div>
+        <div class="dl-card">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+              <b style="font-size:14px;color:var(--d1-ink)">知识库检索模型</b>
+              ${kb.installed ? '<span class="dl-badge-ok">已安装</span>' : ''}
+            </div>
+            <div style="font-size:11px;color:var(--d1-ink-3);margin-bottom:4px">${esc(compTxt)} · 共 ${totalGb}GB</div>
+            <div style="font-size:11px;color:var(--d1-ink-3);line-height:1.5">包含向量化模型（bge-m3，语义+关键词检索）和重排序模型（bge-reranker-v2-m3，精排结果）</div>
+            ${kbMissing.length ? `<div style="font-size:11px;color:var(--pal-amber-dark);margin-top:4px">⚠️ ${kbMissing.join('、')} 缺失</div>` : ''}
+          </div>
+          <div style="display:flex;gap:6px">
+            ${kb.installed
+              ? `<button class="kb-tool-btn" data-dl="kb">重新下载</button><button class="kb-tool-btn" style="color:var(--pal-danger)" id="kbUninstall">卸载</button>`
+              : `<button class="btn-primary-v2" data-dl="kb">下载知识库模型</button>`}
+          </div>
+        </div>
+      </div>
+      <div class="set-group">
+        <h2>从本地安装</h2>
+        <div class="sub">选择 .sidemate 离线包安装，自动识别 LLM 模型或知识库模型</div>
+        <button class="kb-tool-btn" id="dlLocal">选择 .sidemate 文件…</button>
+        <input type="file" id="dlLocalFile" accept=".sidemate" style="display:none">
+        <div class="sub" id="dlInstallText" style="margin-top:8px"></div>
+      </div>`;
+
+    // 下载源切换（持久化到 config.dl_source，与经典版同源）
+    body.querySelector('#dlSrc').addEventListener('change', async (e) => {
+      _dlSrc = e.target.value;
+      // 持久化下载源
+      fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dl_source: _dlSrc }) }).catch(() => {});
+    });
+
+    // 下载 + SSE 进度
+    let _dlEs = null;
+    const showProg = (label, pct) => {
+      body.querySelector('#dlProgGroup').style.display = '';
+      body.querySelector('#dlText').textContent = label;
+      body.querySelector('#dlFill').style.width = Math.round((pct || 0) * 100) + '%';
+    };
+    const attachSSE = (taskId) => {
+      if (_dlEs) _dlEs.close();
+      _dlEs = new EventSource('/api/models/download/progress/' + taskId);
+      _dlEs.onmessage = (ev) => {
+        try {
+          const d = JSON.parse(ev.data);
+          showProg(d.label || d.phase || '下载中…', d.progress || 0);
+          if (d.phase === 'done' || d.status === 'done') {
+            _dlEs.close(); _dlEs = null;
+            showProg('✅ 下载完成', 1);
+            setTimeout(() => renderDownload(body), 1500);
+          } else if (d.phase === 'error' || d.status === 'error' || d.error) {
+            _dlEs.close(); _dlEs = null;
+            showProg('❌ ' + (d.error || d.message || '下载失败'), 0);
+          }
+        } catch (e) { /* 忽略 */ }
+      };
+      _dlEs.onerror = () => { if (_dlEs) { _dlEs.close(); _dlEs = null; } };
+    };
+    // 恢复进行中的下载
+    if (running && running.task_id && running.running !== false) {
+      showProg(running.label || '下载恢复中…', running.progress || 0);
+      attachSSE(running.task_id);
+    }
+    body.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', async () => {
+      const r = await fetch('/api/models/download', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: b.dataset.dl === 'kb' ? 'kb' : 'llm', model_id: b.dataset.dl === 'kb' ? undefined : b.dataset.dl, source: _dlSrc }),
+      }).then(r => r.json()).catch(() => null);
+      if (r && (r.task_id || r.ok)) {
+        showProg('开始下载…', 0);
+        attachSSE(r.task_id);
+      } else {
+        alert('启动下载失败：' + ((r && (r.error || r.message)) || '未知错误'));
+      }
+    }));
+    body.querySelector('#dlCancel').addEventListener('click', async () => {
+      await fetch('/api/models/download/cancel', { method: 'POST' }).catch(() => {});
+      body.querySelector('#dlProgGroup').style.display = 'none';
+    });
+    body.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm(`删除模型「${b.dataset.name}」？删除后需重新下载才能使用。`)) return;
+      await fetch('/api/model/delete', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: b.dataset.del }),
+      }).catch(() => {});
+      renderDownload(body);
+    }));
+    const kbUn = body.querySelector('#kbUninstall');
+    if (kbUn) kbUn.addEventListener('click', async () => {
+      if (!confirm('卸载知识库模型？知识库功能将不可用。')) return;
+      await fetch('/api/extensions/uninstall', { method: 'POST' }).catch(() => {});
+      renderDownload(body);
+    });
+    // 本地 .sidemate 安装（复用扩展上传 + install-progress SSE）
+    body.querySelector('#dlLocal').addEventListener('click', () => body.querySelector('#dlLocalFile').click());
+    body.querySelector('#dlLocalFile').addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const txt = body.querySelector('#dlInstallText');
+      txt.textContent = '上传安装包…';
+      const fd = new FormData();
+      fd.append('file', f);
+      const r = await fetch('/api/extensions/upload', { method: 'POST', body: fd }).then(r => r.json()).catch(() => null);
+      if (r && r.task_id) {
+        const es = new EventSource('/api/extensions/install-progress/' + r.task_id);
+        es.onmessage = (ev) => {
+          try {
+            const d = JSON.parse(ev.data);
+            txt.textContent = d.label || d.phase || '安装中…';
+            if (d.phase === 'done' || d.status === 'done') { txt.textContent = '✅ 安装完成'; es.close(); setTimeout(() => renderDownload(body), 1500); }
+            if (d.phase === 'error' || d.error) { txt.textContent = '❌ ' + (d.error || '安装失败'); es.close(); }
+          } catch (err) { /* 忽略 */ }
+        };
+      } else {
+        txt.textContent = '上传失败：' + ((r && (r.error || r.message)) || '未知错误');
+      }
+      e.target.value = '';
+    });
+  }
+
+  // ============ 环境检查子页 ============
+  async function renderEnvCheck(body) {
+    body.innerHTML = `
+      <div class="set-group">
+        <h2>运行环境检查</h2>
+        <div class="sub">检查 Python 运行时、推理引擎、依赖包和模型加载状态。发现问题可一键修复。</div>
+        <div id="envList" style="min-height:20px"><span style="color:var(--d1-ink-3);font-size:12.5px">点击下方按钮检查运行环境</span></div>
+        <div class="set-row"><div class="stx"></div>
+          <button class="kb-tool-btn" id="envRun">检查运行环境</button></div>
+        <div id="envRepair" style="display:none;margin-top:6px;font-size:12px;color:var(--d1-ink-2)"></div>
+      </div>`;
+
+    const _row = (ok, text, warn) =>
+      `<div class="env-item ${ok ? '' : 'bad'}"><span class="env-dot ${ok ? 'ok' : 'bad'}"></span><span>${text}</span></div>`;
+
+    body.querySelector('#envRun').addEventListener('click', async (e) => {
+      e.target.disabled = true; e.target.textContent = '检查中…';
+      const list = body.querySelector('#envList');
+      list.innerHTML = '<span style="color:var(--d1-ink-3)">检查中…</span>';
+      const data = await fetch('/api/env/diagnose').then(r => r.json()).catch(() => null);
+      if (!data) {
+        list.innerHTML = '<span style="color:var(--pal-danger)">检查失败</span>';
+      } else {
+        let html = '';
+        if (data.python) html += _row(true, 'Python ' + esc(data.python.version || ''));
+        if (data.llama_server) html += _row(!!data.llama_server.ok, 'llama-server ' + (data.llama_server.ok ? '已就绪' : '未找到'));
+        const deps = data.deps || {};
+        const catLabel = { base: '基础', cloud: '云端', kb: '知识库' };
+        const missing = [];
+        for (const cat of ['base', 'cloud', 'kb']) {
+          for (const dep of (deps[cat] || [])) {
+            html += `<div class="env-item ${dep.ok ? '' : 'bad'}"><span class="env-dot ${dep.ok ? 'ok' : 'bad'}"></span>
+              <span class="env-name">${esc(dep.pip)}</span><span class="env-msg">[${catLabel[cat] || cat}]</span></div>`;
+            if (!dep.ok) missing.push(dep.pip);
+          }
+        }
+        for (const opt of (data.optional_missing || [])) {
+          html += `<div class="env-item"><span class="env-dot" style="background:var(--pal-amber-dark)"></span>
+            <span>${esc(opt)} <small style="color:var(--d1-ink-3)">（可选，缺失时功能降级）</small></span></div>`;
+        }
+        if (data.models) {
+          html += _row(!!data.models.llm_loaded, 'LLM 模型' + (data.models.llm_loaded ? '已加载（' + esc(data.models.llm_name || '') + '）' : '未加载'));
+          if (data.models.kb_loaded !== undefined) html += _row(!!data.models.kb_loaded, '知识库模型 ' + (data.models.kb_loaded ? '已加载' : '未加载'));
+        }
+        if (missing.length) {
+          html += `<div style="margin-top:10px"><button class="btn-primary-v2" id="envFixAll">一键修复 ${missing.length} 个缺失依赖</button></div>`;
+        }
+        list.innerHTML = html;
+
+        const fixBtn = list.querySelector('#envFixAll');
+        if (fixBtn) fixBtn.addEventListener('click', async () => {
+          const rep = body.querySelector('#envRepair');
+          rep.style.display = '';
+          rep.textContent = '正在安装依赖…';
+          const r2 = await fetch('/api/env/repair', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ packages: missing }),
+          }).then(r => r.json()).catch(() => null);
+          if (r2 && r2.task_id) {
+            const es = new EventSource('/api/env/repair/progress/' + r2.task_id);
+            es.onmessage = (ev) => {
+              try {
+                const d = JSON.parse(ev.data);
+                rep.textContent = d.label || d.phase || '修复中…';
+                if (d.phase === 'done' || d.status === 'done') { rep.textContent = '✅ 修复完成，请重新检查'; es.close(); }
+                if (d.phase === 'error' || d.error) { rep.textContent = '❌ ' + (d.error || '修复失败'); es.close(); }
+              } catch (err) { /* 忽略 */ }
+            };
+          } else {
+            rep.textContent = (r2 && (r2.message || r2.error)) || '修复请求已提交';
+          }
+        });
+      }
+      e.target.disabled = false; e.target.textContent = '检查运行环境';
     });
   }
 
