@@ -9,6 +9,7 @@ import { renderChatFlow, loadMessages } from './chat_view.js';
 import { renderComposer, loadLocalActions, estimateTokens } from './composer.js';
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
+import { createSettingsView } from './settings.js';
 
 const state = {
   mode: 'cloud',      // 后端值：local/cloud/parallel
@@ -66,6 +67,7 @@ const chatStream = createChatStream({
 let _streamState = null;
 let _composer = null;
 let _kbView = null;  // KB 视图单例（切走销毁，切回新建）
+let _settingsView = null;  // 设置视图单例（无后台资源，常驻即可）
 
 function render() {
   app.innerHTML = '';
@@ -148,17 +150,13 @@ function render() {
     }
     scroll.appendChild(_kbView.el);
   } else {
+    // 设置：壳 + 常规子页已迁入；其余子页在设置内占位逐页迁
     const scroll = main.querySelector('#main-scroll');
-    // 设置：迁移中占位，给经典版直达链接（功能陆续迁入，不在这里做半吊子）
-    const wip = document.createElement('div');
-    wip.className = 'wip-wrap';
-    wip.innerHTML = `
-      <div class="w-ic">◌</div>
-      <h2>设置 · 迁移中</h2>
-      <p>新版界面的「设置」正在按原型迁移，功能一件不少地搬。<br>
-      现在请先在 <a href="/">经典版界面</a> 使用设置，两边数据完全互通。</p>
-    `;
-    scroll.appendChild(wip);
+    if (!_settingsView) {
+      _settingsView = createSettingsView({ onGoClassic: () => { location.href = '/'; } });
+      _settingsView.mount();
+    }
+    scroll.appendChild(_settingsView.el);
   }
 
   // 右视窗壳（M1-D 后续：SVG PPT 预览 / 文件 / 轨迹 tab）
