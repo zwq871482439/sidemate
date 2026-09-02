@@ -80,6 +80,33 @@ class TestExternalBinding:
         assert "error" in projects.set_project_workdir("论文", "Z:\\不存在\\xyz")
         assert "error" in projects.set_project_workdir("论文", "relative\\path")
 
+    def test_lock_after_sessions(self, isolated):
+        """锁定规则：项目有会话后，换绑和回落都被拒绝（PLAN 1.5 三次定稿）。"""
+        chats, ext, _ = isolated
+        # 空项目可自由换绑/解除
+        assert projects.set_project_workdir("论文", ext)["ok"]
+        assert projects.set_project_workdir("论文", None)["ok"]
+        # 有会话后锁定
+        _mk_chat(chats, "2026-09-02_001", group="论文")
+        assert projects.count_project_sessions("论文") == 1
+        r = projects.set_project_workdir("论文", ext)
+        assert "error" in r and "锁定" in r["error"]
+        projects.set_project_workdir("空项目", ext)
+        r2 = projects.set_project_workdir("论文", None)
+        assert "error" in r2 and "锁定" in r2["error"]
+        # resolve 带锁定信息
+        info = projects.resolve_project_workdir("论文")
+        assert info["locked"] is True and info["session_count"] == 1
+        info2 = projects.resolve_project_workdir("空项目")
+        assert info2["locked"] is False
+
+    def test_daily_counts_legacy_json(self, isolated):
+        chats, _, _ = isolated
+        _mk_chat(chats, "2026-09-02_001")
+        with open(os.path.join(chats, "旧会话.json"), "w") as f:
+            json.dump({"messages": []}, f)
+        assert projects.count_project_sessions("日常") == 2
+
     def test_stale_external_falls_to_default(self, isolated, tmp_path):
         _, ext, _ = isolated
         projects.set_project_workdir("论文", ext)
@@ -99,8 +126,8 @@ class TestAllWorkdirs:
 class TestResolveViaChat:
     def test_chat_inherits_project(self, isolated):
         chats, ext, _ = isolated
+        projects.set_project_workdir("论文", ext)  # 空项目时换绑（锁定规则：有会话后禁换）
         _mk_chat(chats, "2026-09-02_001", group="论文")
-        projects.set_project_workdir("论文", ext)
         r = projects.resolve_workdir("2026-09-02_001")
         assert r["source"] == "external" and r["group"] == "论文"
 
@@ -150,11 +177,31 @@ class TestBrowse:
         assert projects.browse_dirs("relative\\path") is None
 
 
+class TestUploadToProject:
+    def test_upload_writes_into_project_dir(self, isolated):
+        chats, ext, _ = isolated
+        projects.set_project_workdir("论文", ext)  # 空项目时换绑
+        _mk_chat(chats, "2026-09-02_001", group="论文")  # 先换绑再建会话……先换绑需在无会话时
+        r = projects.upload_to_project("2026-09-02_001", "材料.txt", "内容".encode("utf-8"))
+        # 上面换绑应被锁拒绝（已有会话）→ 回落默认目录；上传仍应成功到生效目录
+        info = projects.resolve_project_workdir("论文")
+        dst = os.path.join(info["workdir"], "材料.txt")
+        assert r["ok"] and os.path.isfile(dst)
+        with open(dst, "rb") as f:
+            assert f.read() == "内容".encode("utf-8")
+
+    def test_reject_bad_name(self, isolated):
+        chats, _, _ = isolated
+        _mk_chat(chats, "2026-09-02_001")
+        assert "error" in projects.upload_to_project("2026-09-02_001", "../x.txt", b"x")
+        assert "error" in projects.upload_to_project("2026-09-02_001", "", b"x")
+
+
 class TestImportFile:
     def test_import_copies_to_workspace(self, isolated):
         chats, ext, _ = isolated
+        projects.set_project_workdir("论文", ext)  # 空项目时换绑
         _mk_chat(chats, "2026-09-02_001", group="论文")
-        projects.set_project_workdir("论文", ext)
         src = os.path.join(ext, "笔记.md")
         with open(src, "w", encoding="utf-8") as f:
             f.write("# 你好\n内容")
@@ -170,8 +217,8 @@ class TestImportFile:
 
     def test_reject_traversal_and_dir(self, isolated):
         chats, ext, _ = isolated
+        projects.set_project_workdir("论文", ext)  # 空项目时换绑
         _mk_chat(chats, "2026-09-02_001", group="论文")
-        projects.set_project_workdir("论文", ext)
         os.makedirs(os.path.join(ext, "子目录"))
         assert "error" in projects.import_file("2026-09-02_001", "../secret.txt")
         assert "error" in projects.import_file("2026-09-02_001", "子目录")
@@ -179,8 +226,8 @@ class TestImportFile:
 
     def test_reject_bad_ext(self, isolated):
         chats, ext, _ = isolated
+        projects.set_project_workdir("论文", ext)  # 空项目时换绑
         _mk_chat(chats, "2026-09-02_001", group="论文")
-        projects.set_project_workdir("论文", ext)
         with open(os.path.join(ext, "程序.exe"), "w") as f:
             f.write("MZ")
         r = projects.import_file("2026-09-02_001", "程序.exe")

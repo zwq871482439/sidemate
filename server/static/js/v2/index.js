@@ -214,7 +214,7 @@ function render() {
     onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
     onProjectDir: (g, anchorEl) => {
       const wd = state.projectWorkdirs[g] || {};
-      showWorkdirMenu(anchorEl, { group: g, workdir: wd.workdir || null, source: wd.source || 'default' });
+      showWorkdirMenu(anchorEl, { group: g, workdir: wd.workdir || null, source: wd.source || 'default', locked: !!wd.locked, session_count: wd.session_count || 0 });
     },
     onKbFilter: (kf) => {
       if (!_kbView) return;
@@ -274,10 +274,21 @@ function render() {
     scroll.appendChild(_settingsView.el);
   }
 
-  // 右视窗（预览/文件/轨迹）
+  // 右视窗（会话/预览/文件/轨迹）
   if (!_viewer) {
     _viewer = createViewer({
       getCurrentChat: () => state.sessions.find(c => c.current),
+      getSessions: () => state.sessions,
+      getHarness: () => ({ modeLabel: MODE_LABEL[state.mode] || state.mode, modelTag: state.modelTag }),
+      onSwitchSession: async (c) => {
+        await api.switchChat(c.path);
+        state.sessions = await loadSessions();
+        state.tab = 'chat';
+        await loadCurrentMessages();
+        await loadWorkdir();
+        if (_viewer) _viewer.onSessionChange();
+        render();
+      },
       onImportFile: async (name, btn) => {
         const cur = state.sessions.find(c => c.current);
         if (!cur) return;
@@ -352,7 +363,7 @@ function renderChatArea() {
     onAttachChange: () => {},
     onWorkdirClick: (anchorEl) => {
       if (!state.workdir) return;
-      showWorkdirMenu(anchorEl, { group: state.workdir.group, workdir: state.workdir.workdir, source: state.workdir.source });
+      showWorkdirMenu(anchorEl, { group: state.workdir.group, workdir: state.workdir.workdir, source: state.workdir.source, locked: !!state.workdir.locked, session_count: state.workdir.session_count || 0 });
     },
     getSession: () => state.sessions.find(c => c.current),
   });
@@ -599,12 +610,15 @@ function showWorkdirMenu(anchorEl, info) {
   _wdMenuEl = menuEl;
   menuEl.className = 'sess-menu wd-menu';
   const srcLabel = info.source === 'external' ? '外部目录' : '默认目录';
+  const locked = !!info.locked;
   menuEl.innerHTML =
     `<span class="sess-menu-sub-h">项目「${esc(info.group)}」工作目录（${srcLabel}）</span>` +
     (info.workdir ? `<div class="wd-path" title="${esc(info.workdir)}">${esc(info.workdir)}</div>` : '') +
-    `<button data-a="bind">更换目录…</button>` +
-    (info.source === 'external' ? `<button data-a="unbind" class="danger">改回默认目录</button>` : '') +
-    `<button data-a="open">打开文件夹</button><button data-a="view">在视窗查看</button>`;
+    (locked
+      ? `<div class="wd-lock-note">🔒 目录已锁定（${info.session_count || 0} 个会话）</div>`
+      : `<button data-a="bind">更换目录…（开始对话后锁定）</button>`) +
+    (!locked && info.source === 'external' ? `<button data-a="unbind" class="danger">改回默认目录</button>` : '') +
+    `<button data-a="open">在资源管理器中打开</button><button data-a="view">在视窗查看</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
   menuEl.style.left = Math.min(r.left, window.innerWidth - 300) + 'px';
@@ -629,6 +643,7 @@ function showWorkdirMenu(anchorEl, info) {
   const bindBtn = menuEl.querySelector('[data-a="bind"]');
   if (bindBtn) bindBtn.addEventListener('click', () => {
     menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
+    if (!confirm('项目「' + info.group + '」现在还没有会话，可以换绑目录。\n注意：开始对话后目录将锁定，不能再更换。继续？')) return;
     showDirPicker(async (path) => {
       try {
         await api.setProjectWorkdir(info.group, path);
@@ -655,7 +670,7 @@ function showWorkdirMenu(anchorEl, info) {
   const viewBtn = menuEl.querySelector('[data-a="view"]');
   if (viewBtn) viewBtn.addEventListener('click', () => {
     menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    if (_viewer) _viewer.setOpen(true);
+    if (_viewer) _viewer.setOpen(true, 'session');
   });
 }
 

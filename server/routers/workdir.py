@@ -9,6 +9,7 @@ routers/workdir.py — 工作目录 API（0.10.1 M1 只读版，项目 ↔ 目�
   GET  /api/projects/workdirs?groups=a,b 各项目生效目录（外部换绑/默认目录）
   GET  /api/chats/{chat_name}/workdir/files  只读列出项目目录内容（名称/大小/时间）
   POST /api/chats/{chat_name}/workdir/import 把目录内文件引用进会话（复制进 workspace）
+  POST /api/chats/{chat_name}/workdir/upload 上传材料到项目目录（用户显式动作）
   POST /api/chats/{chat_name}/workdir/open   在资源管理器中打开项目目录
 
 M1 只读边界：目录本身只读；「引用」是把文件复制进会话 workspace 走既有附件
@@ -128,6 +129,26 @@ async def api_import_workdir_file(chat_name: str, request: Request):
         return err
     body = await request.json()
     result = projects.import_file(safe, body.get("name", ""))
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+    return result
+
+
+@router.post("/api/chats/{chat_name}/workdir/upload")
+async def api_upload_to_project(chat_name: str, request: Request):
+    """上传材料到项目目录（用户显式动作，multipart 单文件）。"""
+    denied = _guard(request)
+    if denied:
+        return denied
+    safe, err = _safe_name_or_400(chat_name)
+    if err:
+        return err
+    form = await request.form()
+    f = form.get("file")
+    if f is None or not getattr(f, "filename", ""):
+        return JSONResponse({"error": "未选择文件"}, status_code=400)
+    content = await f.read()
+    result = projects.upload_to_project(safe, f.filename, content)
     if "error" in result:
         return JSONResponse(result, status_code=400)
     return result

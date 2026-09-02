@@ -75,16 +75,22 @@ def _default_dir(group):
 def resolve_project_workdir(group):
     """项目生效目录：外部换绑 > 默认目录（自动创建）。
 
-    返回 {"workdir": path, "source": "external"|"default", "group": 组名}
+    返回 {"workdir", "source": "external"|"default", "group",
+          "locked": 是否有会话锁定, "session_count": 会话数}
     group 为空按「日常」处理。
     """
     group = (group or "").strip() or "日常"
+    n = count_project_sessions(group)
+    base = {"workdir": None, "source": "default", "group": group,
+            "locked": n > 0, "session_count": n}
     entry = _load().get(group)
     if isinstance(entry, dict):
         ext = _norm_dir(entry.get("workdir"))
         if ext:
-            return {"workdir": ext, "source": "external", "group": group}
-    return {"workdir": _default_dir(group), "source": "default", "group": group}
+            base.update({"workdir": ext, "source": "external"})
+            return base
+    base["workdir"] = _default_dir(group)
+    return base
 
 
 def get_project_workdir(group):
@@ -97,11 +103,42 @@ def get_project_workdir(group):
     return _norm_dir(entry.get("workdir"))
 
 
+def count_project_sessions(group):
+    """项目下的会话数（folder 格式按 meta.group 计；「日常」兼计旧 .json 格式）。"""
+    group = (group or "").strip() or "日常"
+    n = 0
+    try:
+        entries = os.listdir(CHAT_DIR)
+    except OSError:
+        return 0
+    for entry in entries:
+        ep = os.path.join(CHAT_DIR, entry)
+        if os.path.isdir(ep):
+            meta_path = os.path.join(ep, "meta.json")
+            g = "日常"
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    g = (json.load(f).get("group") or "日常")
+            except Exception:
+                pass
+            if g == group:
+                n += 1
+        elif group == "日常" and entry.endswith(".json") and not entry.endswith(".tmp"):
+            n += 1  # 旧格式无 group 概念，归「日常」
+    return n
+
+
 def set_project_workdir(group, path):
-    """设置/解除项目外部目录。path 为 None/空串 = 解除（回落默认目录）。"""
+    """设置/解除项目外部目录。path 为 None/空串 = 解除（回落默认目录）。
+
+    锁定规则（PLAN 1.5 三次定稿）：项目已有会话则目录冻结，换绑/回落都拒绝。
+    """
     group = (group or "").strip()
     if not group:
         return {"error": "项目名不能为空"}
+    n = count_project_sessions(group)
+    if n > 0:
+        return {"error": "项目「%s」已有 %d 个会话，目录已锁定（新项目在开始对话前可换绑）" % (group, n)}
     with _lock:
         data = _load()
         if not path:
@@ -215,6 +252,34 @@ def browse_dirs(path):
     if parent == p:
         parent = None
     return {"path": p, "parent": parent, "quick": _quick_links(), "entries": entries}
+
+
+def upload_to_project(chat_name, filename, content):
+    """用户显式上传材料到项目目录（不受 M1 只读边界限制——只读约束的是 AI）。
+
+    不限扩展名（这是用户的材料架，能否被 LLM 消费是「引用」时的事），
+    同名覆盖（与 /api/file_upload 一致）。返回 {ok, name, size} 或 {error}。
+    """
+    resolved = resolve_workdir(chat_name)
+    root = resolved["workdir"]
+    if not root:
+        return {"error": "项目目录不可用"}
+    base = os.path.basename(filename or "").strip()
+    if not base or base != filename or base in (".", ".."):
+        return {"error": "非法文件名"}
+    from config import get as _cfg_get
+    max_size = _cfg_get("upload_max_size") or 50 * 1024 * 1024
+    if len(content) > max_size:
+        return {"error": "文件过大（最大50MB）"}
+    dst = os.path.join(root, base)
+    try:
+        with open(dst, "wb") as f:
+            f.write(content)
+    except OSError as e:
+        log.warning("[PROJECT] 上传写入失败: %s", e)
+        return {"error": "写入失败"}
+    log.info("[PROJECT] 上传到项目目录: %s → %s（会话 %s）", base, root, chat_name)
+    return {"ok": True, "name": base, "size": len(content)}
 
 
 def import_file(chat_name, name):
