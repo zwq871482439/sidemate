@@ -8,6 +8,7 @@ import { renderEmptyState } from './empty_state.js';
 import { renderChatFlow, loadMessages } from './chat_view.js';
 import { renderComposer, loadLocalActions } from './composer.js';
 import { createChatStream } from './stream_chat.js';
+import { createKBView } from './kb.js';
 
 const state = {
   mode: 'cloud',      // 后端值：local/cloud/parallel
@@ -63,6 +64,7 @@ const chatStream = createChatStream({
 });
 let _streamState = null;
 let _composer = null;
+let _kbView = null;  // KB 视图单例（切走销毁，切回新建）
 
 function render() {
   app.innerHTML = '';
@@ -83,7 +85,11 @@ function render() {
         render();
       }
     },
-    onTab: (t) => { state.tab = t; render(); },
+    onTab: (t) => {
+      if (state.tab === 'kb' && _kbView) { _kbView.destroy(); _kbView = null; }
+      state.tab = t;
+      render();
+    },
     onSelectSession: async (c) => {
       if (c.current && state.messages !== null) return;
       await api.switchChat(c.path);
@@ -121,17 +127,33 @@ function render() {
 
   if (state.tab === 'chat') {
     renderChatArea();
+  } else if (state.tab === 'kb') {
+    // KB 管理视图（KB-1 增量实装；星图在 KB-2）
+    const scroll = main.querySelector('#main-scroll');
+    if (!_kbView) {
+      _kbView = createKBView({
+        onGoClassic: () => { location.href = '/'; },
+        onAskChat: (q) => {
+          // 推荐追问：切聊天 tab 预填输入框
+          state.tab = 'chat';
+          render();
+          const ta = document.querySelector('.composer textarea');
+          if (ta) { ta.value = q; ta.focus(); }
+        },
+      });
+      _kbView.mount();
+    }
+    scroll.appendChild(_kbView.el);
   } else {
     const scroll = main.querySelector('#main-scroll');
-    // KB / 设置：迁移中占位，给经典版直达链接（功能陆续迁入，不在这里做半吊子）
+    // 设置：迁移中占位，给经典版直达链接（功能陆续迁入，不在这里做半吊子）
     const wip = document.createElement('div');
     wip.className = 'wip-wrap';
-    const label = state.tab === 'kb' ? '知识库' : '设置';
     wip.innerHTML = `
       <div class="w-ic">◌</div>
-      <h2>${label} · 迁移中</h2>
-      <p>新版界面的「${label}」正在按原型迁移，功能一件不少地搬。<br>
-      现在请先在 <a href="/">经典版界面</a> 使用${label}，两边数据完全互通。</p>
+      <h2>设置 · 迁移中</h2>
+      <p>新版界面的「设置」正在按原型迁移，功能一件不少地搬。<br>
+      现在请先在 <a href="/">经典版界面</a> 使用设置，两边数据完全互通。</p>
     `;
     scroll.appendChild(wip);
   }
