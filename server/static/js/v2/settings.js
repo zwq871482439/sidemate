@@ -37,6 +37,9 @@ export function createSettingsView(events) {
     const body = el.querySelector('#setBody');
     if (cur === 'general') await renderGeneral(body);
     else if (cur === 'cloud') await renderCloud(body);
+    else if (cur === 'kb') await renderKbSettings(body);
+    else if (cur === 'privacy') await renderPrivacy(body);
+    else if (cur === 'about') await renderAbout(body);
     else renderWip(body, SUBPAGES.find(p => p.id === cur).label);
   }
 
@@ -317,6 +320,199 @@ export function createSettingsView(events) {
         body: JSON.stringify({ kb_compare_enabled: on }),
       });
       e.target.classList.toggle('on', on);
+    });
+  }
+
+  // ============ 知识库子页 ============
+  async function renderKbSettings(body) {
+    body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
+    const [stats, docs, audit, all] = await Promise.all([
+      fetch('/api/kb/stats').then(r => r.json()).catch(() => ({})),
+      fetch('/api/kb/documents').then(r => r.json()).catch(() => []),
+      fetch('/api/kb/audit_log/stats').then(r => r.json()).catch(() => ({})),
+      fetch('/api/config').then(r => r.json()).catch(() => ({})),
+    ]);
+    const cfg = (all && all.config) || {};
+    const ready = docs.filter(d => d.status === 'ready').length;
+    const processing = docs.filter(d => ['pending', 'processing', 'indexing'].includes(d.status)).length;
+    const errored = docs.filter(d => ['error', 'conflict'].includes(d.status)).length;
+    const idleMin = Math.max(1, Math.round((cfg.reranker_idle_timeout_sec != null ? cfg.reranker_idle_timeout_sec : 300) / 60));
+
+    body.innerHTML = `
+      <div class="set-group">
+        <h2>文档统计</h2>
+        <div class="set-row"><div class="stx"><b>文档总数</b></div><span>${docs.length}</span></div>
+        <div class="set-row"><div class="stx"><b>就绪文档</b></div><span style="color:var(--pal-green-2)">${ready}</span></div>
+        <div class="set-row"><div class="stx"><b>处理中文档</b></div><span style="color:var(--pal-amber-dark)">${processing}</span></div>
+        <div class="set-row"><div class="stx"><b>失败文档</b></div><span style="color:var(--pal-danger)">${errored}</span></div>
+        <div class="set-row"><div class="stx"><b>文本块数</b></div><span>${stats.total_chunks || 0}</span></div>
+        <div class="set-row"><div class="stx"></div><button class="kb-tool-btn" id="kbSetRefresh">刷新统计</button></div>
+      </div>
+      <div class="set-group">
+        <h2>知识库引擎</h2>
+        <div class="sub">选择知识库自身功能（文档打标、标签分组）使用的 AI 引擎。不影响对话——对话由左栏离线/在线/并行模式控制。</div>
+        <div class="set-row"><div class="stx">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;margin-bottom:8px">
+            <input type="radio" name="v2KbAiMode" value="local" ${cfg.kb_ai_mode !== 'cloud' ? 'checked' : ''}> 离线模型（隐私优先）</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="v2KbAiMode" value="cloud" ${cfg.kb_ai_mode === 'cloud' ? 'checked' : ''}> 在线模型（质量优先，需配置在线 API）</label>
+        </div></div>
+      </div>
+      <div class="set-group">
+        <h2>搜索引擎常驻</h2>
+        <div class="sub">控制知识库重排序引擎（Reranker）的内存占用策略</div>
+        <div class="set-row"><div class="stx"><b>重排序引擎常驻内存</b><p>常驻=响应更快但占用内存</p></div>
+          <button class="switch ${cfg.reranker_resident === true ? 'on' : ''}" id="kbRrResident"></button></div>
+        <div class="set-row" id="kbRrIdleRow" style="display:${cfg.reranker_resident === true ? 'none' : 'flex'}"><div class="stx"><b>闲置自动卸载</b><p>闲置 N 分钟后自动卸载（节省内存，下次使用时重新加载）</p></div>
+          <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--d1-ink-2)">
+            <input class="set-input" id="kbRrIdle" type="number" min="1" max="1440" value="${idleMin}" style="width:64px"> 分钟
+          </span></div>
+      </div>
+      <div class="set-group">
+        <h2>审计日志管理</h2>
+        <div class="sub">每次检索知识库时会记录访问明细（时间/访问者/查询词/命中片段），每篇文档最多保留 200 条。</div>
+        <div class="set-row"><div class="stx"><b>日志条数</b></div><span>${audit.total_entries || 0}</span></div>
+        <div class="set-row"><div class="stx"><b>涉及文档</b></div><span>${audit.total_files || 0}</span></div>
+        <div class="set-row"><div class="stx"><b>磁盘占用</b></div><span>${((audit.total_size_kb || 0) / 1024).toFixed(1)} MB</span></div>
+        <div class="set-row"><div class="stx"></div>
+          <button class="kb-tool-btn" id="kbAuditClear" style="color:var(--pal-danger)">清空全部审计日志</button></div>
+      </div>
+      <div class="set-group" style="border-color:var(--pal-danger-border)">
+        <h2 style="color:var(--pal-danger)">重置知识库</h2>
+        <div class="sub">清空所有已导入的文档、文本片段和向量索引。此操作不可撤销，重置后需重新导入文档。仅清除导入的数据，知识库功能本身不受影响。</div>
+        <button class="kb-tool-btn" id="kbReset" style="color:var(--pal-danger)">重置知识库</button>
+      </div>`;
+
+    const saveCfg = (obj) => fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
+
+    body.querySelector('#kbSetRefresh').addEventListener('click', () => renderKbSettings(body));
+    body.querySelectorAll('input[name="v2KbAiMode"]').forEach(r => r.addEventListener('change', async (e) => {
+      await saveCfg({ kb_ai_mode: e.target.value });
+    }));
+    body.querySelector('#kbRrResident').addEventListener('click', async (e) => {
+      const on = !e.target.classList.contains('on');
+      await saveCfg({ reranker_resident: on });
+      e.target.classList.toggle('on', on);
+      body.querySelector('#kbRrIdleRow').style.display = on ? 'none' : 'flex';
+      if (on) fetch('/api/kb/load-models', { method: 'POST' }).catch(() => {});  // 常驻=立即驻留
+    });
+    body.querySelector('#kbRrIdle').addEventListener('change', async (e) => {
+      const min = Math.max(1, Math.min(1440, parseInt(e.target.value || '5', 10)));
+      await saveCfg({ reranker_idle_timeout_sec: min * 60 });
+    });
+    body.querySelector('#kbAuditClear').addEventListener('click', async () => {
+      if (!confirm('清空全部审计日志？')) return;
+      await fetch('/api/kb/audit_log/clear_all', { method: 'POST' });
+      renderKbSettings(body);
+    });
+    body.querySelector('#kbReset').addEventListener('click', async () => {
+      if (!confirm('重置知识库将删除全部文档与向量索引，不可撤销。确定继续？')) return;
+      const r = await fetch('/api/kb/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) }).then(r => r.json()).catch(() => null);
+      alert(r && r.ok ? `已重置（删除 ${r.deleted_docs || 0} 篇文档）` : '重置失败：' + ((r && r.error) || '未知错误'));
+      renderKbSettings(body);
+    });
+  }
+
+  // ============ 隐私安全子页 ============
+  async function renderPrivacy(body) {
+    body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
+    const [info, all] = await Promise.all([
+      fetch('/api/system/info').then(r => r.json()).catch(() => ({})),
+      fetch('/api/config').then(r => r.json()).catch(() => ({})),
+    ]);
+    const cfg = (all && all.config) || {};
+    const mb = info.data_size_mb;
+    const corsStrict = cfg.cors_strict;
+
+    body.innerHTML = `
+      <div class="set-group">
+        <h2>数据存储位置</h2>
+        <div class="set-row"><div class="stx"><b>存储位置</b></div><span style="font-size:11px;word-break:break-all">${esc(info.data_dir || '--')}</span></div>
+        <div class="set-row"><div class="stx"><b>数据占用</b></div><span>${mb != null ? (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB') : '--'}</span></div>
+        <div class="set-note">对话、文档、模型、设置等所有数据均存储在本地。在线模式下，对话内容会发送到你配置的在线 API（详见下方隐私声明）</div>
+      </div>
+      <div class="set-group">
+        <h2>隐私声明</h2>
+        <div class="sub" style="line-height:1.8">
+          桌伴是本地优先的应用：离线模式下所有数据不出本机；在线模式仅在你主动使用时，
+          将对话内容与所引用的文档发送到你自行配置的在线 API 服务商。知识库向量索引
+          全部在本地构建与存储。诊断报告仅包含系统环境与配置状态，不含对话内容。
+        </div>
+      </div>
+      <div class="set-group">
+        <h2>第三方访问</h2>
+        <div class="sub">默认严格模式：只有本机页面可以访问应用接口</div>
+        <div class="set-row"><div class="stx"><b>允许局域网访问</b><p>关闭严格模式后，同一局域网内其他设备可访问本应用（谨慎开启）</p></div>
+          <button class="switch ${corsStrict === false ? 'on' : ''}" id="pvCors"></button></div>
+        <div class="set-row"><div class="stx"><b>导出诊断报告</b><p>系统环境与配置状态（不含对话内容），排查问题时使用</p></div>
+          <button class="kb-tool-btn" id="pvDiag">导出诊断报告</button></div>
+      </div>`;
+
+    body.querySelector('#pvCors').addEventListener('click', async (e) => {
+      const allowLan = !e.target.classList.contains('on');
+      if (allowLan && !confirm('允许局域网访问后，同一网络内的其他设备可以访问本应用。确定开启？')) return;
+      // 语义：勾选=允许第三方=cors_strict=false
+      await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cors_strict: !allowLan }) });
+      e.target.classList.toggle('on', allowLan);
+    });
+    body.querySelector('#pvDiag').addEventListener('click', async () => {
+      const text = await fetch('/api/diagnostics/export').then(r => r.text()).catch(() => '导出失败');
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      const now = new Date();
+      const ts = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + '_' + String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'sidemate_diagnostic_' + ts + '.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+  }
+
+  // ============ 关于子页 ============
+  async function renderAbout(body) {
+    body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
+    const [status, res] = await Promise.all([
+      fetch('/api/status').then(r => r.json()).catch(() => ({})),
+      fetch('/api/resource-info').then(r => r.json()).catch(() => ({})),
+    ]);
+    const mem = res.memory || res;
+    body.innerHTML = `
+      <div class="set-group">
+        <h2>程序版本</h2>
+        <div class="set-row"><div class="stx"><b>桌伴 Sidemate</b></div><span style="color:var(--d1-accent-3);font-weight:600">${esc(status.version || '--')}</span></div>
+        <div class="set-row"><div class="stx"><b>新手指引</b><p>重新查看首次使用的引导</p></div>
+          <button class="kb-tool-btn" id="abTour">重新查看新手指引</button></div>
+      </div>
+      <div class="set-group">
+        <h2>运行状态</h2>
+        <div class="set-row"><div class="stx"><b>总内存</b></div><span>${mem.total_gb || mem.total_mem_gb || '--'} GB</span></div>
+        <div class="set-row"><div class="stx"><b>可用内存</b></div><span>${mem.available_gb || mem.avail_gb || '--'} GB</span></div>
+        <div class="set-row"><div class="stx"><b>Python</b></div><span>${esc(res.python || res.python_version || '--')}</span></div>
+        <div class="set-row"><div class="stx"><b>操作系统</b></div><span style="font-size:12px">${esc(res.os || '--')}</span></div>
+        <div class="set-row"><div class="stx"></div><button class="kb-tool-btn" id="abDiag">导出诊断报告</button></div>
+      </div>
+      <div class="set-group">
+        <h2>产品描述</h2>
+        <div class="sub" style="line-height:1.8">
+          桌伴 Sidemate 是一款本地优先的 AI 桌面应用：离线模型/在线 API 双模，
+          本地知识库，数据不出本机。
+        </div>
+      </div>`;
+
+    body.querySelector('#abTour').addEventListener('click', () => {
+      // 新手引导在经典版呈现（welcome-tour.js），清标记后回经典版即可重看
+      localStorage.removeItem('sidemate_welcomed');
+      localStorage.removeItem('sidemate_toured');
+      location.href = '/';
+    });
+    body.querySelector('#abDiag').addEventListener('click', () => {
+      // 与隐私安全子页同一逻辑
+      fetch('/api/diagnostics/export').then(r => r.text()).then(text => {
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'sidemate_diagnostic.txt';
+        document.body.appendChild(a); a.click(); a.remove();
+      }).catch(() => {});
     });
   }
 
