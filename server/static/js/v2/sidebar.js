@@ -94,9 +94,12 @@ export function renderSidebar(root, state, events) {
     for (const g of order) {
       const grp = document.createElement('div');
       grp.className = 'proj-group' + (collapsedGroups[g] ? ' closed' : '');
-      const dirPath = projDirs[g] || '';
+      const wd = projDirs[g] || null;  // {workdir, source: 'external'|'default'}
+      const dirTip = wd
+        ? (wd.source === 'external' ? '工作目录：' : '默认工作目录：') + wd.workdir + '（点击更换）'
+        : '查看/更换项目「' + g + '」的工作目录';
       grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>📁 ${esc(g)}</span><span class="cnt">${groups[g].length}</span>
-        <button class="proj-dir ${dirPath ? 'on' : ''}" title="${dirPath ? '工作目录：' + esc(dirPath) + '（点击更换/解除）' : '为项目「' + esc(g) + '」绑定工作目录'}">📂</button></div>
+        <button class="proj-dir ${wd && wd.source === 'external' ? 'on' : ''}" title="${esc(dirTip)}">📂</button></div>
         <div class="proj-sess"></div>`;
       grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup(g));
       grp.querySelector('.proj-dir').addEventListener('click', (e) => {

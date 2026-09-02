@@ -116,21 +116,17 @@ export function renderComposer(state, events) {
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); events.onAttachChange(null); });
   }
 
-  // ---- 工作目录 chip（M1 只读版：绑定/查看入口；popover 由 index.js 承接） ----
+  // ---- 工作目录 chip（项目 ↔ 目录 1:1：永远显示当前项目目录；popover 由 index.js 承接） ----
   const wdStrip = wrap.querySelector('.workdir-strip');
   function renderWorkdirChip() {
-    // 无会话（空状态未开聊）不显示——会话级绑定无处附着，项目级走左栏
+    // 无会话（空状态未开聊）不显示——项目是随着会话出现的
     const hasSession = !!(events.getSession && events.getSession());
     const wd = state.workdir;
-    if (!hasSession) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
+    if (!hasSession || !wd || !wd.workdir) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
     wdStrip.style.display = '';
-    if (wd && wd.workdir) {
-      const base = wd.workdir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || wd.workdir;
-      const src = wd.source === 'session' ? '本会话' : '项目「' + wd.group + '」';
-      wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.workdir)}">📂 ${esc(base)}<span class="wd-src">${esc(src)}</span></button>`;
-    } else {
-      wdStrip.innerHTML = `<button class="wd-chip ghost" title="绑定一个本地目录，AI 可读、视窗可看（M1 只读）">📂 绑定工作目录…</button>`;
-    }
+    const base = wd.workdir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || wd.workdir;
+    const src = wd.source === 'external' ? '项目「' + wd.group + '」' : '默认目录';
+    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.workdir)}">📂 ${esc(base)}<span class="wd-src">${esc(src)}</span></button>`;
     wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
       events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
     });
@@ -311,7 +307,16 @@ export function renderComposer(state, events) {
     textarea.disabled = running;
   }
 
-  return { el: wrap, setRunning, focus: () => textarea.focus() };
+  // 外部注入附件（工作目录「引用」：import 返回与上传同构的 {path, filename, tokens}）
+  function setAttach(att) {
+    attach = att;
+    attachTokens = att && att.tokens ? att.tokens : 0;
+    renderTray();
+    updateTokenBar();
+    events.onAttachChange(attach);
+  }
+
+  return { el: wrap, setRunning, setAttach, focus: () => textarea.focus() };
 }
 
 // 拉离线 action 列表（经典版 /api/action/list）

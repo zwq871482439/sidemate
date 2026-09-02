@@ -12,7 +12,7 @@ function esc(s) {
 }
 
 export function createViewer(opts) {
-  // opts: { getCurrentChat() -> {name, path} | null }
+  // opts: { getCurrentChat() -> {name, path} | null, onImportFile(name) }
   const el = document.createElement('div');
   el.id = 'viewer';
   let open = false;
@@ -76,17 +76,19 @@ export function createViewer(opts) {
             </a>`).join('')}
         </div>`;
       }
-      // 绑定工作目录（只读展示：名称/大小/修改时间 + 打开文件夹）
+      // 项目工作目录（只读展示：名称/大小/修改时间 + 打开文件夹；文件可引用进输入区）
       if (wd && wd.workdir) {
+        const srcLabel = wd.source === 'external' ? '（项目「' + esc(wd.group) + '」）' : '（默认目录）';
         html += `<div class="vw-files vw-dir">
-          <div class="vw-sec vw-dir-head"><span class="vw-dir-title">工作目录${wd.source === 'session' ? '（本会话绑定）' : '（项目「' + esc(wd.group) + '」绑定）'}</span>
+          <div class="vw-sec vw-dir-head"><span class="vw-dir-title">工作目录${srcLabel}</span>
             <button class="vw-dir-open" title="在资源管理器中打开">打开文件夹</button></div>
           <div class="vw-dir-path" title="${esc(wd.workdir)}">${esc(wd.workdir)}</div>
           ${wd.files.length ? wd.files.map(f => `
-            <div class="vw-file vw-file-ro" title="${f.is_dir ? '目录' : '文件'}（只读展示）">
+            <div class="vw-file vw-file-ro" title="${f.is_dir ? '目录' : '文件'}">
               <span class="fi">${f.is_dir ? '📁' : _icon(f.name)}</span>
-              <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${f.is_dir ? '目录' : _fmtSize(f.size)} · ${esc(f.mtime)}</span></span>
-            </div>`).join('') : '<div class="vw-empty"><small>目录是空的</small></div>'}
+              <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${f.is_dir ? '目录' : _fmtSize(f.size) + ' · ' + esc(f.mtime)}</span></span>
+              ${f.is_dir ? '' : `<button class="vw-ref" data-name="${esc(f.name)}" title="引用到输入区（复制进会话，AI 可读）">引用</button>`}
+            </div>`).join('') : '<div class="vw-empty"><small>目录是空的——把材料放进去，就能在这里引用给 AI</small></div>'}
         </div>`;
       }
       body.innerHTML = html;
@@ -95,6 +97,10 @@ export function createViewer(opts) {
         const cur = opts.getCurrentChat();
         if (cur) { try { await api.openWorkdir(cur.name); } catch (e) { /* 失败无感 */ } }
       });
+      body.querySelectorAll('.vw-ref').forEach(b =>
+        b.addEventListener('click', () => {
+          if (opts.onImportFile) opts.onImportFile(b.dataset.name, b);
+        }));
     } else if (tab === 'preview') {
       body.innerHTML = `<div class="vw-empty">预览视窗随 PPT/报告生成实装（M1-E）<br><small>到时候 AI 逐页设计的 SVG 会实时出现在这里</small></div>`;
     } else {

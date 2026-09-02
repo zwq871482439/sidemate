@@ -212,7 +212,10 @@ function render() {
       render();
     },
     onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
-    onProjectDir: (g, anchorEl) => showWorkdirMenu(anchorEl, { scope: 'project', group: g }),
+    onProjectDir: (g, anchorEl) => {
+      const wd = state.projectWorkdirs[g] || {};
+      showWorkdirMenu(anchorEl, { group: g, workdir: wd.workdir || null, source: wd.source || 'default' });
+    },
     onKbFilter: (kf) => {
       if (!_kbView) return;
       _kbView.setFilter(kf);
@@ -273,7 +276,26 @@ function render() {
 
   // 右视窗（预览/文件/轨迹）
   if (!_viewer) {
-    _viewer = createViewer({ getCurrentChat: () => state.sessions.find(c => c.current) });
+    _viewer = createViewer({
+      getCurrentChat: () => state.sessions.find(c => c.current),
+      onImportFile: async (name, btn) => {
+        const cur = state.sessions.find(c => c.current);
+        if (!cur) return;
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
+        try {
+          const r = await api.importWorkdirFile(cur.name, name);
+          if (r && r.path) {
+            // 与上传附件同构：进输入区附件栏，发送时走既有管道
+            if (_composer) _composer.setAttach({ kind: 'upload', name: r.filename, path: r.path, tokens: r.tokens });
+          } else {
+            alert((r && r.error) || '引用失败');
+          }
+        } catch (e) {
+          alert('引用失败：' + (e && e.message ? e.message : '未知错误'));
+        }
+        if (btn) { btn.disabled = false; btn.textContent = '引用'; }
+      },
+    });
   }
   app.appendChild(_viewer.el);
   const vb = document.getElementById('tbViewerBtn');
@@ -328,7 +350,10 @@ function renderChatArea() {
     onSceneClear: () => { state.scene = ''; state.actionMode = 'chat'; renderChatArea(); },
     onChipMode: (m) => { state.actionMode = m; },
     onAttachChange: () => {},
-    onWorkdirClick: (anchorEl) => showWorkdirMenu(anchorEl, { scope: 'chat', resolved: state.workdir }),
+    onWorkdirClick: (anchorEl) => {
+      if (!state.workdir) return;
+      showWorkdirMenu(anchorEl, { group: state.workdir.group, workdir: state.workdir.workdir, source: state.workdir.source });
+    },
     getSession: () => state.sessions.find(c => c.current),
   });
   _composer.setRunning(state.generating || state.switching);
@@ -426,7 +451,7 @@ async function loadCurrentMessages() {
   }
 }
 
-// ===== 工作目录（M1 只读版：项目绑目录 + 会话 chip + 视窗展示） =====
+// ===== 工作目录（M1 只读版：项目 ↔ 目录 1:1，目录=项目属性） =====
 async function loadWorkdir() {
   const cur = state.sessions.find(c => c.current);
   if (!cur) { state.workdir = null; return; }
@@ -437,23 +462,24 @@ async function loadWorkdir() {
 
 async function loadProjectWorkdirs() {
   try {
-    const d = await api.getProjectWorkdirs();
+    const groups = [...new Set(state.sessions.map(c => c.group || '日常'))];
+    const d = await api.getProjectWorkdirs(groups);
     state.projectWorkdirs = d.workdirs || {};
   } catch (e) { state.projectWorkdirs = {}; }
 }
 
-// 绑定成功后的首次说明卡（PLAN 一次性提示，M1 只读口径）
+// 换绑成功后的首次说明卡（PLAN 一次性提示，M1 只读口径）
 function maybeShowWorkdirTip() {
   try { if (localStorage.getItem('v2WdTipSeen')) return; } catch (e) { /* 隐私模式 */ }
   const ov = document.createElement('div');
   ov.className = 'kb-pk-overlay';
   ov.innerHTML = `<div class="kb-pk" style="width:440px">
-    <div class="kb-pk-title">工作目录已绑定</div>
+    <div class="kb-pk-title">工作目录已换绑</div>
     <div class="wd-tip">
       <p>· 当前为<strong>只读</strong>版本：界面只读取展示该目录，AI 与软件都不会写入、修改或删除其中的任何文件。</p>
       <p>· 与知识库<strong>完全独立</strong>：目录里的文件不会进知识库、不会被向量化。</p>
       <p>· 对话记录仍保存在软件内部，不会迁移到该目录。</p>
-      <p>· 项目绑定的目录会被项目内所有会话继承；单个会话也可以单独绑定覆盖。</p>
+      <p>· 项目下<strong>所有会话共用</strong>这个目录；在视窗里点「引用」，文件就会作为材料进入当前对话。</p>
     </div>
     <div class="kb-pk-acts"><button class="kb-pk-ok">知道了</button></div>
   </div>`;
@@ -464,28 +490,21 @@ function maybeShowWorkdirTip() {
   });
 }
 
-// 工作目录弹出菜单（sess-menu 同款 fixed 浮层；scope='project'|'chat'）
+// 工作目录弹出菜单（sess-menu 同款 fixed 浮层；侧栏 📂 与输入区 chip 共用）
+// info: { group, workdir, source: 'external'|'default' }
 let _wdMenuEl = null;
 function showWorkdirMenu(anchorEl, info) {
   if (_wdMenuEl) _wdMenuEl.remove();
-  // info: { scope, group, resolved }（chat scope 时 resolved=state.workdir）
-  const isProject = info.scope === 'project';
-  const bound = isProject ? (state.projectWorkdirs[info.group] || null) : (info.resolved && info.resolved.workdir);
-  const source = !isProject && info.resolved ? info.resolved.source : null;
   const menuEl = document.createElement('div');
   _wdMenuEl = menuEl;
   menuEl.className = 'sess-menu wd-menu';
-  let head = isProject
-    ? `<span class="sess-menu-sub-h">项目「${esc(info.group)}」工作目录</span>`
-    : `<span class="sess-menu-sub-h">工作目录${bound ? '（' + (source === 'session' ? '本会话绑定' : '项目「' + esc(info.resolved.group) + '」绑定') + '）' : ''}</span>`;
-  menuEl.innerHTML = head +
-    (bound ? `<div class="wd-path" title="${esc(bound)}">${esc(bound)}</div>` : '') +
-    (isProject
-      ? `<button data-a="bind">${bound ? '更换目录…' : '绑定目录…'}</button>` +
-        (bound ? `<button data-a="unbind" class="danger">解除绑定</button>` : '')
-      : `<button data-a="bind">${bound ? (source === 'session' ? '更换本会话目录…' : '为本会话单独绑定…') : '为本会话绑定目录…'}</button>` +
-        (bound ? `<button data-a="open">打开文件夹</button><button data-a="view">在视窗查看</button>` : '') +
-        (source === 'session' ? `<button data-a="unbind" class="danger">解除本会话绑定（跟随项目）</button>` : ''));
+  const srcLabel = info.source === 'external' ? '外部目录' : '默认目录';
+  menuEl.innerHTML =
+    `<span class="sess-menu-sub-h">项目「${esc(info.group)}」工作目录（${srcLabel}）</span>` +
+    (info.workdir ? `<div class="wd-path" title="${esc(info.workdir)}">${esc(info.workdir)}</div>` : '') +
+    `<button data-a="bind">更换目录…</button>` +
+    (info.source === 'external' ? `<button data-a="unbind" class="danger">改回默认目录</button>` : '') +
+    `<button data-a="open">打开文件夹</button><button data-a="view">在视窗查看</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
   menuEl.style.left = Math.min(r.left, window.innerWidth - 300) + 'px';
@@ -521,15 +540,9 @@ function showWorkdirMenu(anchorEl, info) {
     }
     if (!path) return;
     try {
-      if (isProject) {
-        await api.setProjectWorkdir(info.group, path);
-      } else {
-        const cur = state.sessions.find(c => c.current);
-        if (!cur) return;
-        await api.setChatWorkdir(cur.name, path);
-      }
+      await api.setProjectWorkdir(info.group, path);
     } catch (e) {
-      alert('绑定失败：' + (e && e.message ? e.message : '目录不可用'));
+      alert('换绑失败：' + (e && e.message ? e.message : '目录不可用'));
       return;
     }
     await after();
@@ -538,13 +551,7 @@ function showWorkdirMenu(anchorEl, info) {
   const unbindBtn = menuEl.querySelector('[data-a="unbind"]');
   if (unbindBtn) unbindBtn.addEventListener('click', async () => {
     menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    if (isProject) {
-      await api.setProjectWorkdir(info.group, null);
-    } else {
-      const cur = state.sessions.find(c => c.current);
-      if (!cur) return;
-      await api.setChatWorkdir(cur.name, null);
-    }
+    await api.setProjectWorkdir(info.group, null);
     await after();
   });
   const openBtn = menuEl.querySelector('[data-a="open"]');
@@ -586,22 +593,17 @@ function onScene(scene) {
   }
 }
 
-// ===== 会话 ⋯ 菜单（重命名/导出/移到项目/删除，经典版会话项操作迁入） =====
+// ===== 会话 ⋯ 菜单（重命名/导出/删除；「移到项目」已按 PLAN 1.5 取消——
+// 项目 ↔ 目录 1:1 后移动=换目录上下文，语义混乱，会话归属在创建时定） =====
 let _menuEl = null;
 function showSessionMenu(chat, anchorEl) {
   if (_menuEl) _menuEl.remove();
-  const groups = [...new Set(state.sessions.map(s2 => s2.group || '日常'))];
   const menuEl = document.createElement('div');
   _menuEl = menuEl;
   menuEl.className = 'sess-menu';
   menuEl.innerHTML = `
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
-    <div class="sess-menu-sub">
-      <span class="sess-menu-sub-h">移到项目</span>
-      ${groups.map(g => `<button data-g="${esc(g)}" class="${(chat.group || '日常') === g ? 'cur' : ''}">📁 ${esc(g)}</button>`).join('')}
-      <button data-g="__new__">＋ 新建项目…</button>
-    </div>
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
@@ -653,20 +655,6 @@ function showSessionMenu(chat, anchorEl) {
     await loadCurrentMessages();
     render();
   });
-  menuEl.querySelectorAll('[data-g]').forEach(b => b.addEventListener('click', async () => {
-    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
-    let g = b.dataset.g;
-    if (g === '__new__') {
-      g = await v2Prompt('新建项目（会话将移入）', '');
-      if (!g) return;
-    }
-    await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/group', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ group: g }),
-    });
-    state.sessions = await loadSessions();
-    render();
-  }));
 }
 
 // 轻量输入模态（webview 里原生 prompt 不可靠）

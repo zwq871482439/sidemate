@@ -33,24 +33,16 @@ export const api = {
       body: JSON.stringify({ path }),
     }));
   },
-  // ---- 工作目录（M1 只读版） ----
-  // 弹系统原生目录对话框（阻塞至用户选完）：{ ok, path } | { cancelled }
+  // ---- 工作目录（M1 只读版；项目 ↔ 目录 1:1，目录=项目属性） ----
+  // 弹系统原生目录对话框（阻塞至用户选完）：{ ok, path } | { cancelled } | { error }
   async pickDirectory() {
     return _json(await fetch('/api/system/pick-directory', { method: 'POST' }));
   },
-  // 解析会话生效目录：{ workdir, source: 'session'|'group'|null, group }
+  // 解析会话生效目录（= 所属项目目录）：{ workdir, source: 'external'|'default', group }
   async getWorkdir(chatName) {
     return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir'));
   },
-  // 会话级绑定/解除（path=null 解除）
-  async setChatWorkdir(chatName, path) {
-    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }));
-  },
-  // 项目级绑定/解除（path=null 解除）
+  // 项目外部换绑/解除（path=null 解除，回落默认目录）
   async setProjectWorkdir(group, path) {
     return _json(await fetch('/api/projects/' + encodeURIComponent(group) + '/workdir', {
       method: 'POST',
@@ -58,13 +50,22 @@ export const api = {
       body: JSON.stringify({ path }),
     }));
   },
-  // 全部项目 → 目录映射（侧栏图标态）
-  async getProjectWorkdirs() {
-    return _json(await fetch('/api/projects/workdirs'));
+  // 各项目生效目录（含默认目录）：{ workdirs: { 组名: {workdir, source} } }
+  async getProjectWorkdirs(groups) {
+    const q = groups && groups.length ? '?groups=' + groups.map(encodeURIComponent).join(',') : '';
+    return _json(await fetch('/api/projects/workdirs' + q));
   },
   // 只读列目录：{ files: [{name,is_dir,size,mtime}], workdir, source, group }
   async listWorkdirFiles(chatName) {
     return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/files'));
+  },
+  // 引用目录文件进会话（复制到 workspace，返回与上传同构的 {path, filename, size, tokens}）
+  async importWorkdirFile(chatName, name) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }));
   },
   async openWorkdir(chatName) {
     return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/open', { method: 'POST' }));

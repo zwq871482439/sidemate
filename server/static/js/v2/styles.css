@@ -144,11 +144,11 @@ body {
 .proj-head .cnt { margin-left: auto; font-size: 10px; color: var(--d1-ink-3); }
 .proj-dir {
   border: none; background: none; font-size: 11px; cursor: pointer; padding: 1px 3px;
-  border-radius: 5px; opacity: 0; transition: opacity var(--d1-dur-micro); filter: grayscale(1);
+  border-radius: 5px; opacity: .45; transition: opacity var(--d1-dur-micro); filter: grayscale(1);
 }
-.proj-head:hover .proj-dir, .proj-dir.on { opacity: 1; }
-.proj-dir.on { filter: none; }
-.proj-dir:hover { background: rgba(255,255,255,.12); }
+.proj-head:hover .proj-dir { opacity: 1; }
+.proj-dir.on { filter: none; opacity: .9; }
+.proj-dir:hover { background: rgba(255,255,255,.12); opacity: 1; }
 .proj-sess { padding-left: 8px; }
 .sess-item .si-bar { display: flex; align-items: center; }
 .sess-item .si-bar .st { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -423,6 +423,13 @@ body {
 }
 .vw-dir-open:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
 .vw-file-ro { cursor: default; }
+.vw-ref {
+  flex-shrink: 0; font-family: inherit; font-size: 10.5px; cursor: pointer;
+  border: 1px solid var(--d1-n-line); background: var(--d1-paper); color: var(--d1-accent-3);
+  border-radius: 6px; padding: 2px 9px;
+}
+.vw-ref:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.vw-ref:disabled { opacity: .5; cursor: default; }
 
 .qc-btn {
   font-family: inherit; font-size: var(--d1-fs-small); color: var(--d1-ink-2);

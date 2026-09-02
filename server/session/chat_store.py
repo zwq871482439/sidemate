@@ -615,32 +615,6 @@ def read_meta(chat_name: str) -> dict:
         return {}
 
 
-def set_chat_workdir(chat_name: str, path) -> dict:
-    """设置/解除会话级工作目录（0.10.1 M1 只读版；仅 folder 格式支持）。
-
-    path 为 None/空串 = 解除会话级绑定（回落项目绑定）。
-    目录必须存在且为绝对路径，否则报 error。
-    """
-    folder_path = os.path.join(CHAT_DIR, chat_name)
-    if not os.path.isdir(folder_path):
-        return {"error": "会话不存在或旧格式（旧格式不支持工作目录）"}
-    meta = read_meta(chat_name)
-    if not path:
-        meta.pop("workdir", None)
-        meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        atomic_write_json(os.path.join(folder_path, "meta.json"), meta)
-        log.info("[CHAT] 解除会话目录绑定: %s", chat_name)
-        return {"ok": True, "workdir": None}
-    p = os.path.normpath(str(path).strip().strip('"'))
-    if not os.path.isabs(p) or not os.path.isdir(p):
-        return {"error": "目录不存在或不是绝对路径"}
-    meta["workdir"] = p
-    meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    atomic_write_json(os.path.join(folder_path, "meta.json"), meta)
-    log.info("[CHAT] 会话 %s 绑定目录: %s", chat_name, p)
-    return {"ok": True, "workdir": p}
-
-
 def rename_chat(old_name: str, new_name: str) -> dict:
     """重命名对话（兼容文件夹和 .json 格式）
 
