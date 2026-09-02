@@ -23,8 +23,12 @@ export const api = {
   async listChats() {
     return _json(await fetch('/api/chats'));
   },
-  async newChat() {
-    return _json(await fetch('/api/chats/new', { method: 'POST' }));
+  async newChat(group) {
+    return _json(await fetch('/api/chats/new', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(group ? { group } : {}),
+    }));
   },
   async switchChat(path) {
     return _json(await fetch('/api/chats/switch', {
@@ -50,7 +54,15 @@ export const api = {
       body: JSON.stringify({ path }),
     }));
   },
-  // 各项目生效目录（含默认目录）：{ workdirs: { 组名: {workdir, source} } }
+  // 新建项目（注册空项目；首个会话前可换绑目录）
+  async createProject(name) {
+    return _json(await fetch('/api/projects/new', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }));
+  },
+  // 各项目生效目录 + 已注册项目列表：{ workdirs: {组名: {workdir, source, locked, session_count}}, projects: [] }
   async getProjectWorkdirs(groups) {
     const q = groups && groups.length ? '?groups=' + groups.map(encodeURIComponent).join(',') : '';
     return _json(await fetch('/api/projects/workdirs' + q));

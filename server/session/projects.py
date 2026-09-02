@@ -128,6 +128,36 @@ def count_project_sessions(group):
     return n
 
 
+def registered_projects():
+    """已注册的项目名列表（含无外部换绑的空项目）。"""
+    return [g for g, e in _load().items() if isinstance(e, dict)]
+
+
+def create_project(name):
+    """注册新项目（空项目，无会话；目录先走默认，换绑需在首个会话之前）。
+
+    返回 {"ok", "name"} 或 {"error"}。
+    """
+    from session.chat_store import safe_chat_name
+    safe = safe_chat_name((name or "").strip())
+    if not safe:
+        return {"error": "项目名不能为空或含非法字符"}
+    with _lock:
+        data = _load()
+        if safe in data:
+            return {"error": "项目「%s」已存在" % safe}
+        if count_project_sessions(safe) > 0:
+            return {"error": "已有同名的会话分组「%s」" % safe}
+        data[safe] = {
+            "workdir": None,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        _save(data)
+        _default_dir(safe)  # 默认目录随注册建好，用户可立即往里放材料
+        log.info("[PROJECT] 新建项目: %s", safe)
+        return {"ok": True, "name": safe}
+
+
 def set_project_workdir(group, path):
     """设置/解除项目外部目录。path 为 None/空串 = 解除（回落默认目录）。
 
@@ -142,8 +172,11 @@ def set_project_workdir(group, path):
     with _lock:
         data = _load()
         if not path:
-            data.pop(group, None)
-            _save(data)
+            # 保留条目（空项目注册表语义），仅清外部换绑
+            if group in data:
+                data[group]["workdir"] = None
+                data[group]["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                _save(data)
             log.info("[PROJECT] 解除项目目录换绑（回落默认）: %s", group)
             return {"ok": True, "workdir": None}
         p = _norm_dir(path)

@@ -150,6 +150,13 @@ body {
 .proj-dir.on { filter: none; opacity: .9; }
 .proj-dir:hover { background: rgba(255,255,255,.12); opacity: 1; }
 .proj-sess { padding-left: 8px; }
+.sess-new-in {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin: 2px 0 6px;
+  border-radius: 7px; font-size: 11.5px; color: #8FA6BC; cursor: pointer;
+  border: 1px dashed rgba(255,255,255,.14);
+}
+.sess-new-in:hover { color: var(--d1-gold); border-color: rgba(232,181,77,.4); background: rgba(255,255,255,.04); }
+.sess-new-in .ic { font-size: 11px; }
 .sess-item .si-bar { display: flex; align-items: center; }
 .sess-item .si-bar .st { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sess-more {

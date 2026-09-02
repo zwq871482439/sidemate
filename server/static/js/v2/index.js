@@ -28,8 +28,9 @@ const state = {
   scene: '',          // 场景占位符 tag（空状态场景卡落 tag，不打字进输入框）
   kbTree: null,       // KB 模式下左栏文档范围树
   collapsedGroups: {},     // 项目分组折叠态
-  projectWorkdirs: {},     // 项目 → 工作目录映射（侧栏 📂 态）
-  workdir: null,           // 当前会话生效目录 {workdir, source, group} | null
+  projectWorkdirs: {},     // 项目 → {workdir, source, locked, session_count}
+  projects: [],            // 已注册项目名（含无会话的空项目）
+  workdir: null,           // 当前会话生效目录 {workdir, source, group, locked, session_count} | null
   parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
   generating: false,
   switching: false,   // 模式切换骨架屏态
@@ -176,11 +177,25 @@ function render() {
       if (_viewer) _viewer.onSessionChange();
       render();
     },
-    onNewChat: async () => {
-      await api.newChat();
+    onNewProject: async () => {
+      const name = await v2Prompt('新建项目（开始对话前可换绑目录）', '');
+      if (!name) return;
+      try {
+        await api.createProject(name);
+      } catch (e) {
+        alert('新建项目失败：' + (e && e.message ? e.message : '名称不可用'));
+        return;
+      }
+      state.sessions = await loadSessions();
+      await loadProjectWorkdirs();
+      render();
+    },
+    onNewChatInGroup: async (g) => {
+      await api.newChat(g);
       state.sessions = await loadSessions();
       state.tab = 'chat';
       state.messages = null;  // 新会话 → 空状态
+      await loadProjectWorkdirs();  // 项目会话数/锁定态变化
       await loadWorkdir();
       render();
     },
@@ -473,10 +488,19 @@ async function loadWorkdir() {
 
 async function loadProjectWorkdirs() {
   try {
-    const groups = [...new Set(state.sessions.map(c => c.group || '日常'))];
+    const groups = [...new Set(state.sessions.map(c => c.group || '日常').concat(state.projects))];
     const d = await api.getProjectWorkdirs(groups);
-    state.projectWorkdirs = d.workdirs || {};
-  } catch (e) { state.projectWorkdirs = {}; }
+    state.projects = d.projects || [];
+    // 新注册的空项目首轮不在 groups 里，补一轮拿它的默认目录
+    const missing = state.projects.filter(p => !(d.workdirs || {})[p]);
+    if (missing.length) {
+      const d2 = await api.getProjectWorkdirs([...new Set(groups.concat(missing))]);
+      state.projectWorkdirs = d2.workdirs || {};
+      state.projects = d2.projects || state.projects;
+    } else {
+      state.projectWorkdirs = d.workdirs || {};
+    }
+  } catch (e) { state.projectWorkdirs = {}; state.projects = []; }
 }
 
 // 换绑成功后的首次说明卡（PLAN 一次性提示，M1 只读口径）

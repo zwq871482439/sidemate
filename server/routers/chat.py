@@ -440,12 +440,21 @@ def api_chats_list():
 
 
 @router.post("/api/chats/new")
-def api_chats_new():
-    """创建新对话"""
+async def api_chats_new(request: Request):
+    """创建新对话；可选 body {"group": "项目名"} 直接归入项目（0.10.1 项目层级入口）"""
     filepath = _new_chat_file()
     name = os.path.basename(filepath)
     # 兼容：如果路径是文件夹，name 就是文件夹名（无 .json 后缀）
-    return {"path": filepath, "name": name}
+    group = None
+    try:
+        body = await request.json()
+        group = (body.get("group") or "").strip() or None
+    except Exception:
+        pass
+    if group:
+        from session.chat_store import set_chat_group
+        set_chat_group(name, group)
+    return {"path": filepath, "name": name, "group": group or "日常"}
 
 
 @router.post("/api/chats/switch")

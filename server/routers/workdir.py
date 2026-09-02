@@ -84,17 +84,33 @@ async def api_set_project_workdir(group: str, request: Request):
     return result
 
 
+@router.post("/api/projects/new")
+async def api_create_project(request: Request):
+    """新建项目（注册空项目；目录默认，首个会话前可换绑）。"""
+    denied = _guard(request)
+    if denied:
+        return denied
+    body = await request.json()
+    result = projects.create_project(body.get("name", ""))
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+    return result
+
+
 @router.get("/api/projects/workdirs")
 def api_all_workdirs(request: Request, groups: str = ""):
-    """各项目生效目录。传 groups=a,b 时逐项解析（含默认目录）；
+    """各项目生效目录 + 已注册项目列表。传 groups=a,b 时逐项解析（含默认目录）；
     不传时只返回外部换绑（侧栏图标态用）。"""
     denied = _guard(request)
     if denied:
         return denied
+    base = {"projects": projects.registered_projects()}
     if groups:
         lst = [g for g in (x.strip() for x in groups.split(",")) if g][:50]
-        return {"workdirs": projects.all_workdirs(lst)}
-    return {"workdirs": projects.all_workdirs()}
+        base["workdirs"] = projects.all_workdirs(lst)
+    else:
+        base["workdirs"] = projects.all_workdirs()
+    return base
 
 
 @router.get("/api/chats/{chat_name}/workdir/files")

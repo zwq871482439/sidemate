@@ -45,6 +45,35 @@ def _mk_chat(chats_dir, name, group="日常"):
     return d
 
 
+class TestProjectRegistry:
+    def test_create_and_list(self, isolated):
+        r = projects.create_project("论文")
+        assert r["ok"] and r["name"] == "论文"
+        assert projects.registered_projects() == ["论文"]
+        # 默认目录随注册建好
+        info = projects.resolve_project_workdir("论文")
+        assert info["source"] == "default" and os.path.isdir(info["workdir"])
+        assert info["locked"] is False
+
+    def test_reject_dup_and_invalid(self, isolated):
+        projects.create_project("论文")
+        assert "error" in projects.create_project("论文")
+        assert "error" in projects.create_project("")
+        assert "error" in projects.create_project("a/b")
+        # 已有会话的分组名也算占用
+        chats, _, _ = isolated
+        _mk_chat(chats, "2026-09-02_001", group="既有组")
+        assert "error" in projects.create_project("既有组")
+
+    def test_unbind_keeps_registration(self, isolated):
+        _, ext, _ = isolated
+        projects.create_project("论文")
+        projects.set_project_workdir("论文", ext)
+        projects.set_project_workdir("论文", None)
+        assert projects.registered_projects() == ["论文"]  # 条目保留
+        assert projects.resolve_project_workdir("论文")["source"] == "default"
+
+
 class TestDefaultDir:
     def test_default_created_on_resolve(self, isolated):
         _, _, droot = isolated
