@@ -6,7 +6,7 @@ import { api, MODE_LABEL } from './api.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
 import { renderEmptyState } from './empty_state.js';
 import { renderChatFlow, loadMessages } from './chat_view.js';
-import { renderComposer, loadLocalActions } from './composer.js';
+import { renderComposer, loadLocalActions, estimateTokens } from './composer.js';
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
 
@@ -180,7 +180,8 @@ function renderChatArea() {
   const main = document.getElementById('main');
   const old = main.querySelector('.composer');
   if (old) old.remove();
-  const historyChars = (state.messages || []).reduce((s, m) => s + (m.content || '').length, 0);
+  // 历史 token 估算（经典版口径：中文 1.5 字/token，英文 4 字/token）
+  const historyTokens = (state.messages || []).reduce((s, m) => s + estimateTokens(m.content || '') + estimateTokens(m.think || ''), 0);
   const modelTag = state.mode === 'local'
     ? '离线模型' : (state.mode === 'parallel' ? '离线+在线协作' : '在线 AI');
   _composer = renderComposer({
@@ -189,7 +190,7 @@ function renderChatArea() {
     localActions: state.localActions,
     modelTag,
     contextWindow: state.contextWindow,
-    historyChars,
+    historyTokens,
     chipTip: '',
   }, {
     onSend: onSend,

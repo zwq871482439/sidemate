@@ -310,12 +310,31 @@ body {
   flex-shrink: 0; padding: 12px 20px 16px;
   background: linear-gradient(to top, var(--d1-paper) 70%, transparent);
 }
-.ctx-meter { max-width: 760px; margin: 0 auto 7px; display: flex; flex-direction: column; gap: 3px; padding: 0 2px; }
-.ctx-row { display: flex; align-items: center; gap: 8px; font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); }
-.ctx-row .lb { width: 52px; text-align: right; flex-shrink: 0; }
-.ctx-bar { flex: 1; height: 4px; background: var(--d1-n-line); border-radius: 2px; overflow: hidden; }
-.ctx-bar i { display: block; height: 100%; border-radius: 2px; }
-.ctx-bar .used { background: var(--d1-accent-3); }
+/* Token 聚合条（照搬经典版 token-bar 结构，DNA-01 配色映射） */
+.token-bar {
+  max-width: 760px; margin: 0 auto 7px; padding: 7px 12px;
+  background: var(--d1-paper-2); border-radius: var(--radius-8);
+  border: 0.5px solid var(--d1-n-line); font-size: var(--d1-fs-small);
+}
+.tb-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.tb-track { position: relative; height: 8px; background: var(--d1-n-line); border-radius: var(--radius-4); overflow: hidden; display: flex; }
+.tb-fill { height: 100%; transition: width .2s ease; }
+.tb-used { background: var(--d1-ink-3); }
+.tb-cur { background: var(--d1-accent-3); }
+.tb-track.tb-warn .tb-cur { background: var(--d1-gold-2); }
+.tb-track.tb-over .tb-cur { background: var(--pal-danger); }
+.tb-labels { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tb-lbl-left { color: var(--d1-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+.tb-lbl-right { color: var(--d1-ink-3); white-space: nowrap; flex-shrink: 0; }
+.tb-remain { color: var(--d1-ink); font-weight: 600; }
+.tb-tag { display: inline-block; padding: 1px 6px; border-radius: var(--radius-3); font-size: var(--d1-fs-tiny); font-weight: 500; line-height: 1.5; }
+.tb-tag-used { background: var(--d1-n-line); color: var(--d1-ink-3); }
+.tb-tag-cur { background: var(--a-info-12); color: var(--d1-accent-3); }
+.tb-tag-used > span { color: var(--d1-ink); font-weight: 500; }
+.tb-tag-cur > span { font-weight: 600; }
+.tb-tag-status.status-ok { background: rgba(5,150,105,.12); color: var(--pal-green-2); }
+.tb-tag-status.status-warn { background: var(--a-warn-12); color: var(--pal-amber-dark); }
+.tb-tag-status.status-over { background: rgba(185,28,28,.12); color: var(--pal-danger); }
 
 .quick-chips { max-width: 760px; margin: 0 auto 7px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 0 2px; }
 .qc-btn {
