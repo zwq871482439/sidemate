@@ -49,6 +49,7 @@ export function renderComposer(state, events) {
     <div class="quick-chips"></div>
     <div class="attach-tray" style="display:none"></div>
     <div class="composer-box">
+      <div class="scene-tag-wrap" style="display:none"></div>
       <textarea placeholder="发消息给桌伴…（Enter 发送 / Shift+Enter 换行）" rows="1"></textarea>
       <div class="composer-bar">
         <button class="cb-icon" data-act="upload" title="附加文档到聊天">📎</button>
@@ -61,6 +62,39 @@ export function renderComposer(state, events) {
   `;
 
   const textarea = wrap.querySelector('textarea');
+  const sceneTagWrap = wrap.querySelector('.scene-tag-wrap');
+
+  // 场景占位符 tag：点场景卡不打字进输入框，而是在输入框顶部落一个可移除的
+  // 场景 tag（金色浅底），placeholder 换成该场景的引导句；用户一打字 placeholder 自然消失
+  const SCENE_META = {
+    chat:  { label: '聊天',       ph: '发消息给桌伴…（Enter 发送 / Shift+Enter 换行）' },
+    doc:   { label: '文档生成',   ph: '描述要生成的文档…' },
+    kb_qa: { label: '知识库问答', ph: '输入问题，将从知识库检索回答…' },
+    kb:    { label: '知识库文档', ph: '输入问题，将从知识库检索回答…' },
+    ppt:   { label: '写 PPT',     ph: '描述 PPT 的主题和内容，或丢材料进来…' },
+    report:{ label: '可视化报告', ph: '描述报告主题或粘贴数据…' },
+    poster:{ label: '设计海报',   ph: '描述海报/封面的主题与平台…' },
+    gzh:   { label: '公众号文章', ph: '粘贴文章内容或描述主题…' },
+    search:{ label: '联网搜索',   ph: '输入要联网搜索的主题…' },
+    deep:  { label: '深度分析',   ph: '描述要深挖的课题…' },
+  };
+  function renderSceneTag() {
+    const sc = state.scene && SCENE_META[state.scene] ? state.scene : (SCENE_META[state.actionMode] ? state.actionMode : '');
+    const meta = sc ? SCENE_META[sc] : null;
+    if (meta && sc !== 'chat') {
+      sceneTagWrap.style.display = '';
+      sceneTagWrap.innerHTML = `<span class="scene-tag">${esc(meta.label)}<span class="x" title="取消场景">×</span></span>`;
+      sceneTagWrap.querySelector('.x').addEventListener('click', () => {
+        events.onSceneClear && events.onSceneClear();
+      });
+      textarea.placeholder = meta.ph;
+    } else {
+      sceneTagWrap.style.display = 'none';
+      sceneTagWrap.innerHTML = '';
+      textarea.placeholder = SCENE_META.chat.ph;
+    }
+  }
+  renderSceneTag();
   const sendBtn = wrap.querySelector('.cb-send');
   const stopBtn = wrap.querySelector('.cb-stop');
   const chipsEl = wrap.querySelector('.quick-chips');

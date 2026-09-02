@@ -61,17 +61,17 @@ export function createKBView(events) {
       (heat.heatmap || []).forEach(h => { state.heatmap[h.doc_id] = h.hit_count; });
     } catch (e) { /* 保持现状 */ }
   }
+  // AI 洞察面板已按 0.10.1 定稿移除（0.9.7 用户反馈不知所云）；
+  // 但 overview 数据仍加载——星图 graph 与 stale 重生成依赖它
   async function loadOverview(force) {
     try {
       const r = await fetch('/api/kb/overview/refresh');
       const d = await r.json();
       if (d && d.ok) {
         state.overview = d;
-        // stale → 后端口径：自动重生成（60s 冷却由后端管，前端不重复发）
         if (d.stale && !force) {
-          // 后台触发，不阻塞渲染
           fetch('/api/kb/overview/refresh', { method: 'POST' })
-            .then(r => r.json()).then(d2 => { if (d2 && d2.ok) { state.overview = d2; render(); } })
+            .then(r => r.json()).then(d2 => { if (d2 && d2.ok) state.overview = d2; })
             .catch(() => {});
         }
       }
@@ -98,7 +98,6 @@ export function createKBView(events) {
     el.innerHTML = `
       <div class="kb-chips" id="kbChips"></div>
       <div class="kb-batch" id="kbBatch" style="display:none"></div>
-      <div class="kb-overview" id="kbOverview"></div>
       <div class="kb-private" id="kbPrivate"></div>
       <div class="kb-grid" id="kbGrid"></div>
       <div class="kb-foot" id="kbFoot"></div>
@@ -107,7 +106,6 @@ export function createKBView(events) {
     `;
 
     renderChips();
-    renderOverview();
     renderPrivate();
     renderGrid();
     renderFoot();
@@ -218,38 +216,6 @@ export function createKBView(events) {
     };
     mk('', '全部', state.docs.length);
     entries.forEach(([c, n]) => mk(c, c === '__none__' ? '未分类' : c, n));
-  }
-
-  // ---- AI 洞察面板（星图入口在 KB-2 接） ----
-  function renderOverview() {
-    const box = el.querySelector('#kbOverview');
-    if (!box) return;
-    const ov = state.overview;
-    if (!ov || !ov.insight) { box.style.display = 'none'; return; }
-    box.style.display = '';
-    box.innerHTML = `
-      <div class="kb-ov-head">
-        <b>AI 洞察</b>
-        <span class="kb-ov-meta">${esc(ov.engine_label || '')} · ${ov.doc_count || 0} 篇${ov.updated_at ? ' · ' + esc(String(ov.updated_at).slice(5, 16)) : ''}</span>
-        <button class="kb-tool-btn" id="kbOvRefresh" title="基于全部文档重新生成洞察与星图">重新生成</button>
-      </div>
-      <p class="kb-ov-text">${esc(ov.insight)}</p>
-      ${(ov.suggested_questions && ov.suggested_questions.length) ? `
-        <div class="kb-ov-qs">${ov.suggested_questions.slice(0, 3).map(q =>
-          `<button class="kb-ov-q">${esc(q)}</button>`).join('')}</div>` : ''}
-    `;
-    box.querySelector('#kbOvRefresh').addEventListener('click', async (e) => {
-      const btn = e.target;
-      btn.disabled = true; btn.textContent = '生成中…';
-      try {
-        const r = await fetch('/api/kb/overview/refresh', { method: 'POST' });
-        const d = await r.json();
-        if (d && d.ok) state.overview = d;
-      } catch (err) { /* 忽略 */ }
-      render();
-    });
-    box.querySelectorAll('.kb-ov-q').forEach(b =>
-      b.addEventListener('click', () => events.onAskChat(b.textContent)));
   }
 
   // ---- 私密文档区 ----
@@ -575,7 +541,7 @@ export function createKBView(events) {
     if (!state.moduleReady) return;
     await loadDocs();
     render();
-    loadOverview().then(render);  // 洞察到位后补渲染面板
+    loadOverview();  // 星图数据预热（面板已移除，无需补渲染）
     // 有处理中/打标中文档时 3s 轮询（经典版同款节奏）
     _pollTimer = setInterval(() => {
       if (state.docs.some(d => ['pending', 'processing', 'indexing'].includes(d.status)

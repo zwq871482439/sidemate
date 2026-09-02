@@ -125,9 +125,26 @@ function render() {
       render();
     },
     onToggleCollapse: () => {
-      state.collapsed = !state.collapsed;
-      state.userToggledSidebar = true;  // 手动操作后断点让位
-      render();
+      // 交叉淡化：当前态滑出 → 切换 → 新态滑入（position 突变不可过渡的掩盖）
+      const sb = document.getElementById('sidebar');
+      if (sb) {
+        sb.classList.add('sb-anim', 'sb-out');
+        setTimeout(() => {
+          state.collapsed = !state.collapsed;
+          state.userToggledSidebar = true;  // 手动操作后断点让位
+          render();
+          const sb2 = document.getElementById('sidebar');
+          if (sb2) {
+            sb2.classList.add('sb-anim', 'sb-out');
+            requestAnimationFrame(() => requestAnimationFrame(() => sb2.classList.remove('sb-out')));
+            setTimeout(() => sb2.classList.remove('sb-anim'), 260);
+          }
+        }, 180);
+      } else {
+        state.collapsed = !state.collapsed;
+        state.userToggledSidebar = true;
+        render();
+      }
     },
     onFilter: (v) => { state.filter = v; render(); },
   }));
@@ -293,6 +310,7 @@ async function onSend(payload) {
     .map(m => (m.role === 'assistant' && m.content && m.content.length > 1500)
       ? Object.assign({}, m, { content: m.content.slice(0, 1500) + '\n\n...（内容过长已截断）' })
       : m);
+  state.scene = '';  // 发送后场景 tag 清空
   state.generating = true;
   renderChatArea();
   _composer.setRunning(true);
@@ -323,30 +341,23 @@ async function loadCurrentMessages() {
 }
 
 function onScene(scene) {
-  // 场景卡 = 预填引导 prompt + 视线引导 + 离线 action 模式联动
-  // （点了「文档生成」chips 也要跟着亮——不能只预填不切管道）
+  // 场景卡 = 场景占位符 tag（输入框顶部金色 chip + 场景化 placeholder）+ 视线引导
+  // 用户定稿：不再把引导词打进去（可编辑文本会挡输入），tag 随发送清空
   if (state.mode === 'local') {
     const sceneMode = { doc: 'doc', kb: 'kb_qa', chat: 'chat' }[scene];
     if (sceneMode) state.actionMode = sceneMode;
   }
-  const SCENE_TIPS = {
-    ppt: '请帮我做一份演示文稿 PPT：',
-    doc: '请帮我写一份 Word 文档：',
-    report: '请帮我做一份图文并茂的报告（带图表）：',
-    poster: '请帮我设计一张海报/封面：',
-    gzh: '请帮我写一篇公众号文章：',
-    search: '请联网搜索下面这个主题：',
-    deep: '请对以下内容做深度分析：',
-    chat: '',
-  };
-  const tip = SCENE_TIPS[scene] || '';
-  const textarea = document.querySelector('.composer textarea');
-  if (textarea) {
-    if (tip) textarea.value = tip;
-    textarea.focus();
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
-    textarea.dispatchEvent(new Event('input'));  // 本轮预判条同步
+  state.scene = scene;
+  // 保住用户已输入的文字（重建 composer 不清空）
+  const taOld = document.querySelector('.composer textarea');
+  const keep = taOld ? taOld.value : '';
+  renderChatArea();
+  const ta = document.querySelector('.composer textarea');
+  if (ta) {
+    ta.value = keep;
+    ta.focus();
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
     const box = document.querySelector('.composer-box');
     if (box) {
       box.classList.add('attn');

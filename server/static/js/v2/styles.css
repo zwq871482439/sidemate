@@ -35,7 +35,11 @@ body {
 #main-scroll::-webkit-scrollbar-thumb:hover { background: #93C5FD; }
 #main-scroll { scrollbar-width: thin; scrollbar-color: #BFDBFE transparent; }
 /* 折叠 = 左上角悬浮条（原型 v14：168px 横排 logo + 模式切换 + 展开钮），
-   不是图标条——主内容区让出全宽 */
+   不是图标条——主内容区让出全宽。折叠/展开用交叉淡化（position 突变不可过渡，
+   用 transform/opacity 两段掩盖；与右视窗开合同档 220ms） */
+#sidebar.sb-anim { transition: transform var(--d1-dur-short) var(--d1-ease-out), opacity var(--d1-dur-short) var(--d1-ease-out); }
+#sidebar.sb-out { transform: translateX(-24px); opacity: 0; pointer-events: none; }
+#sidebar.sb-in { transform: translateX(0); opacity: 1; }
 #sidebar.collapsed {
   position: absolute; left: 0; top: 0; width: auto; min-width: 168px; height: auto; z-index: 40;
   border-radius: 0 0 14px 0; box-shadow: 0 4px 20px rgba(8,27,48,.45);
@@ -152,17 +156,13 @@ body {
 /* ---- 空状态（原型 v14：在线 8 卡 / 离线 3 卡） ---- */
 .empty-wrap { max-width: 860px; margin: 0 auto; padding: 44px 32px 60px; }
 .empty-hero { text-align: center; margin-bottom: 36px; }
+/* 空状态主 logo：只保留主要 logo，不再嵌套深蓝块+金点（用户定稿） */
 .empty-hero .mark {
-  width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 16px;
-  background: linear-gradient(135deg, var(--d1-accent), var(--d1-accent-3));
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--d1-shadow-card); position: relative;
-  overflow: visible;
+  margin: 0 auto 14px; position: relative; width: 64px; height: 64px;
 }
-.empty-hero .mark img { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; }
-.empty-hero .mark::after {
-  content: ""; position: absolute; right: -6px; bottom: -6px; width: 18px; height: 18px;
-  border-radius: 6px; background: var(--d1-gold); border: 3px solid var(--d1-paper);
+.empty-hero .mark img {
+  width: 64px; height: 64px; border-radius: 16px; object-fit: cover;
+  box-shadow: var(--d1-shadow-card); display: block;
 }
 .empty-hero h1 { font-size: var(--d1-fs-h1); color: var(--d1-accent); font-weight: 700; letter-spacing: .3px; }
 .empty-hero p { font-size: var(--d1-fs-body); color: var(--d1-ink-3); margin-top: 6px; }
