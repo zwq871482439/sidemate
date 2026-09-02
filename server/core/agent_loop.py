@@ -161,7 +161,21 @@ def _safe_math_eval(expression: str):
 # ===== 常量 =====
 # Patch4 修复 3：MAX_ROUNDS 从 10 提到 20，支持长文档（>10 章）
 # P8-2：20→26（search 5 + fetch 15 最坏情况占 20，留 6 轮收尾）
+# 0.10.1 起用户可调（设置页 → 在线 AI → 轮次预算，PLAN 四章）：config.agent_max_rounds，
+# 默认 26，范围 8~100，非法/留空回落默认
 MAX_ROUNDS = 26
+
+
+def get_max_rounds():
+    try:
+        from config import get as _cfg_get
+        v = _cfg_get("agent_max_rounds", MAX_ROUNDS)
+        v = int(v)
+        if 8 <= v <= 100:
+            return v
+    except Exception:
+        pass
+    return MAX_ROUNDS
 MAX_TOOL_HISTORY_CHARS = 60000  # 工具历史最大字符数（约 40000 token）
 
 # Cheap 工具：本地、不消耗 token 预算，**不计入 MAX_ROUNDS**（Patch4 v3.1 BUG#28 修复）
@@ -296,7 +310,7 @@ class AgentLoop:
             yield from self._pure_chat(messages)
             return
 
-        while rounds < MAX_ROUNDS:
+        while rounds < get_max_rounds():
             # 注意：rounds 不在这里 +=1。改为：本轮工具是 expensive 才 +1，cheap 不计
             # 这样 read_workspace 连读 19 次也不会触发 20 轮上限
             _round_incremented = False
@@ -331,7 +345,7 @@ class AgentLoop:
                     yield ("agent_status", {
                         "status": "tool_limited",
                         "removed": removed,
-                        "rounds_left": MAX_ROUNDS - rounds,
+                        "rounds_left": get_max_rounds() - rounds,
                     })
                 # 如果所有工具都被移除（极端情况），提前结束循环
                 if not tools:
@@ -353,7 +367,7 @@ class AgentLoop:
                                 max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
                                 max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
                                 max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
-                                MAX_ROUNDS - rounds)),
+                                get_max_rounds() - rounds)),
             })
 
             # 发送思考状态
@@ -521,7 +535,7 @@ class AgentLoop:
 
                 # Patch4 修复 3：剩 N 轮时注入预警 hint
                 # （通过 result 的 hint 字段附加到 tool_result 消息内容）
-                rounds_left = MAX_ROUNDS - rounds
+                rounds_left = get_max_rounds() - rounds
                 if rounds_left <= LOW_ROUNDS_WARN:
                     warn_hint = (
                         "⚠️ 你还剩 %d 轮预算，请尽快完成剩余写作或调用 "
@@ -552,8 +566,9 @@ class AgentLoop:
         # ===== 5. 轮次用完 → 强制收尾 =====
         # Patch4 v3.1 BUG#28 修复：达 MAX_ROUNDS 后不再静默退出，
         # 注入"必须直接回答"指令后追加一轮纯对话调用（不带 tools），让 LLM 总结
-        if rounds >= MAX_ROUNDS:
-            log.warning("[AGENT] 达到最大轮次 %d，强制收尾生成总结", MAX_ROUNDS)
+        _max_rounds = get_max_rounds()
+        if rounds >= _max_rounds:
+            log.warning("[AGENT] 达到最大轮次 %d，强制收尾生成总结", _max_rounds)
             yield ("agent_status", {"status": "budget_exceeded"})
             # 仅当用户没收到任何回答时才调 LLM 收尾（避免重复）
             if not final_text.strip():
@@ -588,10 +603,10 @@ class AgentLoop:
                         # 收尾失败时的兜底文案（避免用户看到空消息）
                         yield ("text", "\n\n⚠️ 工具调用已用完预算（%d 轮），无法继续。\n\n"
                                        "建议：\n- 在新消息里直接问你想知道的\n"
-                                       "- 或切换到「文档模式」生成完整报告" % MAX_ROUNDS)
+                                       "- 或切换到「文档模式」生成完整报告" % _max_rounds)
                 except Exception as e:
                     log.error("[AGENT] 收尾生成失败: %s", str(e)[:200])
-                    yield ("text", "\n\n⚠️ 达到最大轮次 %d，生成结束。" % MAX_ROUNDS)
+                    yield ("text", "\n\n⚠️ 达到最大轮次 %d，生成结束。" % get_max_rounds())
 
         # ===== 6. 发送统计摘要 =====
         elapsed = int(time.time() - stats["start_time"])

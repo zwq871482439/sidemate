@@ -26,7 +26,7 @@ export function renderSidebar(root, state, events) {
   if (state.collapsed) sb.classList.add('collapsed');
 
   // 并行按钮按 PLAN 降级：仅当前模式为并行时显示（实验性开关在设置页，后续迁入）
-  const modes = MODE_ORDER.filter(m => m !== 'parallel' || state.mode === 'parallel');
+  const modes = MODE_ORDER.filter(m => m !== 'parallel' || state.mode === 'parallel' || state.parallelEnabled);
 
   sb.innerHTML = `
     <div class="sb-top">

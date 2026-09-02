@@ -26,6 +26,7 @@ const state = {
   modelTag: '',
   scene: '',          // 场景占位符 tag（空状态场景卡落 tag，不打字进输入框）
   kbTree: null,       // KB 模式下左栏文档范围树
+  parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
   generating: false,
   switching: false,   // 模式切换骨架屏态
 };
@@ -420,6 +421,11 @@ async function boot() {
     if (m && m.mode) state.mode = m.mode;
     if (m && m.context_window) state.contextWindow = m.context_window;
     state.modelTag = await getModelTag(state.mode);
+    // 并行实验开关（存量迁移：当前并行而开关未点亮 → 自动点亮由设置页负责，这里只读）
+    try {
+      const all = await fetch('/api/config').then(r => r.json());
+      state.parallelEnabled = !!(all && all.config && all.config.parallel_enabled);
+    } catch (e) { /* 无配置则关 */ }
   } catch (e) { /* 模式读取失败就用默认在线 */ }
   try {
     if (state.mode === 'local') state.localActions = await loadLocalActions();

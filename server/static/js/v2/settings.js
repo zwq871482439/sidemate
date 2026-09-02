@@ -36,6 +36,7 @@ export function createSettingsView(events) {
       b.addEventListener('click', () => { cur = b.dataset.p; render(); }));
     const body = el.querySelector('#setBody');
     if (cur === 'general') await renderGeneral(body);
+    else if (cur === 'cloud') await renderCloud(body);
     else renderWip(body, SUBPAGES.find(p => p.id === cur).label);
   }
 
@@ -165,6 +166,157 @@ export function createSettingsView(events) {
       fd.append('file', fi.files[0]);
       const r = await fetch('/api/backup/import', { method: 'POST', body: fd }).then(r => r.json()).catch(() => null);
       alert(r && r.ok !== false ? '恢复完成，建议重启应用' : ('恢复失败：' + ((r && r.error) || '未知错误')));
+    });
+  }
+
+  // ============ 在线 AI 子页 ============
+  async function renderCloud(body) {
+    body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
+    const [cfg, all] = await Promise.all([
+      fetch('/api/cloud/config').then(r => r.json()).catch(() => ({})),
+      fetch('/api/config').then(r => r.json()).catch(() => ({})),
+    ]);
+    const gcfg = (all && all.config) || {};
+    const parallelOn = !!gcfg.parallel_enabled;
+    const curMode = (gcfg.ai_mode || 'local');
+    const rounds = gcfg.agent_max_rounds || '';
+
+    body.innerHTML = `
+      <div class="set-group">
+        <h2>在线 AI 配置</h2>
+        <div class="sub">云端 API 服务配置（支持 OpenAI / Anthropic 及兼容服务）</div>
+        <div class="set-row"><div class="stx"><b>API 地址</b><p>兼容 OpenAI 协议的接口地址</p></div>
+          <input class="set-input" style="width:260px" id="cfBase" value="${esc(cfg.base_url || '')}" placeholder="https://api.openai.com/v1"></div>
+        <div class="set-row"><div class="stx"><b>API Key</b><p>${cfg.api_key_set ? '已配置 ' + esc(cfg.api_key_preview || '') + '（留空保持不变）' : '未配置'}</p></div>
+          <input class="set-input" style="width:260px" id="cfKey" type="password" placeholder="sk-..." autocomplete="new-password"></div>
+        <div class="set-row"><div class="stx"><b>模型</b><p>当前：${esc(cfg.model || '')}${cfg.context_matched ? '' : '（非内置已知模型，能力用默认档）'}</p></div>
+          <input class="set-input" style="width:200px" id="cfModel" value="${esc(cfg.model || '')}"></div>
+        <div class="set-row"><div class="stx"><b>协议格式</b></div>
+          <select class="set-input" id="cfFmt" style="width:120px">
+            <option value="openai" ${cfg.api_format !== 'anthropic' ? 'selected' : ''}>OpenAI</option>
+            <option value="anthropic" ${cfg.api_format === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+          </select></div>
+        <div class="set-row"><div class="stx"><b>代理模式</b><p>system=跟随系统代理，direct=直连</p></div>
+          <select class="set-input" id="cfProxy" style="width:120px">
+            <option value="system" ${cfg.proxy_mode !== 'direct' ? 'selected' : ''}>跟随系统</option>
+            <option value="direct" ${cfg.proxy_mode === 'direct' ? 'selected' : ''}>直连</option>
+          </select></div>
+        <div class="set-row"><div class="stx"><b>输入上限（tokens）</b><p>0 = 按模型自动匹配（当前生效 ${Math.round((cfg.context_window || 0) / 1000)}K）</p></div>
+          <input class="set-input" id="cfCtx" type="number" min="0" max="2097152" value="${cfg.context_window_user || 0}"></div>
+        <div class="set-row"><div class="stx"><b>上下文策略</b><p>full=完整历史 / current_only=仅当前轮 / slim_history=保留最近 N 轮</p></div>
+          <select class="set-input" id="cfPolicy" style="width:150px">
+            <option value="full" ${cfg.context_policy === 'full' ? 'selected' : ''}>完整历史</option>
+            <option value="current_only" ${cfg.context_policy === 'current_only' ? 'selected' : ''}>仅当前轮</option>
+            <option value="slim_history" ${cfg.context_policy === 'slim_history' ? 'selected' : ''}>保留最近 N 轮</option>
+          </select></div>
+        <div class="set-row"><div class="stx"><b>精简历史轮数</b><p>context_policy=保留最近 N 轮时生效（1-50）</p></div>
+          <input class="set-input" id="cfSlim" type="number" min="1" max="50" value="${cfg.slim_history_rounds || 6}"></div>
+        <div class="set-row"><div class="stx"><b>知识库权限</b><p>云端 AI 访问知识库的范围</p></div>
+          <select class="set-input" id="cfKbPerm" style="width:150px">
+            <option value="full" ${cfg.kb_permission === 'full' ? 'selected' : ''}>完整（可读全文）</option>
+            <option value="search-only" ${cfg.kb_permission === 'search-only' ? 'selected' : ''}>仅检索命中</option>
+            <option value="disabled" ${cfg.kb_permission === 'disabled' ? 'selected' : ''}>禁用</option>
+          </select></div>
+        <div class="set-row" style="border-top:1px solid var(--d1-paper-2)">
+          <div class="stx"></div>
+          <span style="display:flex;gap:8px">
+            <button class="kb-tool-btn" id="cfTest">测试连接</button>
+            <button class="btn-primary-v2" id="cfSave">保存配置</button>
+          </span></div>
+        <div class="set-note" id="cfNote" style="display:none"></div>
+      </div>
+      <div class="set-group">
+        <h2>能力配置</h2>
+        <div class="sub">在线模式的能力开关与预算</div>
+        <div class="set-row"><div class="stx"><b>并行模式 <span class="exp-tag" style="font-size:9.5px;color:var(--d1-gold-2);border:1px solid rgba(232,181,77,.4);border-radius:6px;padding:1px 6px">实验性</span></b>
+          <p>同时用本地+在线引擎对知识库开展问答（本地生成关键词/摘要，云端撰写正文）。开启后左栏出现第三档「并行」</p></div>
+          <button class="switch ${parallelOn ? 'on' : ''}" id="cfParallel"></button></div>
+        <div class="set-row"><div class="stx"><b>Agent 轮次预算</b><p>在线 Agent 单次任务的最大工具调用轮次（8~100，留空=默认 26；Claude 类强模型建议 40+）</p></div>
+          <input class="set-input" id="cfRounds" type="number" min="8" max="100" placeholder="26" value="${rounds}"></div>
+        <div class="set-row"><div class="stx"><b>知识对比（实验）</b><p>KB 问答时本地与云端结果对比展示</p></div>
+          <button class="switch ${cfg.kb_compare_enabled ? 'on' : ''}" id="cfCompare"></button></div>
+      </div>`;
+
+    const note = (msg, ok) => {
+      const n = body.querySelector('#cfNote');
+      n.style.display = '';
+      n.style.color = ok ? 'var(--pal-green-2)' : 'var(--pal-danger)';
+      n.textContent = msg;
+    };
+
+    // 保存
+    body.querySelector('#cfSave').addEventListener('click', async () => {
+      const payload = {
+        base_url: body.querySelector('#cfBase').value.trim(),
+        model: body.querySelector('#cfModel').value.trim(),
+        api_format: body.querySelector('#cfFmt').value,
+        proxy_mode: body.querySelector('#cfProxy').value,
+        context_window: parseInt(body.querySelector('#cfCtx').value || '0', 10),
+        context_policy: body.querySelector('#cfPolicy').value,
+        slim_history_rounds: parseInt(body.querySelector('#cfSlim').value || '6', 10),
+        kb_permission: body.querySelector('#cfKbPerm').value,
+      };
+      const key = body.querySelector('#cfKey').value.trim();
+      if (key) payload.api_key = key;
+      const r = await fetch('/api/cloud/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(r => r.json()).catch(() => null);
+      note(r && r.ok ? '已保存，云端引擎已用新配置重建' : ('保存失败：' + ((r && r.error) || '未知错误')), !!(r && r.ok));
+    });
+
+    // 测试连接
+    body.querySelector('#cfTest').addEventListener('click', async (e) => {
+      e.target.disabled = true; e.target.textContent = '测试中…';
+      const r = await fetch('/api/cloud/test', { method: 'POST' }).then(r => r.json()).catch(() => null);
+      note(r && r.ok ? '连接成功：' + (r.message || r.model || 'OK') : ('连接失败：' + ((r && (r.error || r.message)) || '未知错误')), !!(r && r.ok));
+      e.target.disabled = false; e.target.textContent = '测试连接';
+    });
+
+    // 并行实验开关（存量迁移 + 关闭回退，PLAN 五点七-3）
+    body.querySelector('#cfParallel').addEventListener('click', async (e) => {
+      const on = !e.target.classList.contains('on');
+      await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parallel_enabled: on }),
+      });
+      e.target.classList.toggle('on', on);
+      // 关闭回退：当前在并行 → 回落在线
+      if (!on && curMode === 'parallel') {
+        await fetch('/api/mode/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'cloud' }) });
+      }
+      note(on ? '并行模式已开启，左栏出现第三档' : '并行模式已关闭' + (curMode === 'parallel' ? '，已回落在线模式' : ''), true);
+    });
+
+    // 存量迁移：当前模式=并行且开关未点亮 → 自动点亮（升级用户模式不消失）
+    if (curMode === 'parallel' && !parallelOn) {
+      fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parallel_enabled: true }),
+      }).then(() => { body.querySelector('#cfParallel').classList.add('on'); });
+    }
+
+    // 轮次预算（失焦保存；留空=删 key 回落默认）
+    body.querySelector('#cfRounds').addEventListener('change', async (e) => {
+      const v = e.target.value.trim();
+      const payload = {};
+      if (v === '') payload.agent_max_rounds = 0;  // 0/非法 → 后端回落默认 26
+      else payload.agent_max_rounds = Math.min(100, Math.max(8, parseInt(v, 10) || 0));
+      await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      note('轮次预算已保存', true);
+    });
+
+    // 知识对比开关
+    body.querySelector('#cfCompare').addEventListener('click', async (e) => {
+      const on = !e.target.classList.contains('on');
+      await fetch('/api/cloud/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kb_compare_enabled: on }),
+      });
+      e.target.classList.toggle('on', on);
     });
   }
 
