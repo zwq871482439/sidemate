@@ -4,6 +4,8 @@
 // SSE 进度浮动底栏+冲突处理）/AI 洞察面板+推荐追问/私密区/热力图圆点。
 // 星图（B 组）在 KB-2 增量。端点与经典版同一后端。
 
+import { createStarView, fetchMapExplain } from './kb_star.js';
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -29,6 +31,7 @@ export function createKBView(events) {
     filterCat: '',       // 分类筛选（''=全部，'__none__'=未分类）
     search: '',
     view: 'card',        // card|list
+    pane: 'list',        // list=清单（管理）| star=星图
     selected: new Set(),
     queue: [],           // 上传/处理队列条目
   };
@@ -100,6 +103,10 @@ export function createKBView(events) {
           <button data-v="card" class="${state.view === 'card' ? 'on' : ''}" title="卡片视图">▦</button>
           <button data-v="list" class="${state.view === 'list' ? 'on' : ''}" title="列表视图">☰</button>
         </div>
+        <div class="kb-view-toggle" title="清单/星图">
+          <button data-p="list" class="${state.pane === 'list' ? 'on' : ''}" title="清单">▤ 清单</button>
+          <button data-p="star" class="${state.pane === 'star' ? 'on' : ''}" title="星图">✦ 星图</button>
+        </div>
         <input class="kb-search" placeholder="搜索文件名…" value="${esc(state.search)}">
         <span class="kb-stat" id="kbStatLine"></span>
       </div>
@@ -120,13 +127,56 @@ export function createKBView(events) {
     renderFoot();
     renderFloat();
     bindTop();
+
+    // 星图 pane（全幅覆盖中栏内容区）
+    if (state.pane === 'star') _mountStar(); else _unmountStar();
+  }
+
+  // ---- 星图挂载（数据：overview.graph 服务端沉降终态直出） ----
+  let _star = null;
+  function _mountStar() {
+    const mainEl = document.getElementById('main');
+    if (!mainEl) return;
+    if (_star) return;  // 已挂载
+    const graph = state.overview && state.overview.graph;
+    if (!graph || !graph.settled || !(graph.nodes || []).length) {
+      // 无图/未沉降：触发后端重生成后自动挂载
+      const ph = document.createElement('div');
+      ph.className = 'kb-star';
+      ph.innerHTML = '<div class="kb-loading" style="padding-top:120px">星图生成中…（基于全部文档构建关联）</div>';
+      mainEl.appendChild(ph);
+      _star = { el: ph, destroy: () => ph.remove() };
+      fetch('/api/kb/overview/refresh', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+          if (d && d.ok) state.overview = d;
+          if (_star && _star.el === ph) { _unmountStar(); _mountStar(); renderOverview(); }
+        })
+        .catch(() => { ph.innerHTML = '<div class="kb-loading" style="padding-top:120px">星图生成失败，请稍后重试</div>'; });
+      return;
+    }
+    _star = createStarView({
+      graph,
+      docs: state.docs,
+      onExplain: fetchMapExplain,
+      onSelectDoc: () => {},
+    });
+    mainEl.appendChild(_star.el);
+  }
+  function _unmountStar() {
+    if (!_star) return;
+    _star.destroy();
+    _star.el.remove();
+    _star = null;
   }
 
   function bindTop() {
     el.querySelector('#kbUploadBtn').addEventListener('click', () => el.querySelector('#kbFile').click());
     el.querySelector('#kbFile').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
-    el.querySelectorAll('.kb-view-toggle button').forEach(b =>
+    el.querySelectorAll('.kb-view-toggle button[data-v]').forEach(b =>
       b.addEventListener('click', () => { state.view = b.dataset.v; render(); }));
+    el.querySelectorAll('.kb-view-toggle button[data-p]').forEach(b =>
+      b.addEventListener('click', () => { state.pane = b.dataset.p; render(); }));
     let deb = null;
     el.querySelector('.kb-search').addEventListener('input', (e) => {
       clearTimeout(deb);
@@ -531,6 +581,7 @@ export function createKBView(events) {
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
     Object.values(_sse).forEach(es => es.close());
     _sse = {};
+    _unmountStar();
   }
 
   return { el, mount, destroy };

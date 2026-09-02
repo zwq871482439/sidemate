@@ -561,6 +561,68 @@ body {
 .kb-detail-rows { display: flex; flex-direction: column; gap: 8px; font-size: var(--d1-fs-body); color: var(--d1-ink-2); }
 .kb-detail-rows span { display: inline-block; width: 64px; color: var(--d1-ink-3); }
 
+/* ---- 知识星图（KB-2） ---- */
+.kb-star {
+  position: absolute; top: 48px; left: 0; right: 0; bottom: 0; z-index: 5;
+  background: radial-gradient(1200px 700px at 45% 40%, var(--d1-paper-2) 0%, #F2F6FA 55%, #E7EEF4 100%);
+  overflow: hidden;
+}
+.kb-star svg.star-bg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+.kb-star svg.star-bg:active { cursor: grabbing; }
+.star-bg g.snode { cursor: pointer; transition: opacity var(--d1-dur-short) var(--d1-ease-out); }
+.star-bg g.snode:hover circle:first-child { stroke: var(--d1-gold); stroke-width: 3; }
+.star-tip {
+  position: absolute; z-index: 8; background: var(--d1-accent); color: var(--d1-paper);
+  border-radius: 8px; padding: 6px 10px; font-size: var(--d1-fs-small); pointer-events: none;
+  box-shadow: var(--d1-shadow-pop); max-width: 240px;
+}
+.star-tip small { color: var(--d1-ink-3); }
+.star-filter { position: absolute; left: 16px; top: 14px; display: flex; gap: 6px; z-index: 6; flex-wrap: wrap; max-width: 50%; }
+.star-filter button {
+  font-family: inherit; font-size: 11px; padding: 5px 12px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--d1-n-line); background: rgba(247,249,251,.9); color: var(--d1-ink-2);
+  backdrop-filter: blur(4px); box-shadow: var(--d1-shadow-card);
+  transition: border-color var(--d1-dur-micro);
+}
+.star-filter button.on { background: var(--d1-gold); color: #131B24; border-color: var(--d1-gold); font-weight: 600; }
+.star-hint { position: absolute; left: 16px; bottom: 14px; font-size: 11px; color: var(--d1-ink-3); }
+.star-float {
+  position: absolute; right: 16px; top: 16px; bottom: 16px; width: 270px;
+  background: rgba(247,249,251,.92); backdrop-filter: blur(8px);
+  border: 1px solid var(--d1-n-line); border-radius: 14px; box-shadow: var(--d1-shadow-card);
+  display: flex; flex-direction: column; overflow: hidden;
+  transition: width var(--d1-dur-short) var(--d1-ease-out);
+}
+.star-float.collapsed { width: 38px; }
+.star-float.collapsed .sf-body, .star-float.collapsed .sf-head-tx { display: none; }
+.sf-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px; border-bottom: 1px solid var(--d1-n-line); }
+.sf-head-tx { font-size: 12.5px; color: var(--d1-accent); font-weight: 600; flex: 1; }
+.sf-head-tx small { display: block; font-size: 10px; color: var(--d1-ink-3); font-weight: 400; margin-top: 2px; }
+.sf-collapse { border: none; background: none; color: var(--d1-ink-3); cursor: pointer; font-size: 13px; padding: 3px 5px; border-radius: 5px; }
+.sf-collapse:hover { color: var(--d1-accent); background: var(--d1-paper-2); }
+.sf-body { flex: 1; overflow-y: auto; padding: 8px; }
+.sf-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.sf-item:hover { background: var(--d1-paper); }
+.sf-item .fn2 { font-size: 12px; color: var(--d1-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sf-item .fm2 { font-size: 10px; color: var(--d1-ink-3); margin-top: 2px; }
+.dot2 { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+.sf-node-props { padding: 10px 12px; border-bottom: 1px solid var(--d1-n-line); }
+.sf-node-props .np-name { font-size: 13.5px; color: var(--d1-accent); font-weight: 700; }
+.sf-node-props .np-row { display: flex; font-size: 10.5px; margin-top: 5px; }
+.sf-node-props .np-k { width: 44px; color: var(--d1-ink-3); flex-shrink: 0; }
+.sf-node-props .np-v { color: var(--d1-ink-2); }
+.sf-rel { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 11.5px; color: var(--d1-ink-2); }
+.sf-rel:hover { background: var(--d1-paper); }
+.sf-rel .rl { font-size: 9.5px; color: var(--d1-ink-3); margin-left: auto; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-ai {
+  margin: 8px 10px 10px; border: none; border-radius: 8px; padding: 8px; width: calc(100% - 20px);
+  font-family: inherit; font-size: 11.5px; font-weight: 600;
+  background: rgba(232,181,77,.18); color: var(--d1-gold-2); cursor: pointer;
+}
+.sf-ai:hover { background: rgba(232,181,77,.3); }
+.sf-ai:disabled { opacity: .6; cursor: default; }
+.sf-ai-text { margin: 0 10px 10px; font-size: var(--d1-fs-small); color: var(--d1-ink-2); line-height: 1.6; white-space: pre-wrap; }
+
 /* ---- 右视窗（壳，M1-D 后续填预览/文件/轨迹） ---- */
 #viewer {
   width: 0; flex-shrink: 0; background: var(--d1-paper-2);
