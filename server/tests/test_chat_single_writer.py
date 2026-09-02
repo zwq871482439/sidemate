@@ -171,20 +171,21 @@ class TestPersistTurnAppend:
 
 # ---------- 项目分组（0.10.1 M1-D） ----------
 
+def _group_of(path):
+    """直读 meta.json 的 group（不用 list_chats——它经 routers.deps 会 import server）"""
+    meta = json.load(open(os.path.join(path, "meta.json"), encoding="utf-8"))
+    return meta.get("group")
+
+
 class TestChatGroup:
     def test_default_group_and_set(self, chat_dir):
-        """新会话默认「日常」；set_chat_group 换组；list_chats 带 group 字段"""
-        from session.chat_store import set_chat_group, list_chats
+        """新会话默认「日常」；set_chat_group 换组持久化"""
+        from session.chat_store import set_chat_group
         path = new_chat_file()
-        name = os.path.basename(path)
-        chats = list_chats()
-        c = next(x for x in chats if x["name"] == name)
-        assert c["group"] == "日常"
-        r = set_chat_group(name, "产品发布")
+        assert _group_of(path) == "日常"
+        r = set_chat_group(os.path.basename(path), "产品发布")
         assert r["ok"] and r["group"] == "产品发布"
-        chats = list_chats()
-        c = next(x for x in chats if x["name"] == name)
-        assert c["group"] == "产品发布"
+        assert _group_of(path) == "产品发布"
 
     def test_invalid_group_falls_back(self, chat_dir):
         """非法分组名回落「日常」"""
@@ -192,16 +193,15 @@ class TestChatGroup:
         path = new_chat_file()
         r = set_chat_group(os.path.basename(path), "非法/名称")
         assert r["ok"] and r["group"] == "日常"
+        assert _group_of(path) == "日常"
 
     def test_group_persists_across_save(self, chat_dir):
         """分组不被消息保存覆盖（meta.json 独立字段）"""
-        from session.chat_store import set_chat_group, list_chats
+        from session.chat_store import set_chat_group
         path = new_chat_file()
-        name = os.path.basename(path)
-        set_chat_group(name, "项目A")
+        set_chat_group(os.path.basename(path), "项目A")
         append_message(path, {"role": "user", "content": "hi", "ts": "10:00:00"})
-        c = next(x for x in list_chats() if x["name"] == name)
-        assert c["group"] == "项目A"
+        assert _group_of(path) == "项目A"
 
 class TestPersistTurnLegacy:
     def test_rebuild_when_no_early_save(self, chat_dir):

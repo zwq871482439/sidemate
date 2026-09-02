@@ -584,7 +584,7 @@ def set_chat_group(chat_name: str, group: str) -> dict:
     # group 为空或非法字符时回落「日常」。项目即分组名（免大迁移，无独立实体）
     safe = safe_chat_name(group)
     if not safe:
-        group = "日常"
+        safe = "日常"
     folder_path = os.path.join(CHAT_DIR, chat_name)
     if not os.path.isdir(folder_path):
         return {"error": "会话不存在或旧格式（旧格式不支持分组）"}
