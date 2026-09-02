@@ -172,6 +172,51 @@ def list_dir_entries(path, limit=500):
     return entries[:limit]
 
 
+def _quick_links():
+    """快捷入口（桌面/文档/下载），存在的才返回。"""
+    home = os.path.expanduser("~")
+    quick = []
+    for label, sub in (("桌面", "Desktop"), ("文档", "Documents"), ("下载", "Downloads")):
+        fp = os.path.join(home, sub)
+        if os.path.isdir(fp):
+            quick.append({"name": label, "path": fp})
+    return quick
+
+
+def browse_dirs(path):
+    """内联文件浏览器（目录选择器数据源）：只列子目录。
+
+    path 为空 → 根视图：快捷入口 + 全部可用盘符。
+    返回 {path, parent, quick, entries:[{name, path}]}；目录不可读返回 None。
+    """
+    if not path:
+        drives = []
+        for c in "CDEFGHIJKLMNOPQRSTUVWXYZ":
+            d = "%s:\\" % c
+            if os.path.isdir(d):
+                drives.append({"name": c + ":", "path": d})
+        return {"path": None, "parent": None, "quick": _quick_links(), "entries": drives}
+    p = _norm_dir(path)
+    if not p:
+        return None
+    entries = []
+    try:
+        with os.scandir(p) as it:
+            for e in it:
+                try:
+                    if e.is_dir():
+                        entries.append({"name": e.name, "path": os.path.join(p, e.name)})
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    entries.sort(key=lambda x: x["name"].lower())
+    parent = os.path.dirname(p)
+    if parent == p:
+        parent = None
+    return {"path": p, "parent": parent, "quick": _quick_links(), "entries": entries}
+
+
 def import_file(chat_name, name):
     """把项目目录内的文件「引用」进会话：复制到会话 workspace，走既有附件管道。
 

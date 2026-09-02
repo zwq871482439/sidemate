@@ -34,9 +34,9 @@ export const api = {
     }));
   },
   // ---- 工作目录（M1 只读版；项目 ↔ 目录 1:1，目录=项目属性） ----
-  // 弹系统原生目录对话框（阻塞至用户选完）：{ ok, path } | { cancelled } | { error }
-  async pickDirectory() {
-    return _json(await fetch('/api/system/pick-directory', { method: 'POST' }));
+  // 内联文件浏览器（目录选择器）：path 空=根视图（快捷入口+盘符），否则列子目录
+  async browseDirs(path) {
+    return _json(await fetch('/api/system/browse' + (path ? '?path=' + encodeURIComponent(path) : '')));
   },
   // 解析会话生效目录（= 所属项目目录）：{ workdir, source: 'external'|'default', group }
   async getWorkdir(chatName) {

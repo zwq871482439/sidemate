@@ -490,6 +490,106 @@ function maybeShowWorkdirTip() {
   });
 }
 
+// 内联目录选择器（取代原生对话框：面包屑 + 快捷入口 + 子目录列表 + 粘贴路径）
+function showDirPicker(onPick) {
+  const ov = document.createElement('div');
+  ov.className = 'kb-pk-overlay';
+  ov.innerHTML = `<div class="kb-pk dir-pk">
+    <div class="kb-pk-title">选择工作目录</div>
+    <div class="dp-quick"></div>
+    <div class="dp-crumb"></div>
+    <input class="set-input dp-path" placeholder="也可以直接粘贴路径，回车跳转">
+    <div class="dp-list"><div class="vw-empty">加载中…</div></div>
+    <div class="kb-pk-acts">
+      <button class="kb-pk-cancel">取消</button>
+      <button class="kb-pk-ok dp-ok" disabled>选这个文件夹</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  let cur = null;  // 当前浏览路径（null=根「此电脑」）
+  const listEl = ov.querySelector('.dp-list');
+  const crumbEl = ov.querySelector('.dp-crumb');
+  const quickEl = ov.querySelector('.dp-quick');
+  const pathIn = ov.querySelector('.dp-path');
+  const okBtn = ov.querySelector('.dp-ok');
+
+  async function nav(path) {
+    listEl.innerHTML = '<div class="vw-empty">加载中…</div>';
+    let d;
+    try {
+      d = await api.browseDirs(path);
+    } catch (e) {
+      listEl.innerHTML = '<div class="vw-empty">目录不存在或不可读</div>';
+      return;
+    }
+    cur = d.path;
+    pathIn.value = cur || '';
+    okBtn.disabled = !cur;
+    // 面包屑：此电脑 › C: › deskware › …
+    crumbEl.innerHTML = '';
+    const rootB = document.createElement('button');
+    rootB.className = 'dp-seg' + (cur ? '' : ' cur');
+    rootB.textContent = '此电脑';
+    rootB.addEventListener('click', () => nav(null));
+    crumbEl.appendChild(rootB);
+    if (cur) {
+      const segs = cur.split(/[\\/]+/).filter(Boolean);
+      let p = '';
+      segs.forEach((s, i) => {
+        p = i === 0 ? s + '\\' : p + s + '\\';
+        crumbEl.appendChild(document.createTextNode(' › '));
+        const b = document.createElement('button');
+        b.className = 'dp-seg' + (i === segs.length - 1 ? ' cur' : '');
+        b.textContent = s;
+        const target = p;
+        b.addEventListener('click', () => nav(target));
+        crumbEl.appendChild(b);
+      });
+    }
+    // 快捷入口
+    quickEl.innerHTML = '';
+    (d.quick || []).forEach(q => {
+      const b = document.createElement('button');
+      b.className = 'dp-q';
+      b.textContent = q.name;
+      b.addEventListener('click', () => nav(q.path));
+      quickEl.appendChild(b);
+    });
+    // 子目录列表
+    listEl.innerHTML = '';
+    if (cur && d.parent) {
+      const up = document.createElement('div');
+      up.className = 'dp-item dp-up';
+      up.textContent = '↩ ..（上一级）';
+      up.addEventListener('click', () => nav(d.parent));
+      listEl.appendChild(up);
+    }
+    if (!d.entries.length) {
+      listEl.insertAdjacentHTML('beforeend', '<div class="vw-empty"><small>没有子目录</small></div>');
+    } else {
+      d.entries.forEach(e2 => {
+        const it = document.createElement('div');
+        it.className = 'dp-item';
+        it.innerHTML = `<span class="fi">${cur ? '📁' : '💽'}</span> ${esc(e2.name)}`;
+        it.addEventListener('click', () => nav(e2.path));
+        listEl.appendChild(it);
+      });
+    }
+  }
+  pathIn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { const v = pathIn.value.trim(); if (v) nav(v); }
+  });
+  ov.querySelector('.kb-pk-cancel').addEventListener('click', () => ov.remove());
+  ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+  okBtn.addEventListener('click', () => {
+    if (!cur) return;
+    const p = cur;
+    ov.remove();
+    onPick(p);
+  });
+  nav(null);
+}
+
 // 工作目录弹出菜单（sess-menu 同款 fixed 浮层；侧栏 📂 与输入区 chip 共用）
 // info: { group, workdir, source: 'external'|'default' }
 let _wdMenuEl = null;
@@ -527,26 +627,18 @@ function showWorkdirMenu(anchorEl, info) {
     render();
   };
   const bindBtn = menuEl.querySelector('[data-a="bind"]');
-  if (bindBtn) bindBtn.addEventListener('click', async () => {
+  if (bindBtn) bindBtn.addEventListener('click', () => {
     menuEl.remove(); if (_wdMenuEl === menuEl) _wdMenuEl = null;
-    let path = null;
-    try {
-      const r = await api.pickDirectory();
-      if (r && r.error) { alert(r.error); return; }
-      path = (r && r.ok && r.path) ? r.path : null;
-    } catch (e) {
-      alert('打开目录选择失败：' + (e && e.message ? e.message : '未知错误'));
-      return;
-    }
-    if (!path) return;
-    try {
-      await api.setProjectWorkdir(info.group, path);
-    } catch (e) {
-      alert('换绑失败：' + (e && e.message ? e.message : '目录不可用'));
-      return;
-    }
-    await after();
-    maybeShowWorkdirTip();
+    showDirPicker(async (path) => {
+      try {
+        await api.setProjectWorkdir(info.group, path);
+      } catch (e) {
+        alert('换绑失败：' + (e && e.message ? e.message : '目录不可用'));
+        return;
+      }
+      await after();
+      maybeShowWorkdirTip();
+    });
   });
   const unbindBtn = menuEl.querySelector('[data-a="unbind"]');
   if (unbindBtn) unbindBtn.addEventListener('click', async () => {

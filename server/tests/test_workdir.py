@@ -125,6 +125,31 @@ class TestListDir:
         assert projects.list_dir_entries("Z:\\不存在\\xyz") is None
 
 
+class TestBrowse:
+    def test_root_view_has_drives(self, isolated):
+        r = projects.browse_dirs(None)
+        assert r["path"] is None and r["parent"] is None
+        # 至少 C: 盘在；根视图 entries 全是盘符
+        assert any(e["name"] == "C:" for e in r["entries"])
+        # 快捷入口存在与否取决于机器，但字段必须在
+        assert isinstance(r["quick"], list)
+
+    def test_dirs_only_and_parent(self, isolated):
+        _, ext, _ = isolated
+        os.makedirs(os.path.join(ext, "子目录A"))
+        with open(os.path.join(ext, "文件.txt"), "w") as f:
+            f.write("x")
+        r = projects.browse_dirs(ext)
+        assert r["path"] == os.path.normpath(ext)
+        assert [e["name"] for e in r["entries"]] == ["子目录A"]  # 文件不出现
+        assert r["parent"] is not None
+        assert isinstance(r["quick"], list)  # 子目录视图也带快捷入口（选择器常显）
+
+    def test_invalid_returns_none(self, isolated):
+        assert projects.browse_dirs("Z:\\不存在\\xyz") is None
+        assert projects.browse_dirs("relative\\path") is None
+
+
 class TestImportFile:
     def test_import_copies_to_workspace(self, isolated):
         chats, ext, _ = isolated

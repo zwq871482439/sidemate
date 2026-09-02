@@ -409,6 +409,40 @@ body {
 }
 .wd-tip p { font-size: var(--d1-fs-body); color: var(--d1-ink-2); margin: 0 0 8px; line-height: 1.6; }
 .wd-tip strong { color: var(--d1-accent); }
+
+/* ---- 内联目录选择器 ---- */
+.dir-pk { width: 520px; }
+.dp-quick { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.dp-q {
+  font-family: inherit; font-size: var(--d1-fs-tiny); color: var(--d1-ink-2);
+  background: var(--d1-paper); border: 1px solid var(--d1-n-line);
+  border-radius: 12px; padding: 3px 11px; cursor: pointer;
+}
+.dp-q:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.dp-crumb {
+  font-size: var(--d1-fs-small); color: var(--d1-ink-3); margin-bottom: 8px;
+  word-break: break-all; line-height: 1.7;
+}
+.dp-seg {
+  border: none; background: none; font-family: inherit; font-size: inherit;
+  color: var(--d1-accent-3); cursor: pointer; padding: 1px 2px; border-radius: 4px;
+}
+.dp-seg:hover { background: var(--d1-paper); color: var(--d1-accent); }
+.dp-seg.cur { color: var(--d1-ink); font-weight: 600; cursor: default; }
+.dp-path { width: 100%; margin-bottom: 8px; box-sizing: border-box; }
+.dp-list {
+  max-height: 300px; overflow-y: auto; border: 1px solid var(--d1-n-line);
+  border-radius: var(--d1-r-md); background: var(--d1-paper);
+}
+.dp-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  font-size: var(--d1-fs-body); color: var(--d1-ink); cursor: pointer;
+}
+.dp-item:hover { background: var(--d1-paper-2); }
+.dp-item .fi { flex-shrink: 0; }
+.dp-up { color: var(--d1-ink-3); font-size: var(--d1-fs-small); }
+.dp-ok:disabled { opacity: .5; cursor: default; }
+
 .vw-dir { margin-top: 14px; border-top: 1px solid var(--d1-n-line); padding-top: 10px; }
 .vw-dir-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .vw-dir-title { flex: 1; min-width: 0; }

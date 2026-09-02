@@ -3,7 +3,7 @@
 routers/workdir.py — 工作目录 API（0.10.1 M1 只读版，项目 ↔ 目录 1:1）
 
 端点前缀 /api：
-  POST /api/system/pick-directory        系统原生目录选择对话框（ctypes COM，本地特权）
+  GET  /api/system/browse?path=          内联文件浏览器数据源（目录选择器，只列子目录）
   GET  /api/chats/{chat_name}/workdir    解析会话生效目录（= 所属项目的目录）
   POST /api/projects/{group}/workdir     设置/解除项目外部换绑（body: {"path": str|null}）
   GET  /api/projects/workdirs?groups=a,b 各项目生效目录（外部换绑/默认目录）
@@ -17,7 +17,6 @@ M1 只读边界：目录本身只读；「引用」是把文件复制进会话 w
 import os
 import logging
 import subprocess
-import threading
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -28,9 +27,6 @@ from session import projects
 
 router = APIRouter()
 log = logging.getLogger("routers.workdir")
-
-# 目录对话框全局只许一个在开（模态框叠模态框会把用户搞晕）
-_pick_lock = threading.Lock()
 
 
 def _guard(request):
@@ -46,33 +42,21 @@ def _safe_name_or_400(chat_name):
     return safe, None
 
 
-@router.post("/api/system/pick-directory")
-def api_pick_directory(request: Request):
-    """弹系统目录选择对话框（同步阻塞，用户选完才返回）。
+@router.get("/api/system/browse")
+def api_browse(request: Request, path: str = ""):
+    """内联文件浏览器（目录选择器数据源）：只列子目录。
 
-    嵌入式 Python 无 tkinter，走 core.dir_dialog 的 ctypes COM 实现。
-    sync def：FastAPI 线程池执行，避免阻塞事件循环。
+    path 为空 → 根视图（快捷入口 + 盘符）；否则列出该目录的子目录。
+    取代原生对话框方案——ctypes COM 三连坑（被前台窗压住/取消码带符号/
+    shell 对 FILESYSPATH 返回显示名），不可测试不可靠，2026-09-02 弃用。
     """
     denied = _guard(request)
     if denied:
         return denied
-    if not _pick_lock.acquire(blocking=False):
-        return JSONResponse({"error": "目录选择对话框已打开，请先完成或关闭它"}, status_code=409)
-    try:
-        from core.dir_dialog import pick_directory
-        path = pick_directory("选择工作目录")
-    finally:
-        _pick_lock.release()
-    if not path:
-        log.info("[WORKDIR] 目录选择取消/失败")
-        return {"ok": False, "cancelled": True}
-    p = os.path.normpath(path)
-    if not os.path.isabs(p) or not os.path.isdir(p):
-        # 选了「库」/快速访问等非文件系统位置：IFileOpenDialog 返回的不是本地路径
-        log.info("[WORKDIR] 选定位置无效（非本地目录）: %s", path)
-        return {"ok": False, "error": "所选位置不是本地文件夹（「库」和快速访问不可用），请选具体磁盘上的目录"}
-    log.info("[WORKDIR] 用户选定目录: %s", p)
-    return {"ok": True, "path": p}
+    r = projects.browse_dirs(path or None)
+    if r is None:
+        return JSONResponse({"error": "目录不存在或不可读"}, status_code=400)
+    return r
 
 
 @router.get("/api/chats/{chat_name}/workdir")
