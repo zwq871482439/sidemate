@@ -84,6 +84,13 @@ export function renderComposer(state, events) {
   // ---- 快捷 chips：按模式照搬经典版 ----
   function renderChips() {
     chipsEl.innerHTML = '';
+    // 用户定稿：离线空状态（还没有消息）不出 action 按钮——第一轮聊天后才出现，
+    // 用于聊天过程中切换管道；在线模式本来就没有 chips
+    if (state.mode !== 'cloud' && !state.hasMessages) {
+      chipsEl.style.display = 'none';
+      return;
+    }
+    chipsEl.style.display = '';
     if (state.mode === 'cloud') {
       // 0.10.1 定稿：在线模式的提示词 chips 移除——空状态场景卡已覆盖入口，
       // 工具选择由后端 agent 自主判断（harness 层），输入区只留模型 tag。
@@ -115,6 +122,7 @@ export function renderComposer(state, events) {
       });
       chipsEl.appendChild(kb);
     }
+    if (!chipsEl.children.length) chipsEl.style.display = 'none';
   }
   renderChips();
 

@@ -24,6 +24,7 @@ const state = {
   contextWindow: 8192,
   modelTag: '',
   generating: false,
+  switching: false,   // 模式切换骨架屏态
 };
 
 const app = document.getElementById('app');
@@ -77,16 +78,28 @@ function render() {
       if (m === _modePending) return;  // 重复点击同一目标
       _modePending = m;
       const seq = ++_modeSeq;
+      // 骨架屏过渡（经典版同款：切换期间聊天区鱼骨加载 + 输入区锁定）
+      state.switching = true;
+      render();
       const r = await api.switchMode(m);
       if (seq !== _modeSeq) return;  // 竞态守卫：旧响应丢弃
       _modePending = null;
+      state.switching = false;
       if (r && r.ok) {
         state.mode = r.mode;
+        // 上限随模型/模式动态变化；注意 /api/mode/switch 回的是真实窗口 1048576，
+        // 而 /api/mode 回的是展示口径 1000000——与经典版一致，switch 后重拉 /api/mode
+        try {
+          const m2 = await api.getMode();
+          if (m2 && m2.context_window) state.contextWindow = m2.context_window;
+        } catch (e) { /* 保底用 switch 返回值 */ if (r.context_window) state.contextWindow = r.context_window; }
         state.modelTag = await getModelTag(state.mode);
         if (state.mode === 'local' && !state.localActions.length) {
           state.localActions = await loadLocalActions();
         }
         render();
+      } else {
+        render();  // 失败也要撤掉骨架屏
       }
     },
     onTab: (t) => {
@@ -171,7 +184,14 @@ function render() {
 function renderChatArea() {
   const scroll = document.getElementById('main-scroll');
   if (!scroll) return;
-  if (state.messages && state.messages.length) {
+  if (state.switching) {
+    // 鱼骨加载（模式切换中）：消息区骨架条，输入区锁定
+    scroll.innerHTML = '<div class="skel-wrap">' +
+      '<div class="skel-line" style="width:38%"></div>' +
+      '<div class="skel-line" style="width:72%"></div>' +
+      '<div class="skel-line" style="width:64%"></div>' +
+      '<div class="skel-line" style="width:30%"></div></div>';
+  } else if (state.messages && state.messages.length) {
     renderChatFlow(scroll, state.messages);
   } else {
     scroll.innerHTML = '';
@@ -191,6 +211,7 @@ function renderChatArea() {
     localActions: state.localActions,
     contextWindow: state.contextWindow,
     historyTokens,
+    hasMessages: !!(state.messages && state.messages.length),
     chipTip: '',
   }, {
     onSend: onSend,
@@ -199,7 +220,7 @@ function renderChatArea() {
     onAttachChange: () => {},
     getSession: () => state.sessions.find(c => c.current),
   });
-  _composer.setRunning(state.generating);
+  _composer.setRunning(state.generating || state.switching);
   main.appendChild(_composer.el);
 }
 
@@ -289,7 +310,12 @@ async function loadCurrentMessages() {
 }
 
 function onScene(scene) {
-  // 场景卡 = 预填引导 prompt + 视线引导（输入框金色描边环一闪，DNA-01 动效规范）
+  // 场景卡 = 预填引导 prompt + 视线引导 + 离线 action 模式联动
+  // （点了「文档生成」chips 也要跟着亮——不能只预填不切管道）
+  if (state.mode === 'local') {
+    const sceneMode = { doc: 'doc', kb: 'kb_qa', chat: 'chat' }[scene];
+    if (sceneMode) state.actionMode = sceneMode;
+  }
   const SCENE_TIPS = {
     ppt: '请帮我做一份演示文稿 PPT：',
     doc: '请帮我写一份 Word 文档：',
