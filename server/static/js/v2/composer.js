@@ -215,7 +215,7 @@ export function renderComposer(state, events) {
   }
   updateTokenBar();
 
-  // 旧版会话只读：禁用输入与发送（PLAN 1.5：旧版会话只看/导出/下载产物）
+  // 旧版会话只读：禁用输入/发送/附件（PLAN 1.5：旧版会话只看/导出/下载产物）
   const isLegacy = !!(state.workdir && state.workdir.legacy);
   if (isLegacy) {
     textarea.disabled = true;
@@ -223,6 +223,7 @@ export function renderComposer(state, events) {
     sendBtn.disabled = true;
     sendBtn.style.opacity = '.5';
     sendBtn.style.cursor = 'not-allowed';
+    wrap.querySelectorAll('.cb-icon').forEach(b => { b.disabled = true; b.style.opacity = '.4'; b.style.cursor = 'not-allowed'; });
   }
 
   // ---- 发送/停止 ----

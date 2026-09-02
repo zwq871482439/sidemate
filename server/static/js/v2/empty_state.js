@@ -40,10 +40,15 @@ const OFFLINE_CARDS = [
   { scene: 'kb', icon: I.kb, title: '知识库文档', desc: '上传资料本地检索问答，向量索引不出本机' },
 ];
 
-// events: onScene(scene)（M1-D 后续接对话区；本版给出迁移提示）
+// events: onScene(scene)；onPickProject(anchor) + projectLabel（项目选择器，PLAN 1.5 四次定稿）
 export function renderEmptyState(mode, events) {
   const wrap = document.createElement('div');
   wrap.className = 'empty-wrap';
+  const projRow = events.projectLabel ? `
+      <div class="empty-proj">
+        <button class="ep-chip" title="选择任务所属的项目（发出第一条消息后定型）">📂 ${events.projectLabel} <span class="ep-arrow">▾</span></button>
+        <span class="ep-hint">选择项目</span>
+      </div>` : '';
 
   if (mode === 'local') {
     wrap.innerHTML = `
@@ -51,6 +56,7 @@ export function renderEmptyState(mode, events) {
         <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>离线模式 · 数据不出本机</h1>
         <p>本地模型运行，无需联网 —— 适合隐私敏感场景</p>
+        ${projRow}
       </div>
       <div class="offline-grid">
         ${OFFLINE_CARDS.map(c => `
@@ -67,6 +73,7 @@ export function renderEmptyState(mode, events) {
         <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>开始一段新对话</h1>
         <p>选择一个场景，或直接输入 —— 想做什么，随时切随</p>
+        ${projRow}
       </div>
       <div class="hero-card" data-scene="${hero.scene}">
         <div class="h-ic">${ICON(hero.icon)}</div>
@@ -87,5 +94,7 @@ export function renderEmptyState(mode, events) {
 
   wrap.querySelectorAll('[data-scene]').forEach(el =>
     el.addEventListener('click', () => events.onScene(el.dataset.scene)));
+  const ep = wrap.querySelector('.ep-chip');
+  if (ep && events.onPickProject) ep.addEventListener('click', () => events.onPickProject(ep));
   return wrap;
 }

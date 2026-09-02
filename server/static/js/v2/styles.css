@@ -204,14 +204,14 @@ body {
 #main-scroll { flex: 1; overflow-y: auto; }
 
 /* ---- 空状态（原型 v14：在线 8 卡 / 离线 3 卡） ---- */
-.empty-wrap { max-width: 860px; margin: 0 auto; padding: 44px 32px 60px; }
-.empty-hero { text-align: center; margin-bottom: 36px; }
+.empty-wrap { max-width: 860px; margin: 0 auto; padding: 20px 32px 12px; }
+.empty-hero { text-align: center; margin-bottom: 14px; }
 /* 空状态主 logo：只保留主要 logo，不再嵌套深蓝块+金点（用户定稿） */
 .empty-hero .mark {
-  margin: 0 auto 14px; position: relative; width: 64px; height: 64px;
+  margin: 0 auto 8px; position: relative; width: 52px; height: 52px;
 }
 .empty-hero .mark img {
-  width: 64px; height: 64px; border-radius: 16px; object-fit: cover;
+  width: 52px; height: 52px; border-radius: 14px; object-fit: cover;
   box-shadow: var(--d1-shadow-card); display: block;
 }
 .empty-hero h1 { font-size: var(--d1-fs-h1); color: var(--d1-accent); font-weight: 700; letter-spacing: .3px; }
@@ -243,12 +243,12 @@ body {
 .hero-card .h-tx p { font-size: 12.5px; color: #B9CCDD; margin-top: 5px; line-height: 1.5; }
 .hero-card .h-go { margin-left: auto; color: var(--d1-gold); font-size: 20px; flex-shrink: 0; }
 
-.sec-title { display: flex; align-items: center; gap: 10px; margin: 22px 0 14px; }
+.sec-title { display: flex; align-items: center; gap: 10px; margin: 16px 0 10px; }
 .sec-title .t { font-size: 13px; font-weight: 700; color: var(--d1-accent); letter-spacing: .5px; }
 .sec-title .d { font-size: var(--d1-fs-small); color: var(--d1-ink-3); }
 .sec-title::after { content: ""; flex: 1; height: 1px; background: var(--d1-n-line); }
 
-.scene-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.scene-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .scene-grid.two { grid-template-columns: repeat(2, 1fr); max-width: 67%; }
 .scene-grid.five { grid-template-columns: repeat(5, 1fr); }
 .scene-card {
@@ -504,6 +504,18 @@ body {
 .legacy-empty-ic { font-size: 34px; margin-bottom: 10px; }
 .legacy-empty-t { font-size: var(--d1-fs-h2); font-weight: 600; color: var(--d1-ink-2); margin-bottom: 8px; }
 .legacy-empty-d { font-size: var(--d1-fs-body); line-height: 1.8; }
+/* 空状态项目选择器行 */
+.empty-proj { margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.ep-chip {
+  font-family: inherit; font-size: var(--d1-fs-small); color: var(--d1-ink-2);
+  background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
+  border-radius: 14px; padding: 5px 14px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: border-color var(--d1-dur-micro), color var(--d1-dur-micro);
+}
+.ep-chip:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.ep-chip .ep-arrow { font-size: 10px; color: var(--d1-gold-2); }
+.ep-hint { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); }
 .vw-card-legacy { border-color: var(--d1-gold-2); }
 .vw-missing { color: var(--pal-danger); font-size: var(--d1-fs-tiny); padding-left: 42px; }
 .vw-sub {

@@ -30,6 +30,7 @@ const state = {
   collapsedGroups: {},     // 项目分组折叠态（key=项目目录 / __legacy__）
   projects: [],            // 项目列表 [{dir, display, is_default, status}]（默认项目恒在）
   workdir: null,           // 当前会话所属项目 {legacy} | {dir, display, is_default, status}
+  pendingProjectDir: null, // 无会话时用户在空状态选的项目（首个发送时落在该项目）
   parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
   generating: false,
   switching: false,   // 模式切换骨架屏态
@@ -180,6 +181,7 @@ function render() {
     onNewTask: async () => {
       // 新建任务：默认项目下建会话，空状态里可用项目选择器换项目（0 消息窗口）
       _viewedProject = null;
+      state.pendingProjectDir = null;  // 会话已建，pending 移交 chip 选择器
       await api.newChat();
       state.sessions = await loadSessions();
       state.tab = 'chat';
@@ -249,7 +251,7 @@ function render() {
       ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model">${esc(state.modelTag)}</span>` : ''}
       ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
-      <button class="tb-viewer ${_viewer && _viewer.isOpen ? 'on' : ''}" id="tbViewerBtn" title="视窗（预览/文件/轨迹）">◧ 视窗</button>
+      <button class="tb-viewer ${_viewer && _viewer.isOpen ? 'on' : ''}" id="tbViewerBtn" title="视窗（会话/预览/文件/轨迹）">◧ 视窗</button>
       <a class="tb-link" href="/" title="回经典版界面">经典版 ↗</a>
     </div>
     <div id="main-scroll"></div>
@@ -362,7 +364,13 @@ function renderChatArea() {
     </div>`;
   } else {
     scroll.innerHTML = '';
-    scroll.appendChild(renderEmptyState(state.mode, { onScene: onScene }));
+    // 空状态带项目选择器：无会话时用 pendingProjectDir 的显示名，有 0 消息会话时用其项目名
+    const projLabel = _pickerLabel();
+    scroll.appendChild(renderEmptyState(state.mode, {
+      onScene: onScene,
+      projectLabel: projLabel,
+      onPickProject: (anchor) => showProjectPicker(anchor),
+    }));
   }
   if (state.generating && _streamState) renderStreamingBubble(_streamState);
 
@@ -453,9 +461,10 @@ async function onSend(payload) {
     alert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建任务」。');
     return;
   }
-  // 无会话则先建（零摩擦开始：空状态直达）
+  // 无会话则先建（零摩擦开始：空状态直达；落在空状态选择器选定的项目）
   if (!state.sessions.find(c => c.current)) {
-    await api.newChat();
+    await api.newChat(state.pendingProjectDir || undefined);
+    state.pendingProjectDir = null;
     state.sessions = await loadSessions();
     await loadWorkdir();
   }
@@ -638,17 +647,25 @@ function showDirPicker(onPick) {
   nav(null);
 }
 
-// 项目选择器（Kimi Work 式，0 消息会话的 chip 点开）：已有项目 / 新建空白项目 /
-// 使用现有文件夹 / 默认项目（不使用文件夹之外的自建项目=回默认）
+// 项目选择器（Kimi Work 式）：chip（0 消息会话）与空状态行（无会话）共用。
+// 有 0 消息会话 → 改会话归属（setChatProject）；无会话 → 记 pendingProjectDir（首条消息落该项目）
 let _pkMenuEl = null;
+function _pickerLabel() {
+  if (state.pendingProjectDir) {
+    const p = (state.projects || []).find(x => x.dir === state.pendingProjectDir);
+    if (p) return p.display;
+  }
+  if (state.workdir && !state.workdir.legacy && state.workdir.display) return state.workdir.display;
+  return '默认项目';
+}
 function showProjectPicker(anchorEl) {
   if (_pkMenuEl) _pkMenuEl.remove();
   const cur = state.sessions.find(c => c.current);
-  if (!cur) return;
+  const canAssignSession = !!(cur && !cur.legacy && !cur.msg_count);
   const menuEl = document.createElement('div');
   _pkMenuEl = menuEl;
   menuEl.className = 'sess-menu wd-menu';
-  const curDir = state.workdir && state.workdir.dir;
+  const curDir = state.pendingProjectDir || (state.workdir && state.workdir.dir) || null;
   const others = (state.projects || []);
   menuEl.innerHTML =
     `<span class="sess-menu-sub-h">选择项目（发出第一条消息后定型）</span>` +
@@ -672,16 +689,22 @@ function showProjectPicker(anchorEl) {
   setTimeout(() => document.addEventListener('click', close), 0);
 
   const assign = async (dir) => {
-    try {
-      await api.setChatProject(cur.name, dir);
-    } catch (e) {
-      alert('设置项目失败：' + (e && e.message ? e.message : ''));
-      return;
+    if (canAssignSession) {
+      try {
+        await api.setChatProject(cur.name, dir);
+      } catch (e) {
+        alert('设置项目失败：' + (e && e.message ? e.message : ''));
+        return;
+      }
+      state.sessions = await loadSessions();  // 会话换了组，侧栏要重排
+      await loadWorkdir();
+      if (_viewer) _viewer.onSessionChange();
+      render();
+    } else {
+      // 无会话（或会话已有内容/旧版）：记 pending，首条消息落在该项目
+      state.pendingProjectDir = dir;
+      render();
     }
-    state.sessions = await loadSessions();  // 会话换了组，侧栏要重排
-    await loadWorkdir();
-    if (_viewer) _viewer.onSessionChange();
-    render();
   };
   menuEl.querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     if (b.disabled) return;
@@ -836,7 +859,8 @@ function showSessionMenu(chat, anchorEl) {
   });
   menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {
     menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
-    if (!confirm(`删除会话「${chat.name}」？此操作不可撤销。`)) return;
+    const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
+    if (!confirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`)) return;
     await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });
     state.sessions = await loadSessions();
     await loadCurrentMessages();
