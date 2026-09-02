@@ -38,3 +38,23 @@ export const api = {
 // 模式映射：后端值 ↔ 新版 UI 显示
 export const MODE_LABEL = { local: '离线', cloud: '在线', parallel: '并行' };
 export const MODE_ORDER = ['local', 'cloud', 'parallel'];
+
+// 顶栏模型 tag：「离线 · qwen3.5-2b-q4」/「在线 · deepseek-v4-flash」（具体型号）
+export async function getModelTag(mode) {
+  try {
+    if (mode === 'cloud') {
+      const m = await api.getMode();
+      return '在线 · ' + (m.cloud_model || '云端模型');
+    }
+    const s = await _json(await fetch('/api/status'));
+    for (const k of Object.keys(s)) {
+      const info = s[k];
+      if (info && typeof info === 'object' && info.type === 'llm' && info.loaded) {
+        return (mode === 'parallel' ? '并行 · ' : '离线 · ') + k;
+      }
+    }
+    return mode === 'parallel' ? '并行 · 未加载' : '离线 · 未加载';
+  } catch (e) {
+    return '';
+  }
+}

@@ -44,7 +44,7 @@ const ABORT_LABEL = {
 
 function _renderMsg(m) {
   const isUser = m.role === 'user';
-  const av = isUser ? '我' : '<img src="/static/img/logo.jpg" alt="桌伴" style="width:100%;height:100%;object-fit:cover;border-radius:9px">';
+  // 0.10.1 定稿：无头像框（用户评审：用处不大还影响视线）；气泡左右分布（我右/AI 左）
   const name = isUser ? ('我' + (m.ts ? ' · ' + m.ts : '')) : ('桌伴' + (m.ts ? ' · ' + m.ts : ''));
 
   let bubbleInner = '';
@@ -77,7 +77,6 @@ function _renderMsg(m) {
   const statsHtml = stats ? `<div class="m-stats">${esc(stats)}</div>` : '';
 
   return `<div class="msg ${isUser ? 'user' : 'ai'}">
-    <div class="m-av">${av}</div>
     <div class="m-body">
       <div class="m-name">${esc(name)}</div>
       ${thinkHtml}

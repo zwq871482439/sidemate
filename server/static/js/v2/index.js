@@ -2,7 +2,7 @@
 // 本版范围：三栏骨架 + 左栏（真数据）+ 空状态场景卡 + 会话消息查看 + 对话发送/流式。
 // KB/设置迁入在后续迭代（经典版 / 始终可用）。
 import './styles.css';
-import { api, MODE_LABEL } from './api.js';
+import { api, MODE_LABEL, getModelTag } from './api.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
 import { renderEmptyState } from './empty_state.js';
 import { renderChatFlow, loadMessages } from './chat_view.js';
@@ -21,6 +21,7 @@ const state = {
   actionMode: 'chat', // 离线 action / 在线恒 chat（chips 只预填引导词）
   localActions: [],   // 离线 action 列表
   contextWindow: 8192,
+  modelTag: '',
   generating: false,
 };
 
@@ -79,6 +80,7 @@ function render() {
       _modePending = null;
       if (r && r.ok) {
         state.mode = r.mode;
+        state.modelTag = await getModelTag(state.mode);
         if (state.mode === 'local' && !state.localActions.length) {
           state.localActions = await loadLocalActions();
         }
@@ -118,6 +120,7 @@ function render() {
   main.innerHTML = `
     <div class="topbar">
       <span class="tb-title">${state.tab === 'chat' ? '对话' : state.tab === 'kb' ? '知识库' : '设置'}</span>
+      ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model">${esc(state.modelTag)}</span>` : ''}
       <span class="tb-spacer"></span>
       <a class="tb-link" href="/" title="回经典版界面">经典版 ↗</a>
     </div>
@@ -182,13 +185,10 @@ function renderChatArea() {
   if (old) old.remove();
   // 历史 token 估算（经典版口径：中文 1.5 字/token，英文 4 字/token）
   const historyTokens = (state.messages || []).reduce((s, m) => s + estimateTokens(m.content || '') + estimateTokens(m.think || ''), 0);
-  const modelTag = state.mode === 'local'
-    ? '离线模型' : (state.mode === 'parallel' ? '离线+在线协作' : '在线 AI');
   _composer = renderComposer({
     mode: state.mode,
     actionMode: state.actionMode,
     localActions: state.localActions,
-    modelTag,
     contextWindow: state.contextWindow,
     historyTokens,
     chipTip: '',
@@ -213,7 +213,6 @@ function renderStreamingBubble(st) {
     el.className = 'msg ai streaming';
     el.id = 'v2-stream-msg';
     el.innerHTML = `
-      <div class="m-av"><img src="/static/img/logo.jpg" alt="桌伴" style="width:100%;height:100%;object-fit:cover;border-radius:9px"></div>
       <div class="m-body">
         <div class="m-name">桌伴 · 生成中…</div>
         <div class="stream-status"></div>
@@ -326,6 +325,7 @@ async function boot() {
     const m = await api.getMode();
     if (m && m.mode) state.mode = m.mode;
     if (m && m.context_window) state.contextWindow = m.context_window;
+    state.modelTag = await getModelTag(state.mode);
   } catch (e) { /* 模式读取失败就用默认在线 */ }
   try {
     if (state.mode === 'local') state.localActions = await loadLocalActions();

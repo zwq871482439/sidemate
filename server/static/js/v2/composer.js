@@ -115,13 +115,6 @@ export function renderComposer(state, events) {
       });
       chipsEl.appendChild(kb);
     }
-    // 模型 tag（右端）
-    if (state.modelTag) {
-      const tag = document.createElement('span');
-      tag.className = 'qc-model';
-      tag.textContent = state.modelTag;
-      chipsEl.appendChild(tag);
-    }
   }
   renderChips();
 
