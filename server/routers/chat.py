@@ -553,6 +553,19 @@ async def api_chats_rename(chat_name: str, request: Request):
     return result
 
 
+@router.post("/api/chats/{chat_name}/group")
+async def api_chats_set_group(chat_name: str, request: Request):
+    """设置会话的项目分组（0.10.1 M1-D 项目分组）"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    safe_name = _safe_chat_name(chat_name)
+    if not safe_name:
+        return JSONResponse({"error": "非法对话名称"}, status_code=400)
+    body = await request.json()
+    from session.chat_store import set_chat_group
+    return set_chat_group(safe_name, body.get("group", ""))
+
+
 @router.get("/api/chats/{chat_name}/messages")
 def api_chats_messages(chat_name: str):
     """获取对话消息（兼容文件夹和 .json 格式）"""

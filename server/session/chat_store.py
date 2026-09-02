@@ -150,6 +150,7 @@ def new_chat_file():
         meta = {
             "id": folder_name,
             "title": folder_name,
+            "group": "日常",  # 0.10.1 项目分组：默认进「日常」
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "message_count": 0,
@@ -511,12 +512,14 @@ def list_chats():
             name = entry
             msg_count = 0
             has_cache = False
+            chat_group = "日常"  # 旧会话 meta 无 group → 默认「日常」（免迁移）
             try:
                 meta_path = os.path.join(entry_path, "meta.json")
                 if os.path.exists(meta_path):
                     with open(meta_path, "r", encoding="utf-8") as f:
                         meta = json.load(f)
                     msg_count = meta.get("message_count", 0)
+                    chat_group = meta.get("group") or "日常"
                 else:
                     # fallback: 读 messages.json 计数
                     msgs_path = os.path.join(entry_path, "messages.json")
@@ -536,6 +539,7 @@ def list_chats():
                 "label": label,
                 "current": (entry_path == current_file),
                 "msg_count": msg_count,
+                "group": chat_group,
             })
 
     # 第二遍：扫描旧 .json 格式，跳过已被同名文件夹占用的
@@ -573,6 +577,29 @@ def list_chats():
     # 按修改时间倒序
     result.sort(key=lambda x: os.path.getmtime(x["path"]), reverse=True)
     return result
+
+
+def set_chat_group(chat_name: str, group: str) -> dict:
+    # 设置会话的项目分组（0.10.1；仅 folder 格式支持，旧 .json 静默忽略）
+    # group 为空或非法字符时回落「日常」。项目即分组名（免大迁移，无独立实体）
+    safe = safe_chat_name(group)
+    if not safe:
+        group = "日常"
+    folder_path = os.path.join(CHAT_DIR, chat_name)
+    if not os.path.isdir(folder_path):
+        return {"error": "会话不存在或旧格式（旧格式不支持分组）"}
+    meta_path = os.path.join(folder_path, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            pass
+    meta["group"] = safe
+    meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    atomic_write_json(meta_path, meta)
+    return {"ok": True, "group": safe}
 
 
 def rename_chat(old_name: str, new_name: str) -> dict:

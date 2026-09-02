@@ -27,6 +27,7 @@ const state = {
   modelTag: '',
   scene: '',          // 场景占位符 tag（空状态场景卡落 tag，不打字进输入框）
   kbTree: null,       // KB 模式下左栏文档范围树
+  collapsedGroups: {},     // 项目分组折叠态
   parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
   generating: false,
   switching: false,   // 模式切换骨架屏态
@@ -202,6 +203,11 @@ function render() {
       }
     },
     onFilter: (v) => { state.filter = v; render(); },
+    onToggleGroup: (g) => {
+      state.collapsedGroups[g] = !state.collapsedGroups[g];
+      render();
+    },
+    onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
     onKbFilter: (kf) => {
       if (!_kbView) return;
       _kbView.setFilter(kf);
@@ -436,6 +442,103 @@ function onScene(scene) {
       setTimeout(() => box.classList.remove('attn'), 700);
     }
   }
+}
+
+// ===== 会话 ⋯ 菜单（重命名/导出/移到项目/删除，经典版会话项操作迁入） =====
+let _menuEl = null;
+function showSessionMenu(chat, anchorEl) {
+  if (_menuEl) _menuEl.remove();
+  const groups = [...new Set(state.sessions.map(s2 => s2.group || '日常'))];
+  _menuEl = document.createElement('div');
+  _menuEl.className = 'sess-menu';
+  _menuEl.innerHTML = `
+    <button data-a="rename">重命名</button>
+    <button data-a="export">导出（.txt）</button>
+    <div class="sess-menu-sub">
+      <span class="sess-menu-sub-h">移到项目</span>
+      ${groups.map(g => `<button data-g="${esc(g)}" class="${(chat.group || '日常') === g ? 'cur' : ''}">📁 ${esc(g)}</button>`).join('')}
+      <button data-g="__new__">＋ 新建项目…</button>
+    </div>
+    <button data-a="del" class="danger">删除会话</button>`;
+  document.body.appendChild(_menuEl);
+  const r = anchorEl.getBoundingClientRect();
+  _menuEl.style.left = Math.min(r.right - 180, window.innerWidth - 200) + 'px';
+  _menuEl.style.top = (r.bottom + 4) + 'px';
+  const close = (e) => { if (_menuEl && !_menuEl.contains(e.target)) { _menuEl.remove(); _menuEl = null; document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
+
+  _menuEl.querySelector('[data-a="rename"]').addEventListener('click', async () => {
+    _menuEl.remove(); _menuEl = null;
+    const nv = await v2Prompt('重命名会话', chat.name);
+    if (!nv || nv === chat.name) return;
+    await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/rename', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: nv }),
+    });
+    state.sessions = await loadSessions();
+    render();
+  });
+  _menuEl.querySelector('[data-a="export"]').addEventListener('click', async () => {
+    _menuEl.remove(); _menuEl = null;
+    // 经典版同款：拉消息拼 txt 下载
+    const resp = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/messages');
+    const data = await resp.json();
+    const lines = [];
+    (data.messages || []).forEach(m => {
+      lines.push((m.role === 'user' ? '你' : (m.model || 'AI')) + (m.ts ? ' (' + m.ts + ')' : ''));
+      lines.push(''); lines.push(m.content || ''); lines.push('');
+    });
+    const blob = new Blob([lines.join(String.fromCharCode(10))], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = chat.name + '.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  _menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {
+    _menuEl.remove(); _menuEl = null;
+    if (!confirm(`删除会话「${chat.name}」？此操作不可撤销。`)) return;
+    await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });
+    state.sessions = await loadSessions();
+    await loadCurrentMessages();
+    render();
+  });
+  _menuEl.querySelectorAll('[data-g]').forEach(b => b.addEventListener('click', async () => {
+    _menuEl.remove(); _menuEl = null;
+    let g = b.dataset.g;
+    if (g === '__new__') {
+      g = await v2Prompt('新建项目（会话将移入）', '');
+      if (!g) return;
+    }
+    await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/group', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group: g }),
+    });
+    state.sessions = await loadSessions();
+    render();
+  }));
+}
+
+// 轻量输入模态（webview 里原生 prompt 不可靠）
+function v2Prompt(title, defVal) {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.className = 'kb-pk-overlay';
+    ov.innerHTML = `<div class="kb-pk" style="width:360px">
+      <div class="kb-pk-title">${esc(title)}</div>
+      <input class="set-input" id="v2pIn" style="width:100%" value="${esc(defVal || '')}">
+      <div class="kb-pk-acts"><button class="kb-pk-cancel">取消</button><button class="kb-pk-ok">确定</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('#v2pIn');
+    inp.focus(); inp.select();
+    ov.querySelector('.kb-pk-cancel').addEventListener('click', () => { ov.remove(); resolve(null); });
+    ov.querySelector('.kb-pk-ok').addEventListener('click', () => { const v = inp.value.trim(); ov.remove(); resolve(v || null); });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { const v = inp.value.trim(); ov.remove(); resolve(v || null); }
+      if (e.key === 'Escape') { ov.remove(); resolve(null); }
+    });
+  });
 }
 
 async function boot() {

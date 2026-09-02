@@ -73,18 +73,45 @@ export function renderSidebar(root, state, events) {
     return _bindCommon(sb, state, events);
   }
 
-  // 会话列表（搜索过滤）
+  // 会话列表（搜索过滤）+ 项目分组（PLAN：可折叠分组，session group 字段）
   const filter = (state.filter || '').toLowerCase();
   const sessions = state.sessions.filter(c => !filter || (c.name || '').toLowerCase().includes(filter));
   if (!sessions.length) {
     listEl.innerHTML = `<div class="sess-empty">${filter ? '无匹配会话' : '还没有会话，点上方「新建会话」开始'}</div>`;
   } else {
+    // 按项目分组（免迁移：无 group 的旧会话归「日常」）
+    const groups = {};
+    const order = [];
     for (const c of sessions) {
-      const item = document.createElement('div');
-      item.className = 'sess-item' + (c.current ? ' on' : '');
-      item.innerHTML = `<div class="st">${esc(c.name)}</div><div class="sm">${c.msg_count || 0} 条消息</div>`;
-      item.addEventListener('click', () => events.onSelectSession(c));
-      listEl.appendChild(item);
+      const g = c.group || '日常';
+      if (!groups[g]) { groups[g] = []; order.push(g); }
+      groups[g].push(c);
+    }
+    // 「日常」排最前，其余按名称
+    order.sort((a, b) => a === '日常' ? -1 : b === '日常' ? 1 : a.localeCompare(b, 'zh'));
+    const collapsedGroups = state.collapsedGroups || {};
+    for (const g of order) {
+      const grp = document.createElement('div');
+      grp.className = 'proj-group' + (collapsedGroups[g] ? ' closed' : '');
+      grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>📁 ${esc(g)}</span><span class="cnt">${groups[g].length}</span></div>
+        <div class="proj-sess"></div>`;
+      grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup(g));
+      const box = grp.querySelector('.proj-sess');
+      for (const c of groups[g]) {
+        const item = document.createElement('div');
+        item.className = 'sess-item' + (c.current ? ' on' : '');
+        item.innerHTML = `<div class="si-bar"><div class="st">${esc(c.name)}</div><button class="sess-more" title="导出/重命名/删除/移到项目">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息</div>`;
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('.sess-more')) return;
+          events.onSelectSession(c);
+        });
+        item.querySelector('.sess-more').addEventListener('click', (e) => {
+          e.stopPropagation();
+          events.onSessionMenu(c, e.target.closest('.sess-more'));
+        });
+        box.appendChild(item);
+      }
+      listEl.appendChild(grp);
     }
   }
 
