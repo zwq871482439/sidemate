@@ -346,8 +346,16 @@ body {
   max-width: 760px; margin: 0 auto; background: var(--d1-paper-2);
   border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-lg);
   box-shadow: var(--d1-shadow-card); padding: 12px 14px 10px;
+  position: relative;
 }
 .composer-box:focus-within { border-color: var(--d1-accent-3); }
+/* 场景卡点击后的视线引导：一次性金色描边环（只动 opacity/transform，DNA-01 动效规范） */
+.composer-box.attn::after {
+  content: ""; position: absolute; inset: -3px; border-radius: calc(var(--d1-r-lg) + 3px);
+  border: 2px solid var(--d1-gold); opacity: 0; pointer-events: none;
+  animation: attn-ring 0.6s var(--d1-ease-out);
+}
+@keyframes attn-ring { 0% { opacity: .9; transform: scale(.99); } 100% { opacity: 0; transform: scale(1.02); } }
 .composer textarea {
   width: 100%; border: none; outline: none; resize: none; font-family: inherit;
   font-size: var(--d1-fs-body); color: var(--d1-ink); background: none;

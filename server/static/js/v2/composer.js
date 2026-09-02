@@ -4,15 +4,6 @@
 
 import { api } from './api.js';
 
-// 经典版 chat-actions.js 的在线快捷提示词（原样照搬）
-const CLOUD_PROMPTS = [
-  { label: '联网搜索', tip: '请联网搜索下面这个主题：' },
-  { label: '写文档', tip: '请帮我写一份 Word 文档：' },
-  { label: '可视化报告', tip: '请帮我做一份图文并茂的报告（带图表）：' },
-  { label: '写PPT', tip: '请帮我做一份演示文稿 PPT：' },
-  { label: '深度分析', tip: '请对以下内容做深度分析：' },
-];
-
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -33,6 +24,9 @@ export function renderComposer(state, events) {
       <div class="ctx-row"><span class="lb">已用历史</span>
         <div class="ctx-bar"><i class="used" style="width:${usedPct}%"></i></div>
         <span>${usedK}k / ${totalK}k</span></div>
+      <div class="ctx-row"><span class="lb">本轮预判</span>
+        <div class="ctx-bar"><i class="pred" style="width:0%"></i></div>
+        <span class="pv">+0.0k</span></div>
     </div>
     <div class="quick-chips"></div>
     <div class="attach-tray" style="display:none"></div>
@@ -73,41 +67,34 @@ export function renderComposer(state, events) {
   function renderChips() {
     chipsEl.innerHTML = '';
     if (state.mode === 'cloud') {
-      // 在线：提示词预填（action_mode 恒 chat，按钮只填引导词）
-      for (const p of CLOUD_PROMPTS) {
-        const b = document.createElement('button');
-        b.className = 'qc-btn' + (state.chipTip === p.tip ? ' on' : '');
-        b.textContent = p.label;
-        b.title = p.tip;
-        b.addEventListener('click', () => {
-          // togglePromptChip 行为：再点取消，否则填入引导词
-          if (state.chipTip === p.tip) {
-            state.chipTip = '';
-            textarea.value = textarea.value.replace(p.tip, '');
-          } else {
-            state.chipTip = p.tip;
-            if (!textarea.value.startsWith(p.tip)) textarea.value = p.tip + textarea.value;
-            textarea.focus();
-          }
-          renderChips();
-        });
-        chipsEl.appendChild(b);
-      }
+      // 0.10.1 定稿：在线模式的提示词 chips 移除——空状态场景卡已覆盖入口，
+      // 工具选择由后端 agent 自主判断（harness 层），输入区只留模型 tag。
     } else {
       // 离线/并行：action 模式按钮（本地 /api/action/list + 知识库问答）
+      // 切换语义：点另一个=直接切换；点当前=取消回到 chat
       (state.localActions || []).forEach(a => {
         const b = document.createElement('button');
         b.className = 'qc-btn' + (state.actionMode === a.id ? ' on' : '');
         b.textContent = a.label || a.id;
         b.title = a.title || '';
-        b.addEventListener('click', () => { state.actionMode = a.id; events.onChipMode(a.id); renderChips(); });
+        b.addEventListener('click', () => {
+          const next = state.actionMode === a.id ? 'chat' : a.id;
+          state.actionMode = next;
+          events.onChipMode(next);
+          renderChips();
+        });
         chipsEl.appendChild(b);
       });
       const kb = document.createElement('button');
       kb.className = 'qc-btn' + (state.actionMode === 'kb_qa' ? ' on' : '');
       kb.textContent = '知识库问答';
       kb.title = '检索你的本地知识库，基于文档内容回答问题';
-      kb.addEventListener('click', () => { state.actionMode = 'kb_qa'; events.onChipMode('kb_qa'); renderChips(); });
+      kb.addEventListener('click', () => {
+        const next = state.actionMode === 'kb_qa' ? 'chat' : 'kb_qa';
+        state.actionMode = next;
+        events.onChipMode(next);
+        renderChips();
+      });
       chipsEl.appendChild(kb);
     }
     // 模型 tag（右端）
@@ -149,6 +136,14 @@ export function renderComposer(state, events) {
   textarea.addEventListener('input', () => {
     textarea.style.height = 'auto';
     textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
+    // 本轮预判（token 粗估：字符/1.5，金色条）
+    const predTok = textarea.value.length / 1.5;
+    const predBar = wrap.querySelector('.ctx-bar .pred');
+    const pv = wrap.querySelector('.pv');
+    if (predBar && pv) {
+      predBar.style.width = Math.min(100, predTok / (state.contextWindow || 8192) * 100) + '%';
+      pv.textContent = '+' + (predTok / 1000).toFixed(1) + 'k';
+    }
   });
 
   // ---- 附件：上传文档 ----

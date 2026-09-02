@@ -186,6 +186,7 @@ function renderChatArea() {
   _composer = renderComposer({
     mode: state.mode,
     actionMode: state.actionMode,
+    localActions: state.localActions,
     modelTag,
     contextWindow: state.contextWindow,
     historyChars,
@@ -288,7 +289,7 @@ async function loadCurrentMessages() {
 }
 
 function onScene(scene) {
-  // 场景卡 = 预填引导 prompt（scene 轻标签随 M1-E 接工具路由）
+  // 场景卡 = 预填引导 prompt + 视线引导（输入框金色描边环一闪，DNA-01 动效规范）
   const SCENE_TIPS = {
     ppt: '请帮我做一份演示文稿 PPT：',
     doc: '请帮我写一份 Word 文档：',
@@ -301,13 +302,17 @@ function onScene(scene) {
   };
   const tip = SCENE_TIPS[scene] || '';
   const textarea = document.querySelector('.composer textarea');
-  if (textarea && tip) {
-    textarea.value = tip;
+  if (textarea) {
+    if (tip) textarea.value = tip;
     textarea.focus();
     textarea.style.height = 'auto';
     textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
-  } else if (textarea) {
-    textarea.focus();
+    textarea.dispatchEvent(new Event('input'));  // 本轮预判条同步
+    const box = document.querySelector('.composer-box');
+    if (box) {
+      box.classList.add('attn');
+      setTimeout(() => box.classList.remove('attn'), 700);
+    }
   }
 }
 
