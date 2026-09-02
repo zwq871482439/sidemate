@@ -18,7 +18,7 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// state: { mode, tab, sessions: [], filter, collapsed }
+// state: { mode, tab, sessions: [], filter, collapsed, kbTree: null|{total, recent, cats:[{name,count,subs}], privates, ungrouped, kbFilterSel} }
 // events: onMode/onTab/onSelectSession/onNewChat/onToggleCollapse/onFilter
 export function renderSidebar(root, state, events) {
   const sb = document.createElement('aside');
@@ -39,20 +39,41 @@ export function renderSidebar(root, state, events) {
       </div>
       <button class="sb-collapse" title="折叠/展开">${state.collapsed ? '⟩' : '⟨'}</button>
     </div>
-    <div class="sb-search"><span class="ic">${ICONS.search}</span><input placeholder="搜索会话…" value="${esc(state.filter || '')}"></div>
+    <div class="sb-search"><span class="ic">${ICONS.search}</span><input placeholder="${state.tab === 'kb' ? '搜索文档…' : '搜索会话…'}" value="${esc(state.filter || '')}"></div>
     <nav class="sb-nav">
       <button class="sb-nav-item ${state.tab === 'chat' ? 'on' : ''}" data-tab="chat"><span class="ic">${ICONS.chat}</span><span class="sb-label">聊天</span></button>
       <button class="sb-nav-item ${state.tab === 'kb' ? 'on' : ''}" data-tab="kb"><span class="ic">${ICONS.kb}</span><span class="sb-label">知识库</span></button>
       <button class="sb-nav-item ${state.tab === 'settings' ? 'on' : ''}" data-tab="settings"><span class="ic">${ICONS.settings}</span><span class="sb-label">设置</span></button>
     </nav>
     <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建会话</span></button>
-    <div class="sb-sess-title sb-label">会话</div>
-    <div class="sb-sessions"></div>
+    ${state.tab === 'kb' && state.kbTree
+      ? '<div class="sb-sess-title sb-label">文档范围</div><div class="sb-sessions kb-tree"></div>'
+      : '<div class="sb-sess-title sb-label">会话</div><div class="sb-sessions"></div>'}
     <button class="sb-back"><span>‹</span><span class="sb-label">回经典版界面</span></button>
   `;
 
-  // 会话列表（搜索过滤）
+  // 知识库模式：左栏下段换文档范围树（原型 v14）
   const listEl = sb.querySelector('.sb-sessions');
+  if (state.tab === 'kb' && state.kbTree) {
+    const t = state.kbTree;
+    const sel = state.kbTree.kbFilterSel || '';
+    const item = (id, label, cnt, icon, sub) => `
+      <div class="kt-item ${sel === id ? 'on' : ''}" data-kf="${id}"${sub ? ' style="padding-left:26px"' : ''}>
+        <span class="ki">${icon}</span>${esc(label)}<span class="cnt">${cnt}</span>
+      </div>`;
+    listEl.innerHTML =
+      item('', '全部文档', t.total, '📚') +
+      item('__recent7__', '最近上传', t.recent, '🕐') +
+      t.cats.map(c => item('cat:' + c.name, c.name, c.count, '🏷') +
+        (c.subs || []).map(sb2 => item('cat:' + c.name + '/' + sb2.name, sb2.name, sb2.count, '·', true)).join('')).join('') +
+      item('__priv__', '私密文档', t.privates, '🔒') +
+      item('__none__', '未分组', t.ungrouped, '📁');
+    listEl.querySelectorAll('.kt-item').forEach(b =>
+      b.addEventListener('click', () => events.onKbFilter(b.dataset.kf)));
+    return _bindCommon(sb, state, events);
+  }
+
+  // 会话列表（搜索过滤）
   const filter = (state.filter || '').toLowerCase();
   const sessions = state.sessions.filter(c => !filter || (c.name || '').toLowerCase().includes(filter));
   if (!sessions.length) {
@@ -67,6 +88,10 @@ export function renderSidebar(root, state, events) {
     }
   }
 
+  return _bindCommon(sb, state, events);
+}
+
+function _bindCommon(sb, state, events) {
   sb.querySelector('.sb-collapse').addEventListener('click', () => events.onToggleCollapse());
   sb.querySelectorAll('.mode-mini button').forEach(b =>
     b.addEventListener('click', () => events.onMode(b.dataset.mode)));

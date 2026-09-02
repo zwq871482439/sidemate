@@ -24,6 +24,8 @@ const state = {
   localActions: [],   // 离线 action 列表
   contextWindow: 8192,
   modelTag: '',
+  scene: '',          // 场景占位符 tag（空状态场景卡落 tag，不打字进输入框）
+  kbTree: null,       // KB 模式下左栏文档范围树
   generating: false,
   switching: false,   // 模式切换骨架屏态
 };
@@ -48,6 +50,34 @@ function applyBreakpoint() {
     state.collapsed = narrow;
     render();
   }
+}
+
+// 由 KB 文档构建左栏范围树（分类聚合 + graph 子类 + 私密 + 未分组 + 最近7天）
+function buildKbTree(docs, overview) {
+  const cats = {};
+  const subMap = {};
+  ((overview && overview.graph && overview.graph.nodes) || []).forEach(n => {
+    if (n.doc_id && n.group) subMap[n.doc_id] = { group: n.group, sub: n.sub };
+  });
+  window._v2KbSubMap = subMap;  // kb.js 树筛选用（cat:组/子）
+  let privates = 0, ungrouped = 0, recent = 0;
+  docs.forEach(d => {
+    const c = (d.category || '').trim();
+    if (d.is_private) privates++;
+    if (!c) ungrouped++; else cats[c] = (cats[c] || 0) + 1;
+    const t = Date.parse(d.imported_at || '');
+    if (t && Date.now() - t <= 7 * 86400e3) recent++;
+  });
+  const catArr = Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([name, count]) => {
+    const subs = {};
+    docs.forEach(d => {
+      const m = subMap[d.doc_id];
+      if (m && m.group === name && m.sub) subs[m.sub] = (subs[m.sub] || 0) + 1;
+    });
+    return { name, count, subs: Object.entries(subs).map(([n2, c2]) => ({ name: n2, count: c2 })) };
+  });
+  return { total: docs.length, recent, cats: catArr, privates, ungrouped,
+    kbFilterSel: _kbView ? _kbView.getFilter() : '' };
 }
 
 // ===== 对话发送（M1-B 单写：流末拉后端快照重建） =====
@@ -147,6 +177,13 @@ function render() {
       }
     },
     onFilter: (v) => { state.filter = v; render(); },
+    onKbFilter: (kf) => {
+      if (!_kbView) return;
+      _kbView.setFilter(kf);
+      state.kbTree = buildKbTree(_kbView.getDocs(), _kbView.getOverview());
+      state.kbTree.kbFilterSel = kf;
+      render();
+    },
   }));
 
   const main = document.createElement('main');
@@ -178,6 +215,10 @@ function render() {
           render();
           const ta = document.querySelector('.composer textarea');
           if (ta) { ta.value = q; ta.focus(); }
+        },
+        onDocsChange: (docs) => {
+          state.kbTree = buildKbTree(docs, _kbView ? _kbView.getOverview() : null);
+          render();
         },
       });
       _kbView.mount();
@@ -242,10 +283,12 @@ function renderChatArea() {
     contextWindow: state.contextWindow,
     historyTokens,
     hasMessages: !!(state.messages && state.messages.length),
+    scene: state.scene,
     chipTip: '',
   }, {
     onSend: onSend,
     onStop: () => chatStream.stop(),
+    onSceneClear: () => { state.scene = ''; state.actionMode = 'chat'; renderChatArea(); },
     onChipMode: (m) => { state.actionMode = m; },
     onAttachChange: () => {},
     getSession: () => state.sessions.find(c => c.current),
@@ -310,6 +353,7 @@ async function onSend(payload) {
     .map(m => (m.role === 'assistant' && m.content && m.content.length > 1500)
       ? Object.assign({}, m, { content: m.content.slice(0, 1500) + '\n\n...（内容过长已截断）' })
       : m);
+  state.scene = '';  // 发送后场景 tag 清空
   state.scene = '';  // 发送后场景 tag 清空
   state.generating = true;
   renderChatArea();

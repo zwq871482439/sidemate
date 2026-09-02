@@ -59,6 +59,7 @@ export function createKBView(events) {
       const heat = await heatR.json();
       state.heatmap = {};
       (heat.heatmap || []).forEach(h => { state.heatmap[h.doc_id] = h.hit_count; });
+      if (typeof events.onDocsChange === 'function') events.onDocsChange(state.docs);
     } catch (e) { /* 保持现状 */ }
   }
   // AI 洞察面板已按 0.10.1 定稿移除（0.9.7 用户反馈不知所云）；
@@ -96,6 +97,11 @@ export function createKBView(events) {
     }
 
     el.innerHTML = `
+      <div class="kb-hero" id="kbHero">
+        <div class="kb-hero-ic">⬆</div>
+        <div class="kb-hero-tx"><b>上传文档到知识库</b>
+        <span>PDF / Word / Excel / Markdown / TXT · 自动切分、向量化与打标<br>拖拽文件到此处，或点击选择（支持多选）</span></div>
+      </div>
       <div class="kb-chips" id="kbChips"></div>
       <div class="kb-batch" id="kbBatch" style="display:none"></div>
       <div class="kb-private" id="kbPrivate"></div>
@@ -187,6 +193,8 @@ export function createKBView(events) {
 
   function bindTop() {
     el.querySelector('#kbFile').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
+    const hero = el.querySelector('#kbHero');
+    if (hero) hero.addEventListener('click', () => el.querySelector('#kbFile').click());
     // 拖拽上传
     el.ondragover = (e) => { e.preventDefault(); el.classList.add('drag-over'); };
     el.ondragleave = () => el.classList.remove('drag-over');
@@ -248,10 +256,23 @@ export function createKBView(events) {
 
   // ---- 文档卡片/列表 ----
   function filteredDocs() {
+    const f = state.filterCat || '';
     return state.docs.filter(d => {
-      if (state.filterCat) {
-        const c = (d.category || '').trim() || '__none__';
-        if (c !== state.filterCat) return false;
+      if (f) {
+        if (f === '__priv__') { if (!d.is_private) return false; }
+        else if (f === '__recent7__') {
+          const t = Date.parse(d.imported_at || '');
+          if (!t || Date.now() - t > 7 * 86400e3) return false;
+        }
+        else if (f === '__none__') { if ((d.category || '').trim()) return false; }
+        else if (f.startsWith('cat:')) {
+          const want = f.slice(4);
+          const sub = (window._v2KbSubMap || {})[d.doc_id];
+          if (want.includes('/')) {
+            const [g, sb2] = want.split('/');
+            if (!sub || sub.group !== g || sub.sub !== sb2) return false;
+          } else if ((d.category || '').trim() !== want) return false;
+        }
       }
       if (state.search && !(d.filename || '').toLowerCase().includes(state.search)) return false;
       return true;
@@ -558,6 +579,10 @@ export function createKBView(events) {
   }
 
   return { el, mount, destroy,
+    getDocs: () => state.docs,
+    getOverview: () => state.overview,
+    setFilter: (kf) => { state.filterCat = kf || ''; renderChips(); renderGrid(); },
+    getFilter: () => state.filterCat,
     renderTopbar: () => {
       const slot = document.getElementById('kb-topbar-slot');
       if (slot && state.moduleReady) renderTopbar(slot);
