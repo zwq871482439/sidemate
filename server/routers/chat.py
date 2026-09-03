@@ -270,6 +270,10 @@ async def api_chat_stream(request: Request):
             _ft = body.get("_file_tag")
             if isinstance(_ft, dict) and isinstance(_ft.get("name"), str):
                 _um["_file_tag"] = {"name": _ft["name"], "source": _ft.get("source") or "upload"}
+            # 问答卡回答引用（0.10.1 卡片系统：ask 卡答案与问题关联，回放恢复已答态）
+            _ca = body.get("_card_answer")
+            if isinstance(_ca, dict) and isinstance(_ca.get("question"), str):
+                _um["_card_answer"] = {"question": _ca["question"][:200]}
             _saved_user = append_message(chat_file, _um)
         except Exception as e:
             # 落盘失败不阻断对话——persist_turn 会回退 legacy 重建路径

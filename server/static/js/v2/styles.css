@@ -499,6 +499,52 @@ body {
   padding: 8px 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
 }
 
+/* ---- 问答卡 / 引用卡 ---- */
+.cc-ask-q { font-size: var(--d1-fs-body); color: var(--d1-ink); font-weight: 600; line-height: 1.6; margin-bottom: 10px; }
+.cc-ask-opts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.cc-ask-opt {
+  font-family: inherit; font-size: var(--d1-fs-small); cursor: pointer;
+  border: 1px solid var(--d1-n-line); background: var(--d1-paper); color: var(--d1-ink-2);
+  border-radius: 14px; padding: 5px 14px;
+}
+.cc-ask-opt:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+.cc-ask-opt.on { background: var(--d1-accent); color: var(--d1-paper); border-color: var(--d1-accent); }
+.cc-ask-row { display: flex; gap: 8px; }
+.cc-ask-input {
+  flex: 1; font-family: inherit; font-size: var(--d1-fs-small);
+  border: 1px solid var(--d1-n-line); border-radius: 8px; padding: 7px 12px;
+  background: var(--d1-paper); color: var(--d1-ink);
+}
+.cc-ask-input:focus { outline: none; border-color: var(--d1-gold-2); }
+.cc-ask-go {
+  font-family: inherit; font-size: var(--d1-fs-small); font-weight: 600; cursor: pointer;
+  background: var(--d1-accent); color: var(--d1-paper); border: none;
+  border-radius: 8px; padding: 7px 18px;
+}
+.cc-ask-go:hover { opacity: .92; }
+.cc-ask-done { font-size: var(--d1-fs-small); color: #2E8B57; font-weight: 600; }
+.cc-ref-list { display: flex; flex-direction: column; gap: 2px; }
+.cc-ref-item {
+  display: flex; align-items: center; gap: 7px; padding: 5px 8px;
+  border-radius: var(--d1-r-sm); cursor: pointer; font-size: var(--d1-fs-small);
+}
+.cc-ref-item:hover { background: var(--d1-paper); }
+.cc-ref-item.flash { background: rgba(232,181,77,.18); }
+.cc-ref-n { color: var(--d1-gold-2); font-weight: 600; flex-shrink: 0; }
+.cc-ref-badge { flex-shrink: 0; font-size: 11px; }
+.cc-ref-t { color: var(--d1-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-ref-x {
+  display: none; width: 100%; margin-top: 4px; padding: 6px 8px;
+  font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); line-height: 1.6;
+  background: var(--d1-paper); border-radius: var(--d1-r-sm);
+}
+.cc-ref-item { flex-wrap: wrap; }
+.cc-ref-item.open .cc-ref-x { display: block; }
+sup.ref-n {
+  color: var(--d1-gold-2); font-weight: 600; cursor: pointer; padding: 0 1px;
+}
+sup.ref-n:hover { text-decoration: underline; }
+
 /* ---- 内联目录选择器 ---- */
 .dir-pk { width: 520px; }
 .dp-quick { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
@@ -1104,3 +1150,9 @@ body.narrow #viewer.open ~ .vw-backdrop {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---- Mermaid（方案 A：迁回 + 优雅降级） ---- */
+.mermaid-container { margin: 8px 0; overflow-x: auto; }
+.mermaid-container svg { max-width: 100%; height: auto; }
+.mermaid-wait { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); padding: 8px 0; }
+.mermaid-err { font-size: var(--d1-fs-small); color: var(--pal-danger); margin-bottom: 6px; }

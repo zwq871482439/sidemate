@@ -6,7 +6,7 @@ import { api, MODE_LABEL, getModelTag } from './api.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
 import { renderEmptyState } from './empty_state.js';
 import { renderChatFlow, loadMessages, setCardMode } from './chat_view.js';
-import { extractCards, hydrateCards } from './cards_content.js';
+import { extractCards, hydrateCards, extractMermaid, hydrateMermaid } from './cards_content.js';
 import { renderComposer, loadLocalActions, estimateTokens } from './composer.js';
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
@@ -361,7 +361,10 @@ function renderChatArea() {
       '<div class="skel-line" style="width:30%"></div></div>';
   } else if (state.messages && state.messages.length) {
     setCardMode(state.mode !== 'local');  // 卡片系统仅在线参与
-    renderChatFlow(scroll, state.messages, { getSession: () => state.sessions.find(c => c.current) });
+    renderChatFlow(scroll, state.messages, {
+      getSession: () => state.sessions.find(c => c.current),
+      onAskAnswer, getCardAnswer,
+    });
     // 提纲待确认恢复（快照重建/刷新共用入口）
     const pendingOutline = _lastOutlineMsg();
     if (pendingOutline) _showDocConfirmBar(pendingOutline.msg.content || '');
@@ -549,7 +552,8 @@ function renderStreamingBubble(st) {
       `<span class="m-src">${esc(s.label || s.source_label || '')}</span>`).join('');
   }
   bubble.innerHTML = mdStream(st.text + (st.error ? '\n\n⚠️ ' + st.error : ''));
-  if (state.mode !== 'local') hydrateCards(bubble, { getSession: () => state.sessions.find(c => c.current) });
+  hydrateCards(bubble, { getSession: () => state.sessions.find(c => c.current), onAskAnswer, getCardAnswer });
+  hydrateMermaid(bubble);
   const scroll = document.getElementById('main-scroll');
   if (scroll) scroll.scrollTop = scroll.scrollHeight;
 }
@@ -558,7 +562,9 @@ function mdStream(text) {
   if (!text) return '<span style="color:var(--d1-ink-3)">思考中…</span>';
   if (typeof marked !== 'undefined') {
     setCardMode(state.mode !== 'local');
-    const html = marked.parse(state.mode !== 'local' ? extractCards(text) : text, { breaks: true });
+    let t = extractMermaid(text);
+    if (state.mode !== 'local') t = extractCards(t);
+    const html = marked.parse(t, { breaks: true });
     return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;
   }
   return esc(text).replace(/\n/g, '<br>');
@@ -586,7 +592,6 @@ async function onSend(payload) {
       ? Object.assign({}, m, { content: m.content.slice(0, 1500) + '\n\n...（内容过长已截断）' })
       : m);
   state.scene = '';  // 发送后场景 tag 清空
-  state.scene = '';  // 发送后场景 tag 清空
   state.generating = true;
   renderChatArea();
   _composer.setRunning(true);
@@ -599,8 +604,26 @@ async function onSend(payload) {
     actionMode,
     filePath: payload.filePath,
     fileTag: payload.fileTag,
+    cardAnswer: payload.cardAnswer || null,
     history,
   });
+}
+
+// 问答卡回答（回合制：回答作为新 user 消息开新轮，带 cardAnswer 引用元数据）
+function onAskAnswer(question, answer) {
+  onSend({ text: answer, cardAnswer: { question } });
+}
+
+// 回放恢复已答态：找与问题匹配的 _card_answer 用户消息
+function getCardAnswer(question) {
+  const msgs = state.messages || [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === 'user' && m._card_answer && m._card_answer.question === question) {
+      return m.content || '';
+    }
+  }
+  return null;
 }
 
 async function loadCurrentMessages() {

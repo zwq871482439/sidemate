@@ -47,6 +47,7 @@ export function createChatStream(hooks) {
       _file_tag: payload.fileTag || null,
     };
     if (payload.docContinue) body.doc_continue = payload.docContinue;
+    if (payload.cardAnswer) body._card_answer = payload.cardAnswer;  // 问答卡回答引用
 
     aborter = new AbortController();
     const st = {

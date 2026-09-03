@@ -13,19 +13,81 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
-// ===== 围栏块提取：```chart / ```table + JSON → 占位槽 =====
+// ===== Mermaid 渲染（方案 A：迁回 v2，失败优雅降级为源码+错误提示） =====
+// 与卡片系统无关——纯展示特性，离线/在线都渲染（对齐经典版行为）。
+export function extractMermaid(text) {
+  if (!text) return text;
+  return text.replace(/```mermaid\s*\n([\s\S]*?)```/g, (m, body) => {
+    return '\n\n<div class="mermaid-container" data-mermaid="'
+      + encodeURIComponent(body.trim()) + '"><div class="mermaid-wait">图表渲染中…</div></div>\n\n';
+  });
+}
+
+let _mermaidInited = false;
+function _initMermaid() {
+  if (_mermaidInited || typeof mermaid === 'undefined') return;
+  _mermaidInited = true;
+  // fontFamily 必须显式字体栈（继承字体会让 mermaid 测量框偏小，中文溢出——经典版同款修复）
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'default',
+    securityLevel: 'loose',
+    suppressErrorRendering: true,  // 不渲染 mermaid 原生红色炸弹报错图（降级 UI 我们自己出）
+    fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+    flowchart: { padding: 12, nodeSpacing: 60, rankSpacing: 60, useMaxWidth: false, htmlLabels: false },
+  });
+}
+
+export function hydrateMermaid(container) {
+  if (typeof mermaid === 'undefined') return;
+  _initMermaid();
+  const _cleanOrphans = () => {
+    // mermaid 渲染期的临时容器（id 前缀 dmm-）失败时会挂着原生报错图残留在 body 末尾
+    document.querySelectorAll('body > div[id^="dmm-"]').forEach(el => el.remove());
+  };
+  container.querySelectorAll('.mermaid-container:not([data-rendered])').forEach(box => {
+    const code = decodeURIComponent(box.getAttribute('data-mermaid') || '');
+    if (!code) return;
+    const parent = box.parentElement;
+    const next = box.nextSibling;
+    mermaid.render('mm-' + Math.random().toString(36).slice(2, 10), code)
+      .then(result => {
+        box.setAttribute('data-rendered', '1');
+        // mermaid 测量期会把容器挪到 body 末尾，settle 后无条件放回原位（经典版同款坑）
+        if (!box.parentElement) {
+          if (next && next.parentElement === parent) parent.insertBefore(box, next);
+          else if (parent) parent.appendChild(box);
+        }
+        box.innerHTML = result.svg;
+        _cleanOrphans();
+      })
+      .catch(err => {
+        box.setAttribute('data-rendered', '1');
+        if (!box.parentElement) {
+          if (next && next.parentElement === parent) parent.insertBefore(box, next);
+          else if (parent) parent.appendChild(box);
+        }
+        _cleanOrphans();
+        // 优雅降级：错误提示 + 源码，不黑屏
+        box.innerHTML = `<div class="mermaid-err">⚠️ 图表语法有误，无法渲染（${esc(String(err && err.message || err).slice(0, 120))}）</div>
+          <pre class="cc-raw">${esc(code)}</pre>`;
+      });
+  });
+}
+
+// ===== 围栏块提取：```chart / ```table / ```ask + JSON → 占位槽 =====
 // 离线不调用本函数（PLAN：卡片系统仅在线参与）
 export function extractCards(text) {
   if (!text) return text;
-  return text.replace(/```(chart|table)\s*\n([\s\S]*?)```/g, (m, type, body) => {
+  return text.replace(/```(chart|table|ask)\s*\n([\s\S]*?)```/g, (m, type, body) => {
     return '\n\n<div class="cc-slot" data-cc-type="' + type + '" data-cc="'
       + encodeURIComponent(body.trim()) + '"></div>\n\n';
   });
 }
 
 // ===== 卡片水合：渲染占位槽（解析失败优雅降级为源码+错误提示） =====
+// opts: { getSession(), onAskAnswer(question, answer), getCardAnswer(question) }
 export function hydrateCards(container, opts) {
-  // opts: { getSession() }
   container.querySelectorAll('.cc-slot:not([data-cc-done])').forEach(slot => {
     slot.setAttribute('data-cc-done', '1');
     const type = slot.dataset.ccType;
@@ -45,6 +107,8 @@ export function hydrateCards(container, opts) {
     if (err) {
       card.innerHTML = `<div class="cc-err">⚠️ ${esc(err)}</div>
         <pre class="cc-raw">${esc(decodeURIComponent(slot.dataset.cc || ''))}</pre>`;
+    } else if (type === 'ask') {
+      _renderAsk(card, spec, opts);
     } else {
       const title = spec.title || (type === 'chart' ? '图表' : '表格');
       card.innerHTML = `<div class="cc-head">
@@ -62,6 +126,24 @@ export function hydrateCards(container, opts) {
     }
     slot.replaceWith(card);
   });
+  // 引用卡槽（消息自带的来源数据，非围栏块）
+  container.querySelectorAll('.cc-ref-slot:not([data-cc-done])').forEach(slot => {
+    slot.setAttribute('data-cc-done', '1');
+    let sources = [];
+    try { sources = JSON.parse(decodeURIComponent(slot.dataset.refs || '')); } catch (e) { /* 忽略 */ }
+    if (!sources.length) { slot.remove(); return; }
+    slot.replaceWith(_renderRefCard(sources));
+  });
+  // 上标互链：点击 [n] 跳到 ref 卡对应条目
+  container.querySelectorAll('sup.ref-n').forEach(sup => {
+    sup.addEventListener('click', () => {
+      const item = container.querySelector('.cc-ref-item[data-n="' + sup.dataset.n + '"]');
+      if (!item) return;
+      item.scrollIntoView({ block: 'center' });
+      item.classList.add('flash');
+      setTimeout(() => item.classList.remove('flash'), 900);
+    });
+  });
 }
 
 function _validate(type, spec) {
@@ -71,12 +153,89 @@ function _validate(type, spec) {
     if (!Array.isArray(spec.labels) || !spec.labels.length) return 'labels 缺失或为空';
     if (!Array.isArray(spec.series) || !spec.series.length) return 'series 缺失或为空';
     if (!spec.series.every(s => Array.isArray(s.data))) return 'series.data 必须是数组';
-  } else {
+  } else if (type === 'table') {
     if (!Array.isArray(spec.columns) || !spec.columns.length) return 'columns 缺失或为空';
     if (!Array.isArray(spec.rows)) return 'rows 必须是数组';
+  } else if (type === 'ask') {
+    if (!spec.question || typeof spec.question !== 'string') return 'question 缺失';
+    if (spec.options && !Array.isArray(spec.options)) return 'options 必须是数组';
   }
   return '';
 }
+
+// ===== 问答卡（ask）：模型提问 → 用户单选/手敲 → 回答开新轮（回合制） =====
+function _renderAsk(card, spec, opts) {
+  const answered = opts && opts.getCardAnswer ? opts.getCardAnswer(spec.question) : null;
+  card.innerHTML = `<div class="cc-head">
+    <span class="cc-badge">❓</span>
+    <span class="cc-title">需要确认</span>
+  </div>
+  <div class="cc-ask-q">${esc(spec.question)}</div>
+  <div class="cc-ask-body"></div>`;
+  const body = card.querySelector('.cc-ask-body');
+  if (answered) {
+    body.innerHTML = `<div class="cc-ask-done">✓ 已答：${esc(answered)}</div>`;
+    return;
+  }
+  let picked = '';
+  const optsRow = document.createElement('div');
+  optsRow.className = 'cc-ask-opts';
+  (spec.options || []).forEach(o => {
+    const b = document.createElement('button');
+    b.className = 'cc-ask-opt';
+    b.textContent = o;
+    b.addEventListener('click', () => {
+      picked = o;
+      optsRow.querySelectorAll('.cc-ask-opt').forEach(x => x.classList.toggle('on', x === b));
+      input.value = o;
+      input.dispatchEvent(new Event('input'));
+    });
+    optsRow.appendChild(b);
+  });
+  body.appendChild(optsRow);
+  const row = document.createElement('div');
+  row.className = 'cc-ask-row';
+  const input = document.createElement('input');
+  input.className = 'cc-ask-input';
+  input.placeholder = (spec.options && spec.options.length) ? '选一个，或手敲补充…' : '输入你的回答…';
+  const go = document.createElement('button');
+  go.className = 'cc-ask-go';
+  go.textContent = '回答';
+  const submit = () => {
+    const answer = (input.value || picked).trim();
+    if (!answer) { input.focus(); return; }
+    body.innerHTML = `<div class="cc-ask-done">✓ 已答：${esc(answer)}</div>`;
+    if (opts && opts.onAskAnswer) opts.onAskAnswer(spec.question, answer);
+  };
+  go.addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  row.appendChild(input);
+  if (spec.allow_input !== false || !(spec.options || []).length) row.appendChild(go);
+  body.appendChild(row);
+}
+
+// ===== 引用卡（ref）：唯一跨两界——同渲染组件，两数据来路（kb_sources/agent results） =====
+function _renderRefCard(sources) {
+  const card = document.createElement('div');
+  card.className = 'cc-card cc-ref';
+  card.innerHTML = `<div class="cc-head"><span class="cc-badge">🔎</span>
+    <span class="cc-title">引用来源 · ${sources.length}</span></div>
+    <div class="cc-ref-list"></div>`;
+  const list = card.querySelector('.cc-ref-list');
+  sources.forEach((s, i) => {
+    const item = document.createElement('div');
+    item.className = 'cc-ref-item';
+    item.dataset.n = String(i + 1);
+    item.innerHTML = `<span class="cc-ref-n">[${i + 1}]</span>
+      <span class="cc-ref-badge ${s.kind === 'web' ? 'web' : 'kb'}">${s.kind === 'web' ? '🌐' : '📚'}</span>
+      <span class="cc-ref-t">${esc(s.title)}</span>
+      <div class="cc-ref-x">${esc(s.excerpt || '')}</div>`;
+    item.addEventListener('click', () => item.classList.toggle('open'));
+    list.appendChild(item);
+  });
+  return card;
+}
+
 
 // ===== 存产物 =====
 async function _saveArtifact(type, spec, card, btn, opts) {
