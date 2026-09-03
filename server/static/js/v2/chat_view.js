@@ -3,6 +3,7 @@
 // 流式发送/卡片回放（CardRenderer）随对话区迁入增量补上。
 
 import { api } from './api.js';
+import { icon } from './icons.js';
 import { renderCardHistory } from './cards.js';
 import { extractCards, hydrateCards, extractMermaid, hydrateMermaid } from './cards_content.js';
 
@@ -90,7 +91,7 @@ function _renderMsg(m) {
   let bubbleInner = '';
   // 附件/引用标记
   if (m._file_tag && m._file_tag.name) {
-    bubbleInner += `<span class="fref">📎 ${esc(m._file_tag.name)}</span><br>`;
+    bubbleInner += `<span class="fref">${icon('paperclip')} ${esc(m._file_tag.name)}</span><br>`;
   }
   // 卡片解析跟随产出引擎（在线产出的卡片在离线模式下也正确渲染；
   // 离线模型产出的消息不解析——PLAN ②+「离线不参与」约束的是产出侧）

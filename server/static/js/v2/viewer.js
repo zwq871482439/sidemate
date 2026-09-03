@@ -8,6 +8,7 @@
 // Escape 收起；窄屏浮层态见 styles.css body.narrow。
 
 import { api } from './api.js';
+import { icon, iconSvg } from './icons.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -93,7 +94,7 @@ export function createViewer(opts) {
     if (!cur && !(wd && wd._cross)) return '<div class="vw-empty">还没有会话，先开始一段对话</div>';
     if (wd && wd.legacy) {
       return `<div class="vw-card vw-card-legacy">
-        <div class="vw-card-t">🗄 旧版本会话</div>
+        <div class="vw-card-t">${icon('archive')} 旧版本会话</div>
         <div class="vw-card-r">该会话来自旧版本，已转为只读存档：可以查看、导出（会话 ⋯ 菜单）、在「文件」tab 下载产物。</div>
         <div class="vw-card-r">要聊新内容，请用「新建任务」开一个新会话。</div>
       </div>`;
@@ -107,7 +108,7 @@ export function createViewer(opts) {
       <div class="vw-card-r"><span class="vw-k">会话</span>${esc(cur.name)} · ${cur.msg_count || 0} 条消息</div>`}
       ${wd && wd.dir ? `<div class="vw-card-r"><span class="vw-k">目录</span>${wd.is_default ? '默认项目目录' : '项目文件夹'}</div>
       <div class="vw-card-r vw-path" title="${esc(wd.dir)}">${esc(wd.dir)}</div>` : ''}
-      ${missing ? '<div class="vw-card-r vw-missing">⚠️ 目录丢失——文件夹在磁盘上被删除或移动，会话只读可看</div>' : ''}
+      ${missing ? `<div class="vw-card-r vw-missing">${icon('alertTriangle')} 目录丢失——文件夹在磁盘上被删除或移动，会话只读可看</div>` : ''}
       ${wd && !wd.is_default ? '<div class="vw-card-r"><button class="vw-mini danger" data-a="delproj" title="删除项目：会话记录级联删除，目录文件永不动">删除项目…</button></div>' : ''}
     </div>`;
   }
@@ -139,7 +140,7 @@ export function createViewer(opts) {
 
   function _fileRow(f, prefix, canRef) {
     return `<div class="vw-file vw-file-ro" title="${f.is_dir ? '目录' : '文件'}">
-      <span class="fi">${f.is_dir ? '📁' : _icon(f.name)}</span>
+      <span class="fi">${f.is_dir ? iconSvg('folder') : _icon(f.name)}</span>
       <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${f.is_dir ? '目录' : _fmtSize(f.size) + ' · ' + esc(f.mtime)}</span></span>
       ${f.is_dir || !canRef ? '' : `<button class="vw-ref" data-name="${esc(prefix + f.name)}" title="引用到输入区（直读，AI 可读原文件）">引用</button>`}
     </div>`;
@@ -303,7 +304,7 @@ export function createViewer(opts) {
       const nums = Object.keys(d.pages).map(Number).sort((a, b) => a - b);
       return `<div class="vw-ppt-deck">
         <div class="vw-ppt-head">
-          <span class="vw-ppt-title">📽 ${esc(d.title)}</span>
+          <span class="vw-ppt-title">${icon('presentation')} ${esc(d.title)}</span>
           <span class="vw-ppt-meta">${nums.length} 页${d.pptx_url ? ` · <a class="vw-ppt-dl" href="${d.pptx_url}" download>下载 PPTX</a>` : ''}</span>
         </div>
         ${nums.map(n => `<div class="vw-ppt-page">
@@ -346,7 +347,8 @@ export function createViewer(opts) {
 
   function _icon(name) {
     const ext = (name.split('.').pop() || '').toLowerCase();
-    return { docx: '📄', xlsx: '📊', pptx: '📽', pdf: '📕', md: '📝', txt: '📝', html: '🌐', json: '🧾', csv: '📊' }[ext] || '📎';
+    const key = { docx: 'fileText', xlsx: 'table', pptx: 'presentation', pdf: 'fileText', md: 'fileText', txt: 'fileText', html: 'globe', json: 'receipt', csv: 'table' }[ext] || 'file';
+    return iconSvg(key);
   }
 
   function setOpen(v, tabName) {

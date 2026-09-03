@@ -4,6 +4,7 @@
 // 存产物：table→CSV / chart→SVG，写 <项目目录>/.sidemate/（用户显式动作）。
 
 import { api } from './api.js';
+import { iconSvg } from './icons.js';
 
 const PALETTE = ['#0F2B46', '#E8B54D', '#4E7FA6', '#6BA36B', '#B0653A', '#7A5CA6'];
 
@@ -69,7 +70,7 @@ export function hydrateMermaid(container) {
         }
         _cleanOrphans();
         // 优雅降级：错误提示 + 源码，不黑屏
-        box.innerHTML = `<div class="mermaid-err">⚠️ 图表语法有误，无法渲染（${esc(String(err && err.message || err).slice(0, 120))}）</div>
+        box.innerHTML = `<div class="mermaid-err">${iconSvg('alertTriangle')} 图表语法有误，无法渲染（${esc(String(err && err.message || err).slice(0, 120))}）</div>
           <pre class="cc-raw">${esc(code)}</pre>`;
       });
   });
@@ -105,14 +106,14 @@ export function hydrateCards(container, opts) {
     const card = document.createElement('div');
     card.className = 'cc-card cc-' + type;
     if (err) {
-      card.innerHTML = `<div class="cc-err">⚠️ ${esc(err)}</div>
+      card.innerHTML = `<div class="cc-err">${iconSvg('alertTriangle')} ${esc(err)}</div>
         <pre class="cc-raw">${esc(decodeURIComponent(slot.dataset.cc || ''))}</pre>`;
     } else if (type === 'ask') {
       _renderAsk(card, spec, opts);
     } else {
       const title = spec.title || (type === 'chart' ? '图表' : '表格');
       card.innerHTML = `<div class="cc-head">
-        <span class="cc-badge">${type === 'chart' ? '📊' : '🗂'}</span>
+        <span class="cc-badge">${iconSvg(type === 'chart' ? 'barChart' : 'table')}</span>
         <span class="cc-title">${esc(title)}</span>
         <button class="cc-save" title="存入项目产物（.sidemate）">存产物</button>
       </div>
@@ -218,7 +219,7 @@ function _renderAsk(card, spec, opts) {
 function _renderRefCard(sources) {
   const card = document.createElement('div');
   card.className = 'cc-card cc-ref';
-  card.innerHTML = `<div class="cc-head"><span class="cc-badge">🔎</span>
+  card.innerHTML = `<div class="cc-head"><span class="cc-badge">${iconSvg('search')}</span>
     <span class="cc-title">引用来源 · ${sources.length}</span></div>
     <div class="cc-ref-list"></div>`;
   const list = card.querySelector('.cc-ref-list');
@@ -227,7 +228,7 @@ function _renderRefCard(sources) {
     item.className = 'cc-ref-item';
     item.dataset.n = String(i + 1);
     item.innerHTML = `<span class="cc-ref-n">[${i + 1}]</span>
-      <span class="cc-ref-badge ${s.kind === 'web' ? 'web' : 'kb'}">${s.kind === 'web' ? '🌐' : '📚'}</span>
+      <span class="cc-ref-badge ${s.kind === 'web' ? 'web' : 'kb'}">${iconSvg(s.kind === 'web' ? 'globe' : 'book')}</span>
       <span class="cc-ref-t">${esc(s.title)}</span>
       <div class="cc-ref-x">${esc(s.excerpt || '')}</div>`;
     item.addEventListener('click', () => item.classList.toggle('open'));

@@ -3,6 +3,7 @@
 // KB/设置迁入在后续迭代（经典版 / 始终可用）。
 import './styles.css';
 import { api, MODE_LABEL, getModelTag } from './api.js';
+import { icon, iconSvg } from './icons.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
 import { renderEmptyState } from './empty_state.js';
 import { renderChatFlow, loadMessages, setCardMode } from './chat_view.js';
@@ -376,7 +377,7 @@ function renderChatArea() {
   } else if (state.workdir && state.workdir.legacy) {
     // 旧版 0 消息会话不出场景卡（点了也发不出去），给只读存档说明
     scroll.innerHTML = `<div class="legacy-empty">
-      <div class="legacy-empty-ic">🗄</div>
+      <div class="legacy-empty-ic">${iconSvg('archive')}</div>
       <div class="legacy-empty-t">旧版本会话 · 只读存档</div>
       <div class="legacy-empty-d">这条会话来自旧版本，没有对话内容。可以看、导出、下载产物；<br>要聊新内容，点左侧「新建任务」。</div>
     </div>`;
@@ -532,7 +533,7 @@ function _showDocConfirmBar(outlineText) {
   bar.id = 'v2DocBar';
   bar.innerHTML = `
     <details class="doc-outline-edit-wrap">
-      <summary>📄 文档提纲已生成 — 点击查看，可编辑章节</summary>
+      <summary>${icon('fileText')} 文档提纲已生成 — 点击查看，可编辑章节</summary>
       <div class="doc-outline-toolbar">
         <button class="doc-outline-toggle-btn" data-t="edit">编辑</button>
         <button class="doc-outline-toggle-btn active" data-t="preview">预览</button>
@@ -871,7 +872,7 @@ function showDirPicker(onPick) {
       d.entries.forEach(e2 => {
         const it = document.createElement('div');
         it.className = 'dp-item';
-        it.innerHTML = `<span class="fi">${cur ? '📁' : '💽'}</span> ${esc(e2.name)}`;
+        it.innerHTML = `<span class="fi">${iconSvg(cur ? 'folder' : 'hardDrive')}</span> ${esc(e2.name)}`;
         it.addEventListener('click', () => nav(e2.path));
         listEl.appendChild(it);
       });
@@ -915,10 +916,10 @@ function showProjectPicker(anchorEl) {
     `<span class="sess-menu-sub-h">选择项目（发出第一条消息后定型）</span>` +
     others.map(p =>
       `<button data-dir="${esc(p.dir)}" class="${curDir === p.dir ? 'cur' : ''}" ${p.status === 'missing' ? 'disabled' : ''}>
-        📁 ${esc(p.display)}${p.status === 'missing' ? '（目录丢失）' : ''}</button>`).join('') +
+        ${icon('folder')} ${esc(p.display)}${p.status === 'missing' ? '（目录丢失）' : ''}</button>`).join('') +
     `<div class="sess-menu-sub">
       <button data-a="new_blank">＋ 新建空白项目…</button>
-      <button data-a="new_ext">📂 使用现有文件夹…</button>
+      <button data-a="new_ext">${icon('folderOpen')} 使用现有文件夹…</button>
     </div>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();

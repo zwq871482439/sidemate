@@ -5,6 +5,7 @@
 // 星图（B 组）在 KB-2 增量。端点与经典版同一后端。
 
 import { createStarView, fetchMapExplain } from './kb_star.js';
+import { icon, iconSvg } from './icons.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -98,7 +99,7 @@ export function createKBView(events) {
 
     el.innerHTML = `
       <div class="kb-hero" id="kbHero">
-        <div class="kb-hero-ic">⬆</div>
+        <div class="kb-hero-ic">${iconSvg('upload')}</div>
         <div class="kb-hero-tx"><b>上传文档到知识库</b>
         <span>PDF / Word / Excel / Markdown / TXT · 自动切分、向量化与打标<br>拖拽文件到此处，或点击选择（支持多选）</span></div>
       </div>
@@ -173,9 +174,9 @@ export function createKBView(events) {
       ${state.pane === 'list' ? `
       <div class="kb-view-toggle" title="卡片/列表">
         <button data-v="card" class="${state.view === 'card' ? 'on' : ''}" title="卡片视图">▦</button>
-        <button data-v="list" class="${state.view === 'list' ? 'on' : ''}" title="列表视图">☰</button>
+        <button data-v="list" class="${state.view === 'list' ? 'on' : ''}" title="列表视图">${iconSvg('list')}</button>
       </div>` : ''}
-      <button class="kb-tool-btn" id="kbUploadBtn">⬆ 上传文档</button>
+      <button class="kb-tool-btn" id="kbUploadBtn">${icon('upload')} 上传文档</button>
       <input class="kb-search" placeholder="搜索文件名…" value="${esc(state.search)}" style="max-width:180px">
       <span class="kb-stat">${state.docs.length} 篇</span>
     `;
@@ -235,7 +236,7 @@ export function createKBView(events) {
     box.style.display = '';
     box.innerHTML = `
       <details>
-        <summary>🔒 私密文档（${privates.length}）<span class="kb-pv-hint">不参与常规检索，需令牌授权</span></summary>
+        <summary>${icon('lock')} 私密文档（${privates.length}）<span class="kb-pv-hint">不参与常规检索，需令牌授权</span></summary>
         <div class="kb-pv-list">${privates.map(d => `
           <div class="kb-pv-item" data-id="${esc(d.doc_id)}">
             <span class="kb-pv-name">${esc(d.filename)}</span>
@@ -298,8 +299,8 @@ export function createKBView(events) {
       const sel = state.selected.has(d.doc_id);
       const tags = (d.tags || []).slice(0, 4).map(t => `<span class="kb-tag">${esc(t)}</span>`).join('');
       const stLabel = STATUS_LABEL[d.status] || d.status;
-      const priv = d.is_private ? '<span class="kb-lock" title="私密文档">🔒</span>' : '';
-      const dup = (d.metadata && d.metadata.duplicate_of) ? '<span class="kb-dup" title="与既有文档重复">⚠ 重复</span>' : '';
+      const priv = d.is_private ? `<span class="kb-lock" title="私密文档">${iconSvg('lock')}</span>` : '';
+      const dup = (d.metadata && d.metadata.duplicate_of) ? '<span class="kb-dup" title="与既有文档重复">' + iconSvg('alertTriangle') + ' 重复</span>' : '';
       const summary = d.summary
         ? esc(d.summary)
         : (d.tag_status === 'generating' ? 'AI 摘要生成中…' : (d.tag_status === 'failed' ? '摘要生成失败' : '暂无摘要'));
@@ -316,7 +317,7 @@ export function createKBView(events) {
           <span>${stLabel} · ${d.chunk_count || 0} 块 · ${_fmtSize(d.file_size)}</span>
           <span class="kb-acts">
             <button data-act="detail" title="详情">详情</button>
-            <button data-act="privacy" title="${d.is_private ? '取消私密' : '设为私密'}">${d.is_private ? '🔓' : '🔐'}</button>
+            <button data-act="privacy" title="${d.is_private ? '取消私密' : '设为私密'}">${iconSvg(d.is_private ? 'lockOpen' : 'lock')}</button>
             <button data-act="del" title="删除">✕</button>
           </span>
         </div>
@@ -417,7 +418,7 @@ export function createKBView(events) {
       <div class="kb-pk" style="width:520px">
         <div class="kb-pk-title">${esc(d.filename)}</div>
         <div class="kb-detail-rows">
-          <div><span>状态</span>${esc(STATUS_LABEL[d.status] || d.status)}${d.is_private ? ' · 🔒 私密' : ''}</div>
+          <div><span>状态</span>${esc(STATUS_LABEL[d.status] || d.status)}${d.is_private ? ` · ${icon('lock')} 私密` : ''}</div>
           <div><span>分类</span>${esc(d.category || '未分类')}</div>
           <div><span>大小</span>${_fmtSize(d.file_size)} · ${d.total_chars || 0} 字 · ${d.chunk_count || 0} 块</div>
           <div><span>被搜索</span>${d.hit_count || 0} 次</div>

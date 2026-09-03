@@ -3,6 +3,7 @@
 // 下段：新建会话 + 会话列表（真数据）。项目分组依赖 session 加 group 字段，后续迭代。
 
 import { api, MODE_LABEL, MODE_ORDER } from './api.js';
+import { icon, iconSvg } from './icons.js';
 
 const ICONS = {
   search: '<svg fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607z"/></svg>',
@@ -62,12 +63,12 @@ export function renderSidebar(root, state, events) {
         <span class="ki">${icon}</span>${esc(label)}<span class="cnt">${cnt}</span>
       </div>`;
     listEl.innerHTML =
-      item('', '全部文档', t.total, '📚') +
-      item('__recent7__', '最近上传', t.recent, '🕐') +
-      t.cats.map(c => item('cat:' + c.name, c.name, c.count, '🏷') +
+      item('', '全部文档', t.total, iconSvg('book')) +
+      item('__recent7__', '最近上传', t.recent, iconSvg('clock')) +
+      t.cats.map(c => item('cat:' + c.name, c.name, c.count, iconSvg('tag')) +
         (c.subs || []).map(sb2 => item('cat:' + c.name + '/' + sb2.name, sb2.name, sb2.count, '·', true)).join('')).join('') +
-      item('__priv__', '私密文档', t.privates, '🔒') +
-      item('__none__', '未分组', t.ungrouped, '📁');
+      item('__priv__', '私密文档', t.privates, iconSvg('lock')) +
+      item('__none__', '未分组', t.ungrouped, iconSvg('folder'));
     listEl.querySelectorAll('.kt-item').forEach(b =>
       b.addEventListener('click', () => events.onKbFilter(b.dataset.kf)));
     return _bindCommon(sb, state, events);
@@ -130,9 +131,9 @@ export function renderSidebar(root, state, events) {
     const missing = p.status === 'missing';
     const grp = document.createElement('div');
     grp.className = 'proj-group' + (collapsedGroups[p.dir] ? ' closed' : '');
-    grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>📁 ${esc(p.display)}</span>
+    grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span class="pj-ic">${icon('folder')}</span><span>${esc(p.display)}</span>
       ${missing ? '<span class="proj-missing">目录丢失</span>' : ''}<span class="cnt">${grpSess.length}</span>
-      <button class="proj-dir ${p.is_default ? '' : 'on'}" title="项目信息（${esc(p.dir)}）">📂</button></div>
+      <button class="proj-dir ${p.is_default ? '' : 'on'}" title="项目信息（${esc(p.dir)}）">${iconSvg('info')}</button></div>
       <div class="proj-sess"></div>`;
     grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup(p.dir));
     grp.querySelector('.proj-dir').addEventListener('click', (e) => {
@@ -149,7 +150,7 @@ export function renderSidebar(root, state, events) {
     rendered++;
     const grp = document.createElement('div');
     grp.className = 'proj-group legacy' + (collapsedGroups.__legacy__ ? ' closed' : '');
-    grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span>🗄 旧版本会话</span><span class="cnt">${legacySess.length}</span></div>
+    grp.innerHTML = `<div class="proj-head"><span class="arrow">▼</span><span class="pj-ic">${icon('archive')}</span><span>旧版本会话</span><span class="cnt">${legacySess.length}</span></div>
       <div class="proj-sess"></div>`;
     grp.querySelector('.proj-head').addEventListener('click', () => events.onToggleGroup('__legacy__'));
     const box = grp.querySelector('.proj-sess');

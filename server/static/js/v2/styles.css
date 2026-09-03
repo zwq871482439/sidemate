@@ -12,6 +12,12 @@ body {
 }
 .ic { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .ic svg { width: 1em; height: 1em; display: block; }
+/* iconSvg() 裸用容器（不套 .ic 的场景）统一 1em 并随文字基线对齐 */
+.proj-dir svg, .pj-ic svg, .ki svg, .fi svg, .cc-badge svg, .cc-ref-badge svg,
+.kb-lock svg, .kb-dup svg, .eo-ic svg, .legacy-empty-ic svg, .kb-hero-ic svg,
+.mermaid-err svg, .cc-err svg, .vw-card-t svg, .empty-handoff svg, .fref svg {
+  width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em;
+}
 
 /* ============ 三栏骨架 ============ */
 #app { display: flex; height: 100%; }

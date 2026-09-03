@@ -1,3 +1,4 @@
+import { iconSvg } from './icons.js';
 // 桌伴 0.10.1 新版 UI — 设置（M1-D 设置迁入增量 1）
 // 壳：左竖导航 + 右内容区（PLAN 结构）。常规子页全真功能（界面版本/模型与设备/
 // 数据维护/备份恢复）；其余子页占位 + 经典版直达，逐页迁入。
@@ -596,7 +597,7 @@ export function createSettingsView(events) {
             </div>
             <div style="font-size:11px;color:var(--d1-ink-3);margin-bottom:4px">${esc(compTxt)} · 共 ${totalGb}GB</div>
             <div style="font-size:11px;color:var(--d1-ink-3);line-height:1.5">包含向量化模型（bge-m3，语义+关键词检索）和重排序模型（bge-reranker-v2-m3，精排结果）</div>
-            ${kbMissing.length ? `<div style="font-size:11px;color:var(--pal-amber-dark);margin-top:4px">⚠️ ${kbMissing.join('、')} 缺失</div>` : ''}
+            ${kbMissing.length ? `<div style="font-size:11px;color:var(--pal-amber-dark);margin-top:4px">${iconSvg('alertTriangle')} ${kbMissing.join('、')} 缺失</div>` : ''}
           </div>
           <div style="display:flex;gap:6px">
             ${kb.installed

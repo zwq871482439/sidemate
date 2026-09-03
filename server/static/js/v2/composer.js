@@ -3,6 +3,7 @@
 //       + 附件浮出栏（上传文档/KB 引用）+ 输入框 + 发送/停止。
 
 import { api } from './api.js';
+import { icon, iconSvg } from './icons.js';
 
 // Token 估算（照搬经典版 token-estimator.js：中文 ~1.5 字/token，英文 ~4 字/token）
 export function estimateTokens(text) {
@@ -53,8 +54,8 @@ export function renderComposer(state, events) {
       <div class="scene-tag-wrap" style="display:none"></div>
       <textarea placeholder="发消息给桌伴…（Enter 发送 / Shift+Enter 换行）" rows="1"></textarea>
       <div class="composer-bar">
-        <button class="cb-icon" data-act="upload" title="附加文档到聊天">📎</button>
-        <button class="cb-icon" data-act="kb" title="附加知识库文档到聊天">📚</button>
+        <button class="cb-icon" data-act="upload" title="附加文档到聊天">${iconSvg('paperclip')}</button>
+        <button class="cb-icon" data-act="kb" title="附加知识库文档到聊天">${iconSvg('book')}</button>
         <button class="cb-send">发送</button>
         <button class="cb-send cb-stop" style="display:none">停止</button>
       </div>
@@ -109,9 +110,9 @@ export function renderComposer(state, events) {
     if (!attach) { trayEl.style.display = 'none'; trayEl.innerHTML = ''; return; }
     trayEl.style.display = 'flex';
     if (attach.kind === 'upload') {
-      trayEl.innerHTML = `<span class="attach-chip">📄 ${esc(attach.name)}<span class="x" title="移除">×</span></span>`;
+      trayEl.innerHTML = `<span class="attach-chip">${icon('fileText')} ${esc(attach.name)}<span class="x" title="移除">×</span></span>`;
     } else {
-      trayEl.innerHTML = `<span class="attach-chip">📚 KB：${esc(attach.names.join('、'))}<span class="x" title="移除">×</span></span>`;
+      trayEl.innerHTML = `<span class="attach-chip">${icon('book')} KB：${esc(attach.names.join('、'))}<span class="x" title="移除">×</span></span>`;
     }
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); events.onAttachChange(null); });
   }
@@ -125,7 +126,7 @@ export function renderComposer(state, events) {
     if (!hasSession || !wd || !state.hasMessages) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
     wdStrip.style.display = '';
     if (wd.legacy) {
-      wdStrip.innerHTML = `<button class="wd-chip legacy" title="旧版本会话：只读存档，可查看/导出/下载产物">🗄 旧版本会话</button>`;
+      wdStrip.innerHTML = `<button class="wd-chip legacy" title="旧版本会话：只读存档，可查看/导出/下载产物">${icon('archive')} 旧版本会话</button>`;
       wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
         events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
       });
@@ -133,7 +134,7 @@ export function renderComposer(state, events) {
     }
     if (!wd.dir) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
     const name = wd.display || '默认项目';
-    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.dir)}（点击查看项目信息）">📂 ${esc(name)}</button>`;
+    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.dir)}（点击查看项目信息）">${icon('folder')} ${esc(name)}</button>`;
     wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
       events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
     });

@@ -1,3 +1,4 @@
+import { icon, iconSvg } from './icons.js';
 // 桌伴 0.10.1 新版 UI — 空状态页（M1-D 按原型 v14：在线 8 卡 / 离线 3 卡）
 // 零摩擦开始：点卡片 = 预填引导 prompt + scene 轻标签（对话区迁入后接通发送）。
 
@@ -46,13 +47,13 @@ export function renderEmptyState(mode, events) {
   wrap.className = 'empty-wrap';
   const projRow = events.projectLabel ? `
       <div class="empty-own" title="选择任务所属的项目（发出第一条消息后定型）">
-        <span class="eo-ic">📂</span>
+        <span class="eo-ic">${iconSvg('folderOpen')}</span>
         <span class="eo-name">${events.projectLabel}</span>
         <button class="eo-change">更换 ▾</button>
       </div>` : '';
   const handoffRow = events.handoffMeta ? `
       <div class="empty-handoff" title="项目交接已注入新会话">
-        📄 已载入项目交接${events.handoffMeta.source_chat ? '（来自会话 ' + events.handoffMeta.source_chat + '）' : ''}${events.handoffMeta.updated_at ? ' · 更新于 ' + events.handoffMeta.updated_at : ''}
+        ${icon('fileText')} 已载入项目交接${events.handoffMeta.source_chat ? '（来自会话 ' + events.handoffMeta.source_chat + '）' : ''}${events.handoffMeta.updated_at ? ' · 更新于 ' + events.handoffMeta.updated_at : ''}
       </div>` : '';
 
   if (mode === 'local') {

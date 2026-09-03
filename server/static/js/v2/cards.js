@@ -3,6 +3,8 @@
 // （agent_think + agent_status 工具）+ doc_loaded/summary/hint。
 // 序列化格式与 card_data 完全兼容（与经典版 enrich 同一结构），历史回放共用。
 
+import { icon } from './icons.js';
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -217,7 +219,7 @@ export function renderCardHistory(m) {
             `<div class="cb-step"><span class="cb-dot ${t.status === 'done' ? 'ok' : t.status === 'error' ? 'err' : 'wait'}"></span><span class="cb-label">${esc(t.label)}</span></div>`).join('')}</div>
         </div></details>`;
     } else if (s.type === 'doc_loaded') {
-      html += `<div class="cb-doc">📄 已加载文档 ${(s.items || []).map(i => esc(i.name || '')).join('、')}</div>`;
+      html += `<div class="cb-doc">${icon('fileText')} 已加载文档 ${(s.items || []).map(i => esc(i.name || '')).join('、')}</div>`;
     } else if (s.type === 'summary') {
       const d2 = s.data || {};
       const parts = [];
@@ -225,9 +227,9 @@ export function renderCardHistory(m) {
       if (d2.fetches) parts.push('阅读 ' + d2.fetches + ' 篇');
       if (d2.kb_hits) parts.push('知识库命中 ' + d2.kb_hits);
       if (d2.docs) parts.push('文档 ' + d2.docs);
-      if (parts.length) html += `<div class="cb-sum">📊 ${parts.join(' · ')}</div>`;
+      if (parts.length) html += `<div class="cb-sum">${icon('barChart')} ${parts.join(' · ')}</div>`;
     } else if (s.type === 'hint') {
-      html += `<div class="cb-hint">💡 ${esc(s.text || '')}</div>`;
+      html += `<div class="cb-hint">${icon('bulb')} ${esc(s.text || '')}</div>`;
     } else {
       // 扁平步骤
       const det = [];
