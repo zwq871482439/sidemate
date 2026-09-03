@@ -116,13 +116,13 @@ export function renderComposer(state, events) {
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); events.onAttachChange(null); });
   }
 
-  // ---- 项目 chip（项目即文件夹：显示所属项目；0 消息会话可点开选择器换项目；
-  // 旧版会话显示只读徽标；popover 由 index.js 承接） ----
+  // ---- 项目 chip（项目即文件夹：对话中显示所属项目，点击打开信息卡；
+  // 空状态（无消息）时隐藏——项目选择由空状态归属条承接，避免双入口重复） ----
   const wdStrip = wrap.querySelector('.workdir-strip');
   function renderWorkdirChip() {
     const hasSession = !!(events.getSession && events.getSession());
     const wd = state.workdir;
-    if (!hasSession || !wd) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
+    if (!hasSession || !wd || !state.hasMessages) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
     wdStrip.style.display = '';
     if (wd.legacy) {
       wdStrip.innerHTML = `<button class="wd-chip legacy" title="旧版本会话：只读存档，可查看/导出/下载产物">🗄 旧版本会话</button>`;
@@ -132,13 +132,10 @@ export function renderComposer(state, events) {
       return;
     }
     if (!wd.dir) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
-    const fresh = !state.hasMessages;  // 归属在创建窗口定型：有消息后不可换项目
     const name = wd.display || '默认项目';
-    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.dir)}">📂 ${esc(name)}${fresh ? '<span class="wd-src">选择项目 ▾</span>' : ''}</button>`;
+    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.dir)}（点击查看项目信息）">📂 ${esc(name)}</button>`;
     wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
-      const anchor = e.target.closest('.wd-chip');
-      if (fresh && events.onProjectPick) events.onProjectPick(anchor);
-      else if (events.onWorkdirClick) events.onWorkdirClick(anchor);
+      events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
     });
   }
   renderWorkdirChip();
