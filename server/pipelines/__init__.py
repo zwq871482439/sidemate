@@ -62,3 +62,35 @@ def can_generate_handoff(ai_mode: str, manual: bool) -> bool:
     if ai_mode == "local" and not manual:
         return False
     return True
+
+
+def auto_name_if_default(chat_name: str, user_text: str, ai_mode: str) -> None:
+    """首条消息后静默自动命名（PLAN 五点七-1 延迟归属①，M1-E）。
+
+    触发条件：meta.title 仍是文件夹名（=从未命名过）且本轮有真实用户文本。
+    引擎分模式：离线/并行=本地小模型（内容不出机，隐私铁律），在线=云端。
+    只写 meta.title 显示名，文件夹名/路径不动（手动重命名仍走 rename_chat，
+    后者会同步 meta.title）。任何失败静默跳过——命名是锦上添花，绝不能影响主流程。
+    """
+    import re as _re
+    try:
+        from session import chat_store
+        meta = chat_store.read_meta(chat_name)
+        if not meta or (meta.get("title") or chat_name) != chat_name:
+            return  # 已命名过（自动或手动）
+        text = (user_text or "").strip()
+        if not text or text.startswith("["):  # doc_continue 等占位消息不命名
+            return
+        prompt = (
+            "为下面的用户消息生成一个简短的中文会话标题。要求：6-14 个字，概括主题，"
+            "不要标点收尾，不要引号书名号，只输出标题本身。\n\n用户消息：\n" + text[:300]
+        )
+        title = run_text_once(prompt, ai_mode)
+        # 清洗：取首行、去首尾引号/书名号/标点、限长
+        title = (title or "").splitlines()[0].strip() if title else ""
+        title = _re.sub(r"^[\"'《<「『]+|[\"'》>」』。！？!?.:：,，;；\s]+$", "", title).strip()
+        if not title or len(title) < 2:
+            return
+        chat_store.set_chat_title(chat_name, title[:20])
+    except Exception:
+        pass

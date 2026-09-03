@@ -37,6 +37,10 @@ def chat_dir(tmp_path, monkeypatch):
     # 迁移标记全局只跑一次，测试间互不影响（tmp 目录无旧文件，迁移是 no-op）
     monkeypatch.setattr(chat_store, "_migration_done", True)
     monkeypatch.setattr(chat_store, "set_current_chat", lambda p: None)
+    # M1-E：persist_turn 包装器挂了自动命名钩子——测试环境屏蔽之，
+    # 否则会走到 run_text_once → routers.deps → import server（看门狗进 pytest）
+    import pipelines as _pl
+    monkeypatch.setattr(_pl, "auto_name_if_default", lambda *a, **k: None)
     return d
 
 

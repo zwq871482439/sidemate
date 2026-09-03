@@ -76,7 +76,9 @@ export function renderSidebar(root, state, events) {
   // 会话列表（搜索过滤）+ 项目树（项目即文件夹，PLAN 1.5 四次定稿：
   // 组按 project_dir 归集；无 project_dir 的进「旧版本会话」只读桶）
   const filter = (state.filter || '').toLowerCase();
-  const sessions = state.sessions.filter(c => !filter || (c.name || '').toLowerCase().includes(filter));
+  const sessions = state.sessions.filter(c => !filter
+    || (c.title || c.name || '').toLowerCase().includes(filter)
+    || (c.name || '').toLowerCase().includes(filter));
   const projects = state.projects || [];   // [{dir, display, is_default, status}]
   const sessionsByDir = {};
   const legacySess = [];
@@ -99,7 +101,7 @@ export function renderSidebar(root, state, events) {
   const renderSessItem = (c) => {
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
-    item.innerHTML = `<div class="si-bar"><div class="st">${esc(c.name)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息</div>`;
+    item.innerHTML = `<div class="si-bar"><div class="st">${esc(c.title || c.name)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息</div>`;
     item.addEventListener('click', (e) => {
       if (e.target.closest('.sess-more')) return;
       events.onSelectSession(c);

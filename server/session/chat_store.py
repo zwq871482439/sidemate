@@ -524,6 +524,7 @@ def list_chats():
             has_cache = False
             chat_group = "日常"  # 旧会话 meta 无 group → 默认「日常」（免迁移）
             chat_project_dir = None  # 0.10.1 项目即文件夹：无 project_dir = 旧版只读会话
+            chat_title = name
             try:
                 meta_path = os.path.join(entry_path, "meta.json")
                 if os.path.exists(meta_path):
@@ -532,6 +533,7 @@ def list_chats():
                     msg_count = meta.get("message_count", 0)
                     chat_group = meta.get("group") or "日常"
                     chat_project_dir = meta.get("project_dir") or None
+                    chat_title = meta.get("title") or name  # M1-E：自动命名显示名（默认=文件夹名）
                 else:
                     # fallback: 读 messages.json 计数
                     msgs_path = os.path.join(entry_path, "messages.json")
@@ -548,6 +550,7 @@ def list_chats():
             result.append({
                 "path": entry_path,
                 "name": name,
+                "title": chat_title,
                 "label": label,
                 "current": (entry_path == current_file),
                 "msg_count": msg_count,
@@ -583,6 +586,7 @@ def list_chats():
             result.append({
                 "path": filepath,
                 "name": name,
+                "title": name,
                 "label": label,
                 "current": (filepath == current_file),
                 "msg_count": msg_count,
@@ -668,8 +672,44 @@ def rename_chat(old_name: str, new_name: str) -> dict:
 
     try:
         os.rename(old_path, new_path)
+        # M1-E 自动命名共存：手动重命名（改文件夹名）后同步 meta.title 显示名，
+        # 避免自动命名的旧标题在新文件夹名下继续显示
+        try:
+            _meta_path = os.path.join(new_path, "meta.json")
+            if os.path.isdir(new_path) and os.path.isfile(_meta_path):
+                with open(_meta_path, "r", encoding="utf-8") as f:
+                    _meta = json.load(f)
+                _meta["title"] = safe_new
+                _meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                atomic_write_json(_meta_path, _meta)
+        except Exception:
+            pass
         log.info("[CHAT] renamed: %s -> %s" % (old_name, safe_new))
         return {"ok": True, "old_name": old_name, "new_name": safe_new, "new_file": new_path}
     except OSError as e:
         log.error("[CHAT] rename failed: %s -> %s — %s" % (old_name, safe_new, str(e)))
         return {"error": "重命名失败: %s" % str(e)[:100]}
+
+
+def set_chat_title(chat_name: str, title: str) -> bool:
+    """写 meta.title 显示名（M1-E 自动命名）。文件夹名/路径不动。
+
+    Returns:
+        bool: 是否写入成功（meta 不存在/旧格式/写失败均 False）
+    """
+    title = (title or "").strip()
+    if not title:
+        return False
+    meta_path = os.path.join(CHAT_DIR, chat_name, "meta.json")
+    if not os.path.isfile(meta_path):
+        return False
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        meta["title"] = title
+        meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        atomic_write_json(meta_path, meta)
+        return True
+    except Exception as e:
+        log.warning("[CHAT] set_chat_title 失败 %s: %s", chat_name, str(e)[:80])
+        return False

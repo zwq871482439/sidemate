@@ -123,6 +123,23 @@ def persist_abort(ctx, content, think="", model_choice="", task_type="text",
 
 
 def persist_turn(ctx, assistant_msg, context_cache=None):
+    """回合落盘 + 首条消息后自动命名钩子（M1-E）。
+
+    落盘本体见 _persist_turn_impl；命名钩子失败静默（绝不影响主流程）。
+    模式分支走 pipelines 工厂（CI 白名单口径）。
+    """
+    result = _persist_turn_impl(ctx, assistant_msg, context_cache)
+    try:
+        import os as _os
+        from pipelines import auto_name_if_default
+        _chat_name = _os.path.splitext(_os.path.basename(ctx.chat_file))[0]
+        auto_name_if_default(_chat_name, ctx.message, ctx.ai_mode)
+    except Exception:
+        pass
+    return result
+
+
+def _persist_turn_impl(ctx, assistant_msg, context_cache=None):
     """回合落盘：读盘 → 追加 assistant 消息 → 保存。
 
     单写路径（新）：stream 入口已把 user 消息开局落盘（ctx.user_msg_saved），
