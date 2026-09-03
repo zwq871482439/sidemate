@@ -31,6 +31,7 @@ export function createViewer(opts) {
   let wd = null;       // 项目：{ files, artifacts, dir, display, is_default, status } | {legacy:true} | null=未加载
   let handoff = null;  // 项目交接 {content, updated_at, source_engine, source_chat} | null
   let handoffProj = null;
+  let carrySids = [];  // M2 选带层：本会话勾选携带的前情会话 sid 列表
   let uploading = false;
   let ppt = null;      // PPT decks 回放：{ decks:[{deck,title,pages:[{n,url}],pptx,pptx_url}] } | null=未加载
   let pptLive = {};    // 流式期间即时累积：deck -> { title, pages: {n: url} }
@@ -68,6 +69,32 @@ export function createViewer(opts) {
       handoff = h && h.handoff ? h.handoff : null;
       if (wd && wd.dir) handoffProj = h.project || null;
     } catch (e) { handoff = null; }
+    // M2 选带层：本会话携带的前情会话清单
+    try {
+      const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/carry');
+      const d = await r.json();
+      carrySids = d.sids || [];
+    } catch (e) { carrySids = []; }
+  }
+
+  // 选带层切换：勾选/取消某条同项目会话 → POST 全量清单
+  async function _toggleCarry(sid, btn) {
+    const cur = opts.getCurrentChat();
+    if (!cur) return;
+    const next = carrySids.includes(sid)
+      ? carrySids.filter(s => s !== sid)
+      : carrySids.concat([sid]).slice(0, 4);
+    if (btn) btn.disabled = true;
+    try {
+      const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/carry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sids: next }),
+      });
+      const d = await r.json();
+      if (d.ok) carrySids = d.sids || [];
+    } catch (e) { /* 失败保持原状 */ }
+    if (btn) btn.disabled = false;
+    renderBody();
   }
 
   function render() {
@@ -129,11 +156,12 @@ export function createViewer(opts) {
     const sessions = (opts.getSessions ? opts.getSessions() : []);
     const peers = sessions.filter(s => s.project_dir === wd.dir);
     if (!peers.length) return '';
-    return `<div class="vw-sec">同项目会话 · ${peers.length}</div>
+    return `<div class="vw-sec">同项目会话 · ${peers.length}${carrySids.length ? `<span class="vw-carry-hint">（携带 ${carrySids.length} 条前情）</span>` : ''}</div>
       <div class="vw-peers">
       ${peers.map(c => `
         <div class="vw-peer ${c.current ? 'on' : ''}" data-name="${esc(c.name)}" title="${esc(c.name)}">
-          <span class="pn">${esc(c.name)}</span><span class="pm">${c.msg_count || 0} 条</span>
+          <span class="pn">${esc(c.title || c.name)}</span><span class="pm">${c.msg_count || 0} 条</span>
+          ${c.current ? '' : `<button class="vw-carry ${carrySids.includes(c.name) ? 'on' : ''}" data-sid="${esc(c.name)}" title="${carrySids.includes(c.name) ? '取消携带（不再注入此会话摘要）' : '携带前情（注入此会话摘要到本会话上下文，仅在线生效）'}">携</button>`}
         </div>`).join('')}
       </div>`;
   }
@@ -182,12 +210,17 @@ export function createViewer(opts) {
         ${_wdFiles()}
       </div>
       <input type="file" class="vw-up-input" style="display:none">`;
-      // 同项目会话点击切换
+      // 同项目会话点击切换；「携」按钮切换选带（不触发切换）
       body.querySelectorAll('.vw-peer').forEach(p =>
         p.addEventListener('click', () => {
           const sessions = (opts.getSessions ? opts.getSessions() : []);
           const target = sessions.find(s => s.name === p.dataset.name);
           if (target && !target.current && opts.onSwitchSession) opts.onSwitchSession(target);
+        }));
+      body.querySelectorAll('.vw-carry').forEach(b =>
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          _toggleCarry(b.dataset.sid, b);
         }));
       const openBtn = body.querySelector('[data-a="open"]');
       if (openBtn) openBtn.addEventListener('click', async () => {

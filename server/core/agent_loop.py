@@ -1297,6 +1297,41 @@ class AgentLoop:
                         "message": "生成 docx 失败: %s" % str(e)[:100],
                     }
 
+            elif tool_name == "read_session":
+                # M2 冷层：同项目校验 + 每 sid 每任务只读一次（防循环）+
+                # 私密会话拒读（隐私铁律：离线内容不出机）
+                from session import chat_store as _cs3, projects as _proj4
+                sid = (args.get("chat_name") or "").strip()
+                if not hasattr(self, "_read_sids"):
+                    self._read_sids = set()
+                if not sid:
+                    return {"success": False, "tool": "read_session",
+                            "error": "missing_sid", "message": "缺少 chat_name（会话 sid）"}
+                if sid in self._read_sids:
+                    return {"success": False, "tool": "read_session",
+                            "error": "already_read",
+                            "message": "会话 %s 本次任务已读过（防循环限制）——请基于已读到的内容继续，或换一条会话" % sid}
+                _cur_proj = _proj4.resolve_chat_project(self.chat_id)
+                _sid_proj = _proj4.resolve_chat_project(sid)
+                if not _cur_proj.get("dir") or _sid_proj.get("dir") != _cur_proj.get("dir"):
+                    return {"success": False, "tool": "read_session",
+                            "error": "cross_project",
+                            "message": "会话 %s 不在当前项目内——只能读[项目会话索引]里列出的同项目会话" % sid}
+                if _cs3.is_private_session(sid):
+                    return {"success": False, "tool": "read_session",
+                            "error": "private_session",
+                            "message": "会话 %s 是私密会话，不可读取（隐私保护）" % sid}
+                _dg = _cs3.session_digest(sid, max_chars=2000)
+                if not _dg:
+                    return {"success": False, "tool": "read_session",
+                            "error": "not_found",
+                            "message": "会话 %s 不存在或没有消息" % sid}
+                self._read_sids.add(sid)
+                stats["session_reads"] = stats.get("session_reads", 0) + 1
+                return {"success": True, "tool": "read_session",
+                        "data": {"sid": sid, "digest": _dg,
+                                 "question": (args.get("question") or "")}}
+
             elif tool_name == "spawn_reader":
                 # M2：并行深读子任务——并发 fetch（继承 SSRF 防护与截断），
                 # 按 question 关键词窗口截取相关片段汇总回填
@@ -1734,6 +1769,9 @@ class AgentLoop:
             return get_status_event(tool_name, "start",
                                     count=len(args.get("urls") or []),
                                     query=(args.get("question") or "")[:40])
+        elif tool_name == "read_session":
+            return get_status_event(tool_name, "start",
+                                    name=(args.get("chat_name") or "")[:40])
         else:
             return {"status": "thinking"}
 
@@ -1850,6 +1888,9 @@ class AgentLoop:
                                     count=data.get("total", 0),
                                     ok_count=data.get("ok_count", 0),
                                     query=(data.get("question") or "")[:40])
+        elif tool_name == "read_session":
+            return get_status_event(tool_name, "done",
+                                    name=data.get("sid", ""))
         else:
             return {"status": "done"}
 

@@ -3358,6 +3358,8 @@ var CardRenderer = (function() {
     if (status === 'plan') return '编排完成：' + (d.ok_count || 0) + '/' + (d.count || 0) + ' 步成功';
     if (status === 'readers_spawning') return '并行深读 ' + (d.count || '?') + ' 篇：' + _esc(d.query || '');
     if (status === 'readers') return '深读完成：' + (d.ok_count || 0) + '/' + (d.count || 0) + ' 篇';
+    if (status === 'session_reading') return '读取历史会话：' + _esc(d.name || '');
+    if (status === 'session_read') return '已读历史会话：' + _esc(d.name || '');
     // _done 后缀的状态：提取前缀映射
     if (status.indexOf('_done') > 0) {
       var prefix = status.replace('_done', '');

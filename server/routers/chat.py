@@ -605,6 +605,58 @@ async def api_chats_set_group(chat_name: str, request: Request):
     return set_chat_group(safe_name, body.get("group", ""))
 
 
+@router.get("/api/chats/{chat_name}/carry")
+def api_chats_get_carry(chat_name: str):
+    """读取会话的携带前情清单（M2 选带层 carry_sids）"""
+    safe_name = _safe_chat_name(chat_name)
+    if not safe_name:
+        return JSONResponse({"error": "非法对话名称"}, status_code=400)
+    from session import chat_store
+    return {"sids": chat_store.read_meta(safe_name).get("carry_sids") or []}
+
+
+@router.post("/api/chats/{chat_name}/carry")
+async def api_chats_set_carry(chat_name: str, request: Request):
+    """设置会话的携带前情清单（M2 选带层 carry_sids）。
+
+    校验：≤4 条、不能带自己、只能带同项目会话（项目目录一致）。
+    写 meta.carry_sids；注入在 agent prompt 装配时生效（在线路径）。
+    """
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    safe_name = _safe_chat_name(chat_name)
+    if not safe_name:
+        return JSONResponse({"error": "非法对话名称"}, status_code=400)
+    body = await request.json()
+    sids = [s for s in (body.get("sids") or []) if isinstance(s, str) and s][:4]
+    from session import chat_store, projects
+    import os as _os
+    from config import CHAT_DIR as _CD
+    cur_proj = projects.resolve_chat_project(safe_name)
+    valid = []
+    for sid in sids:
+        if sid == safe_name:
+            continue
+        if not _os.path.isdir(_os.path.join(_CD, sid)):
+            continue
+        if cur_proj.get("dir") and projects.resolve_chat_project(sid).get("dir") != cur_proj.get("dir"):
+            continue  # 只允许携带同项目会话
+        if sid not in valid:
+            valid.append(sid)
+    import time as _t
+    from common.utils import atomic_write_json
+    meta_path = _os.path.join(_CD, safe_name, "meta.json")
+    if not _os.path.isfile(meta_path):
+        return JSONResponse({"error": "会话不存在"}, status_code=404)
+    import json as _json
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = _json.load(f)
+    meta["carry_sids"] = valid
+    meta["updated_at"] = _t.strftime("%Y-%m-%d %H:%M:%S")
+    atomic_write_json(meta_path, meta)
+    return {"ok": True, "sids": valid}
+
+
 @router.get("/api/chats/{chat_name}/messages")
 def api_chats_messages(chat_name: str):
     """获取对话消息（兼容文件夹和 .json 格式）"""

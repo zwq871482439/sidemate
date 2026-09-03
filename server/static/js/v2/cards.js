@@ -49,6 +49,8 @@ export function agentStatusLabel(status, d) {
   if (status === 'plan') return '编排完成：' + (d.ok_count || 0) + '/' + (d.count || 0) + ' 步成功（' + (d.detail || '') + '）';
   if (status === 'readers_spawning') return '并行深读 ' + (d.count || '?') + ' 篇：' + (d.query || '');
   if (status === 'readers') return '深读完成：' + (d.ok_count || 0) + '/' + (d.count || 0) + ' 篇';
+  if (status === 'session_reading') return '读取历史会话：' + (d.name || '');
+  if (status === 'session_read') return '已读历史会话：' + (d.name || '');
   if (status === 'ppt') {  // ppt_done 经 _done 后缀剥离到这里
     if (d.action === 'begin') return 'PPT 开题：' + (d.title || '');
     if (d.action === 'page') return '第 ' + (d.page || '?') + ' 页设计完成';

@@ -622,6 +622,16 @@ sup.ref-n:hover { text-decoration: underline; }
 .vw-peer.on { background: var(--d1-paper); color: var(--d1-accent); font-weight: 600; cursor: default; }
 .vw-peer .pn { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vw-peer .pm { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); flex-shrink: 0; }
+/* 选带层「携」切换（M2 carry_sids） */
+.vw-carry {
+  flex-shrink: 0; border: 1px solid var(--d1-n-line); background: transparent;
+  color: var(--d1-ink-3); border-radius: var(--d1-r-sm); font-size: var(--d1-fs-tiny);
+  padding: 1px 6px; cursor: pointer;
+}
+.vw-carry:hover { border-color: var(--d1-gold); color: var(--d1-gold-2); }
+.vw-carry.on { background: var(--d1-gold); border-color: var(--d1-gold); color: #131B24; font-weight: 600; }
+.vw-carry:disabled { opacity: .5; cursor: default; }
+.vw-carry-hint { font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); margin-left: 6px; }
 .vw-dir-acts { display: flex; gap: 6px; flex-shrink: 0; }
 .wd-lock-note {
   font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); padding: 7px 10px;

@@ -747,6 +747,38 @@ TOOL_REGISTRY = {
         "condition": None,
         "prompt_fragment": "reader",
     },
+    # ===== M2：read_session 冷层（检索式互查，防循环）=====
+    "read_session": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_session",
+                "description": "读取同项目某个历史会话的内容摘要（标题+首条提问+最近回答节选）。适用：[项目会话索引] 里发现某条历史会话与当前任务相关，需要它里面的具体细节（决定/数据/错误记录）时。规则：① 只能读[项目会话索引]中列出的同项目会话（传 sid）；② 每个会话每次任务最多读一次（系统防循环，重复读会被拒）；③ 读到的是节选不是全文，需要更多可换 question 角度再读别的会话；④ 私密会话不可读。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "chat_name": {
+                            "type": "string",
+                            "description": "会话 sid（项目会话索引里 sid: 后的值）"
+                        },
+                        "question": {
+                            "type": "string",
+                            "description": "想从该会话了解什么（可选，引导摘要侧重）"
+                        }
+                    },
+                    "required": ["chat_name"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "session_reading",
+            "done": "session_read_done",
+        },
+        "stat_key": "session_reads",
+        "condition": None,
+        "prompt_fragment": "read_session",
+    },
 }
 
 # ===== prompt fragment 惰性加载表（M2 能力注册表拼装）=====
@@ -757,6 +789,7 @@ _FRAGMENT_LOADERS = {
     "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,
     "plan": lambda: __import__("prompts").PLAN_PROTOCOL_PROMPT,
     "reader": lambda: __import__("prompts").READER_PROTOCOL_PROMPT,
+    "read_session": lambda: __import__("prompts").SESSION_READ_PROMPT,
 }
 
 # 工具级权限映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。
@@ -984,10 +1017,9 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
                 reduced = [b for j, b in enumerate(blocks) if j != i]
                 body = _assemble_context(reduced)
 
-        if not body.strip():
-            return base_prompt
-
-        out = base_prompt + header + "\n" + body
+        # body 为空（全新会话：无文件/无工具历史）也继续走项目级注入——
+        # handoff/会话索引/选带层正是为「新会话开局接续」设计的，不能被早退吞掉
+        out = base_prompt + (header + "\n" + body if body.strip() else "")
         # ===== 项目交接注入（PLAN ②++：同项目新会话开局载入 handoff.md）=====
         # 隐私铁律：私密来源（离线生成）的交接不注入在线 prompt（离线内容不上云）
         try:
@@ -1000,6 +1032,53 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
                             "[交接完]——在此基础上继续，不要重复已完成的工作"
                             % (_pd.get("display", ""), _h.get("updated_at", ""),
                                _h["content"][:_proj.HANDOFF_MAX_INJECT]))
+        except Exception:
+            pass
+        # ===== 项目会话索引段（M2 记忆分层·热层发现面，②+++ 议题1）=====
+        # 同项目最近 8 条会话一行式（标题/sid/时间/条数），动态拼装零 LLM 成本；
+        # 隐私铁律：离线私密会话不进在线索引段（read_session 同样拒读）
+        try:
+            from session import projects as _proj2, chat_store as _cs
+            _pd2 = _proj2.resolve_chat_project(chat_id)
+            if not _pd2.get("legacy") and _pd2.get("dir"):
+                _lines = []
+                for _c in _cs.iter_project_sessions(_pd2["dir"]):
+                    if _c.get("name") == chat_id:
+                        continue
+                    if _cs.is_private_session(_c["name"]):
+                        continue
+                    _lines.append("- %s（sid:%s · %s · %d条）" % (
+                        (_c.get("title") or _c["name"]), _c["name"],
+                        (_c.get("updated_at") or "")[:16], _c.get("msg_count") or 0))
+                    if len(_lines) >= 8:
+                        break
+                if _lines:
+                    out += ("\n\n[项目会话索引 · 同项目最近 %d 条会话，"
+                            "需要细节用 read_session 读取（每会话只读一次）]\n%s"
+                            % (len(_lines), "\n".join(_lines)))
+        except Exception:
+            pass
+        # ===== 选带层（carry_sids：用户勾选携带的会话，②+++ 议题1）=====
+        # 注入各携带会话的轻量摘要（去重/封顶）；私密会话跳过
+        try:
+            from session import chat_store as _cs2, projects as _proj3
+            _carry = (_cs2.read_meta(chat_id).get("carry_sids") or [])[:4]
+            if _carry:
+                _pd3 = _proj3.resolve_chat_project(chat_id)
+                _digests = []
+                for _sid in _carry:
+                    if _sid == chat_id or _cs2.is_private_session(_sid):
+                        continue
+                    if _pd3.get("dir"):
+                        _sp = _proj3.resolve_chat_project(_sid)
+                        if _sp.get("dir") != _pd3["dir"]:
+                            continue  # 只允许携带同项目会话
+                    _dg = _cs2.session_digest(_sid, max_chars=500)
+                    if _dg:
+                        _digests.append(_dg)
+                if _digests:
+                    out += ("\n\n[用户指定携带的前情会话 · %d 条]\n%s"
+                            % (len(_digests), "\n\n".join(_digests)[:1600]))
         except Exception:
             pass
         return out

@@ -713,3 +713,65 @@ def set_chat_title(chat_name: str, title: str) -> bool:
     except Exception as e:
         log.warning("[CHAT] set_chat_title 失败 %s: %s", chat_name, str(e)[:80])
         return False
+
+
+def session_digest(chat_name: str, max_chars: int = 800) -> str:
+    """生成会话轻量摘要（M2 记忆分层：选带层注入 + read_session 冷层用）。
+
+    构成：标题 + 首条用户消息（截 120 字）+ 最近一条助手消息（截 max_chars）。
+    返回空字符串表示会话不存在/无消息。不含私密判定（调用方负责隐私门禁）。
+    """
+    try:
+        meta = read_meta(chat_name)
+        title = meta.get("title") or chat_name
+        msgs = load_chat(os.path.join(CHAT_DIR, chat_name)) or []
+        if not msgs:
+            return ""
+        first_user = next((m for m in msgs if m.get("role") == "user"), None)
+        last_asst = next((m for m in reversed(msgs) if m.get("role") == "assistant"), None)
+        parts = ["《%s》（sid:%s）" % (title, chat_name)]
+        if first_user:
+            parts.append("首条提问：%s" % str(first_user.get("content", ""))[:120])
+        if last_asst:
+            parts.append("最近回答：%s" % str(last_asst.get("content", ""))[:max_chars])
+        return "\n".join(parts)[:max_chars + 200]
+    except Exception:
+        return ""
+
+
+def is_private_session(chat_name: str) -> bool:
+    """隐私铁律判定：离线私密会话（engine_origin=local 且 private）不注入在线。"""
+    meta = read_meta(chat_name)
+    return meta.get("engine_origin") == "local" and bool(meta.get("private"))
+
+
+def iter_project_sessions(project_dir: str) -> list:
+    """同项目会话轻量枚举（M2 会话索引段注入用）。
+
+    与 list_chats 的区别：不调用 get_current_chat（routers.deps → import server），
+    因此在任意上下文（含 pytest/后台线程）都安全。按 meta.updated_at 倒序。
+
+    Returns:
+        list[dict]: [{name, title, msg_count, updated_at, project_dir}]
+    """
+    if not project_dir or not os.path.isdir(CHAT_DIR):
+        return []
+    out = []
+    for entry in os.listdir(CHAT_DIR):
+        entry_path = os.path.join(CHAT_DIR, entry)
+        if not os.path.isdir(entry_path):
+            continue
+        meta = read_meta(entry)
+        if not meta or not meta.get("project_dir"):
+            continue
+        if os.path.normpath(meta["project_dir"]) != os.path.normpath(project_dir):
+            continue
+        out.append({
+            "name": entry,
+            "title": meta.get("title") or entry,
+            "msg_count": meta.get("message_count", 0),
+            "updated_at": meta.get("updated_at", ""),
+            "project_dir": meta["project_dir"],
+        })
+    out.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+    return out

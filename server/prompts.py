@@ -138,6 +138,14 @@ READER_PROTOCOL_PROMPT = (
     "汇总返回，比逐篇 fetch_url 省轮次。单篇精读仍用 fetch_url。"
 )
 
+# 记忆分层冷层协议（M2：read_session 检索式互查，防循环）
+SESSION_READ_PROMPT = (
+    "\n12. 历史会话互查（read_session 工具）：上下文里有 [项目会话索引]（同项目"
+    "最近会话的一行式清单）。当当前任务明显承接某条历史会话（同一主题的先前讨论/"
+    "之前的决定或数据/上次没做完的事），用 read_session 读它的摘要再继续，"
+    "不要凭印象复述历史。每个会话只读一次；索引里没有的会话不能读。"
+)
+
 # 场景增强（只一句话，不重复规则，不超20字）
 STRATEGY_ENHANCEMENTS = {
     "greeting":   "1-2句简短回应即可。",
