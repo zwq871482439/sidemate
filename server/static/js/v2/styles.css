@@ -417,6 +417,51 @@ body {
 .wd-tip p { font-size: var(--d1-fs-body); color: var(--d1-ink-2); margin: 0 0 8px; line-height: 1.6; }
 .wd-tip strong { color: var(--d1-accent); }
 
+/* ---- 文档提纲确认栏（两阶段 doc 管道，经典版交互 DNA-01 重绘） ---- */
+.doc-confirm-bar {
+  max-width: 760px; margin: 10px auto 0; padding: 12px 14px;
+  background: var(--d1-paper-2); border: 1px solid var(--d1-gold-2);
+  border-radius: var(--d1-r-lg); display: flex; flex-direction: column; gap: 10px;
+}
+.doc-outline-edit-wrap > summary {
+  cursor: pointer; font-size: var(--d1-fs-small); color: var(--d1-ink-2);
+  list-style: none; display: flex; align-items: center; gap: 6px;
+}
+.doc-outline-edit-wrap > summary::-webkit-details-marker { display: none; }
+.doc-outline-edit-wrap > summary::before { content: '▸'; font-size: 10px; transition: transform var(--d1-dur-micro); }
+.doc-outline-edit-wrap[open] > summary::before { transform: rotate(90deg); }
+.doc-outline-toolbar { display: flex; gap: 6px; margin: 10px 0 8px; }
+.doc-outline-toggle-btn {
+  font-family: inherit; font-size: var(--d1-fs-tiny); cursor: pointer;
+  border: 1px solid var(--d1-n-line); background: var(--d1-paper); color: var(--d1-ink-2);
+  border-radius: 12px; padding: 3px 12px;
+}
+.doc-outline-toggle-btn.active { background: var(--d1-accent); color: var(--d1-paper); border-color: var(--d1-accent); }
+.doc-outline-preview {
+  max-height: 280px; overflow-y: auto; background: var(--d1-paper);
+  border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md);
+  padding: 10px 14px; font-size: var(--d1-fs-small); line-height: 1.7;
+}
+.doc-outline-editor {
+  width: 100%; min-height: 180px; box-sizing: border-box; resize: vertical;
+  font-family: inherit; font-size: var(--d1-fs-small); line-height: 1.7;
+  border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md);
+  padding: 10px 12px; background: var(--d1-paper); color: var(--d1-ink);
+}
+.doc-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.doc-confirm-ok {
+  font-family: inherit; font-size: var(--d1-fs-small); font-weight: 600; cursor: pointer;
+  background: var(--d1-accent); color: var(--d1-paper); border: none;
+  border-radius: 8px; padding: 7px 18px;
+}
+.doc-confirm-ok:hover { opacity: .92; }
+.doc-confirm-cancel {
+  font-family: inherit; font-size: var(--d1-fs-small); cursor: pointer;
+  background: var(--d1-paper); color: var(--d1-ink-2); border: 1px solid var(--d1-n-line);
+  border-radius: 8px; padding: 7px 16px;
+}
+.doc-confirm-cancel:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
+
 /* ---- 内联目录选择器 ---- */
 .dir-pk { width: 520px; }
 .dp-quick { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }

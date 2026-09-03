@@ -97,6 +97,10 @@ const chatStream = createChatStream({
   },
   onStreamTick: (st, phase) => { _streamState = st; renderStreamingBubble(st); },
   onCardEvent: (d) => { if (_cards) _cards.handleEvent(d); },
+  onDocOutline: (outline) => {
+    // 文档 Phase 1 完成：提纲确认栏（经典版同款交互，v2 DNA 样式）
+    _showDocConfirmBar(outline);
+  },
   onDoneData: (d) => { _doneData = d; },
   onDone: async () => {
     state.generating = false;
@@ -346,6 +350,7 @@ document.addEventListener('keydown', (e) => {
 function renderChatArea() {
   const scroll = document.getElementById('main-scroll');
   if (!scroll) return;
+  document.getElementById('v2DocBar')?.remove();  // 先清旧确认栏，待确认分支会重建
   if (state.switching) {
     // 鱼骨加载（模式切换中）：消息区骨架条，输入区锁定
     scroll.innerHTML = '<div class="skel-wrap">' +
@@ -355,6 +360,9 @@ function renderChatArea() {
       '<div class="skel-line" style="width:30%"></div></div>';
   } else if (state.messages && state.messages.length) {
     renderChatFlow(scroll, state.messages);
+    // 提纲待确认恢复（快照重建/刷新共用入口）
+    const pendingOutline = _lastOutlineMsg();
+    if (pendingOutline) _showDocConfirmBar(pendingOutline.msg.content || '');
   } else if (state.workdir && state.workdir.legacy) {
     // 旧版 0 消息会话不出场景卡（点了也发不出去），给只读存档说明
     scroll.innerHTML = `<div class="legacy-empty">
@@ -407,6 +415,104 @@ function renderChatArea() {
   });
   _composer.setRunning(state.generating || state.switching);
   main.appendChild(_composer.el);
+}
+
+// ===== 文档两阶段：提纲确认栏（Phase 1 提纲 → 用户确认/编辑 → Phase 2 正文） =====
+let _outlineDismissed = null;  // 用户取消过的提纲消息 id（本地态，刷新恢复同经典版）
+
+function _lastOutlineMsg() {
+  const msgs = state.messages || [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === 'assistant' && m.doc_phase === 'outline') {
+      return _outlineDismissed === (m.id || i) ? null : { msg: m, key: m.id || i };
+    }
+    if (m.role === 'assistant' && m.doc_phase !== 'outline' && (m.content || '').trim()) return null;
+    // 提纲之后已有正式回答 → 不再待确认
+  }
+  return null;
+}
+
+function _mdPreview(text) {
+  if (typeof marked !== 'undefined') {
+    const html = marked.parse(text || '', { breaks: true });
+    return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;
+  }
+  return '<pre>' + esc(text || '') + '</pre>';
+}
+
+// 确认栏渲染（流式中途 doc_outline 事件 + 快照重建/刷新恢复共用）。
+// 钉在消息区与输入区之间（非滚动区内部）——确认按钮恒可见，
+// 不信 scrollTop（布局期滚动夹持会清掉滚动位置，已踩过）
+function _showDocConfirmBar(outlineText) {
+  const main = document.getElementById('main');
+  if (!main) return;
+  document.getElementById('v2DocBar')?.remove();
+  const bar = document.createElement('div');
+  bar.className = 'doc-confirm-bar';
+  bar.id = 'v2DocBar';
+  bar.innerHTML = `
+    <details class="doc-outline-edit-wrap">
+      <summary>📄 文档提纲已生成 — 点击查看，可编辑章节</summary>
+      <div class="doc-outline-toolbar">
+        <button class="doc-outline-toggle-btn" data-t="edit">编辑</button>
+        <button class="doc-outline-toggle-btn active" data-t="preview">预览</button>
+      </div>
+      <textarea class="doc-outline-editor" style="display:none"></textarea>
+      <div class="doc-outline-preview md"></div>
+    </details>
+    <div class="doc-confirm-actions">
+      <button class="doc-confirm-ok" data-a="ok">✓ 确认生成</button>
+      <button class="doc-confirm-cancel" data-a="cancel">取消</button>
+    </div>`;
+  const editor = bar.querySelector('.doc-outline-editor');
+  const preview = bar.querySelector('.doc-outline-preview');
+  editor.value = outlineText || '';
+  preview.innerHTML = _mdPreview(outlineText);
+  bar.querySelectorAll('.doc-outline-toggle-btn').forEach(b =>
+    b.addEventListener('click', () => {
+      const toPreview = b.dataset.t === 'preview';
+      bar.querySelectorAll('.doc-outline-toggle-btn').forEach(x => x.classList.toggle('active', x === b));
+      editor.style.display = toPreview ? 'none' : 'block';
+      preview.style.display = toPreview ? 'block' : 'none';
+      if (toPreview) preview.innerHTML = _mdPreview(editor.value);
+    }));
+  bar.querySelector('[data-a="ok"]').addEventListener('click', () => {
+    const outline = editor.value.trim();
+    if (!outline) { alert('提纲内容为空，无法生成'); return; }
+    bar.remove();
+    const pending = _lastOutlineMsg();
+    if (pending) _outlineDismissed = pending.key;  // 确认后提纲消息仍在列表尾，Phase 2 期间不再出栏
+    _docPhase2(outline);
+  });
+  bar.querySelector('[data-a="cancel"]').addEventListener('click', () => {
+    bar.remove();
+    const pending = _lastOutlineMsg();
+    if (pending) _outlineDismissed = pending.key;  // 本地取消；刷新后恢复（经典版同款语义）
+  });
+  // 钉在 #main-scroll 与 composer 之间（无 composer 时追加在末尾）
+  const composerEl = main.querySelector('.composer');
+  if (composerEl) main.insertBefore(bar, composerEl);
+  else main.appendChild(bar);
+}
+
+// Phase 2：带确认的提纲发 doc_continue（空消息，无 user 气泡）
+async function _docPhase2(outline) {
+  if (state.generating) return;
+  const history = (state.messages || [])
+    .filter(m => !(m.role === 'assistant' && (!m.content || !m.content.trim())))
+    .map(m => (m.role === 'assistant' && m.content && m.content.length > 1500)
+      ? Object.assign({}, m, { content: m.content.slice(0, 1500) + '\n\n...（内容过长已截断）' })
+      : m);
+  state.generating = true;
+  renderChatArea();
+  _composer.setRunning(true);
+  await chatStream.send({
+    text: '',
+    docContinue: outline,
+    actionMode: 'doc',
+    history,
+  });
 }
 
 // 流式气泡：生成中追加在消息区末尾（不污染 state.messages，流末快照重建）

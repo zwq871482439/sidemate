@@ -24,18 +24,21 @@ export function createChatStream(hooks) {
   let aborter = null;
 
   async function send(payload) {
-    // payload: { text, actionMode, filePath, fileTag, history }
+    // payload: { text, actionMode, filePath, fileTag, history, docContinue }
     const session = hooks.getSession();
     if (!session) return;
 
     // 用户消息即刻上屏（M1-B：后端 stream 入口开局落盘，前端只负责即时显示）
-    hooks.onUserMsg({
-      role: 'user', content: payload.text, ts: _now(),
-      _file_tag: payload.fileTag || undefined,
-    });
+    // doc Phase2（doc_continue）不上屏 user 气泡（避免「请基于提纲生成」假消息）
+    if (!payload.docContinue) {
+      hooks.onUserMsg({
+        role: 'user', content: payload.text, ts: _now(),
+        _file_tag: payload.fileTag || undefined,
+      });
+    }
 
     const body = {
-      message: payload.text,
+      message: payload.docContinue ? '' : payload.text,
       history: payload.history,
       chat_file: session.path,
       action_mode: payload.actionMode || 'chat',
@@ -43,6 +46,7 @@ export function createChatStream(hooks) {
       user_ts: _now(),
       _file_tag: payload.fileTag || null,
     };
+    if (payload.docContinue) body.doc_continue = payload.docContinue;
 
     aborter = new AbortController();
     const st = {
@@ -130,6 +134,12 @@ function _handleEvent(d, st, hooks) {
     case 'kb_sources':
     case 'sources':
       st.sources = d.sources || null;
+      hooks.onStreamTick(st, 'token');
+      break;
+    case 'doc_outline':
+      // 文档 Phase 1 完成：提纲出炉，弹确认栏（经典版同款，v2 由 index 渲染）
+      st.outlineText = d.outline || st.text;
+      if (hooks.onDocOutline) hooks.onDocOutline(st.outlineText);
       hooks.onStreamTick(st, 'token');
       break;
     case 'doc_ready':
