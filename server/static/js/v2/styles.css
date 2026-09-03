@@ -504,18 +504,22 @@ body {
 .legacy-empty-ic { font-size: 34px; margin-bottom: 10px; }
 .legacy-empty-t { font-size: var(--d1-fs-h2); font-weight: 600; color: var(--d1-ink-2); margin-bottom: 8px; }
 .legacy-empty-d { font-size: var(--d1-fs-body); line-height: 1.8; }
-/* 空状态项目选择器行 */
-.empty-proj { margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.ep-chip {
-  font-family: inherit; font-size: var(--d1-fs-small); color: var(--d1-ink-2);
+/* 空状态项目选择器：通栏归属条（hero 与场景卡之间，2026-09-03 用户定稿） */
+.empty-own {
+  display: flex; align-items: center; gap: 10px;
   background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
-  border-radius: 14px; padding: 5px 14px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px;
-  transition: border-color var(--d1-dur-micro), color var(--d1-dur-micro);
+  border-radius: var(--d1-r-md); padding: 11px 16px; margin-bottom: 20px;
+  cursor: pointer; transition: border-color var(--d1-dur-micro), box-shadow var(--d1-dur-micro);
 }
-.ep-chip:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
-.ep-chip .ep-arrow { font-size: 10px; color: var(--d1-gold-2); }
-.ep-hint { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); }
+.empty-own:hover { border-color: var(--d1-gold-2); box-shadow: 0 0 0 3px rgba(232,181,77,.10); }
+.empty-own .eo-ic { font-size: 15px; }
+.empty-own .eo-name { flex: 1; font-size: var(--d1-fs-body); font-weight: 600; color: var(--d1-ink); }
+.empty-own .eo-change {
+  border: none; background: none; font-family: inherit; cursor: pointer;
+  font-size: var(--d1-fs-small); color: var(--d1-gold-2); font-weight: 600;
+  padding: 3px 8px; border-radius: 6px;
+}
+.empty-own .eo-change:hover { background: rgba(232,181,77,.12); }
 .vw-card-legacy { border-color: var(--d1-gold-2); }
 .vw-missing { color: var(--pal-danger); font-size: var(--d1-fs-tiny); padding-left: 42px; }
 .vw-sub {

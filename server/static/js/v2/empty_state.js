@@ -45,9 +45,10 @@ export function renderEmptyState(mode, events) {
   const wrap = document.createElement('div');
   wrap.className = 'empty-wrap';
   const projRow = events.projectLabel ? `
-      <div class="empty-proj">
-        <button class="ep-chip" title="选择任务所属的项目（发出第一条消息后定型）">📂 ${events.projectLabel} <span class="ep-arrow">▾</span></button>
-        <span class="ep-hint">选择项目</span>
+      <div class="empty-own" title="选择任务所属的项目（发出第一条消息后定型）">
+        <span class="eo-ic">📂</span>
+        <span class="eo-name">${events.projectLabel}</span>
+        <button class="eo-change">更换 ▾</button>
       </div>` : '';
 
   if (mode === 'local') {
@@ -56,8 +57,8 @@ export function renderEmptyState(mode, events) {
         <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>离线模式 · 数据不出本机</h1>
         <p>本地模型运行，无需联网 —— 适合隐私敏感场景</p>
-        ${projRow}
       </div>
+      ${projRow}
       <div class="offline-grid">
         ${OFFLINE_CARDS.map(c => `
           <div class="offline-card" data-scene="${c.scene}">
@@ -73,8 +74,8 @@ export function renderEmptyState(mode, events) {
         <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>开始一段新对话</h1>
         <p>选择一个场景，或直接输入 —— 想做什么，随时切随</p>
-        ${projRow}
       </div>
+      ${projRow}
       <div class="hero-card" data-scene="${hero.scene}">
         <div class="h-ic">${ICON(hero.icon)}</div>
         <div class="h-tx"><h2>${hero.title} <span class="tag">${hero.tag}</span></h2><p>${hero.desc}</p></div>
@@ -94,7 +95,9 @@ export function renderEmptyState(mode, events) {
 
   wrap.querySelectorAll('[data-scene]').forEach(el =>
     el.addEventListener('click', () => events.onScene(el.dataset.scene)));
-  const ep = wrap.querySelector('.ep-chip');
-  if (ep && events.onPickProject) ep.addEventListener('click', () => events.onPickProject(ep));
+  const eo = wrap.querySelector('.empty-own');
+  if (eo && events.onPickProject) {
+    eo.addEventListener('click', () => events.onPickProject(eo));
+  }
   return wrap;
 }
