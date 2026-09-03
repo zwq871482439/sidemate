@@ -43,6 +43,12 @@ MIT License 组件
   - idna
   - striprtf (MIT License, 用于 RTF 文档解析)
   - curl_cffi (lexiforest, MIT License, 捆绑 libcurl 实现浏览器 TLS 指纹伪装，用于搜索引擎反爬)
+  - ppt-master (hugohe3, MIT License, 0.10.1 起 vendor 抽取其 svg_to_pptx 编译链
+    至 server/vendor/ppt_master/ 用于 create_ppt 真 PPT 功能；
+    抽取时剥离了与桌伴集成分发不适用的防篡改门禁，署名与许可全文保留于该目录
+    LICENSE-ppt-master，原项目: https://github.com/hugohe3/ppt-master)
+  - Heroicons (Tailwind Labs, MIT License, 新版界面部分描边图标)
+  - esbuild (Evan Wallace, MIT License, 前端构建工具，仅开发期使用，不随安装包分发)
 
 MIT License 原文：
 
@@ -85,6 +91,10 @@ Apache License 2.0 组件
   - FlagEmbedding (BAAI, Apache License 2.0, 用于 BGE-M3 向量模型推理)
   - bge-reranker-v2-m3 / bge-reranker-large (BAAI, Apache License 2.0, 用于知识库检索精排)
   - aiofiles (Apache License 2.0, 用于知识库上传的流式文件写入)
+  - uharfbuzz (Apache License 2.0, HarfBuzz 文本整形，create_ppt 编译链依赖)
+  - Open XML SDK 预设形状数据（Microsoft Corporation, MIT License, 位于
+    server/vendor/ppt_master/pptx_shapes/data/，源自 ppt-master；
+    该目录同时含 Apache License 2.0 文本及 NOTICE.md，按许可要求原样保留）
 
 Apache License 2.0 通知要求：
 
@@ -122,6 +132,7 @@ BSD License 组件
   - sympy
   - python-dotenv
   - pypdfium2
+  - skia-pathops (BSD-3-Clause, Skia 几何路径运算，create_ppt 编译链依赖)
 
   BSD-2-Clause:
   - regex
@@ -286,7 +297,32 @@ Copyleft 许可组件（GPL / AGPL / MPL）
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+ISC License 组件
+
+以下组件使用 ISC License 发布（与 MIT 等价的宽松许可）。
+
+  - Lucide (ISC License, 新版界面部分描边图标，https://lucide.dev)
+
+ISC License 原文：
+
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted, provided that the above
+  copyright notice and this permission notice appear in all copies.
+
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+  SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+  OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+  CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 本声明最后更新：2026年7月13日（0.9.7 — 开源 Apache-2.0 + llama.cpp 引擎迁移）
+2026-09-03 补录：0.10.1 M1-E 引入项（ppt-master vendor 链 / skia-pathops /
+uharfbuzz / XlsxWriter / Open XML SDK 形状数据 NOTICE 保留）及
+新版界面图标（Heroicons MIT / Lucide ISC）、esbuild 开发期构建工具。
 
 如需获取任何第三方组件的完整许可协议文本或源代码，请联系：
 sidemate@deskware.cn
