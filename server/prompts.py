@@ -122,6 +122,22 @@ PPT_PROTOCOL_PROMPT = (
     "build 返回质量门错误时，修复对应页后重新 build。"
 )
 
+# PTC 调用计划协议（M2：run_plan 工具，一次编排多步独立调用省轮次）
+PLAN_PROTOCOL_PROMPT = (
+    "\n10. 批量编排（run_plan 工具）：当你需要连续做多个【相互独立】的信息获取"
+    "（多个关键词搜索、多个网页阅读、多处查询）时，不要一轮一调——"
+    "用一次 run_plan 把最多 5 个独立调用打包执行，结果合并返回，你再继续分析。\n"
+    "   判断标准：后一步不依赖前一步的结果就可以打包（如同时搜 3 个关键词）；"
+    "有依赖关系的调用仍逐轮进行。写操作和 create_ppt 不进 run_plan。"
+)
+
+# spawn_reader 并行深读协议（M2：一次并发深读多篇网页）
+READER_PROTOCOL_PROMPT = (
+    "\n11. 并行深读（spawn_reader 工具）：拿到搜索结果后要读多篇原文时，"
+    "优先用 spawn_reader 一次并发深读（最多 5 篇），它会按你的问题截取相关片段"
+    "汇总返回，比逐篇 fetch_url 省轮次。单篇精读仍用 fetch_url。"
+)
+
 # 场景增强（只一句话，不重复规则，不超20字）
 STRATEGY_ENHANCEMENTS = {
     "greeting":   "1-2句简短回应即可。",

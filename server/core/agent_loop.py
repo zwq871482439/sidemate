@@ -219,6 +219,54 @@ def _extract_md_title(md_content):
     return ""
 
 
+def _keyword_excerpt(text, question, width=1200):
+    """按问题关键词从长文截取相关片段（M2 spawn_reader 用）。
+
+    策略：问题分词（中文二元组+英文词），统计每段的命中数，
+    取命中最高的段落窗口拼接；全文零命中时返回开头 width 字符。
+    """
+    if not text:
+        return ""
+    if len(text) <= width:
+        return text
+    import re as _re
+    # 问题分词：英文/数字词 + 中文连续段（长度≥2 按二元组切）
+    words = _re.findall(r"[A-Za-z0-9_]{2,}", question)
+    for seg in _re.findall(r"[一-鿿]{2,}", question):
+        words.append(seg)
+        if len(seg) > 2:
+            words.extend(seg[i:i + 2] for i in range(len(seg) - 1))
+    words = [w for w in dict.fromkeys(words) if len(w) >= 2][:12]
+    if not words:
+        return text[:width]
+    # 分段评分（按行聚合到 ~300 字的块）
+    lines = text.splitlines()
+    blocks, cur = [], ""
+    for ln in lines:
+        cur += ln + "\n"
+        if len(cur) >= 300:
+            blocks.append(cur)
+            cur = ""
+    if cur:
+        blocks.append(cur)
+    scored = []
+    for i, b in enumerate(blocks):
+        hit = sum(b.count(w) for w in words)
+        scored.append((hit, i, b))
+    if not any(h for h, _, _ in scored):
+        return text[:width]
+    # 取命中最高的块按原文顺序拼到 width
+    picked = sorted((s for s in scored if s[0] > 0), key=lambda x: -x[0])
+    chosen, total = [], 0
+    for hit, i, b in picked:
+        if total >= width:
+            break
+        chosen.append((i, b))
+        total += len(b)
+    chosen.sort()
+    return "\n…\n".join(b for _, b in chosen)[:width + 100]
+
+
 class AgentLoop:
     """ReAct Agent 循环 — 在线模式专用"""
 
@@ -1249,6 +1297,106 @@ class AgentLoop:
                         "message": "生成 docx 失败: %s" % str(e)[:100],
                     }
 
+            elif tool_name == "spawn_reader":
+                # M2：并行深读子任务——并发 fetch（继承 SSRF 防护与截断），
+                # 按 question 关键词窗口截取相关片段汇总回填
+                question = (args.get("question") or "").strip()
+                urls = [u.strip() for u in (args.get("urls") or [])
+                        if isinstance(u, str) and u.strip()][:5]
+                if not question or not urls:
+                    return {
+                        "success": False, "tool": "spawn_reader",
+                        "error": "bad_args",
+                        "message": "需要 question（深读问题）和 urls（1-5 个网页）",
+                    }
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _read_one(u):
+                    try:
+                        r = self._execute_tool("fetch_url", {"url": u}, stats)
+                        if not r.get("success"):
+                            return {"url": u, "ok": False,
+                                    "error": r.get("error", "failed"),
+                                    "message": r.get("message", "")}
+                        d = r.get("data", {})
+                        return {"url": u, "ok": True,
+                                "title": d.get("title", ""),
+                                "chars": d.get("length", 0),
+                                "excerpt": _keyword_excerpt(d.get("text", ""), question)}
+                    except Exception as e:
+                        return {"url": u, "ok": False, "error": "exception",
+                                "message": str(e)[:120]}
+
+                with ThreadPoolExecutor(max_workers=4) as _ex:
+                    readers = list(_ex.map(_read_one, urls))
+                ok_n = sum(1 for r in readers if r.get("ok"))
+                stats["reader_batches"] = stats.get("reader_batches", 0) + 1
+                return {
+                    "success": ok_n > 0,
+                    "tool": "spawn_reader",
+                    "data": {
+                        "question": question, "total": len(readers),
+                        "ok_count": ok_n, "readers": readers,
+                    },
+                    "message": "深读 %d 篇，成功 %d 篇" % (len(readers), ok_n),
+                }
+
+            elif tool_name == "run_plan":
+                # M2：PTC 调用计划——一批相互独立的信息获取类调用一次执行
+                # （省 LLM 轮次；顺序执行，写操作/嵌套/超限步骤逐个跳过并说明）
+                _PLAN_ALLOWED = {
+                    "search_web", "fetch_url", "search_kb", "get_current_time",
+                    "calculator", "read_workspace", "read_workspace_chunk",
+                    "list_workspace", "list_docs", "deep_read",
+                }
+                steps = args.get("steps") or []
+                if not isinstance(steps, list) or not steps:
+                    return {
+                        "success": False, "tool": "run_plan",
+                        "error": "empty_plan",
+                        "message": "steps 不能为空——给出 1-5 个相互独立的工具调用",
+                    }
+                results = []
+                for i, step in enumerate(steps[:5]):
+                    s_tool = (step or {}).get("tool", "")
+                    s_args = (step or {}).get("args") or {}
+                    if s_tool not in _PLAN_ALLOWED:
+                        results.append({"tool": s_tool or "?", "ok": False,
+                                        "error": "not_allowed",
+                                        "message": "run_plan 只支持信息获取类工具，%s 不允许" % s_tool})
+                        continue
+                    try:
+                        r = self._execute_tool(s_tool, s_args, stats)
+                        ok = bool(r.get("success"))
+                        item = {"tool": s_tool, "ok": ok}
+                        if ok:
+                            item["data"] = r.get("data", {})
+                            if r.get("message"):
+                                item["message"] = r["message"]
+                        else:
+                            item["error"] = r.get("error", "failed")
+                            item["message"] = r.get("message", "")
+                        results.append(item)
+                    except Exception as e:
+                        results.append({"tool": s_tool, "ok": False,
+                                        "error": "exception", "message": str(e)[:120]})
+                skipped = len(steps) - len(steps[:5])
+                if skipped:
+                    results.append({"tool": "-", "ok": False, "error": "over_limit",
+                                    "message": "超出 5 步上限，%d 步未执行" % skipped})
+                ok_count = sum(1 for r in results if r.get("ok"))
+                stats["plan_calls"] = stats.get("plan_calls", 0) + 1
+                return {
+                    "success": ok_count > 0,
+                    "tool": "run_plan",
+                    "data": {
+                        "note": args.get("note", ""),
+                        "total": len(results), "ok_count": ok_count,
+                        "results": results,
+                    },
+                    "message": "编排执行 %d 步，成功 %d 步" % (len(results), ok_count),
+                }
+
             elif tool_name == "create_ppt":
                 # 0.10.1 M1-E：真 PPT（LLM 逐页手写 SVG → 编译 native PPTX）
                 # begin/page/build 三动作，实现在 core/ppt_compile.py
@@ -1577,6 +1725,15 @@ class AgentLoop:
                                     action=args.get("action", ""),
                                     page=args.get("page") or 0,
                                     title=(args.get("title") or "")[:40])
+        elif tool_name == "run_plan":
+            _steps = args.get("steps") or []
+            return get_status_event(tool_name, "start",
+                                    count=len(_steps),
+                                    detail="、".join((s or {}).get("tool", "?") for s in _steps[:5]))
+        elif tool_name == "spawn_reader":
+            return get_status_event(tool_name, "start",
+                                    count=len(args.get("urls") or []),
+                                    query=(args.get("question") or "")[:40])
         else:
             return {"status": "thinking"}
 
@@ -1682,6 +1839,17 @@ class AgentLoop:
                   "pptx_name": data.get("pptx_name", ""),
                   "title": data.get("title", "")}
             return get_status_event(tool_name, "done", **_d)
+        elif tool_name == "run_plan":
+            return get_status_event(tool_name, "done",
+                                    count=data.get("total", 0),
+                                    ok_count=data.get("ok_count", 0),
+                                    detail="、".join("%s%s" % (r.get("tool", "?"), "✓" if r.get("ok") else "✗")
+                                                     for r in (data.get("results") or [])[:5]))
+        elif tool_name == "spawn_reader":
+            return get_status_event(tool_name, "done",
+                                    count=data.get("total", 0),
+                                    ok_count=data.get("ok_count", 0),
+                                    query=(data.get("question") or "")[:40])
         else:
             return {"status": "done"}
 

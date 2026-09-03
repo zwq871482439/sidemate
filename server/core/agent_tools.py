@@ -672,7 +672,91 @@ TOOL_REGISTRY = {
         },
         "stat_key": "ppt_actions",
         "condition": None,
+        "prompt_fragment": "ppt",  # M2：协议 fragment 随启用自动进 prompt（注册表拼装）
     },
+    # ===== M2：PTC 调用计划（一次编排多步工具，省 LLM 轮次）=====
+    "run_plan": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "run_plan",
+                "description": "把多个【相互独立】的工具调用打包成一批一次执行，节省对话轮次。适用：需要搜多个关键词、读多个网页、查多处资料时——与其一轮一调，不如一次编排。规则：① 只放信息获取类工具（search_web/fetch_url/search_kb/get_current_time/calculator/read_workspace/read_workspace_chunk/list_workspace/list_docs/deep_read），写操作（write_workspace/create_ppt 等）与 run_plan 嵌套一律禁止；② 各步必须相互独立（后一步不依赖前一步结果），最多 5 步；③ 每步返回结果会合并回传，之后你再继续分析或写作。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "note": {
+                            "type": "string",
+                            "description": "这批调用的目的（一句话）"
+                        },
+                        "steps": {
+                            "type": "array",
+                            "description": "相互独立的工具调用列表（1-5 个）",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "tool": {"type": "string", "description": "工具名（信息获取类）"},
+                                    "args": {"type": "object", "description": "该工具的参数对象"}
+                                },
+                                "required": ["tool", "args"]
+                            }
+                        }
+                    },
+                    "required": ["steps"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "plan_running",
+            "done": "plan_done",
+        },
+        "stat_key": "plan_calls",
+        "condition": None,
+        "prompt_fragment": "plan",
+    },
+    # ===== M2：spawn_reader 并行深读子任务 =====
+    "spawn_reader": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "spawn_reader",
+                "description": "派生并行深读子任务：一次性并发阅读多个网页并带回按问题截取的相关片段汇总（相当于把多次 fetch_url 并发执行+预筛内容）。适用：已经拿到一批搜索结果链接，需要围绕一个问题深读多篇原文时——一次调用顶多次逐篇阅读。返回：每篇的标题+与问题相关的片段（每篇约1200字）。注意：① urls 最多 5 个；② 拿不准该读哪些就先用 search_web；③ 返回片段是预筛结果，仍需你综合判断，引用编号规则不变。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "深读要回答的问题（决定片段截取的相关性）"
+                        },
+                        "urls": {
+                            "type": "array",
+                            "description": "要深读的网页 URL 列表（1-5 个）",
+                            "items": {"type": "string"}
+                        }
+                    },
+                    "required": ["question", "urls"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "readers_spawning",
+            "done": "readers_done",
+        },
+        "stat_key": "reader_batches",
+        "condition": None,
+        "prompt_fragment": "reader",
+    },
+}
+
+# ===== prompt fragment 惰性加载表（M2 能力注册表拼装）=====
+# 注册工具/能力时把协议文本挂这里：工具启用 → fragment 自动进 system prompt，
+# 不再各处手工 append（M1-D-24 手工注入漏一处的教训、②++ 定稿的落地）。
+_FRAGMENT_LOADERS = {
+    "cards": lambda: __import__("prompts").CARD_PROTOCOL_PROMPT,
+    "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,
+    "plan": lambda: __import__("prompts").PLAN_PROTOCOL_PROMPT,
+    "reader": lambda: __import__("prompts").READER_PROTOCOL_PROMPT,
 }
 
 # 工具级权限映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。
@@ -720,6 +804,7 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
     # 读取工具级权限配置（_TOOL_PERM_MAP 定义在模块级）
     from config import get as _cfg
 
+    enabled_names = []
     for name, tool_def in TOOL_REGISTRY.items():
         # 条件检查
         condition = tool_def.get("condition")
@@ -733,6 +818,7 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
             continue
 
         tools.append(tool_def["schema"])
+        enabled_names.append(name)
 
     # 组装 system prompt
     if doc_mode:
@@ -764,21 +850,25 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         if template_prompt:
             base += template_prompt
 
-    # 可视化卡片协议（在线 LLM 用卡片，PLAN ②+；agent 路径注入）
-    try:
-        from prompts import CARD_PROTOCOL_PROMPT
-        base += CARD_PROTOCOL_PROMPT
-    except Exception:
-        pass
-
-    # 真 PPT 协议（PLAN 三章 1，M1-E；create_ppt 启用时才注入——
-    # 打在 agent base 上，cloud_engine extras 模型收不到，M1-D-24 教训①）
-    if any(t["function"]["name"] == "create_ppt" for t in tools):
+    # ===== 能力注册表拼装（M2 定稿落地）=====
+    # prompt fragment 跟随「启用的工具/能力」自动进 system prompt：
+    # - 卡片协议（cards fragment）：在线 agent 路径恒启用（渲染协议无开关）
+    # - 工具附带 fragment（如 create_ppt → ppt）：随工具启用/禁用自动进出
+    # 手工 append 时代结束（M1-D-24 两处注入漏一处、PPT 靠 if 特判的教训）。
+    fragments = []
+    _frag_seen = set()
+    for _key in ["cards"] + [TOOL_REGISTRY[n].get("prompt_fragment") for n in enabled_names]:
+        if not _key or _key in _frag_seen:
+            continue
+        _loader = _FRAGMENT_LOADERS.get(_key)
+        if not _loader:
+            continue
         try:
-            from prompts import PPT_PROTOCOL_PROMPT
-            base += PPT_PROTOCOL_PROMPT
+            fragments.append(_loader())
+            _frag_seen.add(_key)
         except Exception:
             pass
+    base += "".join(fragments)
 
     # ===== Patch4 修复 2：会话上下文注入（token 预算 5000）=====
     base = _inject_session_context(

@@ -3341,6 +3341,23 @@ var CardRenderer = (function() {
       return _esc(d.message || '工具调用已达上限，基于已获取信息继续回答');
     }
     if (status === 'tool_limited') return '工具调用已达上限，转入回答';
+    // M1-E/M2：PPT 与编排计划的状态标签（_done 经后缀剥离后也到这里）
+    if (status === 'ppt_working') {
+      if (d.action === 'begin') return 'PPT 开题：' + _esc(d.title || '');
+      if (d.action === 'page') return '设计第 ' + (d.page || '?') + ' 页…';
+      if (d.action === 'build') return '编译 PPTX…';
+      return '制作 PPT';
+    }
+    if (status === 'ppt') {
+      if (d.action === 'begin') return 'PPT 开题：' + _esc(d.title || '');
+      if (d.action === 'page') return '第 ' + (d.page || '?') + ' 页设计完成';
+      if (d.action === 'build') return 'PPT 已生成：' + _esc(d.pptx_name || '');
+      return 'PPT 完成';
+    }
+    if (status === 'plan_running') return '编排执行 ' + (d.count || '?') + ' 个工具…';
+    if (status === 'plan') return '编排完成：' + (d.ok_count || 0) + '/' + (d.count || 0) + ' 步成功';
+    if (status === 'readers_spawning') return '并行深读 ' + (d.count || '?') + ' 篇：' + _esc(d.query || '');
+    if (status === 'readers') return '深读完成：' + (d.ok_count || 0) + '/' + (d.count || 0) + ' 篇';
     // _done 后缀的状态：提取前缀映射
     if (status.indexOf('_done') > 0) {
       var prefix = status.replace('_done', '');
