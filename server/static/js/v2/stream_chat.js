@@ -53,6 +53,7 @@ export function createChatStream(hooks) {
     const st = {
       text: '', think: '', sources: null, docUrl: '', docName: '',
       status: '', taskType: '', error: '',
+      channels: null,  // 并行模式双列：{ local:{text,phase}, cloud:{text,phase} }（首个 channel 事件时惰性创建）
     };
     hooks.onStreamTick(st, 'start');
 
@@ -129,8 +130,21 @@ function _handleEvent(d, st, hooks) {
       hooks.onStreamTick(st, 'think');
       break;
     case 'stream':
-      // 并行/对比模式的 channel 正文：merge 列进主气泡
-      if (d.channel === 'merge') { st.text += d.content || ''; hooks.onStreamTick(st, 'token'); }
+      // 并行/对比模式的 channel 正文：local/cloud 累加进双列，merge/无 channel 进主气泡
+      if (d.channel === 'local' || d.channel === 'cloud') {
+        if (!st.channels) st.channels = { local: { text: '', phase: '' }, cloud: { text: '', phase: '' } };
+        st.channels[d.channel].text += d.content || '';
+      } else {
+        st.text += d.content || '';
+      }
+      hooks.onStreamTick(st, 'token');
+      break;
+    case 'phase':
+      // 并行模式列阶段（channel=local/cloud，phase=done 等）
+      if (st.channels && d.channel && st.channels[d.channel]) {
+        st.channels[d.channel].phase = d.phase || '';
+        hooks.onStreamTick(st, 'token');
+      }
       break;
     case 'kb_sources':
     case 'sources':

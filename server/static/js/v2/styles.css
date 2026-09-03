@@ -1079,6 +1079,12 @@ sup.ref-n:hover { text-decoration: underline; }
 .cb-par summary { padding: 7px 10px; cursor: pointer; font-size: var(--d1-fs-small); color: var(--d1-ink-2); list-style: none; }
 .cb-par summary::-webkit-details-marker { display: none; }
 .cb-par-body { padding: 4px 10px 10px; font-size: var(--d1-fs-small); }
+/* 并行双列流式（live 态，merge 开写后折叠回 details 回放结构） */
+.cb-par.live .cb-par-head { padding: 7px 10px; font-size: var(--d1-fs-small); color: var(--d1-ink-2); display: flex; align-items: center; gap: 6px; }
+.cb-par-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--d1-gold); animation: cbpar-pulse 1.1s ease-in-out infinite; }
+@keyframes cbpar-pulse { 50% { opacity: .25; } }
+.cb-par-done { color: var(--d1-gold); font-weight: 600; }
+.cb-par-wait { color: var(--d1-ink-3); }
 
 /* ---- 右视窗（壳，M1-D 后续填预览/文件/轨迹） ---- */
 #viewer {

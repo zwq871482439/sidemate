@@ -607,6 +607,7 @@ function renderStreamingBubble(st) {
         <div class="m-name">桌伴 · 生成中…</div>
         <div class="stream-status"></div>
         <div class="m-sources" style="display:none"></div>
+        <div class="v2-par-slot" style="display:none"></div>
         <div class="v2-card-slot"></div>
         <div class="m-bubble md"></div>
       </div>`;
@@ -624,11 +625,42 @@ function renderStreamingBubble(st) {
     srcEl.innerHTML = st.sources.map(s =>
       `<span class="m-src">${esc(s.label || s.source_label || '')}</span>`).join('');
   }
+  renderParallelCols(el.querySelector('.v2-par-slot'), st);
   bubble.innerHTML = mdStream(st.text + (st.error ? '\n\n⚠️ ' + st.error : ''));
   hydrateCards(bubble, { getSession: () => state.sessions.find(c => c.current), onAskAnswer, getCardAnswer });
   hydrateMermaid(bubble);
   const scroll = document.getElementById('main-scroll');
   if (scroll) scroll.scrollTop = scroll.scrollHeight;
+}
+
+// 并行双列流式（M1-D 迁移段）：local/cloud channel 实时渲染。
+// merge 列开写（主气泡有文）后双列折叠为 details，与 chat_view.js 回放结构同构，
+// 流末快照重建时 UI 无跳变。列内走 mdPlain：卡片协议只认 merge 主输出（M1-D-24 教训②）。
+function renderParallelCols(slot, st) {
+  if (!slot) return;
+  if (!st.channels || !(st.channels.local.text || st.channels.cloud.text)) {
+    slot.style.display = 'none';
+    return;
+  }
+  const merging = !!st.text;
+  const colLive = (label, c) =>
+    `<div class="cb-par live"><div class="cb-par-head">${label}` +
+    (c.phase === 'done' ? ' <span class="cb-par-done">✓ 完成</span>' : ' <span class="cb-par-dot"></span>') +
+    `</div><div class="cb-par-body md">${c.text ? mdPlain(c.text) : '<span class="cb-par-wait">生成中…</span>'}</div></div>`;
+  const colDone = (label, txt) => txt
+    ? `<details class="cb-par"><summary>${label}</summary><div class="cb-par-body md">${mdPlain(txt)}</div></details>` : '';
+  slot.style.display = '';
+  slot.innerHTML = '<div class="cb-par-wrap">' + (merging
+    ? colDone('离线列', st.channels.local.text) + colDone('在线列', st.channels.cloud.text)
+    : colLive('离线列', st.channels.local) + colLive('在线列', st.channels.cloud)) + '</div>';
+}
+
+function mdPlain(text) {
+  if (typeof marked !== 'undefined') {
+    const html = marked.parse(text || '', { breaks: true });
+    return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;
+  }
+  return esc(text || '').replace(/\n/g, '<br>');
 }
 
 function mdStream(text) {
