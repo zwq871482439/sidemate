@@ -25,6 +25,7 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -288,6 +289,75 @@ async def api_save_artifact(chat_name: str, request: Request):
     if "error" in result:
         return JSONResponse(result, status_code=400)
     return result
+
+
+# ============================================================
+#  项目交接 handoff.md（PLAN ②++）
+# ============================================================
+
+@router.get("/api/chats/{chat_name}/handoff")
+def api_get_handoff(chat_name: str, request: Request):
+    """读会话所属项目的交接文件（内容+来源元信息）。"""
+    denied = _guard(request)
+    if denied:
+        return denied
+    safe, err = _safe_name_or_400(chat_name)
+    if err:
+        return err
+    proj = projects.resolve_chat_project(safe)
+    if proj.get("legacy") or not proj.get("dir"):
+        return {"handoff": None}
+    h = projects.read_handoff(proj["dir"])
+    return {"handoff": h, "project": {"dir": proj["dir"], "display": proj.get("display", "")}}
+
+
+@router.post("/api/chats/{chat_name}/handoff/generate")
+def api_generate_handoff(chat_name: str, request: Request):
+    """生成项目交接：当前模式引擎一次性生成 → 重写 handoff.md（sync def 线程池执行）。
+
+    隐私：离线（local）模式会话不自动生成（PLAN ②++ 隐私铁律：私密会话不自动写，
+    手动生成走用户显式动作——前端手动菜单会带 ?manual=1）。
+    """
+    denied = _guard(request)
+    if denied:
+        return denied
+    safe, err = _safe_name_or_400(chat_name)
+    if err:
+        return err
+    from config import get as _cfg_get
+    ai_mode = _cfg_get("ai_mode", "local")
+    manual = request.query_params.get("manual") == "1"
+    from pipelines import can_generate_handoff
+    if not can_generate_handoff(ai_mode, manual):
+        return JSONResponse({"error": "离线模式会话不自动生成交接（可手动触发）"}, status_code=400)
+    proj = projects.resolve_chat_project(safe)
+    if proj.get("legacy") or not proj.get("dir"):
+        return JSONResponse({"error": "旧版会话不支持生成交接"}, status_code=400)
+    old = projects.read_handoff(proj["dir"])
+    prompt = projects.build_handoff_prompt(safe, (old or {}).get("content", ""))
+    # 一次性文本生成（引擎选择在工厂，模式分支不进路由——CI 白名单口径）
+    try:
+        from pipelines import run_text_once
+        content = run_text_once(prompt, ai_mode)
+    except Exception as e:
+        log.warning("[HANDOFF] 生成失败: %s", str(e)[:120])
+        return JSONResponse({"error": "生成失败: %s" % str(e)[:100]}, status_code=500)
+    if not content:
+        return JSONResponse({"error": "模型没有产出内容"}, status_code=500)
+    # 简短历史行（一句话取首段摘要）
+    first_line = ""
+    for ln in content.splitlines():
+        ln = ln.strip().lstrip("#").strip()
+        if ln:
+            first_line = ln[:40]
+            break
+    log_line = "%s · %s · %s" % (
+        time.strftime("%m-%d %H:%M"), safe, first_line or "交接更新")
+    result = projects.write_handoff(proj["dir"], content, ai_mode, safe, log_line)
+    if "error" in result:
+        return JSONResponse(result, status_code=500)
+    return {"ok": True, "content": content, "updated_at": result["updated_at"],
+            "project": {"dir": proj["dir"], "display": proj.get("display", "")}}
 
 
 @router.post("/api/chats/{chat_name}/workdir/open")

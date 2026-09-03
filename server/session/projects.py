@@ -412,6 +412,131 @@ def reference_file(chat_name, name):
     return {"path": src, "filename": os.path.basename(src), "size": size, "tokens": tokens}
 
 
+# ============================================================
+#  项目交接 handoff.md（PLAN ②++：平滑 session 移动主通道）
+# ============================================================
+
+HANDOFF_NAME = "handoff.md"
+HANDOFF_MAX_INJECT = 2000      # 注入 prompt 的截断上限
+HANDOFF_LOG_KEEP = 5           # 历史一行式日志保留条数
+
+
+def _handoff_file(project_dir):
+    return os.path.join(project_dir, PROJECT_ARTIFACT_DIR, HANDOFF_NAME)
+
+
+def read_handoff(project_dir):
+    """读项目交接。返回 {content, updated_at, source_engine, source_chat} 或 None。"""
+    p = _norm(project_dir)
+    if not p:
+        return None
+    f = _handoff_file(p)
+    if not os.path.isfile(f):
+        return None
+    try:
+        with open(f, "r", encoding="utf-8") as fh:
+            raw = fh.read()
+    except OSError:
+        return None
+    meta = {"content": raw, "updated_at": "", "source_engine": "", "source_chat": ""}
+    if raw.startswith("<!--"):
+        end = raw.find("-->")
+        if end > 0:
+            header = raw[4:end]
+            # 头格式：source_engine: X | source_chat: Y | updated: Z（单行管道分隔）
+            for seg in header.split("|"):
+                if ":" in seg:
+                    k, v = seg.split(":", 1)
+                    k, v = k.strip(), v.strip()
+                    if k == "source_engine":
+                        meta["source_engine"] = v
+                    elif k == "source_chat":
+                        meta["source_chat"] = v
+                    elif k == "updated":
+                        meta["updated_at"] = v
+            meta["content"] = raw[end + 3:].lstrip("\n")
+    return meta
+
+
+def write_handoff(project_dir, content, source_engine, source_chat, log_line=""):
+    """写项目交接（重写制：全文覆盖 + 保留最近 5 条一行式历史）。
+
+    返回 {ok} 或 {error}。
+    """
+    p = _norm(project_dir)
+    if not p or not os.path.isdir(p):
+        return {"error": "项目目录不可用"}
+    # 旧历史区保留
+    history = []
+    old = read_handoff(p)
+    if old and old.get("content"):
+        m = old["content"].split("\n---\n## 历史", 1)
+        if len(m) == 2:
+            for ln in m[1].splitlines():
+                ln = ln.strip()
+                if ln.startswith("- "):
+                    history.append(ln)
+    if log_line:
+        history.append("- " + log_line)
+    history = history[-HANDOFF_LOG_KEEP:]
+    body = (content or "").strip()
+    # 防御：模型把历史区也写进来时剥掉（历史由我们维护）
+    if "\n---\n## 历史" in body:
+        body = body.split("\n---\n## 历史", 1)[0].rstrip()
+    ts = time.strftime("%Y-%m-%d %H:%M")
+    header = "<!-- source_engine: %s | source_chat: %s | updated: %s -->\n" % (
+        source_engine or "unknown", source_chat or "", ts)
+    out = header + body
+    if history:
+        out += "\n\n---\n## 历史\n" + "\n".join(history) + "\n"
+    art_dir = os.path.join(p, PROJECT_ARTIFACT_DIR)
+    try:
+        os.makedirs(art_dir, exist_ok=True)
+        with open(_handoff_file(p), "w", encoding="utf-8") as f:
+            f.write(out)
+    except OSError as e:
+        return {"error": "写入失败: %s" % e}
+    log.info("[PROJECT] 交接已写入: %s（来源会话 %s）", _handoff_file(p), source_chat)
+    return {"ok": True, "updated_at": ts}
+
+
+def build_handoff_prompt(chat_name, old_content):
+    """交接生成 prompt（五段式，≤1500 字，重写制）。"""
+    from session.chat_store import load_chat
+    from config import CHAT_DIR
+    msgs = []
+    try:
+        msgs = load_chat(os.path.join(CHAT_DIR, chat_name)) or []
+    except Exception:
+        pass
+    # 取最近 16 条，逐条截断，总量 ~6000 字
+    recent = msgs[-16:]
+    parts = []
+    total = 0
+    for m in recent:
+        role = "用户" if m.get("role") == "user" else "AI"
+        c = (m.get("content") or "").strip()
+        if not c:
+            continue
+        c = c[:800]
+        parts.append("%s: %s" % (role, c))
+        total += len(c)
+        if total > 6000:
+            break
+    transcript = "\n\n".join(parts)
+    return (
+        "你是项目交接撰写器。根据下面的旧交接（如有）和本会话对话，重写一份项目交接文件。\n"
+        "要求：\n"
+        "1. 严格五段结构：【项目目标】一句话【已确认的决定】逐条【当前进度】做到哪了"
+        "【待办下一步】逐条【关键文件】清单（没有就写无）\n"
+        "2. 全文不超过 1500 字，只写有行动价值的信息，不要复述对话过程\n"
+        "3. 旧交接里仍然成立的内容保留并整合，过时的替换，不要简单堆叠\n"
+        "4. 直接输出交接正文（markdown），不要任何解释、不要写历史区\n\n"
+        + ("【旧交接】\n%s\n\n" % old_content[:3000] if old_content else "")
+        + "【本会话对话】\n%s" % transcript
+    )
+
+
 def save_artifact(chat_name, filename, content):
     """卡片「存产物」：写 <项目目录>/.sidemate/<filename>（用户显式动作，豁免只读边界）。
 

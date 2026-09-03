@@ -1156,3 +1156,15 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .mermaid-container svg { max-width: 100%; height: auto; }
 .mermaid-wait { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); padding: 8px 0; }
 .mermaid-err { font-size: var(--d1-fs-small); color: var(--pal-danger); margin-bottom: 6px; }
+
+/* ---- 项目交接 ---- */
+.empty-handoff {
+  font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); text-align: center;
+  margin: -10px 0 14px;
+}
+.vw-handoff {
+  font-size: var(--d1-fs-tiny); color: var(--d1-ink-2); line-height: 1.7;
+  background: var(--d1-paper); border: 1px solid var(--d1-n-line);
+  border-radius: var(--d1-r-md); padding: 10px 12px; margin-bottom: 14px;
+  max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+}

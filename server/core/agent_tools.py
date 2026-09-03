@@ -46,12 +46,12 @@ _AGENT_BASE_PROMPT = (
     "- 需要读写 Excel 表格时用 table_ops（数据分析先 read 读出，再 calculator 计算）\n"
     "- 画流程图、架构图、思维导图时，使用 mermaid 代码块格式输出\n"
     "- 自己判断要不要用工具、用几次\n\n"
-    "可视化输出指南（自动判断，无需用户要求）：\n"
+    "可视化输出指南（自动判断，无需用户要求；选型分区严格遵守）：\n"
+    "- 流程/步骤/架构/思维导图 → 用 mermaid（flowchart/mindmap/timeline 代码块）\n"
     "- 分类/层级关系 → 用 mermaid mindmap 或 flowchart\n"
-    "- 流程/步骤 → 用 mermaid flowchart\n"
-    "- 时间线/演进 → 用 mermaid timeline\n"
-    "- 对比/表格数据 → 用 markdown 表格\n"
-    "- 数据图表 → 用 ```mermaid``` 围栏：折线/柱状用 xychart-beta，占比用 pie（禁止手写 SVG，容易出错）\n"
+    "- 数据图表（趋势/对比/占比，折线/柱状/饼图）→ 用 ```chart``` 卡片围栏，不要用 mermaid xychart\n"
+    "- 结构化数据表 → 用 ```table``` 卡片围栏（比 markdown 表格更好：可排序、可存产物）；"
+    "行数很少的简单对照也可直接用 markdown 表格\n"
     "- 普通问答 → 直接文字回答\n"
     "原则：如果能用图让信息更清晰，就用图。不确定时默认用结构化文字。\n\n"
     "回答时必须标注信息来源编号，格式「事实陈述 [1]」。\n"
@@ -872,7 +872,22 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
         if not body.strip():
             return base_prompt
 
-        return base_prompt + header + "\n" + body
+        out = base_prompt + header + "\n" + body
+        # ===== 项目交接注入（PLAN ②++：同项目新会话开局载入 handoff.md）=====
+        # 隐私铁律：私密来源（离线生成）的交接不注入在线 prompt（离线内容不上云）
+        try:
+            from session import projects as _proj
+            _pd = _proj.resolve_chat_project(chat_id)
+            if not _pd.get("legacy") and _pd.get("dir"):
+                _h = _proj.read_handoff(_pd["dir"])
+                if _h and _h.get("content") and _h.get("source_engine") != "local":
+                    out += ("\n\n[项目交接 · 来自项目「%s」的 handoff.md（更新于 %s）]\n%s\n"
+                            "[交接完]——在此基础上继续，不要重复已完成的工作"
+                            % (_pd.get("display", ""), _h.get("updated_at", ""),
+                               _h["content"][:_proj.HANDOFF_MAX_INJECT]))
+        except Exception:
+            pass
+        return out
 
     except Exception as e:
         log.warning("[AGENT_TOOLS] 会话上下文注入失败 chat_id=%s: %s", chat_id, str(e)[:100])

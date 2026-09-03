@@ -50,6 +50,10 @@ export function renderEmptyState(mode, events) {
         <span class="eo-name">${events.projectLabel}</span>
         <button class="eo-change">更换 ▾</button>
       </div>` : '';
+  const handoffRow = events.handoffMeta ? `
+      <div class="empty-handoff" title="项目交接已注入新会话">
+        📄 已载入项目交接${events.handoffMeta.source_chat ? '（来自会话 ' + events.handoffMeta.source_chat + '）' : ''}${events.handoffMeta.updated_at ? ' · 更新于 ' + events.handoffMeta.updated_at : ''}
+      </div>` : '';
 
   if (mode === 'local') {
     wrap.innerHTML = `
@@ -59,6 +63,7 @@ export function renderEmptyState(mode, events) {
         <p>本地模型运行，无需联网 —— 适合隐私敏感场景</p>
       </div>
       ${projRow}
+      ${handoffRow}
       <div class="offline-grid">
         ${OFFLINE_CARDS.map(c => `
           <div class="offline-card" data-scene="${c.scene}">
@@ -76,6 +81,7 @@ export function renderEmptyState(mode, events) {
         <p>选择一个场景，或直接输入 —— 想做什么，随时切随</p>
       </div>
       ${projRow}
+      ${handoffRow}
       <div class="hero-card" data-scene="${hero.scene}">
         <div class="h-ic">${ICON(hero.icon)}</div>
         <div class="h-tx"><h2>${hero.title} <span class="tag">${hero.tag}</span></h2><p>${hero.desc}</p></div>

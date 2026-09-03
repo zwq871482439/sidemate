@@ -31,6 +31,7 @@ const state = {
   collapsedGroups: {},     // 项目分组折叠态（key=项目目录 / __legacy__）
   projects: [],            // 项目列表 [{dir, display, is_default, status}]（默认项目恒在）
   workdir: null,           // 当前会话所属项目 {legacy} | {dir, display, is_default, status}
+  handoff: null,           // 项目交接 {content, updated_at, source_chat, source_engine}
   pendingProjectDir: null, // 无会话时用户在空状态选的项目（首个发送时落在该项目）
   parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
   generating: false,
@@ -126,6 +127,7 @@ const chatStream = createChatStream({
     state.sessions = await loadSessions();   // 先刷新列表（msg_count 已变）
     await loadCurrentMessages();             // 后端快照 = 真相
     render();
+    maybePromptHandoff();  // 上下文 ≥80% 时弹交接建议（PLAN ②++）
   },
 });
 let _streamState = null;
@@ -175,6 +177,7 @@ function render() {
     onSelectSession: async (c) => {
       if (c.current && state.messages !== null) return;
       _viewedProject = null;  // 切会话清掉跨项目查看
+      _handoffPrompted = false;  // 换会话重置 80% 交接提示
       await api.switchChat(c.path);
       state.sessions = await loadSessions();
       state.tab = 'chat';
@@ -333,6 +336,7 @@ function render() {
       },
       onDeleteProject: (proj) => deleteProject(proj),
       onRenameProject: (proj) => renameProject(proj),
+      onGenerateHandoff: (btn) => generateHandoffFlow(btn, false),
     });
   }
   app.appendChild(_viewer.el);
@@ -383,6 +387,7 @@ function renderChatArea() {
       onScene: onScene,
       projectLabel: projLabel,
       onPickProject: (anchor) => showProjectPicker(anchor),
+      handoffMeta: state.handoff ? { source_chat: state.handoff.source_chat, updated_at: state.handoff.updated_at } : null,
     }));
   }
   if (state.generating && _streamState) renderStreamingBubble(_streamState);
@@ -420,6 +425,74 @@ function renderChatArea() {
   });
   _composer.setRunning(state.generating || state.switching);
   main.appendChild(_composer.el);
+}
+
+// ===== 项目交接（PLAN ②++：生成/一键移动/80% 建议） =====
+let _handoffGenerating = false;
+
+async function generateHandoffFlow(btn, thenMove) {
+  const cur = state.sessions.find(c => c.current);
+  if (!cur || _handoffGenerating) return null;
+  _handoffGenerating = true;
+  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
+  let r = null;
+  try {
+    r = await api.generateHandoff(cur.name, true);  // 手动触发：离线也允许
+  } catch (e) { /* 走错误分支 */ }
+  _handoffGenerating = false;
+  if (btn) { btn.disabled = false; btn.textContent = '重新生成'; }
+  if (!r || !r.ok) {
+    alert((r && r.error) || '交接生成失败');
+    return null;
+  }
+  if (thenMove) {
+    // 一键移动：同项目新建会话并切换（handoff.md 会注入新会话）
+    const dir = state.workdir && state.workdir.dir;
+    await api.newChat(dir || undefined);
+    state.sessions = await loadSessions();
+    state.tab = 'chat';
+    state.messages = null;
+    await loadWorkdir();
+    render();
+  } else if (_viewer) {
+    _viewer.onSessionChange();  // 交接区刷新
+    if (!_viewer.isOpen) _viewer.setOpen(true, 'session');
+  }
+  return r;
+}
+
+// 80% 建议：流末检查 token 占比，≥80% 弹交接建议（每会话只提示一次）
+let _handoffPrompted = false;
+function maybePromptHandoff() {
+  if (_handoffPrompted || state.generating) return;
+  const maxTokens = state.contextWindow || 8192;
+  const hist = (state.messages || []).reduce((s, m) =>
+    s + estimateTokens(m.content || '') + estimateTokens(m.think || ''), 0);
+  if (maxTokens <= 0 || hist / maxTokens < 0.8) return;
+  _handoffPrompted = true;
+  const ov = document.createElement('div');
+  ov.className = 'kb-pk-overlay';
+  ov.innerHTML = `<div class="kb-pk" style="width:420px">
+    <div class="kb-pk-title">上下文将满（已用 ${Math.round(hist / maxTokens * 100)}%）</div>
+    <div class="wd-tip">
+      <p>要把当前进度<strong>生成交接</strong>并开一个接续的新会话吗？交接会写入项目目录的
+      handoff.md，新会话开局自动载入，不用从头解释。</p>
+    </div>
+    <div class="kb-pk-acts">
+      <button class="kb-pk-cancel" data-a="no">不了</button>
+      <button class="kb-pk-ok" data-a="yes">生成交接并开新会话</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('[data-a="no"]').addEventListener('click', () => ov.remove());
+  ov.querySelector('[data-a="yes"]').addEventListener('click', async () => {
+    const okBtn = ov.querySelector('[data-a="yes"]');
+    okBtn.disabled = true;
+    okBtn.textContent = '生成中…';
+    const r = await generateHandoffFlow(null, true);
+    if (r) ov.remove();
+    else { okBtn.disabled = false; okBtn.textContent = '生成交接并开新会话'; }
+  });
 }
 
 // ===== 文档两阶段：提纲确认栏（Phase 1 提纲 → 用户确认/编辑 → Phase 2 正文） =====
@@ -645,10 +718,15 @@ let _viewedProject = null;  // 跨项目查看（📂 点别的项目）时的�
 
 async function loadWorkdir() {
   const cur = state.sessions.find(c => c.current);
-  if (!cur) { state.workdir = null; return; }
+  if (!cur) { state.workdir = null; state.handoff = null; return; }
   try {
     state.workdir = await api.getWorkdir(cur.name);
   } catch (e) { state.workdir = null; }
+  // 项目交接（空状态来源行用）
+  try {
+    const h = await api.getHandoff(cur.name);
+    state.handoff = (h && h.handoff) ? h.handoff : null;
+  } catch (e) { state.handoff = null; }
 }
 
 async function loadProjects() {
@@ -947,6 +1025,7 @@ function showSessionMenu(chat, anchorEl) {
   menuEl.innerHTML = `
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
+    <button data-a="handoff">生成交接（写进项目 handoff.md）</button>
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
@@ -990,8 +1069,11 @@ function showSessionMenu(chat, anchorEl) {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
-  menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {
+  menuEl.querySelector('[data-a="handoff"]').addEventListener('click', async () => {
     menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
+    await generateHandoffFlow(null, false);
+  });
+  menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
     const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
     if (!confirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`)) return;
     await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });

@@ -68,7 +68,7 @@ RULES_PROMPT = ""  # V5.1 已合并到 IDENTITY_PROMPT
 # 追加在在线模式 system prompt 尾部；离线不注入（卡片系统仅在线参与）
 CARD_PROTOCOL_PROMPT = (
     "\n7. 可视化卡片：当需要展示趋势/对比/占比图或结构化表格时，用围栏块输出卡片"
-    "（不要输出图片、ASCII 图或 mermaid）。\n"
+    "（数据图表不要输出 mermaid/ASCII 图/手写 SVG；流程/架构/思维导图才用 mermaid）。\n"
     "   图表（type 只支持 line/bar/pie）：\n"
     "   ```chart\n"
     "   {\"type\":\"line\",\"title\":\"标题\",\"labels\":[\"A\",\"B\",\"C\"],"

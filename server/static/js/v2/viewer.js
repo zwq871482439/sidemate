@@ -28,6 +28,8 @@ export function createViewer(opts) {
   let files = null;    // null=未加载（工作区文件）
   let filesFor = '';   // 当前列表属于哪个会话
   let wd = null;       // 项目：{ files, artifacts, dir, display, is_default, status } | {legacy:true} | null=未加载
+  let handoff = null;  // 项目交接 {content, updated_at, source_engine, source_chat} | null
+  let handoffProj = null;
   let uploading = false;
 
   async function loadFiles() {
@@ -56,6 +58,12 @@ export function createViewer(opts) {
     try {
       wd = await api.listWorkdirFiles(cur.name);
     } catch (e) { wd = false; }
+    // 项目交接（PLAN ②++：会话信息 tab 交接区）
+    try {
+      const h = await api.getHandoff(cur.name);
+      handoff = h && h.handoff ? h.handoff : null;
+      if (wd && wd.dir) handoffProj = h.project || null;
+    } catch (e) { handoff = null; }
   }
 
   function render() {
@@ -101,8 +109,19 @@ export function createViewer(opts) {
     </div>`;
   }
 
-  function _sessionList() {
+  function _handoffSection() {
     if (!wd || wd.legacy || !wd.dir) return '';
+    if (!handoff) {
+      return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">交接</span>
+        <span class="vw-dir-acts"><button class="vw-dir-open" data-a="handoff" title="把当前进度写进项目交接文件">生成交接</button></span></div>
+        <div class="vw-empty"><small>还没有交接文件——上下文将满时生成交接，新会话自动接续</small></div>`;
+    }
+    return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">交接 · 更新于 ${esc(handoff.updated_at || '')}</span>
+        <span class="vw-dir-acts"><button class="vw-dir-open" data-a="handoff" title="重新生成项目交接">重新生成</button></span></div>
+      <div class="vw-handoff">${esc(handoff.content || '')}</div>`;
+  }
+
+  function _sessionList() {    if (!wd || wd.legacy || !wd.dir) return '';
     const sessions = (opts.getSessions ? opts.getSessions() : []);
     const peers = sessions.filter(s => s.project_dir === wd.dir);
     if (!peers.length) return '';
@@ -155,6 +174,7 @@ export function createViewer(opts) {
       body.innerHTML = `<div class="vw-files">
         ${_projectCard()}
         ${_sessionList()}
+        ${_handoffSection()}
         ${_wdFiles()}
       </div>
       <input type="file" class="vw-up-input" style="display:none">`;
@@ -173,6 +193,10 @@ export function createViewer(opts) {
       const renameBtn = body.querySelector('[data-a="rename"]');
       if (renameBtn) renameBtn.addEventListener('click', () => {
         if (opts.onRenameProject && wd) opts.onRenameProject(wd);
+      });
+      const handoffBtn = body.querySelector('[data-a="handoff"]');
+      if (handoffBtn) handoffBtn.addEventListener('click', () => {
+        if (opts.onGenerateHandoff) opts.onGenerateHandoff(handoffBtn);
       });
       const delBtn = body.querySelector('[data-a="delproj"]');
       if (delBtn) delBtn.addEventListener('click', () => {
@@ -250,12 +274,13 @@ export function createViewer(opts) {
       if (tabName) tab = tabName;
       files = null;
       wd = null;  // 每次展开重新拉
+      handoff = null;
     }
     render();
   }
 
   // 会话切换/项目变化后刷新
-  function onSessionChange() { files = null; wd = null; if (open) renderBody(); }
+  function onSessionChange() { files = null; wd = null; handoff = null; if (open) renderBody(); }
 
   return {
     el,
