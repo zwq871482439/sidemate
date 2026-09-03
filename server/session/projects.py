@@ -412,6 +412,35 @@ def reference_file(chat_name, name):
     return {"path": src, "filename": os.path.basename(src), "size": size, "tokens": tokens}
 
 
+def save_artifact(chat_name, filename, content):
+    """卡片「存产物」：写 <项目目录>/.sidemate/<filename>（用户显式动作，豁免只读边界）。
+
+    文本内容（CSV/SVG/Markdown 等），5MB 上限，同名覆盖。返回 {ok, name, path} 或 {error}。
+    """
+    proj = resolve_chat_project(chat_name)
+    if proj.get("legacy") or not proj.get("dir"):
+        return {"error": "旧版会话不支持存产物"}
+    base = os.path.basename(filename or "").strip()
+    if not base or base != filename or base in (".", ".."):
+        return {"error": "非法文件名"}
+    if isinstance(content, str):
+        data = content.encode("utf-8")
+    else:
+        data = bytes(content or b"")
+    if len(data) > 5 * 1024 * 1024:
+        return {"error": "内容过大（最大5MB）"}
+    art_dir = os.path.join(proj["dir"], PROJECT_ARTIFACT_DIR)
+    try:
+        os.makedirs(art_dir, exist_ok=True)
+        with open(os.path.join(art_dir, base), "wb") as f:
+            f.write(data)
+    except OSError as e:
+        log.warning("[PROJECT] 存产物失败: %s", e)
+        return {"error": "写入失败"}
+    log.info("[PROJECT] 存产物: %s → %s（会话 %s）", base, art_dir, chat_name)
+    return {"ok": True, "name": base}
+
+
 def upload_to_project(chat_name, filename, content):
     """用户显式上传材料到项目根（用户的架子；AI 产物才进 .sidemate/）。
 

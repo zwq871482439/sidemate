@@ -100,6 +100,14 @@ export const api = {
   async openWorkdir(chatName) {
     return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/open', { method: 'POST' }));
   },
+  // 存产物到 <项目目录>/.sidemate/（卡片「存产物」动作；用户显式动作）
+  async saveArtifact(chatName, filename, content) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/workdir/artifact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content }),
+    }));
+  },
 };
 
 // 模式映射：后端值 ↔ 新版 UI 显示

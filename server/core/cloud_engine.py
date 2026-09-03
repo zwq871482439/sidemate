@@ -443,6 +443,12 @@ class CloudEngine:
             extras.append("当前任务类型: %s" % task_type)
         if strategy_enhancement:
             extras.append(strategy_enhancement)
+        # 可视化卡片协议（在线 LLM 用卡片，PLAN ②+）
+        try:
+            from prompts import CARD_PROTOCOL_PROMPT
+            extras.append(CARD_PROTOCOL_PROMPT.strip("\n"))
+        except Exception:
+            pass
         if extras:
             system_content += "\n" + "\n".join(extras)
 

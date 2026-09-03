@@ -274,6 +274,22 @@ async def api_upload_to_project(chat_name: str, request: Request):
     return result
 
 
+@router.post("/api/chats/{chat_name}/workdir/artifact")
+async def api_save_artifact(chat_name: str, request: Request):
+    """卡片「存产物」：写 <项目目录>/.sidemate/<filename>（body: {filename, content}）。"""
+    denied = _guard(request)
+    if denied:
+        return denied
+    safe, err = _safe_name_or_400(chat_name)
+    if err:
+        return err
+    body = await request.json()
+    result = projects.save_artifact(safe, body.get("filename", ""), body.get("content", ""))
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+    return result
+
+
 @router.post("/api/chats/{chat_name}/workdir/open")
 def api_open_workdir(chat_name: str, request: Request):
     """在资源管理器中打开项目目录（本地应用特权）。"""

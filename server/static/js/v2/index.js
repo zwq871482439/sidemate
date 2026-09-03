@@ -5,7 +5,8 @@ import './styles.css';
 import { api, MODE_LABEL, getModelTag } from './api.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
 import { renderEmptyState } from './empty_state.js';
-import { renderChatFlow, loadMessages } from './chat_view.js';
+import { renderChatFlow, loadMessages, setCardMode } from './chat_view.js';
+import { extractCards, hydrateCards } from './cards_content.js';
 import { renderComposer, loadLocalActions, estimateTokens } from './composer.js';
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
@@ -359,7 +360,8 @@ function renderChatArea() {
       '<div class="skel-line" style="width:64%"></div>' +
       '<div class="skel-line" style="width:30%"></div></div>';
   } else if (state.messages && state.messages.length) {
-    renderChatFlow(scroll, state.messages);
+    setCardMode(state.mode !== 'local');  // 卡片系统仅在线参与
+    renderChatFlow(scroll, state.messages, { getSession: () => state.sessions.find(c => c.current) });
     // 提纲待确认恢复（快照重建/刷新共用入口）
     const pendingOutline = _lastOutlineMsg();
     if (pendingOutline) _showDocConfirmBar(pendingOutline.msg.content || '');
@@ -547,6 +549,7 @@ function renderStreamingBubble(st) {
       `<span class="m-src">${esc(s.label || s.source_label || '')}</span>`).join('');
   }
   bubble.innerHTML = mdStream(st.text + (st.error ? '\n\n⚠️ ' + st.error : ''));
+  if (state.mode !== 'local') hydrateCards(bubble, { getSession: () => state.sessions.find(c => c.current) });
   const scroll = document.getElementById('main-scroll');
   if (scroll) scroll.scrollTop = scroll.scrollHeight;
 }
@@ -554,7 +557,8 @@ function renderStreamingBubble(st) {
 function mdStream(text) {
   if (!text) return '<span style="color:var(--d1-ink-3)">思考中…</span>';
   if (typeof marked !== 'undefined') {
-    const html = marked.parse(text, { breaks: true });
+    setCardMode(state.mode !== 'local');
+    const html = marked.parse(state.mode !== 'local' ? extractCards(text) : text, { breaks: true });
     return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;
   }
   return esc(text).replace(/\n/g, '<br>');

@@ -64,6 +64,24 @@ _CAPABILITIES_CLOUD = "你的真实能力：对话问答、知识库检索问答
 IDENTITY_PROMPT = SYSTEM_PROMPT_V2
 RULES_PROMPT = ""  # V5.1 已合并到 IDENTITY_PROMPT
 
+# 可视化卡片协议（0.10.1 PLAN ②+：LLM 产数据，前端确定性渲染）
+# 追加在在线模式 system prompt 尾部；离线不注入（卡片系统仅在线参与）
+CARD_PROTOCOL_PROMPT = (
+    "\n7. 可视化卡片：当需要展示趋势/对比/占比图或结构化表格时，用围栏块输出卡片"
+    "（不要输出图片、ASCII 图或 mermaid）。\n"
+    "   图表（type 只支持 line/bar/pie）：\n"
+    "   ```chart\n"
+    "   {\"type\":\"line\",\"title\":\"标题\",\"labels\":[\"A\",\"B\",\"C\"],"
+    "\"series\":[{\"name\":\"系列名\",\"data\":[1,2,3]}]}\n"
+    "   ```\n"
+    "   表格：\n"
+    "   ```table\n"
+    "   {\"columns\":[\"列1\",\"列2\"],\"rows\":[[\"a\",1],[\"b\",2]]}\n"
+    "   ```\n"
+    "   卡片规则：JSON 必须合法；数据必须来自对话上下文或工具结果，不编造数字；"
+    "   labels 与 data 长度一致；一句话自然引出卡片即可，不要解释 JSON 本身。"
+)
+
 # 场景增强（只一句话，不重复规则，不超20字）
 STRATEGY_ENHANCEMENTS = {
     "greeting":   "1-2句简短回应即可。",

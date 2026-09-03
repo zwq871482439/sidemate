@@ -4,6 +4,7 @@
 
 import { api } from './api.js';
 import { renderCardHistory } from './cards.js';
+import { extractCards, hydrateCards } from './cards_content.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -11,10 +12,14 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// 卡片系统仅在线参与（PLAN ②+）：离线模式围栏块按普通代码显示
+let _cardMode = false;
+export function setCardMode(on) { _cardMode = !!on; }
+
 function md(text) {
   if (!text) return '';
   if (typeof marked !== 'undefined') {
-    const html = marked.parse(text, { breaks: true });
+    const html = marked.parse(_cardMode ? extractCards(text) : text, { breaks: true });
     if (typeof DOMPurify !== 'undefined') return DOMPurify.sanitize(html);
     return html;
   }
@@ -98,14 +103,17 @@ function _renderMsg(m) {
 
 // 渲染一个会话的完整消息流；parallel/compare 的卡片回放（card_data）随对话区迁入补齐，
 // 本版至少保证正文/引用/统计/下载栏完整可见。
-export function renderChatFlow(container, messages) {
+// opts: { getSession() }（卡片「存产物」用）
+export function renderChatFlow(container, messages, opts) {
   const flow = document.createElement('div');
   flow.className = 'chat-flow';
   flow.innerHTML = messages.map(_renderMsg).join('');
   container.innerHTML = '';
   container.appendChild(flow);
-  // 滚到底部（最新消息）
-  container.scrollTop = container.scrollHeight;
+  if (_cardMode) hydrateCards(flow, opts || {});
+  // 滚到底部（最新消息）。同步设置在布局完成前会被滚动夹持清零
+  // （后台标签 rAF 又不触发），setTimeout 是唯一能扛住的路径
+  setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
 }
 
 export async function loadMessages(chatName) {

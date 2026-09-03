@@ -748,6 +748,13 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         if template_prompt:
             base += template_prompt
 
+    # 可视化卡片协议（在线 LLM 用卡片，PLAN ②+；agent 路径注入）
+    try:
+        from prompts import CARD_PROTOCOL_PROMPT
+        base += CARD_PROTOCOL_PROMPT
+    except Exception:
+        pass
+
     # ===== Patch4 修复 2：会话上下文注入（token 预算 5000）=====
     base = _inject_session_context(
         chat_id=chat_id,

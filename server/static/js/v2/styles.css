@@ -462,6 +462,43 @@ body {
 }
 .doc-confirm-cancel:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
 
+/* ---- 内容卡片系统（chart/table，PLAN ②+） ---- */
+.cc-card {
+  max-width: 640px; margin: 8px 0; background: var(--d1-paper-2);
+  border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-lg);
+  padding: 10px 14px 12px;
+}
+.cc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cc-badge { font-size: 13px; }
+.cc-title { flex: 1; font-size: var(--d1-fs-small); font-weight: 600; color: var(--d1-accent); }
+.cc-save {
+  font-family: inherit; font-size: var(--d1-fs-tiny); cursor: pointer;
+  border: 1px solid var(--d1-n-line); background: var(--d1-paper); color: var(--d1-accent-3);
+  border-radius: 6px; padding: 2px 10px;
+}
+.cc-save:hover { border-color: var(--d1-gold-2); color: var(--d1-gold-2); }
+.cc-save.done { color: #2E8B57; border-color: #2E8B57; cursor: default; }
+.cc-save:disabled { opacity: .5; }
+.cc-svg { width: 100%; height: auto; display: block; }
+.cc-ax { font-size: 10px; fill: var(--d1-ink-3); font-family: inherit; }
+.cc-lg { font-size: 10.5px; fill: var(--d1-ink-2); font-family: inherit; }
+.cc-piepct { font-size: 10px; fill: #fff; font-weight: 600; font-family: inherit; }
+.cc-tbl { width: 100%; border-collapse: collapse; font-size: var(--d1-fs-small); }
+.cc-tbl th {
+  text-align: left; color: var(--d1-accent); font-weight: 600; cursor: pointer;
+  padding: 6px 10px; border-bottom: 1.5px solid var(--d1-n-line); user-select: none;
+  white-space: nowrap;
+}
+.cc-tbl th:hover { color: var(--d1-gold-2); }
+.cc-tbl td { padding: 6px 10px; border-bottom: 1px solid var(--d1-n-line); color: var(--d1-ink); }
+.cc-tbl tr:last-child td { border-bottom: none; }
+.cc-err { font-size: var(--d1-fs-small); color: var(--pal-danger); margin-bottom: 6px; }
+.cc-raw {
+  font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); background: var(--d1-paper);
+  border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-sm);
+  padding: 8px 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+}
+
 /* ---- 内联目录选择器 ---- */
 .dir-pk { width: 520px; }
 .dp-quick { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
