@@ -625,37 +625,52 @@ TOOL_REGISTRY = {
         },
         "condition": None,
     },
-    "edit_workspace": {
+    # ===== 0.10.1 M1-E：create_ppt（真 PPT：LLM 逐页手写 SVG → 编译 native PPTX）=====
+    "create_ppt": {
         "schema": {
             "type": "function",
             "function": {
-                "name": "edit_workspace",
-                "description": "对已有文件做精准文本替换（不重写全文）。适合修改文档的某一段，old_text 必须在文件中精确匹配。",
+                "name": "create_ppt",
+                "description": "制作真正的 PPT 演示文稿（.pptx，可用 PowerPoint/WPS 打开编辑）。工作流：① action='begin' 开题（给标题，系统返回画布与设计规则要点）→ ② action='page' 逐页提交手写 SVG（每页一个完整 <svg>，页码从 1 递增；质量门不通过会返回 issues，修复后用相同页码重发）→ ③ action='build' 编译成 pptx 供用户下载。每提交一页，用户右侧视窗会实时看到该页预览。适用：用户要\"PPT/幻灯片/pptx/演示/汇报\"且需要可编辑的原生 PPT 文件（网页式演示用 .ppt.html 赛道，不要混用）。",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "path": {
+                        "action": {
                             "type": "string",
-                            "description": "相对工作区根目录的文件路径"
+                            "enum": ["begin", "page", "build"],
+                            "description": "begin=开题建 deck；page=提交一页 SVG；build=编译全部页为 pptx"
                         },
-                        "old_text": {
+                        "title": {
                             "type": "string",
-                            "description": "要替换的原文（必须在文件中精确存在）"
+                            "description": "begin 必填：演示文稿主题标题"
                         },
-                        "new_text": {
+                        "page": {
+                            "type": "integer",
+                            "description": "page 必填：页码（从 1 开始递增；修复重发用相同页码）"
+                        },
+                        "svg": {
                             "type": "string",
-                            "description": "替换后的新内容"
+                            "description": "page 必填：该页完整 SVG（<svg viewBox=\"0 0 1280 720\"> 起手，全部样式内联）"
+                        },
+                        "deck": {
+                            "type": "string",
+                            "description": "page/build 必填：begin 返回的 deck id"
+                        },
+                        "filename": {
+                            "type": "string",
+                            "description": "build 可选：输出文件名（不含扩展名，默认用主题）"
                         }
                     },
-                    "required": ["path", "old_text", "new_text"]
+                    "required": ["action"]
                 }
             }
         },
         "handler": None,
         "status_map": {
-            "start": "workspace_editing",
-            "done": "workspace_edited",
+            "start": "ppt_working",
+            "done": "ppt_done",
         },
+        "stat_key": "ppt_actions",
         "condition": None,
     },
 }
@@ -673,6 +688,7 @@ _TOOL_PERM_MAP = {
     "delete_workspace": "tool_enabled_file_rw",
     "append_workspace": "tool_enabled_file_rw",
     "edit_workspace": "tool_enabled_file_rw",
+    "create_ppt": "tool_enabled_file_rw",   # M1-E：PPT 产物写 workspace，归文件读写权限档
 }
 
 
@@ -754,6 +770,15 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         base += CARD_PROTOCOL_PROMPT
     except Exception:
         pass
+
+    # 真 PPT 协议（PLAN 三章 1，M1-E；create_ppt 启用时才注入——
+    # 打在 agent base 上，cloud_engine extras 模型收不到，M1-D-24 教训①）
+    if any(t["function"]["name"] == "create_ppt" for t in tools):
+        try:
+            from prompts import PPT_PROTOCOL_PROMPT
+            base += PPT_PROTOCOL_PROMPT
+        except Exception:
+            pass
 
     # ===== Patch4 修复 2：会话上下文注入（token 预算 5000）=====
     base = _inject_session_context(

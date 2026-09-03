@@ -1142,6 +1142,18 @@ body.narrow #viewer.open ~ .vw-backdrop {
   background: rgba(15,43,70,.25); z-index: 20;
 }
 
+/* 预览 tab：PPT 逐页 SVG（M1-E，DNA-01 深蓝金） */
+.vw-ppt-deck { margin-bottom: 14px; }
+.vw-ppt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 4px 2px 8px; }
+.vw-ppt-title { font-size: var(--d1-fs); font-weight: 600; color: var(--d1-ink); }
+.vw-ppt-meta { font-size: var(--d1-fs-small); color: var(--d1-ink-3); white-space: nowrap; }
+.vw-ppt-dl { color: var(--d1-gold-2); text-decoration: none; font-weight: 600; }
+.vw-ppt-dl:hover { text-decoration: underline; }
+.vw-ppt-page { margin-bottom: 10px; }
+.vw-ppt-num { font-size: var(--d1-fs-small); color: var(--d1-ink-3); padding: 0 2px 4px; }
+.vw-ppt-svg { border-radius: var(--d1-r-sm); overflow: hidden; box-shadow: var(--d1-shadow-card, 0 1px 4px rgba(15,43,70,.12)); background: #0F2B46; }
+.vw-ppt-svg svg { display: block; width: 100%; height: auto; }
+
 /* 空状态 stagger 入场（DNA-01 动效） */
 @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 .empty-wrap > * { animation: rise-in var(--d1-dur-long) var(--d1-ease-out) both; }

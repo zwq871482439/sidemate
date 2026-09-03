@@ -49,6 +49,12 @@ REQUIRED_DEPS: List[Tuple[str, str, str]] = [
 # F10: curl_cffi 缺失时搜索引擎 fallback 到 httpx（无 TLS 指纹伪装）
 OPTIONAL_DEPS: Dict[str, str] = {
     "curl_cffi": "搜索引擎 TLS 指纹伪装（缺失则用 httpx，部分网站可能拦截）",
+    # 0.10.1 M1-E：create_ppt 真 PPT 编译链（缺失则 build 动作报错降级，
+    # 其余功能不受影响；编译链 import 是惰性的，见 core/ppt_compile.py）
+    "pptx": "真 PPT 编译（python-pptx，缺失则 create_ppt 无法生成 .pptx）",
+    "pathops": "真 PPT 编译（skia-pathops 几何运算）",
+    "uharfbuzz": "真 PPT 编译（uharfbuzz 文本整形）",
+    "xlsxwriter": "真 PPT 编译（XlsxWriter 原生图表）",
 }
 
 

@@ -1249,6 +1249,35 @@ class AgentLoop:
                         "message": "生成 docx 失败: %s" % str(e)[:100],
                     }
 
+            elif tool_name == "create_ppt":
+                # 0.10.1 M1-E：真 PPT（LLM 逐页手写 SVG → 编译 native PPTX）
+                # begin/page/build 三动作，实现在 core/ppt_compile.py
+                from core import ppt_compile as _pptc
+                action = args.get("action", "")
+                if action == "begin":
+                    r = _pptc.begin_deck(self.chat_id, args.get("title", ""))
+                elif action == "page":
+                    r = _pptc.add_page(self.chat_id, args.get("deck", ""),
+                                       args.get("page"), args.get("svg", ""))
+                elif action == "build":
+                    r = _pptc.build_deck(self.chat_id, args.get("deck", ""),
+                                         args.get("filename"))
+                else:
+                    return {
+                        "success": False, "tool": "create_ppt",
+                        "error": "bad_action",
+                        "message": "action 必须是 begin/page/build 之一",
+                    }
+                if r.get("ok"):
+                    stats["ppt_actions"] = stats.get("ppt_actions", 0) + 1
+                    return {"success": True, "tool": "create_ppt", "data": r}
+                return {
+                    "success": False, "tool": "create_ppt",
+                    "error": r.get("error", "ppt_error"),
+                    "message": r.get("message", "create_ppt 执行失败"),
+                    "data": r,
+                }
+
             elif tool_name == "list_docs":
                 # Patch4 v3：列出 workspace 里的 .md 文档 + completed 标记
                 from core.doc_session import list_workspace_files, list_completed_docs
@@ -1542,7 +1571,12 @@ class AgentLoop:
         elif tool_name == "table_ops":
             return get_status_event(tool_name, "start",
                                     action=args.get("action", ""),
-                                    filename=(args.get("filename", "") or "")[:50])
+                                    filename=(args.get("filename") or "")[:50])
+        elif tool_name == "create_ppt":
+            return get_status_event(tool_name, "start",
+                                    action=args.get("action", ""),
+                                    page=args.get("page") or 0,
+                                    title=(args.get("title") or "")[:40])
         else:
             return {"status": "thinking"}
 
@@ -1638,6 +1672,16 @@ class AgentLoop:
                                     name=data.get("name", ""),
                                     rows=data.get("rows", 0),
                                     cols=data.get("cols", 0))
+        elif tool_name == "create_ppt":
+            # M1-E：page 完成带 deck/page（pipeline 据此派生 ppt_page 预览事件）；
+            # build 完成带 pptx_name（pipeline 派生产物下载）。注意不透传 svg 正文
+            _d = {"action": data.get("action") or args.get("action", ""),
+                  "deck": data.get("deck", ""),
+                  "page": data.get("page", 0),
+                  "pages": data.get("pages") if isinstance(data.get("pages"), list) else data.get("pages", 0),
+                  "pptx_name": data.get("pptx_name", ""),
+                  "title": data.get("title", "")}
+            return get_status_event(tool_name, "done", **_d)
         else:
             return {"status": "done"}
 

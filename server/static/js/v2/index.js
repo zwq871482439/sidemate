@@ -99,6 +99,7 @@ const chatStream = createChatStream({
   },
   onStreamTick: (st, phase) => { _streamState = st; renderStreamingBubble(st); },
   onCardEvent: (d) => { if (_cards) _cards.handleEvent(d); },
+  onPptPage: (d) => { if (_viewer) _viewer.onPptPage(d); },  // M1-E：PPT 逐页预览直转视窗
   onDocOutline: (outline) => {
     // 文档 Phase 1 完成：提纲确认栏（经典版同款交互，v2 DNA 样式）
     _showDocConfirmBar(outline);

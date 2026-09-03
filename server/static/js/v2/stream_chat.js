@@ -111,6 +111,11 @@ function _now() { return new Date().toTimeString().slice(0, 8); }
 
 // SSE 事件子集（经典版 56 种里的核心集；卡片类事件转发给 hooks.onCardEvent）
 function _handleEvent(d, st, hooks) {
+  // PPT 逐页预览事件（M1-E）：直接转视窗，不进卡片区
+  if (d.type === 'ppt_page') {
+    if (hooks.onPptPage) hooks.onPptPage(d);
+    return;
+  }
   // 明盒卡片事件（agent_timeline/agent_status/doc_loaded/agent_summary/fetch_hint）
   if (hooks.onCardEvent && ['agent_timeline', 'agent_status', 'doc_loaded', 'agent_summary', 'fetch_hint'].includes(d.type)) {
     hooks.onCardEvent(d);

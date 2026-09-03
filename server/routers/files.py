@@ -211,6 +211,36 @@ def download_chat_doc(chat_id: str, doc_id: str, fmt: str = "docx"):
                         filename=doc_id + ".docx")
 
 
+@router.get("/api/chat/{chat_id}/ppt/pages")
+def list_ppt_pages(chat_id: str):
+    """列出会话的 PPT deck 与页面（视窗预览 tab 回放用，M1-E）。
+
+    返回 {ok, decks: [{deck, title, pages: [{n, url}], pptx, pptx_url}]}
+    """
+    from core.ppt_compile import list_decks
+    if _chat_folder_path(chat_id) is None:
+        return JSONResponse({"error": "非法或不存在会话"}, status_code=404)
+    try:
+        from urllib.parse import quote as _q
+        decks = []
+        for d in list_decks(chat_id):
+            decks.append({
+                "deck": d["deck"],
+                "title": d["title"],
+                "pages": [{"n": n, "url": "/api/chat/%s/workspace/download?path=%s" % (
+                    _q(chat_id, safe=''),
+                    _q("ppt/%s/svg_output/P%02d.svg" % (d["deck"], n), safe=''))}
+                    for n in d["pages"]],
+                "pptx": d.get("pptx"),
+                "pptx_url": ("/api/chat/%s/workspace/download?path=%s" % (
+                    _q(chat_id, safe=''), _q(d["pptx"], safe=''))) if d.get("pptx") else None,
+            })
+        return {"ok": True, "decks": decks}
+    except Exception as e:
+        log.warning("[PPT] pages 列表失败 chat=%s: %s", chat_id, str(e)[:100])
+        return JSONResponse({"error": str(e)[:120]}, status_code=500)
+
+
 @router.get("/api/chat/{chat_id}/workspace")
 def list_workspace(chat_id: str):
     """列出会话 workspace 内的文件。"""

@@ -89,6 +89,39 @@ CARD_PROTOCOL_PROMPT = (
     "   输出 ask 块后本轮立刻结束，不得自问自答；用户回答后再继续。"
 )
 
+# 真 PPT 协议（0.10.1 M1-E：create_ppt 工具，SVG 单一中间表示 + DNA-01 设计卡）
+# 追加在在线 agent system prompt 尾部（create_ppt 工具启用时）；离线不注入
+PPT_PROTOCOL_PROMPT = (
+    "\n9. 真 PPT 制作（create_ppt 工具）：用户要\"PPT/pptx/幻灯片/汇报/演示\"且需要"
+    "可编辑的原生 PPT 文件时使用（纯网页演示仍走 .ppt.html 赛道，二者不要混用）。\n"
+    "   工作流（严格按序）：\n"
+    "   ① create_ppt(action=\"begin\", title=\"主题\") 开题；\n"
+    "   ② create_ppt(action=\"page\", deck=..., page=页码, svg=\"...\") 逐页提交"
+    "（页码从 1 递增，每次只提交一页，提交后用户右侧会实时看到该页）；\n"
+    "   ③ 全部页提交完（通常 5-8 页，含封面/目录/内容页/结尾）"
+    "调 create_ppt(action=\"build\", deck=...) 生成可下载 pptx。\n"
+    "   每页 SVG 硬契约（违反会被质量门拒收，需修复重发）：\n"
+    "   - 以 <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1280 720\"> 起手，"
+    "画布 1280×720，坐标全部在此范围内\n"
+    "   - 禁用：mask、<style>、class 属性、外部 CSS、foreignObject、textPath、"
+    "@font-face、animate、script、事件属性（on*）、iframe\n"
+    "   - 样式一律写内联属性（fill/font-size/font-family 直接写在元素上）\n"
+    "   - 文本写原始 Unicode 字符，XML 保留字转义（& → &amp;）；&nbsp; 等 HTML 实体不可用\n"
+    "   - 文本框宽度估算（PoC 实测安全系数）：宽度 px ≈ 字数 × 字号 × 0.62；"
+    "超长文本必须手动用多个 <tspan> 分行，不要让文字溢出形状边界\n"
+    "   - 字体 font-family=\"Microsoft YaHei\"（微软雅黑）\n"
+    "   设计规则（DNA-01 深蓝金，默认风格卡）：\n"
+    "   - 底色 #0F2B46（深蓝），强调色 #E8B54D（金），正文文字 #FFFFFF，次要文字 #B8C4D4\n"
+    "   - 字号只能用这五档（工程门禁强制，超出 ±2 的档位出现 3 次即拒收）：\n"
+    "     页大标题/封面 72、副标题 34、正文 26、辅助说明 19、脚注/页码 18\n"
+    "   - 字重拉开层次（正文 400 / 标题 600-700）；8px 网格对齐；四周留边距 ≥60px\n"
+    "   - 每页一个核心观点；封面可大面积留白+大标题；内容页信息密度适中\n"
+    "   - 装饰元素用纯几何（矩形/圆角矩形/圆形/线条），金色细分隔线、角标、页码（右下\"02 / 主题\"式）\n"
+    "   - 禁止堆砌段落文字进 PPT——正文超过 4 行就拆页或提炼为要点\n"
+    "   错误处理：page 返回 issues 时，必须按提示修复该页并用相同页码重发；"
+    "build 返回质量门错误时，修复对应页后重新 build。"
+)
+
 # 场景增强（只一句话，不重复规则，不超20字）
 STRATEGY_ENHANCEMENTS = {
     "greeting":   "1-2句简短回应即可。",

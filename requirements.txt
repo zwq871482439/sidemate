@@ -55,6 +55,11 @@ python-docx==1.2.0
 python-pptx==1.0.2
 openpyxl==3.1.5
 mammoth==1.11.0
+# 0.10.1 M1-E：create_ppt 真 PPT（SVG 单一中间表示 → native PPTX，
+# vendor ppt-master svg_to_pptx 链，MIT 署名见 server/vendor/ppt_master/）
+skia-pathops>=0.8
+uharfbuzz>=0.39
+XlsxWriter>=3.2
 # Patch5 B2: EPUB 解析（文件类型扩展）— P6 改用 zipfile(标准库) + BeautifulSoup(MIT)，
 # 彻底去除 EbookLib(AGPLv3+) 依赖。
 # Patch5 B2: RTF 解析（文件类型扩展）

@@ -37,6 +37,18 @@ export function agentStatusLabel(status, d) {
   }
   if (status === 'tool_limit_reached') return d.message || '工具调用已达上限，基于已获取信息继续回答';
   if (status === 'tool_limited') return '工具调用已达上限，转入回答';
+  if (status === 'ppt_working') {
+    if (d.action === 'begin') return 'PPT 开题：' + (d.title || '');
+    if (d.action === 'page') return '设计第 ' + (d.page || '?') + ' 页…';
+    if (d.action === 'build') return '编译 PPTX…';
+    return '制作 PPT';
+  }
+  if (status === 'ppt') {  // ppt_done 经 _done 后缀剥离到这里
+    if (d.action === 'begin') return 'PPT 开题：' + (d.title || '');
+    if (d.action === 'page') return '第 ' + (d.page || '?') + ' 页设计完成';
+    if (d.action === 'build') return 'PPT 已生成：' + (d.pptx_name || '');
+    return 'PPT 完成';
+  }
   if (status.indexOf('_done') > 0) return agentStatusLabel(status.replace('_done', ''), d);
   return String(status).replace(/_/g, ' ');
 }

@@ -629,6 +629,39 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                                 "ts": now_ts,
                             })
 
+                    # M1-E: create_ppt 派生——page 动作发逐页预览事件（只带 URL，
+                    # SVG 正文前端自取，防 SSE/timeline 膨胀）；build 动作走产物下载
+                    if status_val == "ppt_done":
+                        _ppt_action = content.get("action")
+                        if _ppt_action == "page" and content.get("deck") and content.get("page"):
+                            from urllib.parse import quote as _url_quote
+                            _svg_rel = "ppt/%s/svg_output/P%02d.svg" % (
+                                content["deck"], int(content["page"]))
+                            yield sse_event("ppt_page", {
+                                "deck": content["deck"],
+                                "page": int(content["page"]),
+                                "pages": content.get("pages") if isinstance(content.get("pages"), list) else [],
+                                "url": "/api/chat/%s/workspace/download?path=%s" % (
+                                    _chat_id, _url_quote(_svg_rel, safe='')),
+                                "ts": now_ts,
+                            })
+                        elif _ppt_action == "build" and content.get("pptx_name"):
+                            from urllib.parse import quote as _url_quote
+                            _pptx_url = "/api/chat/%s/workspace/download?path=%s" % (
+                                _chat_id, _url_quote(content["pptx_name"], safe=''))
+                            if not _doc_complete_sent:
+                                _doc_complete_sent = True
+                                _doc_complete_url = _pptx_url
+                                _doc_complete_filename = content["pptx_name"]
+                            _artifacts.append({"url": _pptx_url, "filename": content["pptx_name"]})
+                            yield sse_event("doc_complete", {
+                                "filename": content["pptx_name"],
+                                "doc_url": _pptx_url,
+                                "md_filename": "",
+                                "total_time": max(0.0, time.time() - _pipeline_start_ts),
+                                "ts": now_ts,
+                            })
+
                     # 给转发出去的 agent_status 追加 phase / ts / elapsed_ms
                     enriched = dict(content)
                     enriched.setdefault("phase", _status_phase(status_val))
