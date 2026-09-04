@@ -1297,6 +1297,47 @@ class AgentLoop:
                         "message": "生成 docx 失败: %s" % str(e)[:100],
                     }
 
+            elif tool_name == "project_write":
+                # M2-3：项目目录写权限（计划/执行双模式，实现在 core/project_write.py）
+                from core import project_write as _pw
+                r = _pw.write_file(self.chat_id, args.get("path", ""),
+                                   args.get("content", ""), args.get("note", ""))
+                if r.get("ok"):
+                    stats["project_writes"] = stats.get("project_writes", 0) + 1
+                    return {"success": True, "tool": "project_write", "data": r}
+                # plan 模式登记不算失败（pending=True 是正常路径）
+                if r.get("pending"):
+                    return {"success": True, "tool": "project_write",
+                            "data": r, "message": r.get("message", "")}
+                return {"success": False, "tool": "project_write",
+                        "error": r.get("error", "write_error"),
+                        "message": r.get("message", "写入失败")}
+
+            elif tool_name == "set_exec_mode":
+                from core import project_write as _pw
+                r = _pw.set_exec_mode(self.chat_id, args.get("mode", ""))
+                if r.get("ok"):
+                    stats["exec_mode_switches"] = stats.get("exec_mode_switches", 0) + 1
+                    return {"success": True, "tool": "set_exec_mode", "data": r}
+                return {"success": False, "tool": "set_exec_mode",
+                        "error": r.get("error", "mode_error"), "message": r.get("message", "")}
+
+            elif tool_name == "set_goal":
+                from core import project_write as _pw
+                r = _pw.set_goal(self.chat_id, args.get("goal", ""))
+                if r.get("ok"):
+                    return {"success": True, "tool": "set_goal", "data": r}
+                return {"success": False, "tool": "set_goal",
+                        "error": r.get("error", "goal_error"), "message": "目标未记录"}
+
+            elif tool_name == "discard_plan":
+                from core import project_write as _pw
+                r = _pw.discard_plan(self.chat_id)
+                if r.get("ok"):
+                    return {"success": True, "tool": "discard_plan", "data": r}
+                return {"success": False, "tool": "discard_plan",
+                        "error": r.get("error", "discard_error"), "message": "清空计划失败"}
+
             elif tool_name == "read_session":
                 # M2 冷层：同项目校验 + 每 sid 每任务只读一次（防循环）+
                 # 私密会话拒读（隐私铁律：离线内容不出机）
@@ -1687,11 +1728,22 @@ class AgentLoop:
                     return self._workspace_error("edit_workspace", e)
 
             else:
+                # ask 是最高频的误调（它是输出围栏块不是工具）——单独引导，
+                # 其余未知工具给可用清单
+                if tool_name == "ask":
+                    return {
+                        "success": False,
+                        "tool": tool_name,
+                        "error": "unknown_tool",
+                        "message": "ask 不是工具，是输出围栏块：直接在回复正文里写 ```ask 代码块即可，本轮到此结束等用户回答",
+                    }
+                from core.agent_tools import TOOL_REGISTRY as _TR
                 return {
                     "success": False,
                     "tool": tool_name,
                     "error": "unknown_tool",
-                    "message": "未知工具: %s" % tool_name,
+                    "message": "未知工具: %s。可用工具：%s" % (
+                        tool_name, "、".join(sorted(_TR.keys()))[:300]),
                 }
 
         except Exception as e:
@@ -1772,6 +1824,16 @@ class AgentLoop:
         elif tool_name == "read_session":
             return get_status_event(tool_name, "start",
                                     name=(args.get("chat_name") or "")[:40])
+        elif tool_name == "project_write":
+            return get_status_event(tool_name, "start",
+                                    path=(args.get("path") or "")[:50])
+        elif tool_name == "set_exec_mode":
+            return get_status_event(tool_name, "start", action=args.get("mode", ""))
+        elif tool_name == "set_goal":
+            return get_status_event(tool_name, "start",
+                                    query=(args.get("goal") or "")[:40])
+        elif tool_name == "discard_plan":
+            return get_status_event(tool_name, "start")
         else:
             return {"status": "thinking"}
 
@@ -1891,6 +1953,16 @@ class AgentLoop:
         elif tool_name == "read_session":
             return get_status_event(tool_name, "done",
                                     name=data.get("sid", ""))
+        elif tool_name == "project_write":
+            _d2 = {"name": data.get("path", ""), "planned": bool(data.get("pending")),
+                   "overwrite": bool(data.get("overwrite") or data.get("overwritten"))}
+            return get_status_event(tool_name, "done", **_d2)
+        elif tool_name == "set_exec_mode":
+            return get_status_event(tool_name, "done", action=data.get("exec_mode", ""))
+        elif tool_name == "set_goal":
+            return get_status_event(tool_name, "done", query=(data.get("goal") or "")[:40])
+        elif tool_name == "discard_plan":
+            return get_status_event(tool_name, "done", count=data.get("cleared", 0))
         else:
             return {"status": "done"}
 

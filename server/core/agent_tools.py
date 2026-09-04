@@ -779,6 +779,85 @@ TOOL_REGISTRY = {
         "condition": None,
         "prompt_fragment": "read_session",
     },
+    # ===== M2-3：项目目录写权限（计划/执行双模式）+ 任务目标 =====
+    "project_write": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "project_write",
+                "description": "把文件写入当前项目目录（用户的项目文件夹，不是会话工作区）。安全规则（系统强制）：① 只接受项目内相对路径，拒绝绝对路径和 ../；② 不删文件；③ 覆盖已有文件前系统自动备份旧版（用户可撤销）；④ 默认【计划模式】——写入不会立即执行，只登记进待执行计划；你应先集齐本轮要写的全部文件，用 ask 卡向用户列出计划（覆盖已有文件的必须明确标注），用户确认后调 set_exec_mode(\"execute\") 再逐个重新执行写入；⑤ 执行完成后调 set_exec_mode(\"plan\") 回到计划模式。适用：用户明确要求把成果写进项目文件夹/修改项目里的文件时。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "项目内相对路径（如 报告/周报.md），禁止绝对路径与 ../"},
+                        "content": {"type": "string", "description": "文件完整内容（文本）"},
+                        "note": {"type": "string", "description": "一句话说明这次写入（记入项目变更日志）"}
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "project_writing", "done": "project_write_done"},
+        "stat_key": "project_writes",
+        "condition": None,
+        "prompt_fragment": "pwrite",
+    },
+    "set_exec_mode": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "set_exec_mode",
+                "description": "切换项目写入的计划/执行模式。规则：只有用户通过 ask 卡明确确认计划后，才能切 execute；执行完计划内的写入后立刻切回 plan。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {"type": "string", "enum": ["plan", "execute"],
+                                 "description": "plan=计划模式（写入只登记）；execute=执行模式（写入落盘）"}
+                    },
+                    "required": ["mode"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "exec_mode_switching", "done": "exec_mode_switch_done"},
+        "stat_key": "exec_mode_switches",
+        "condition": None,
+    },
+    "set_goal": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "set_goal",
+                "description": "记录当前任务的一句话目标（任务目标机制：换会话/中断后仍有据可依）。在任务开始时设一次；目标变化时更新。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal": {"type": "string", "description": "一句话任务目标（≤100字）"}
+                    },
+                    "required": ["goal"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "goal_setting", "done": "goal_set_done"},
+        "stat_key": "goal_sets",
+        "condition": None,
+    },
+    "discard_plan": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "discard_plan",
+                "description": "清空待执行计划（用户取消计划，或计划作废重来时调用）。",
+                "parameters": {"type": "object", "properties": {}, "required": []}
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "plan_discarding", "done": "plan_discard_done"},
+        "stat_key": "plan_discards",
+        "condition": None,
+    },
 }
 
 # ===== prompt fragment 惰性加载表（M2 能力注册表拼装）=====
@@ -790,6 +869,7 @@ _FRAGMENT_LOADERS = {
     "plan": lambda: __import__("prompts").PLAN_PROTOCOL_PROMPT,
     "reader": lambda: __import__("prompts").READER_PROTOCOL_PROMPT,
     "read_session": lambda: __import__("prompts").SESSION_READ_PROMPT,
+    "pwrite": lambda: __import__("prompts").PWRITE_PROTOCOL_PROMPT,
 }
 
 # 工具级权限映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。
@@ -1079,6 +1159,32 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
                 if _digests:
                     out += ("\n\n[用户指定携带的前情会话 · %d 条]\n%s"
                             % (len(_digests), "\n\n".join(_digests)[:1600]))
+        except Exception:
+            pass
+        # ===== 任务目标 + 待执行计划 + 项目目录变更感知（M2-3）=====
+        # 变更感知扫描后即更新 manifest，每次外部改动只提示一次
+        try:
+            from core import project_write as _pw
+            _hs = _pw.get_harness_state(chat_id)
+            if _hs.get("goal"):
+                out += "\n\n[当前任务目标] %s" % _hs["goal"]
+            _pend = _hs.get("pending_plan") or []
+            if _pend:
+                out += ("\n\n[待执行计划（计划模式登记，尚未落盘）]\n" + "\n".join(
+                    "- %s%s（%dB）" % (p.get("path", ""),
+                                       "［将覆盖］" if p.get("overwrite") else "",
+                                       p.get("bytes", 0)) for p in _pend[:10]))
+            _chg = _pw.scan_changes(chat_id)
+            if _chg:
+                _parts = []
+                if _chg.get("changed"):
+                    _parts.append("被外部修改：" + "、".join(_chg["changed"][:8]))
+                if _chg.get("added"):
+                    _parts.append("外部新增：" + "、".join(_chg["added"][:8]))
+                if _chg.get("removed"):
+                    _parts.append("外部删除：" + "、".join(_chg["removed"][:8]))
+                out += ("\n\n[项目目录变更 · 用户在外部改动了文件]\n" + "；".join(_parts)
+                        + "\n——写这些文件前先读最新内容，不要覆盖掉用户的新改动")
         except Exception:
             pass
         return out

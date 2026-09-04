@@ -3360,6 +3360,14 @@ var CardRenderer = (function() {
     if (status === 'readers') return '深读完成：' + (d.ok_count || 0) + '/' + (d.count || 0) + ' 篇';
     if (status === 'session_reading') return '读取历史会话：' + _esc(d.name || '');
     if (status === 'session_read') return '已读历史会话：' + _esc(d.name || '');
+    if (status === 'project_writing') return '写入项目文件：' + _esc(d.path || '');
+    if (status === 'project_write') return (d.planned ? '计划登记：' : '已写入：') + _esc(d.name || '') + (d.overwrite ? '（覆盖，已备份）' : '');
+    if (status === 'exec_mode_switching') return '切换写入模式…';
+    if (status === 'exec_mode_switch') return '已切到' + (d.action === 'execute' ? '执行模式' : '计划模式');
+    if (status === 'goal_setting') return '记录任务目标…';
+    if (status === 'goal_set') return '任务目标：' + _esc(d.query || '');
+    if (status === 'plan_discarding') return '清空待执行计划…';
+    if (status === 'plan_discard') return '已清空 ' + (d.count || 0) + ' 条待执行计划';
     // _done 后缀的状态：提取前缀映射
     if (status.indexOf('_done') > 0) {
       var prefix = status.replace('_done', '');

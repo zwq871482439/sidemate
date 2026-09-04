@@ -379,3 +379,71 @@ def api_open_workdir(chat_name: str, request: Request):
     except Exception as e:
         log.warning("[WORKDIR] 打开目录失败: %s", e)
         return JSONResponse({"error": "打开失败", "path": path}, status_code=500)
+
+
+# ============================================================
+#  M2-3：项目写权限 harness 状态（计划/执行双模式 + 撤销 + 变更感知）
+# ============================================================
+
+@router.get("/api/chats/{chat_name}/harness-state")
+def api_harness_state(request: Request, chat_name: str):
+    """会话 harness 状态卡（视窗会话 tab）：exec_mode/goal/pending_plan/外部变更。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    safe, err = _safe_name_or_400(chat_name)
+    if err:
+        return err
+    from core import project_write as _pw
+    state = _pw.get_harness_state(safe)
+    try:
+        chg = _pw.scan_changes(safe)  # 扫描即更新 manifest，每次外部改动只报一次
+    except Exception:
+        chg = None
+    state["external_changes"] = chg
+    # 最近一次 AI 写入时间（撤销按钮可用性）
+    state["can_undo"] = False
+    try:
+        import os as _os2
+        log_p = _os2.path.join(state["dir"] or "", ".sidemate", "log.jsonl")
+        if state.get("dir") and _os2.path.isfile(log_p):
+            for ln in reversed(open(log_p, encoding="utf-8").read().splitlines()[-50:]):
+                if '"action": "write"' in ln or '"action":"write"' in ln:
+                    state["can_undo"] = True
+                    break
+    except Exception:
+        pass
+    return state
+
+
+@router.post("/api/chats/{chat_name}/exec-mode")
+async def api_exec_mode(request: Request, chat_name: str):
+    """用户手动切换计划/执行模式（视窗会话 tab 开关）。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    safe, err = _safe_name_or_400(chat_name)
+    if err:
+        return err
+    body = await request.json()
+    from core import project_write as _pw
+    r = _pw.set_exec_mode(safe, (body.get("mode") or ""))
+    if not r.get("ok"):
+        return JSONResponse({"error": r.get("error", "失败")}, status_code=400)
+    return r
+
+
+@router.post("/api/chats/{chat_name}/undo-write")
+def api_undo_write(request: Request, chat_name: str):
+    """撤销最近一次 AI 对项目目录的写入（恢复备份/移除新建文件）。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    safe, err = _safe_name_or_400(chat_name)
+    if err:
+        return err
+    from core import project_write as _pw
+    r = _pw.undo_last_write(safe)
+    if not r.get("ok"):
+        return JSONResponse({"error": r.get("message", "撤销失败")}, status_code=400)
+    return r

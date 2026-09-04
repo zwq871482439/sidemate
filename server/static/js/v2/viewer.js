@@ -32,6 +32,7 @@ export function createViewer(opts) {
   let handoff = null;  // 项目交接 {content, updated_at, source_engine, source_chat} | null
   let handoffProj = null;
   let carrySids = [];  // M2 选带层：本会话勾选携带的前情会话 sid 列表
+  let hs = null;       // M2-3 harness 状态：{exec_mode, goal, pending_plan, external_changes, can_undo}
   let uploading = false;
   let ppt = null;      // PPT decks 回放：{ decks:[{deck,title,pages:[{n,url}],pptx,pptx_url}] } | null=未加载
   let pptLive = {};    // 流式期间即时累积：deck -> { title, pages: {n: url} }
@@ -75,6 +76,11 @@ export function createViewer(opts) {
       const d = await r.json();
       carrySids = d.sids || [];
     } catch (e) { carrySids = []; }
+    // M2-3：harness 状态（计划/执行模式、任务目标、待执行计划、外部变更）
+    try {
+      const r2 = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/harness-state');
+      hs = await r2.json();
+    } catch (e) { hs = null; }
   }
 
   // 选带层切换：勾选/取消某条同项目会话 → POST 全量清单
@@ -140,8 +146,26 @@ export function createViewer(opts) {
     </div>`;
   }
 
-  function _handoffSection() {
-    if (!wd || wd.legacy || !wd.dir) return '';
+  // M2-3 harness 卡：写入模式切换（计划/执行）+ 任务目标 + 待执行计划 + 撤销 + 外部变更
+  function _harnessSection() {
+    if (!hs || hs.legacy || !hs.dir) return '';
+    const isExec = hs.exec_mode === 'execute';
+    const pend = hs.pending_plan || [];
+    const chg = hs.external_changes;
+    return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">写入与计划</span>
+        <span class="vw-dir-acts">
+          <span class="vw-mode-seg" title="计划模式：AI 写项目文件前先给你确认清单；执行模式：确认后直接落盘">
+            <button class="vw-seg ${!isExec ? 'on' : ''}" data-m="plan">计划</button><button class="vw-seg ${isExec ? 'on' : ''}" data-m="execute">执行</button>
+          </span>
+        </span></div>
+      ${hs.goal ? `<div class="vw-goal" title="任务目标（AI 在任务开始时记录）">${icon('target')} ${esc(hs.goal)}</div>` : ''}
+      ${pend.length ? `<div class="vw-pend"><div class="vw-pend-t">待执行计划 · ${pend.length}（确认后 AI 才会真正写入）</div>
+        ${pend.slice(0, 6).map(p => `<div class="vw-pend-i">${p.overwrite ? '<span class="vw-ow">覆盖</span>' : ''}${esc(p.path)}</div>`).join('')}</div>` : ''}
+      ${chg ? `<div class="vw-chg">${icon('alertTriangle')} 项目目录有外部改动：${[...(chg.changed || []), ...(chg.added || []), ...(chg.removed || [])].slice(0, 4).map(esc).join('、')}${chg.total > 4 ? ' 等 ' + chg.total + ' 项' : ''}（AI 已被告知）</div>` : ''}
+      ${hs.can_undo ? '<div class="vw-card-r"><button class="vw-mini" data-a="undo" title="恢复最近一次 AI 写入前的状态（覆盖→还原旧版，新建→移除）">${icon('undo')} 撤销上次写入</button></div>' : ''}`;
+  }
+
+  function _handoffSection() {    if (!wd || wd.legacy || !wd.dir) return '';
     if (!handoff) {
       return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">交接</span>
         <span class="vw-dir-acts"><button class="vw-dir-open" data-a="handoff" title="把当前进度写进项目交接文件">生成交接</button></span></div>
@@ -205,11 +229,41 @@ export function createViewer(opts) {
       }
       body.innerHTML = `<div class="vw-files">
         ${_projectCard()}
+        ${_harnessSection()}
         ${_sessionList()}
         ${_handoffSection()}
         ${_wdFiles()}
       </div>
       <input type="file" class="vw-up-input" style="display:none">`;
+      // harness 卡：计划/执行切换 + 撤销
+      body.querySelectorAll('.vw-seg').forEach(b =>
+        b.addEventListener('click', async () => {
+          const cur = opts.getCurrentChat();
+          if (!cur || b.classList.contains('on')) return;
+          try {
+            await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/exec-mode', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode: b.dataset.m }),
+            });
+            hs = null;
+            await loadWd();
+            renderBody();
+          } catch (e) { /* 失败无感 */ }
+        }));
+      const undoBtn = body.querySelector('[data-a="undo"]');
+      if (undoBtn) undoBtn.addEventListener('click', async () => {
+        const cur = opts.getCurrentChat();
+        if (!cur) return;
+        undoBtn.disabled = true;
+        try {
+          const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/undo-write', { method: 'POST' });
+          const d = await r.json();
+          alert(d.message || d.error || '已处理');
+        } catch (e) { alert('撤销失败'); }
+        hs = null; files = null;
+        await loadWd();
+        renderBody();
+      });
       // 同项目会话点击切换；「携」按钮切换选带（不触发切换）
       body.querySelectorAll('.vw-peer').forEach(p =>
         p.addEventListener('click', () => {

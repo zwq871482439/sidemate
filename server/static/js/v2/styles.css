@@ -632,6 +632,16 @@ sup.ref-n:hover { text-decoration: underline; }
 .vw-carry.on { background: var(--d1-gold); border-color: var(--d1-gold); color: #131B24; font-weight: 600; }
 .vw-carry:disabled { opacity: .5; cursor: default; }
 .vw-carry-hint { font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); margin-left: 6px; }
+/* harness 卡（M2-3 写入与计划） */
+.vw-mode-seg { display: inline-flex; border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-sm); overflow: hidden; }
+.vw-seg { border: none; background: transparent; color: var(--d1-ink-3); font-size: var(--d1-fs-tiny); padding: 3px 10px; cursor: pointer; }
+.vw-seg.on { background: var(--d1-accent); color: var(--d1-paper); font-weight: 600; }
+.vw-goal { font-size: var(--d1-fs-small); color: var(--d1-ink-2); padding: 6px 10px; background: var(--d1-paper-2); border-radius: var(--d1-r-sm); margin-bottom: 8px; }
+.vw-pend { border: 1px solid var(--d1-gold); border-radius: var(--d1-r-sm); padding: 8px 10px; margin-bottom: 8px; background: rgba(232,181,77,.06); }
+.vw-pend-t { font-size: var(--d1-fs-small); color: var(--d1-gold-2); font-weight: 600; margin-bottom: 4px; }
+.vw-pend-i { font-size: var(--d1-fs-small); color: var(--d1-ink-2); padding: 2px 0; }
+.vw-ow { color: #B0653A; font-weight: 600; margin-right: 4px; }
+.vw-chg { font-size: var(--d1-fs-tiny); color: #B0653A; padding: 6px 10px; background: rgba(176,101,58,.08); border-radius: var(--d1-r-sm); margin-bottom: 8px; }
 .vw-dir-acts { display: flex; gap: 6px; flex-shrink: 0; }
 .wd-lock-note {
   font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); padding: 7px 10px;
