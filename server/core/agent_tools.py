@@ -858,6 +858,31 @@ TOOL_REGISTRY = {
         "stat_key": "plan_discards",
         "condition": None,
     },
+    # ===== M2-4：deliver_package 成果包（多产物打 zip 交付）=====
+    "deliver_package": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "deliver_package",
+                "description": "把本次任务的多个产物打包成一个 zip 供用户一次下载（成果包）。适用：任务产出了多个交付物（报告 docx + 数据表 xlsx + PPT 等），用户需要一次拿走时。files 不填则自动打包工作区里的全部交付物文件（docx/xlsx/pptx/html/md/txt/csv，不含工程中间文件）。注意：工作区里没有产物时不要调。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "成果包名称（不含扩展名）"},
+                        "files": {"type": "array", "description": "要打包的工作区文件相对路径（可选，默认全部交付物）",
+                                  "items": {"type": "string"}},
+                        "note": {"type": "string", "description": "一句话说明（可选）"}
+                    },
+                    "required": ["title"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "deliver_packing", "done": "deliver_pack_done"},
+        "stat_key": "deliver_packages",
+        "condition": None,
+        "prompt_fragment": "deliver",
+    },
 }
 
 # ===== prompt fragment 惰性加载表（M2 能力注册表拼装）=====
@@ -870,6 +895,7 @@ _FRAGMENT_LOADERS = {
     "reader": lambda: __import__("prompts").READER_PROTOCOL_PROMPT,
     "read_session": lambda: __import__("prompts").SESSION_READ_PROMPT,
     "pwrite": lambda: __import__("prompts").PWRITE_PROTOCOL_PROMPT,
+    "deliver": lambda: __import__("prompts").DELIVER_PROTOCOL_PROMPT,
 }
 
 # 工具级权限映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。

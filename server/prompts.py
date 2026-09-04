@@ -160,6 +160,13 @@ PWRITE_PROTOCOL_PROMPT = (
     "说明用户在外部改了文件，先读最新内容再写，不要覆盖掉用户的新改动"
 )
 
+# 成果包协议（M2-4：deliver_package 多产物 zip 交付）
+DELIVER_PROTOCOL_PROMPT = (
+    "\n14. 成果包（deliver_package 工具）：任务产出了多个交付物"
+    "（如 docx 报告 + xlsx 数据表 + pptx 汇报）且用户需要一次拿走时，"
+    "调 deliver_package 打包成 zip。只有一两个产物时不打。"
+)
+
 # 场景增强（只一句话，不重复规则，不超20字）
 STRATEGY_ENHANCEMENTS = {
     "greeting":   "1-2句简短回应即可。",

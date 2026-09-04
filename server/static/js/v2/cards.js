@@ -59,6 +59,8 @@ export function agentStatusLabel(status, d) {
   if (status === 'goal_set') return '任务目标：' + (d.query || '');
   if (status === 'plan_discarding') return '清空待执行计划…';
   if (status === 'plan_discard') return '已清空 ' + (d.count || 0) + ' 条待执行计划';
+  if (status === 'deliver_packing') return '打包成果包…';
+  if (status === 'deliver_pack') return '成果包已生成：' + (d.name || '') + '（' + (d.count || 0) + ' 个文件）';
   if (status === 'ppt') {  // ppt_done 经 _done 后缀剥离到这里
     if (d.action === 'begin') return 'PPT 开题：' + (d.title || '');
     if (d.action === 'page') return '第 ' + (d.page || '?') + ' 页设计完成';

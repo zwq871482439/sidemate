@@ -1297,6 +1297,51 @@ class AgentLoop:
                         "message": "生成 docx 失败: %s" % str(e)[:100],
                     }
 
+            elif tool_name == "deliver_package":
+                # M2-4：成果包——工作区交付物打 zip（不含 ppt/ 工程目录等中间件）
+                import re as _re2
+                import zipfile as _zipfile
+                from core.doc_session import _workspace_root, list_workspace_files
+                title = _re2.sub(r'[\\/:*?"<>|]+', "_", (args.get("title") or "").strip())[:60] or "成果包"
+                ws_root = _workspace_root(self.chat_id)
+                _DELIVER_EXT = (".docx", ".xlsx", ".pptx", ".html", ".md", ".txt", ".csv")
+                try:
+                    all_files = list_workspace_files(self.chat_id)
+                except Exception:
+                    all_files = []
+                want = [f.strip() for f in (args.get("files") or []) if isinstance(f, str) and f.strip()]
+                if want:
+                    # 显式清单：校验存在且在 workspace 内（防穿越由 list 比对兜底）
+                    names = {f.get("name") for f in all_files}
+                    targets = [f for f in want if f in names]
+                    missing = [f for f in want if f not in names]
+                    if missing:
+                        return {"success": False, "tool": "deliver_package",
+                                "error": "files_missing",
+                                "message": "这些文件不在工作区：%s" % "、".join(missing[:5])}
+                else:
+                    targets = [f.get("name") for f in all_files
+                               if f.get("name", "").lower().endswith(_DELIVER_EXT)
+                               and "/" not in f.get("name", "") and "\\" not in f.get("name", "")]
+                if not targets:
+                    return {"success": False, "tool": "deliver_package",
+                            "error": "no_artifacts",
+                            "message": "工作区里没有可打包的交付物（docx/xlsx/pptx/html/md/txt/csv）"}
+                zip_name = title + ".zip"
+                zip_path = os.path.join(ws_root, zip_name)
+                os.makedirs(ws_root, exist_ok=True)
+                with _zipfile.ZipFile(zip_path, "w", _zipfile.ZIP_DEFLATED) as zf:
+                    for fn in targets:
+                        fp = os.path.join(ws_root, fn)
+                        if os.path.isfile(fp):
+                            zf.write(fp, fn)
+                stats["deliver_packages"] = stats.get("deliver_packages", 0) + 1
+                log.info("[AGENT] deliver_package: %s（%d 个文件）", zip_name, len(targets))
+                return {"success": True, "tool": "deliver_package",
+                        "data": {"name": zip_name, "count": len(targets),
+                                 "files": targets[:20],
+                                 "note": (args.get("note") or "")[:80]}}
+
             elif tool_name == "project_write":
                 # M2-3：项目目录写权限（计划/执行双模式，实现在 core/project_write.py）
                 from core import project_write as _pw
@@ -1834,6 +1879,9 @@ class AgentLoop:
                                     query=(args.get("goal") or "")[:40])
         elif tool_name == "discard_plan":
             return get_status_event(tool_name, "start")
+        elif tool_name == "deliver_package":
+            return get_status_event(tool_name, "start",
+                                    name=(args.get("title") or "")[:40])
         else:
             return {"status": "thinking"}
 
@@ -1963,6 +2011,10 @@ class AgentLoop:
             return get_status_event(tool_name, "done", query=(data.get("goal") or "")[:40])
         elif tool_name == "discard_plan":
             return get_status_event(tool_name, "done", count=data.get("cleared", 0))
+        elif tool_name == "deliver_package":
+            return get_status_event(tool_name, "done",
+                                    name=data.get("name", ""),
+                                    count=data.get("count", 0))
         else:
             return {"status": "done"}
 

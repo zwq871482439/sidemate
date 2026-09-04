@@ -3368,6 +3368,8 @@ var CardRenderer = (function() {
     if (status === 'goal_set') return '任务目标：' + _esc(d.query || '');
     if (status === 'plan_discarding') return '清空待执行计划…';
     if (status === 'plan_discard') return '已清空 ' + (d.count || 0) + ' 条待执行计划';
+    if (status === 'deliver_packing') return '打包成果包…';
+    if (status === 'deliver_pack') return '成果包已生成：' + _esc(d.name || '') + '（' + (d.count || 0) + ' 个文件）';
     // _done 后缀的状态：提取前缀映射
     if (status.indexOf('_done') > 0) {
       var prefix = status.replace('_done', '');

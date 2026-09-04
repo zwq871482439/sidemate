@@ -610,7 +610,8 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
 
                     # P6: 统一产物下载——table_ops write / format_convert 成功后也派发产物事件
                     # 复用 doc_complete 事件类型（前端已有下载 tag 渲染），用 workspace 下载接口（支持 xlsx/txt/md 等）
-                    if status_val in ("table_operating_done", "format_converting_done"):
+                    # M2-4: deliver_pack_done（成果包 zip）同通道
+                    if status_val in ("table_operating_done", "format_converting_done", "deliver_pack_done"):
                         _artifact_name = content.get("name") or content.get("target") or ""
                         if _artifact_name:
                             from urllib.parse import quote as _url_quote
