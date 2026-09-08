@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 file_extractor.py — 文件内容提取 + 长文件三级策略
-支持：txt/md/csv/docx/xlsx/pdf（纯文本提取，图片忽略）
-.doc/.xls 旧格式不支持，返回提示让用户转存新格式
+支持：txt/md/csv/docx/xlsx/pdf/pptx（纯文本提取，图片忽略）
+.doc/.xls/.ppt 旧格式不支持，返回提示让用户转存新格式
 """
 
 import os
@@ -70,7 +70,44 @@ def extract_text(file_path: str) -> str:
     
     elif ext == '.xls':
         return "[不支持 .xls 旧格式，请用 Excel 另存为 .xlsx 后重新上传]"
-    
+
+    elif ext == '.pptx':
+        # 0.10.1 冲刺补齐：pptx 文本提取（python-pptx，M1-E 起已随包分发）
+        # 提取每页的文本框+表格；图片忽略；旧格式 .ppt 不支持
+        try:
+            from pptx import Presentation
+            from pptx.enum.shapes import MSO_SHAPE_TYPE
+            prs = Presentation(file_path)
+            texts = []
+
+            def _walk(shapes, acc):
+                for sh in shapes:
+                    if sh.shape_type == MSO_SHAPE_TYPE.GROUP:
+                        _walk(sh.shapes, acc)
+                    elif getattr(sh, "has_text_frame", False) and sh.text_frame.text.strip():
+                        acc.append(sh.text_frame.text.strip())
+                    elif getattr(sh, "has_table", False):
+                        for row in sh.table.rows:
+                            cells = [c.text.strip() for c in row.cells]
+                            if any(cells):
+                                acc.append(" | ".join(cells))
+
+            for i, slide in enumerate(prs.slides):
+                page = []
+                _walk(slide.shapes, page)
+                if page:
+                    texts.append("### 第 %d 页\n%s" % (i + 1, "\n".join(page)))
+            return "\n\n".join(texts)
+        except ImportError:
+            log.warning("python-pptx 未安装，无法提取 .pptx 文件")
+            return ""
+        except Exception as e:
+            log.error(f"提取 pptx 失败: {e}")
+            return ""
+
+    elif ext == '.ppt':
+        return "[不支持 .ppt 旧格式，请用 PowerPoint 另存为 .pptx 后重新上传]"
+
     elif ext == '.pdf':
         try:
             import fitz  # PyMuPDF

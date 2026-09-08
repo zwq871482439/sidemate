@@ -70,7 +70,7 @@ class TaskItem:
 
 # 支持的文件扩展名（与 kb.py upload 端点保持一致）
 # B2: 新增 epub/html/srt/rtf 四种格式
-_SUPPORTED_EXTENSIONS = frozenset({"txt", "md", "csv", "docx", "xlsx", "pdf", "epub", "html", "htm", "srt", "rtf"})
+_SUPPORTED_EXTENSIONS = frozenset({"txt", "md", "csv", "docx", "xlsx", "pdf", "pptx", "epub", "html", "htm", "srt", "rtf"})
 
 
 class BatchQueue:
@@ -728,6 +728,31 @@ def _extract_file_text(file_path: str, file_type: str) -> str:
                     if page_text:
                         text += page_text + "\n\n"
             return text
+
+        elif file_type == "pptx":
+            from pptx import Presentation
+            from pptx.enum.shapes import MSO_SHAPE_TYPE
+            prs = Presentation(file_path)
+            texts = []
+
+            def _walk(shapes, acc):
+                for sh in shapes:
+                    if sh.shape_type == MSO_SHAPE_TYPE.GROUP:
+                        _walk(sh.shapes, acc)
+                    elif getattr(sh, "has_text_frame", False) and sh.text_frame.text.strip():
+                        acc.append(sh.text_frame.text.strip())
+                    elif getattr(sh, "has_table", False):
+                        for row in sh.table.rows:
+                            cells = [c.text.strip() for c in row.cells]
+                            if any(cells):
+                                acc.append(" | ".join(cells))
+
+            for i, slide in enumerate(prs.slides):
+                page = []
+                _walk(slide.shapes, page)
+                if page:
+                    texts.append("### 第 %d 页\n%s" % (i + 1, "\n".join(page)))
+            return "\n\n".join(texts)
 
         else:
             log.warning("[BATCH_QUEUE] 不支持的文件格式: .%s", file_type)

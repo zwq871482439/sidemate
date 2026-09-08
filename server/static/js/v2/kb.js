@@ -13,7 +13,7 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-const ACCEPT_EXTS = ['.txt', '.md', '.csv', '.docx', '.xlsx', '.pdf', '.epub', '.html', '.htm', '.srt', '.rtf'];
+const ACCEPT_EXTS = ['.txt', '.md', '.csv', '.docx', '.xlsx', '.pdf', '.pptx', '.epub', '.html', '.htm', '.srt', '.rtf'];
 
 // 状态文案（经典版口径）
 const STATUS_LABEL = {

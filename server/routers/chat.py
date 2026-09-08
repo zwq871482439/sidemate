@@ -921,6 +921,35 @@ async def api_qa_upload(file: UploadFile = File(...)):
                 text = "[Excel 解析失败：缺少 openpyxl 库]"
         elif ext == "xls":
             text = "[不支持 .xls 旧格式，请用 Excel 另存为 .xlsx 后重新上传]"
+        elif ext == "pptx":
+            # 0.10.1 冲刺补齐：pptx 文本提取（python-pptx）
+            try:
+                import io as _io
+                from pptx import Presentation
+                from pptx.enum.shapes import MSO_SHAPE_TYPE
+                prs = Presentation(_io.BytesIO(content_bytes))
+                _texts = []
+                for i, slide in enumerate(prs.slides):
+                    _page = []
+                    for sh in slide.shapes:
+                        if sh.shape_type == MSO_SHAPE_TYPE.GROUP:
+                            for sh2 in sh.shapes:
+                                if getattr(sh2, "has_text_frame", False) and sh2.text_frame.text.strip():
+                                    _page.append(sh2.text_frame.text.strip())
+                        elif getattr(sh, "has_text_frame", False) and sh.text_frame.text.strip():
+                            _page.append(sh.text_frame.text.strip())
+                        elif getattr(sh, "has_table", False):
+                            for row in sh.table.rows:
+                                cells = [c.text.strip() for c in row.cells]
+                                if any(cells):
+                                    _page.append(" | ".join(cells))
+                    if _page:
+                        _texts.append("### 第 %d 页" % (i + 1) + chr(10) + chr(10).join(_page))
+                text = (chr(10) + chr(10)).join(_texts) or "[该 PPT 没有可提取的文本内容]"
+            except ImportError:
+                text = "[PPT 解析失败：缺少 python-pptx 库]"
+        elif ext == "ppt":
+            text = "[不支持 .ppt 旧格式，请用 PowerPoint 另存为 .pptx 后重新上传]"
         elif ext == "pdf":
             try:
                 import io
@@ -1018,7 +1047,7 @@ async def api_file_upload(file: UploadFile = File(...), chat_id: str = ""):
     # N-5：上传扩展名白名单 = 实际"能被 LLM 消费"的类型（extract_text 能产出正文）。
     # 排除：.doc/.xls（仅返回"请转换"提示，无正文）、.rtf（striprtf 未打包，提取为空）。
     _ALLOWED_UPLOAD_EXTS = {
-        ".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf",
+        ".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf", ".pptx",
         ".epub", ".html", ".htm", ".srt",
     }
     _up_ext = os.path.splitext(safe_name)[1].lower()
