@@ -274,6 +274,16 @@ async def api_chat_stream(request: Request):
             _ca = body.get("_card_answer")
             if isinstance(_ca, dict) and isinstance(_ca.get("question"), str):
                 _um["_card_answer"] = {"question": _ca["question"][:200]}
+                # M2-3 计划确认卡：点「同意」由系统直接切执行模式（不经模型翻译）；
+                # 本轮 prompt 注入会带待执行计划，模型直接执行即可
+                if _ca.get("action") == "plan_execute":
+                    try:
+                        from core import project_write as _pw2
+                        _chat_name = os.path.basename(os.path.normpath(chat_file))
+                        _pw2.set_exec_mode(_chat_name, "execute")
+                        log.info("[CHAT] 计划确认卡：%s 已切执行模式", _chat_name)
+                    except Exception as _e:
+                        log.warning("[CHAT] 计划确认切执行模式失败: %s", str(_e)[:80])
             _saved_user = append_message(chat_file, _um)
         except Exception as e:
             # 落盘失败不阻断对话——persist_turn 会回退 legacy 重建路径

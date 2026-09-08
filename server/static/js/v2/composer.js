@@ -54,10 +54,18 @@ export function renderComposer(state, events) {
       <div class="scene-tag-wrap" style="display:none"></div>
       <textarea placeholder="发消息给桌伴…（Enter 发送 / Shift+Enter 换行）" rows="1"></textarea>
       <div class="composer-bar">
-        <button class="cb-icon" data-act="upload" title="附加文档到聊天">${iconSvg('paperclip')}</button>
-        <button class="cb-icon" data-act="kb" title="附加知识库文档到聊天">${iconSvg('book')}</button>
-        <button class="cb-send">发送</button>
-        <button class="cb-send cb-stop" style="display:none">停止</button>
+        <div class="cb-pills">
+          <button class="cb-pill" data-act="add" title="添加材料到对话">${iconSvg('plus')} 添加</button>
+          <button class="cb-pill cb-xmode" data-act="execmode" style="display:none" title="计划模式：AI 写项目文件前先给你确认清单；执行模式：确认后直接落盘">计划</button>
+        </div>
+        <div class="cb-right">
+          <button class="cb-send">发送</button>
+          <button class="cb-send cb-stop" style="display:none">停止</button>
+        </div>
+      </div>
+      <div class="cb-add-menu" style="display:none">
+        <button data-act="upload">附加文档到聊天</button>
+        <button data-act="kb">引用知识库文档</button>
       </div>
     </div>
     <input type="file" style="display:none">
@@ -117,6 +125,41 @@ export function renderComposer(state, events) {
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); events.onAttachChange(null); });
   }
 
+  // ---- 计划/执行 pill（M2-3 写权限双模式；仅在线+有项目的会话显示） ----
+  const xmodeBtn = wrap.querySelector('.cb-xmode');
+  let xmodeBusy = false;
+  async function renderXmodePill() {
+    const session = events.getSession && events.getSession();
+    const wd = state.workdir;
+    const show = !!(session && wd && !wd.legacy && wd.dir && state.mode === 'cloud');
+    if (!show) { xmodeBtn.style.display = 'none'; return; }
+    try {
+      const r = await fetch('/api/chats/' + encodeURIComponent(session.name) + '/harness-state');
+      const d = await r.json();
+      const isExec = d.exec_mode === 'execute';
+      xmodeBtn.style.display = '';
+      xmodeBtn.textContent = isExec ? '执行' : '计划';
+      xmodeBtn.classList.toggle('exec', isExec);
+      xmodeBtn.title = isExec
+        ? '执行模式：AI 写项目文件直接落盘（点我切回计划模式）'
+        : '计划模式：AI 写项目文件前先给你确认清单（点我切到执行模式）';
+    } catch (e) { xmodeBtn.style.display = 'none'; }
+  }
+  xmodeBtn.addEventListener('click', async () => {
+    const session = events.getSession && events.getSession();
+    if (!session || xmodeBusy) return;
+    xmodeBusy = true;
+    const next = xmodeBtn.classList.contains('exec') ? 'plan' : 'execute';
+    try {
+      await fetch('/api/chats/' + encodeURIComponent(session.name) + '/exec-mode', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: next }),
+      });
+    } catch (e) { /* 失败无感 */ }
+    xmodeBusy = false;
+    renderXmodePill();
+  });
+
   // ---- 项目 chip（项目即文件夹：对话中显示所属项目，点击打开信息卡；
   // 空状态（无消息）时隐藏——项目选择由空状态归属条承接，避免双入口重复） ----
   const wdStrip = wrap.querySelector('.workdir-strip');
@@ -140,6 +183,7 @@ export function renderComposer(state, events) {
     });
   }
   renderWorkdirChip();
+  renderXmodePill();
 
   // ---- 快捷 chips：按模式照搬经典版 ----
   function renderChips() {
@@ -258,6 +302,16 @@ export function renderComposer(state, events) {
     textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
     updateTokenBar();
   });
+
+  // ---- 「添加」浮条菜单（附件文档/知识库引用，OpenWebUI pill 范式） ----
+  const addBtn = wrap.querySelector('[data-act="add"]');
+  const addMenu = wrap.querySelector('.cb-add-menu');
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    addMenu.style.display = addMenu.style.display === 'none' ? 'flex' : 'none';
+  });
+  document.addEventListener('click', () => { addMenu.style.display = 'none'; });
+  addMenu.addEventListener('click', () => { addMenu.style.display = 'none'; });
 
   // ---- 附件：上传文档 ----
   wrap.querySelector('[data-act="upload"]').addEventListener('click', () => fileInput.click());

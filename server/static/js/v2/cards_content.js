@@ -167,9 +167,10 @@ function _validate(type, spec) {
 // ===== 问答卡（ask）：模型提问 → 用户单选/手敲 → 回答开新轮（回合制） =====
 function _renderAsk(card, spec, opts) {
   const answered = opts && opts.getCardAnswer ? opts.getCardAnswer(spec.question) : null;
+  const isPlan = spec.kind === 'plan_confirm';  // M2-3：计划确认卡（点同意=系统直接切执行模式）
   card.innerHTML = `<div class="cc-head">
-    <span class="cc-badge">❓</span>
-    <span class="cc-title">需要确认</span>
+    <span class="cc-badge">${iconSvg(isPlan ? 'clipboardCheck' : 'help')}</span>
+    <span class="cc-title">${isPlan ? '计划确认' : '需要确认'}</span>
   </div>
   <div class="cc-ask-q">${esc(spec.question)}</div>
   <div class="cc-ask-body"></div>`;
@@ -181,9 +182,9 @@ function _renderAsk(card, spec, opts) {
   let picked = '';
   const optsRow = document.createElement('div');
   optsRow.className = 'cc-ask-opts';
-  (spec.options || []).forEach(o => {
+  (spec.options || []).forEach((o, oi) => {
     const b = document.createElement('button');
-    b.className = 'cc-ask-opt';
+    b.className = 'cc-ask-opt' + (isPlan && oi === 0 ? ' agree' : '');
     b.textContent = o;
     b.addEventListener('click', () => {
       picked = o;
@@ -201,12 +202,14 @@ function _renderAsk(card, spec, opts) {
   input.placeholder = (spec.options && spec.options.length) ? '选一个，或手敲补充…' : '输入你的回答…';
   const go = document.createElement('button');
   go.className = 'cc-ask-go';
-  go.textContent = '回答';
+  go.textContent = isPlan ? '确认' : '回答';
   const submit = () => {
     const answer = (input.value || picked).trim();
     if (!answer) { input.focus(); return; }
     body.innerHTML = `<div class="cc-ask-done">✓ 已答：${esc(answer)}</div>`;
-    if (opts && opts.onAskAnswer) opts.onAskAnswer(spec.question, answer);
+    // 计划确认卡：点中首个选项（同意项）→ 回答带动作语义，后端直接切执行模式
+    const action = (isPlan && answer === (spec.options || [])[0]) ? 'plan_execute' : null;
+    if (opts && opts.onAskAnswer) opts.onAskAnswer(spec.question, answer, action);
   };
   go.addEventListener('click', submit);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });

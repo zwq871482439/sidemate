@@ -1200,6 +1200,9 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
                     "- %s%s（%dB）" % (p.get("path", ""),
                                        "［将覆盖］" if p.get("overwrite") else "",
                                        p.get("bytes", 0)) for p in _pend[:10]))
+            if _hs.get("exec_mode") == "execute":
+                out += ("\n\n[写入模式：执行] 用户已确认计划——用 project_write 逐个执行"
+                        "待执行计划里的写入，全部完成后调 set_exec_mode(\"plan\") 切回计划模式")
             _chg = _pw.scan_changes(chat_id)
             if _chg:
                 _parts = []

@@ -716,9 +716,10 @@ async function onSend(payload) {
   });
 }
 
-// 问答卡回答（回合制：回答作为新 user 消息开新轮，带 cardAnswer 引用元数据）
-function onAskAnswer(question, answer) {
-  onSend({ text: answer, cardAnswer: { question } });
+// 问答卡回答（回合制：回答作为新 user 消息开新轮，带 cardAnswer 引用元数据；
+// M2-3：计划确认卡点同意带 action='plan_execute'，后端直接切执行模式不经模型翻译）
+function onAskAnswer(question, answer, action) {
+  onSend({ text: answer, cardAnswer: { question, action: action || undefined } });
 }
 
 // 回放恢复已答态：找与问题匹配的 _card_answer 用户消息
