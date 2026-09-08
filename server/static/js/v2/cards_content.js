@@ -25,16 +25,35 @@ export function extractMermaid(text) {
 }
 
 let _mermaidInited = false;
+// DNA-01 深蓝金 mermaid 主题（0.10.1 用户实测反馈「内嵌 mermaid 太难看」）：
+// theme:'base' + themeVariables 全面换皮成自家色板（纸面/深墨/金线/雅黑）。
+const _MERMAID_DNA_VARS = {
+  primaryColor: '#EEF3F8',        // 节点填充：纸面浅底
+  primaryTextColor: '#22303C',    // 节点文字：深墨
+  primaryBorderColor: '#0F2B46',  // 节点描边：主深蓝
+  lineColor: '#5B6B7B',           // 连线：次级墨
+  secondaryColor: '#F5DFA8',      // 次色：浅金
+  tertiaryColor: '#F7F9FB',       // 分组底：纸面
+  clusterBkg: '#F2F6FA',
+  edgeLabelBackground: '#F7F9FB',
+  nodeTextColor: '#22303C',
+  titleColor: '#0F2B46',
+  actorTextColor: '#22303C',
+  actorLineColor: '#5B6B7B',
+  signalTextColor: '#22303C',
+  labelTextColor: '#22303C',
+};
 function _initMermaid() {
   if (_mermaidInited || typeof mermaid === 'undefined') return;
   _mermaidInited = true;
   // fontFamily 必须显式字体栈（继承字体会让 mermaid 测量框偏小，中文溢出——经典版同款修复）
   mermaid.initialize({
     startOnLoad: false,
-    theme: 'default',
+    theme: 'base',
+    themeVariables: _MERMAID_DNA_VARS,
     securityLevel: 'loose',
     suppressErrorRendering: true,  // 不渲染 mermaid 原生红色炸弹报错图（降级 UI 我们自己出）
-    fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+    fontFamily: '"Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif',
     flowchart: { padding: 12, nodeSpacing: 60, rankSpacing: 60, useMaxWidth: false, htmlLabels: false },
   });
 }

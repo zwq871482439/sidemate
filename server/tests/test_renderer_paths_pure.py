@@ -248,7 +248,7 @@ class TestMermaidInitialization:
     def test_initialize_passes_security_level(self):
         """initialize 必须配置 securityLevel 为 'loose'，否则 mindmap 等图无法处理 <br/> 标签"""
         init_match = re.search(
-            r"mermaid\.initialize\s*\(\s*\{([^}]+)\}", self.src, re.DOTALL
+            r"mermaid\.initialize\s*\(\s*\{(.*?)\}\s*\)", self.src, re.DOTALL
         )
         assert init_match, "未发现 mermaid.initialize 配置"
         config = init_match.group(1)

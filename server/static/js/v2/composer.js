@@ -270,8 +270,11 @@ export function renderComposer(state, events) {
   }
 
   // ---- 发送/停止 ----
+  let attachPending = false;  // 引用直读异步取 token 期间禁发送（大文件估算要几秒，
+                              // 十五五实战：读取未完就发 = 文件没进上下文，AI 报"没收到"）
   function doSend() {
     if (isLegacy) return;
+    if (attachPending) return;  // 附件读取中——chip 出现才放行
     const text = textarea.value.trim();
     if (!text && !attach) return;
     const payload = {
@@ -450,12 +453,23 @@ export function renderComposer(state, events) {
   function setAttach(att) {
     attach = att;
     attachTokens = att && att.tokens ? att.tokens : 0;
+    attachPending = false;
+    sendBtn.disabled = false;
+    sendBtn.style.opacity = '';
     renderTray();
     updateTokenBar();
     events.onAttachChange(attach);
   }
 
-  return { el: wrap, setRunning, setAttach, focus: () => textarea.focus() };
+  // 引用直读读取中的发送门禁（attach 还没就位时禁点发送）
+  function setAttachPending(p) {
+    attachPending = p;
+    sendBtn.disabled = !!p;
+    sendBtn.style.opacity = p ? '.5' : '';
+    sendBtn.title = p ? '附件读取中…' : '';
+  }
+
+  return { el: wrap, setRunning, setAttach, setAttachPending, focus: () => textarea.focus() };
 }
 
 // 拉离线 action 列表（经典版 /api/action/list）

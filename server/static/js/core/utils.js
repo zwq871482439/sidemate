@@ -229,11 +229,19 @@ if (typeof mermaid !== 'undefined') {
   // 但实际 SVG 渲染时 foreignObject 内继承的是系统字体(行高更大),
   // 导致测量框偏小、中文多行文字溢出框外不可读。
   // 用系统默认字体栈保持测量/渲染一致。
+  // 0.10.1：换皮 DNA-01 深蓝金（用户实测反馈默认主题难看）
   mermaid.initialize({
     startOnLoad: false,
-    theme: 'default',
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#EEF3F8', primaryTextColor: '#22303C', primaryBorderColor: '#0F2B46',
+      lineColor: '#5B6B7B', secondaryColor: '#F5DFA8', tertiaryColor: '#F7F9FB',
+      clusterBkg: '#F2F6FA', edgeLabelBackground: '#F7F9FB', nodeTextColor: '#22303C',
+      titleColor: '#0F2B46', actorTextColor: '#22303C', actorLineColor: '#5B6B7B',
+      signalTextColor: '#22303C', labelTextColor: '#22303C',
+    },
     securityLevel: 'loose',
-    fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+    fontFamily: '"Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif',
     flowchart: {
       padding: 12,
       nodeSpacing: 60,

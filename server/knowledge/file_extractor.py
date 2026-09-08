@@ -142,8 +142,21 @@ def extract_text(file_path: str) -> str:
                             texts.append(t)
                     return '\n\n'.join(texts)
             except ImportError:
-                log.warning("PyMuPDF 和 pdfplumber 均未安装，无法提取 PDF")
-                return ""
+                # 最终兜底 pypdf（requirements 常驻依赖，精简环境唯一保证在场者）
+                # 十五五实战暴露：精简运行环境里 pdfplumber 缺 pdfminer 变砖、
+                # PyMuPDF 未装——链必须有一条永远活着（2026-09-08）
+                try:
+                    from pypdf import PdfReader
+                    reader = PdfReader(file_path)
+                    texts = []
+                    for page in reader.pages[:1000]:
+                        t = page.extract_text()
+                        if t:
+                            texts.append(t)
+                    return '\n\n'.join(texts)
+                except ImportError:
+                    log.warning("PyMuPDF、pdfplumber、pypdf 均不可用，无法提取 PDF")
+                    return ""
         except Exception as e:
             log.error(f"提取 PDF 失败: {e}")
             return ""

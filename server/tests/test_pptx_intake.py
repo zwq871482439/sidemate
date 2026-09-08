@@ -8,6 +8,7 @@
 - chat.py qa 上传白名单含 .pptx
 """
 import os
+import inspect
 
 import pytest
 
@@ -59,3 +60,16 @@ class TestPptxExtraction:
         import inspect
         src = inspect.getsource(rc)
         assert '".pptx"' in src  # _ALLOWED_UPLOAD_EXTS 含 .pptx
+
+
+class TestPdfFallbackChain:
+    """PDF 提取三级链：fitz → pdfplumber → pypdf（精简环境必须有一条活着）。
+    十五五实战暴露：rt 精简环境 pdfplumber 缺 pdfminer 变砖导致 PDF 摄入全断。"""
+
+    def test_chain_order_in_source(self):
+        import knowledge.file_extractor as fe
+        src = inspect.getsource(fe)
+        i_fitz = src.find("import fitz")
+        i_plumber = src.find("import pdfplumber")
+        i_pypdf = src.find("from pypdf import PdfReader")
+        assert -1 < i_fitz < i_plumber < i_pypdf  # 三级链顺序

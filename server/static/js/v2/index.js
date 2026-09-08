@@ -323,6 +323,7 @@ function render() {
         const cur = state.sessions.find(c => c.current);
         if (!cur) return;
         if (btn) { btn.disabled = true; btn.textContent = '…'; }
+        if (_composer) _composer.setAttachPending(true);  // 大文件 token 估算要几秒，读取中禁发送
         try {
           const r = await api.referenceWorkdirFile(cur.name, name);
           if (r && r.path) {
@@ -334,6 +335,7 @@ function render() {
         } catch (e) {
           alert('引用失败：' + (e && e.message ? e.message : '未知错误'));
         }
+        if (_composer) _composer.setAttachPending(false);
         if (btn) { btn.disabled = false; btn.textContent = '引用'; }
       },
       onDeleteProject: (proj) => deleteProject(proj),
