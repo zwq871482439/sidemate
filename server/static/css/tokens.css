@@ -62,6 +62,31 @@
   --d1-dur-micro: 120ms;
   --d1-dur-short: 220ms;
   --d1-dur-long:  420ms;
+
+  /* ③ v2 语义色收编（0.10.1 收尾自查：v2/styles.css 硬编码 12 色提 token，
+     深色档（0.10.2 候选）的前置地基；hex 兜底在前，OKLCH 主声明在后） */
+  --d1-on-gold:      #131B24;                 /* 金底上的深文字 */
+  --d1-on-gold:      oklch(16% 0.02 240);
+  --d1-warn-rust:    #B0653A;                 /* 警示棕（外部变更/覆盖标红/换版提示） */
+  --d1-warn-rust:    oklch(52% 0.09 50);
+  --d1-ok:           #2E8B57;                 /* 成功绿（存产物完成/已答态） */
+  --d1-ok:           oklch(52% 0.09 155);
+  --d1-dark-ink:     #D5E3EF;                 /* 深底主文字（侧栏会话/KB 批量栏） */
+  --d1-dark-ink:     oklch(90% 0.015 230);
+  --d1-dark-ink-2:   #B9CCDD;                 /* 深底次级文字（hero 卡描述） */
+  --d1-dark-ink-2:   oklch(81% 0.015 230);
+  --d1-dark-ink-3:   #8FA6BC;                 /* 深底三级文字（侧栏新建行） */
+  --d1-dark-ink-3:   oklch(70% 0.02 230);
+  --d1-dark-danger:  #FFB4A8;                 /* 深底危险文字（批量删除/错误提示） */
+  --d1-dark-danger:  oklch(78% 0.09 35);
+  --d1-scrollbar:    #BFDBFE;                 /* 主滚动区滚动条 */
+  --d1-scrollbar:    oklch(84% 0.04 250);
+  --d1-toggle-track: #CBD6E0;                 /* 开关轨道 */
+  --d1-toggle-track: oklch(84% 0.012 235);
+  --d1-star-bg-a:    #F2F6FA;                 /* 星图渐变底（中） */
+  --d1-star-bg-a:    oklch(97% 0.005 230);
+  --d1-star-bg-b:    #E7EEF4;                 /* 星图渐变底（缘） */
+  --d1-star-bg-b:    oklch(94.5% 0.008 230);
 }
 
 /* ============ ② 旧体系补全（同值收编，双主题不变量） ============ */
