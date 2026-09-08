@@ -1140,8 +1140,12 @@ class AgentLoop:
                     return {"success": False, "tool": "deep_read", "error": "文件不存在: %s" % filename}
 
                 try:
-                    from pipelines.doc_action import read_document_text
-                    _raw_text = read_document_text(_file_path)
+                    # 统一走 file_extractor（docx/pptx/pdf/txt 全格式）；
+                    # 历史上 import 不存在的 doc_action.read_document_text 静默
+                    # ImportError → 兜底裸读把 docx 的 PK 压缩字节灌进上下文
+                    # （十五五实战 MiniMax 实测暴露，2026-09-08）
+                    from knowledge.file_extractor import extract_text as _extract_text
+                    _raw_text = _extract_text(_file_path)
                 except Exception:
                     try:
                         with open(_file_path, 'r', encoding='utf-8', errors='ignore') as _f:

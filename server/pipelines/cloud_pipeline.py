@@ -399,32 +399,24 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         _doc_texts = []
         _doc_names = []
 
-        # 分支A：上传文件——直接读取文件内容
+        # 分支A：上传文件——统一走 file_extractor（docx/pptx/pdf 全格式解析）
+        # 修复 2026-09-08（十五五实战 MiniMax 暴露）：历史上 import 不存在的
+        # doc_action.read_document_text 静默 ImportError → 兜底裸读把 docx 的
+        # PK 压缩字节当正文灌进上下文
         if _uploaded_paths:
-            try:
-                from pipelines.doc_action import read_document_text
-                for _path in _uploaded_paths:
-                    try:
-                        _content = read_document_text(_path)
-                        if _content:
-                            # 截断超长文档（最多 12000 字符 ≈ 8000 token）
-                            if len(_content) > 12000:
-                                _content = _content[:12000] + "\n\n[文档较长，已截断]"
-                            _doc_texts.append(_content)
-                            _doc_names.append(os.path.basename(_path))
-                            log.info("[CLOUD-AGENT] 预读取上传文件: %s, %d 字", os.path.basename(_path), len(_content))
-                    except Exception as _e:
-                        log.warning("[CLOUD-AGENT] 读取上传文件失败 %s: %s", _path, str(_e)[:60])
-            except ImportError:
-                # fallback: 直接用 python 读文本文件
-                for _path in _uploaded_paths:
-                    try:
-                        with open(_path, 'r', encoding='utf-8', errors='ignore') as _f:
-                            _content = _f.read()[:12000]
-                            _doc_texts.append(_content)
-                            _doc_names.append(os.path.basename(_path))
-                    except Exception:
-                        pass
+            from knowledge.file_extractor import extract_text as _extract_text
+            for _path in _uploaded_paths:
+                try:
+                    _content = _extract_text(_path)
+                    if _content:
+                        # 截断超长文档（最多 12000 字符 ≈ 8000 token）
+                        if len(_content) > 12000:
+                            _content = _content[:12000] + "\n\n[文档较长，已截断]"
+                        _doc_texts.append(_content)
+                        _doc_names.append(os.path.basename(_path))
+                        log.info("[CLOUD-AGENT] 预读取上传文件: %s, %d 字", os.path.basename(_path), len(_content))
+                except Exception as _e:
+                    log.warning("[CLOUD-AGENT] 读取上传文件失败 %s: %s", _path, str(_e)[:60])
 
         # 分支B：KB 引用——从知识库读取 chunk 内容
         if _kb_doc_ids and kb:
