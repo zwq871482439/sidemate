@@ -33,6 +33,7 @@ export function createViewer(opts) {
   let handoffProj = null;
   let carrySids = [];  // M2 选带层：本会话勾选携带的前情会话 sid 列表
   let hs = null;       // M2-3 harness 状态：{exec_mode, goal, pending_plan, external_changes, can_undo}
+  let pkb = null;      // M2-5 项目知识库：{enabled, files, chunks, size_bytes, hints}
   let uploading = false;
   let ppt = null;      // PPT decks 回放：{ decks:[{deck,title,pages:[{n,url}],pptx,pptx_url}] } | null=未加载
   let pptLive = {};    // 流式期间即时累积：deck -> { title, pages: {n: url} }
@@ -81,6 +82,13 @@ export function createViewer(opts) {
       const r2 = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/harness-state');
       hs = await r2.json();
     } catch (e) { hs = null; }
+    // M2-5：项目知识库状态（仅当前项目、非跨项目查看时）
+    try {
+      if (wd && wd.dir && !wd.legacy) {
+        const r3 = await fetch('/api/projects/kb/status?dir=' + encodeURIComponent(wd.dir));
+        pkb = await r3.json();
+      } else { pkb = null; }
+    } catch (e) { pkb = null; }
   }
 
   // 选带层切换：勾选/取消某条同项目会话 → POST 全量清单
@@ -144,6 +152,135 @@ export function createViewer(opts) {
       ${missing ? `<div class="vw-card-r vw-missing">${icon('alertTriangle')} 目录丢失——文件夹在磁盘上被删除或移动，会话只读可看</div>` : ''}
       ${wd && !wd.is_default ? '<div class="vw-card-r"><button class="vw-mini danger" data-a="delproj" title="删除项目：会话记录级联删除，目录文件永不动">删除项目…</button></div>' : ''}
     </div>`;
+  }
+
+  // M2-5 项目知识库区块（议题2 定稿：手动开关/两路径入库/诊断检索框/极简）
+  function _pkbSection() {
+    if (!wd || wd.legacy || !wd.dir || wd._cross || !pkb) return '';
+    const on = pkb.enabled;
+    const files = pkb.files || [];
+    const hints = pkb.hints || [];
+    const indexedSet = {};
+    files.forEach(f => { indexedSet[f.path] = f; });
+    const materials = (wd.files || []).filter(f => !f.is_dir);
+    const statusLine = on
+      ? `${files.length} 个文件 · ${pkb.chunks || 0} 段 · ${(pkb.size_bytes / 1024).toFixed(0)}KB`
+      : '未开启';
+    return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">项目知识库</span>
+        <span class="vw-dir-acts">
+          <button class="vw-mini ${on ? 'on' : ''}" data-a="pkb-toggle">${on ? '已开启 · 点击关闭' : '开启'}</button>
+        </span></div>
+      <div class="vw-pkb-note">大体量参考材料（参考书/长报告）向量化后供 AI 检索，仅在线模式生效；不进全局知识库。${on ? '（' + statusLine + '）' : ''}</div>
+      ${on ? `
+      <div class="vw-pkb-box">
+        <div class="vw-sub">入库材料（逐文件勾选，不自动扫目录）</div>
+        ${materials.length ? materials.map(f => `<div class="vw-pkb-f">
+            <label><input type="checkbox" data-pkb-add="${esc(f.name)}" ${indexedSet[f.name] ? 'checked disabled' : ''}> ${esc(f.name)} <span class="vw-pkb-sz">${_fmtSize(f.size)}</span>${indexedSet[f.name] ? (indexedSet[f.name].stale ? '<span class="vw-pkb-stale">内容已变，可重建</span>' : '<span class="vw-pkb-ok">已入库</span>') : ''}</label>
+            ${indexedSet[f.name] ? `<button class="vw-mini" data-pkb-rebuild="${esc(f.name)}" title="源文件已更新时重建索引">${indexedSet[f.name].stale ? '重建' : '重索引'}</button><button class="vw-mini danger" data-pkb-del="${esc(f.name)}" title="从索引移除（材料本体不动）">移出</button>` : ''}
+          </div>`).join('') : '<div class="vw-empty"><small>项目根目录还没有材料文件</small></div>'}
+        <div class="vw-pkb-ext"><input class="vw-pkb-ext-in" placeholder="粘贴外部文件路径入库（复制源文件进项目根）…"><button class="vw-mini" data-a="pkb-add-ext">入库</button></div>
+        <div class="vw-sub">诊断检索（手搜验证能不能搜出片段）</div>
+        <div class="vw-pkb-q"><input class="vw-pkb-q-in" placeholder="输入检索词试试…"><button class="vw-mini" data-a="pkb-query">检索</button></div>
+        <div class="vw-pkb-hits"></div>
+      </div>` : ''}
+      ${!on && hints.length ? `<div class="vw-pkb-hint">${icon('bulb')} 检测到大材料：${hints.map(h => esc(h.path) + '（' + _fmtSize(h.size) + '）').join('、')}——建议开启项目知识库入库，AI 直读会占大量上下文</div>` : ''}`;
+  }
+
+  function _bindPkb(body) {
+    const cur = opts.getCurrentChat();
+    if (!cur || !wd || !wd.dir) return;
+    const dir = wd.dir;
+    const tBtn = body.querySelector('[data-a="pkb-toggle"]');
+    if (tBtn) tBtn.addEventListener('click', async () => {
+      if (pkb && pkb.enabled) {
+        if (!confirm('关闭项目知识库？索引（约 ' + ((pkb.size_bytes / 1024).toFixed(0)) + 'KB）将被清除；材料文件不受影响。')) return;
+      }
+      tBtn.disabled = true;
+      try {
+        const r = await fetch('/api/projects/kb/toggle', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dir, on: !(pkb && pkb.enabled) }),
+        });
+        const d = await r.json();
+        if (d.error) alert(d.error);
+        pkb = null; await loadWd(); renderBody();
+      } catch (e) { alert('操作失败'); tBtn.disabled = false; }
+    });
+    body.querySelectorAll('[data-pkb-add]').forEach(cb =>
+      cb.addEventListener('change', async () => {
+        if (!cb.checked) return;
+        cb.disabled = true;
+        try {
+          const r = await fetch('/api/projects/kb/add', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir, path: cb.dataset.pkbAdd }),
+          });
+          const d = await r.json();
+          if (d.error) { alert(d.error); cb.checked = false; cb.disabled = false; return; }
+          pkb = null; await loadWd(); renderBody();
+        } catch (e) { alert('入库失败'); cb.checked = false; cb.disabled = false; }
+      }));
+    body.querySelectorAll('[data-pkb-del]').forEach(b =>
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          await fetch('/api/projects/kb/remove', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir, path: b.dataset.pkbDel }),
+          });
+          pkb = null; await loadWd(); renderBody();
+        } catch (e) { b.disabled = false; }
+      }));
+    body.querySelectorAll('[data-pkb-rebuild]').forEach(b =>
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          await fetch('/api/projects/kb/add', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir, path: b.dataset.pkbRebuild }),
+          });
+          pkb = null; await loadWd(); renderBody();
+        } catch (e) { b.disabled = false; }
+      }));
+    const extBtn = body.querySelector('[data-a="pkb-add-ext"]');
+    const extIn = body.querySelector('.vw-pkb-ext-in');
+    if (extBtn && extIn) extBtn.addEventListener('click', async () => {
+      const p = extIn.value.trim();
+      if (!p) return;
+      extBtn.disabled = true;
+      try {
+        const r = await fetch('/api/projects/kb/add-external', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dir, src_path: p }),
+        });
+        const d = await r.json();
+        if (d.error) { alert(d.error); extBtn.disabled = false; return; }
+        pkb = null; await loadWd(); renderBody();
+      } catch (e) { alert('入库失败'); extBtn.disabled = false; }
+    });
+    const qBtn = body.querySelector('[data-a="pkb-query"]');
+    const qIn = body.querySelector('.vw-pkb-q-in');
+    const hitsEl = body.querySelector('.vw-pkb-hits');
+    if (qBtn && qIn && hitsEl) {
+      const doQuery = async () => {
+        const q = qIn.value.trim();
+        if (!q) return;
+        hitsEl.innerHTML = '<div class="vw-empty"><small>检索中…</small></div>';
+        try {
+          const r = await fetch('/api/projects/kb/query', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir, q }),
+          });
+          const d = await r.json();
+          if (d.error) { hitsEl.innerHTML = '<div class="vw-empty"><small>' + esc(d.error) + '</small></div>'; return; }
+          hitsEl.innerHTML = (d.hits && d.hits.length)
+            ? d.hits.map(h => `<div class="vw-pkb-hit"><div class="vw-pkb-hit-t">${esc(h.path)} · 第${h.chunk_no + 1}段 · ${h.score}</div><div class="vw-pkb-hit-x">${esc(h.text.slice(0, 120))}…</div></div>`).join('')
+            : '<div class="vw-empty"><small>没有命中——换个词试试</small></div>';
+        } catch (e) { hitsEl.innerHTML = '<div class="vw-empty"><small>检索失败</small></div>'; }
+      };
+      qBtn.addEventListener('click', doQuery);
+      qIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') doQuery(); });
+    }
   }
 
   // M2-3 harness 卡：写入模式切换（计划/执行）+ 任务目标 + 待执行计划 + 撤销 + 外部变更
@@ -232,9 +369,11 @@ export function createViewer(opts) {
         ${_harnessSection()}
         ${_sessionList()}
         ${_handoffSection()}
+        ${_pkbSection()}
         ${_wdFiles()}
       </div>
       <input type="file" class="vw-up-input" style="display:none">`;
+      _bindPkb(body);
       // harness 卡：计划/执行切换 + 撤销
       body.querySelectorAll('.vw-seg').forEach(b =>
         b.addEventListener('click', async () => {

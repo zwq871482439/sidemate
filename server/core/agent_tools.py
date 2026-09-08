@@ -883,6 +883,28 @@ TOOL_REGISTRY = {
         "condition": None,
         "prompt_fragment": "deliver",
     },
+    # ===== M2-5：项目知识库检索（议题2 落点；仅在线，随项目开关出现）=====
+    "project_kb_search": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "project_kb_search",
+                "description": "在当前项目的「项目知识库」里做语义检索（用户手动入库的大体量参考材料，如参考书/长报告）。返回最相关的若干片段（带来源文件）。适用：项目里有已入库的参考材料且问题涉及其内容时——比通读全文省上下文。注意：只覆盖用户手动入库的文件；项目目录里的其他文件该直读还是直读。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "检索问题/关键词"}
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "proj_kb_searching", "done": "proj_kb_done"},
+        "stat_key": "proj_kb_hits",
+        "condition": "project_kb",
+        "prompt_fragment": "pkb",
+    },
 }
 
 # ===== prompt fragment 惰性加载表（M2 能力注册表拼装）=====
@@ -896,6 +918,7 @@ _FRAGMENT_LOADERS = {
     "read_session": lambda: __import__("prompts").SESSION_READ_PROMPT,
     "pwrite": lambda: __import__("prompts").PWRITE_PROTOCOL_PROMPT,
     "deliver": lambda: __import__("prompts").DELIVER_PROTOCOL_PROMPT,
+    "pkb": lambda: __import__("prompts").PROJECT_KB_PROMPT,
 }
 
 # 工具级权限映射：工具名 → config_key。不在映射里的工具（内部工具）始终启用。
@@ -951,6 +974,18 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
             continue
         if condition == "doc_mode" and not doc_mode:
             continue
+        if condition == "project_kb":
+            # M2-5：当前会话所属项目的知识库开关开且索引非空才注册
+            _pkb_ok = False
+            try:
+                from session import projects as _pkb_proj
+                from core import project_kb as _pkb_mod
+                _pd = _pkb_proj.resolve_chat_project(chat_id) if chat_id else {}
+                _pkb_ok = bool(_pd.get("dir")) and _pkb_mod.has_index(_pd["dir"])
+            except Exception:
+                _pkb_ok = False
+            if not _pkb_ok:
+                continue
         # 工具级权限检查（用户可在设置里禁用）
         perm_key = _TOOL_PERM_MAP.get(name)
         if perm_key and not _cfg(perm_key, True):

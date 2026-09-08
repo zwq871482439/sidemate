@@ -447,3 +447,165 @@ def api_undo_write(request: Request, chat_name: str):
     if not r.get("ok"):
         return JSONResponse({"error": r.get("message", "撤销失败")}, status_code=400)
     return r
+
+
+# ============================================================
+#  M2-5：项目知识库（议题2 落点：手动开关/两路径入库/诊断检索/大文件提示）
+# ============================================================
+
+def _kb_embedder():
+    """取全局 KB 的共享嵌入引擎（不另起 bge-m3 实例）。"""
+    from routers.deps import get_kb
+    kb = get_kb()
+    return getattr(kb, "embedder", None) if kb else None
+
+
+def _proj_dir_or_400(request, body=None):
+    """从 query/body 取项目目录并校验是注册项目。"""
+    d = (body or {}).get("dir") or request.query_params.get("dir") or ""
+    d = os.path.normpath(d) if d else ""
+    if not d or not os.path.isdir(d):
+        return None, JSONResponse({"error": "项目目录不存在"}, status_code=400)
+    return d, None
+
+
+@router.post("/api/projects/kb/toggle")
+async def api_project_kb_toggle(request: Request):
+    """开/关项目知识库。关=清索引（弹确认由前端做，这里附索引大小供确认文案）。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    body = await request.json()
+    d, err = _proj_dir_or_400(request, body)
+    if err:
+        return err
+    from core import project_kb as _pkb
+    on = bool(body.get("on"))
+    if not on:
+        r = _pkb.set_enabled(d, False)
+        return r
+    # 开启前检查嵌入引擎可用（KB 模型未装则引导）
+    if _kb_embedder() is None:
+        return JSONResponse({"error": "知识库模型未安装：请到 设置 → 模型下载 安装知识库模型后再开"}, status_code=400)
+    return _pkb.set_enabled(d, True)
+
+
+@router.get("/api/projects/kb/status")
+def api_project_kb_status(request: Request):
+    """项目知识库状态：开关/文件清单（含换版 stale 标记）/体量/大文件提示。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    d, err = _proj_dir_or_400(request)
+    if err:
+        return err
+    from core import project_kb as _pkb
+    st = _pkb.status(d)
+    indexed = [f["path"] for f in st.get("files", [])]
+    st["hints"] = _pkb.large_material_hints(d, indexed) if st.get("enabled") is not None else []
+    return st
+
+
+@router.post("/api/projects/kb/add")
+async def api_project_kb_add(request: Request):
+    """入库项目内文件（相对路径，防穿越）。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    body = await request.json()
+    d, err = _proj_dir_or_400(request, body)
+    if err:
+        return err
+    from core import project_kb as _pkb
+    if not _pkb.is_enabled(d):
+        return JSONResponse({"error": "项目知识库未开启"}, status_code=400)
+    emb = _kb_embedder()
+    if emb is None:
+        return JSONResponse({"error": "嵌入引擎不可用（知识库模型未安装）"}, status_code=400)
+    rel = (body.get("path") or "").strip()
+    try:
+        return _pkb.index_file(d, rel, emb)
+    except Exception as e:
+        log.warning("[PROJ-KB] 入库失败 %s: %s", rel, str(e)[:120])
+        return JSONResponse({"error": "入库失败：%s（嵌入模型可能未加载，先安装知识库模型）" % str(e)[:80]}, status_code=500)
+
+
+@router.post("/api/projects/kb/add-external")
+async def api_project_kb_add_external(request: Request):
+    """入库外部文件：复制源文件进项目根（出处验证/可重建/自包含）再入库。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    body = await request.json()
+    d, err = _proj_dir_or_400(request, body)
+    if err:
+        return err
+    src = os.path.normpath((body.get("src_path") or "").strip())
+    if not src or not os.path.isfile(src):
+        return JSONResponse({"error": "源文件不存在"}, status_code=400)
+    # 防把项目内文件当外部重复复制
+    if os.path.normcase(os.path.realpath(src)).startswith(os.path.normcase(os.path.realpath(d)) + os.sep):
+        return JSONResponse({"error": "该文件已在项目目录内，直接用项目内入库"}, status_code=400)
+    from core import project_kb as _pkb
+    if not _pkb.is_enabled(d):
+        return JSONResponse({"error": "项目知识库未开启"}, status_code=400)
+    emb = _kb_embedder()
+    if emb is None:
+        return JSONResponse({"error": "嵌入引擎不可用（知识库模型未安装）"}, status_code=400)
+    name = os.path.basename(src)
+    dst = os.path.join(d, name)
+    base, ext = os.path.splitext(name)
+    i = 1
+    while os.path.exists(dst):
+        dst = os.path.join(d, "%s-%d%s" % (base, i, ext))
+        i += 1
+    try:
+        shutil.copy2(src, dst)
+        return _pkb.index_file(d, os.path.basename(dst), emb)
+    except Exception as e:
+        log.warning("[PROJ-KB] 外部入库失败 %s: %s", src, str(e)[:120])
+        return JSONResponse({"error": "入库失败：%s" % str(e)[:80]}, status_code=500)
+
+
+@router.post("/api/projects/kb/remove")
+async def api_project_kb_remove(request: Request):
+    """从索引移除一个文件（材料本体不动）。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    body = await request.json()
+    d, err = _proj_dir_or_400(request, body)
+    if err:
+        return err
+    from core import project_kb as _pkb
+    rel = (body.get("path") or "").strip()
+    ok, rel_or_err = __import__("core.project_write", fromlist=["_safe_rel"])._safe_rel(rel)
+    if not ok:
+        return JSONResponse({"error": rel_or_err}, status_code=400)
+    return _pkb.remove_file(d, rel_or_err)
+
+
+@router.post("/api/projects/kb/query")
+async def api_project_kb_query(request: Request):
+    """诊断检索：用户手搜验证能不能搜出片段。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    body = await request.json()
+    d, err = _proj_dir_or_400(request, body)
+    if err:
+        return err
+    q = (body.get("q") or "").strip()
+    if not q:
+        return JSONResponse({"error": "输入检索词"}, status_code=400)
+    from core import project_kb as _pkb
+    emb = _kb_embedder()
+    if emb is None:
+        return JSONResponse({"error": "嵌入引擎不可用（知识库模型未安装）"}, status_code=400)
+    try:
+        hits = _pkb.query(d, q, emb, top_k=5)
+        return {"ok": True, "hits": [{"path": h["path"], "chunk_no": h["chunk_no"],
+                                      "text": h["text"][:400], "score": round(h["score"], 3)}
+                                     for h in hits]}
+    except Exception as e:
+        return JSONResponse({"error": "检索失败：%s" % str(e)[:80]}, status_code=500)

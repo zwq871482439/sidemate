@@ -170,6 +170,14 @@ DELIVER_PROTOCOL_PROMPT = (
     "调 deliver_package 打包成 zip。只有一两个产物时不打。"
 )
 
+# 项目知识库协议（M2-5：议题2 落点；工具随项目开关出现）
+PROJECT_KB_PROMPT = (
+    "\n15. 项目知识库（project_kb_search 工具）：这个项目里有用户手动入库的"
+    "大体量参考材料（参考书/长报告）。问题涉及这些材料时用 project_kb_search "
+    "语义检索，比通读全文省上下文；命中片段会标注来源文件，回答时可引用来源。"
+    "它只覆盖已入库的文件；项目目录里没入库的文件仍按引用/直读处理。"
+)
+
 # 场景增强（只一句话，不重复规则，不超20字）
 STRATEGY_ENHANCEMENTS = {
     "greeting":   "1-2句简短回应即可。",

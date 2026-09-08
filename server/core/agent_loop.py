@@ -1383,6 +1383,34 @@ class AgentLoop:
                 return {"success": False, "tool": "discard_plan",
                         "error": r.get("error", "discard_error"), "message": "清空计划失败"}
 
+            elif tool_name == "project_kb_search":
+                # M2-5：项目知识库语义检索（当前会话所属项目；嵌入复用全局 KB 引擎）
+                from session import projects as _pkb_p
+                from core import project_kb as _pkb
+                _pd = _pkb_p.resolve_chat_project(self.chat_id)
+                if not _pd.get("dir") or not _pkb.has_index(_pd["dir"]):
+                    return {"success": False, "tool": "project_kb_search",
+                            "error": "no_index",
+                            "message": "当前项目没有启用项目知识库（视窗会话信息卡里开启）"}
+                from routers.deps import get_kb as _get_kb
+                _kb2 = _get_kb()
+                if not _kb2 or not getattr(_kb2, "embedder", None):
+                    return {"success": False, "tool": "project_kb_search",
+                            "error": "no_engine",
+                            "message": "嵌入引擎不可用（知识库模型未安装：设置 → 模型下载）"}
+                try:
+                    _hits = _pkb.query(_pd["dir"], args.get("query", ""), _kb2.embedder, top_k=5)
+                except Exception as e:
+                    return {"success": False, "tool": "project_kb_search",
+                            "error": "engine_error",
+                            "message": "检索失败（嵌入模型可能未加载：设置 → 模型下载先装知识库模型）：%s" % str(e)[:100]}
+                stats["proj_kb_hits"] = stats.get("proj_kb_hits", 0) + 1
+                return {"success": True, "tool": "project_kb_search",
+                        "data": {"count": len(_hits),
+                                 "sources": [{"label": "%s §%d" % (h["path"], h["chunk_no"] + 1),
+                                              "snippet": h["text"][:300],
+                                              "score": round(h["score"], 3)} for h in _hits]}}
+
             elif tool_name == "read_session":
                 # M2 冷层：同项目校验 + 每 sid 每任务只读一次（防循环）+
                 # 私密会话拒读（隐私铁律：离线内容不出机）
@@ -1869,6 +1897,8 @@ class AgentLoop:
         elif tool_name == "read_session":
             return get_status_event(tool_name, "start",
                                     name=(args.get("chat_name") or "")[:40])
+        elif tool_name == "project_kb_search":
+            return get_status_event(tool_name, "start", query=args.get("query", "")[:40])
         elif tool_name == "project_write":
             return get_status_event(tool_name, "start",
                                     path=(args.get("path") or "")[:50])
@@ -2001,6 +2031,8 @@ class AgentLoop:
         elif tool_name == "read_session":
             return get_status_event(tool_name, "done",
                                     name=data.get("sid", ""))
+        elif tool_name == "project_kb_search":
+            return get_status_event(tool_name, "done", count=data.get("count", 0))
         elif tool_name == "project_write":
             _d2 = {"name": data.get("path", ""), "planned": bool(data.get("pending")),
                    "overwrite": bool(data.get("overwrite") or data.get("overwritten"))}

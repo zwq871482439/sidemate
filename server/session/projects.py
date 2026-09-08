@@ -213,6 +213,13 @@ def delete_project(dir_path):
         entry = _find(data, d)
         data["projects"] = [p for p in data["projects"] if p is not entry]
         _save(data)
+    # 项目知识库索引是系统生成的派生物（.sidemate/index/）——级联清掉
+    # （不动用户材料本体；议题2 定稿：关闭或删项目即清索引）
+    try:
+        from core import project_kb as _pkb
+        _pkb.clear_index_if_exists(d)
+    except Exception:
+        pass
     # 找该项目的会话（新模型按 meta.project_dir）
     sessions = []
     try:
