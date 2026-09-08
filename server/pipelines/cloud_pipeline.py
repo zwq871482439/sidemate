@@ -412,7 +412,11 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                         # 截断超长文档（最多 12000 字符 ≈ 8000 token）
                         if len(_content) > 12000:
                             _content = _content[:12000] + "\n\n[文档较长，已截断]"
-                        _doc_texts.append(_content)
+                        # 文件名必须随内容一起注入（=== 文档：名 === 分节，
+                        # 与 KB 多文档分支同构）——不标注时模型分不清两份
+                        # 模板近似的材料（十五五实战：编制说明与规划修订稿
+                        # 开篇雷同，模型误判「新文件没到」）
+                        _doc_texts.append("=== 文档：%s（本条消息新选定） ===\n%s" % (os.path.basename(_path), _content))
                         _doc_names.append(os.path.basename(_path))
                         log.info("[CLOUD-AGENT] 预读取上传文件: %s, %d 字", os.path.basename(_path), len(_content))
                 except Exception as _e:
