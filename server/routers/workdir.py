@@ -609,3 +609,21 @@ async def api_project_kb_query(request: Request):
                                      for h in hits]}
     except Exception as e:
         return JSONResponse({"error": "检索失败：%s" % str(e)[:80]}, status_code=500)
+
+
+@router.post("/api/projects/reference")
+async def api_reference_cross_project(request: Request):
+    """跨项目引用文件（M2-6 用户级文件区消融：文件住在各项目目录，
+    直接引用不建第二存储层）。body: {dir, name}。"""
+    g = _guard(request)
+    if g is not None:
+        return g
+    body = await request.json()
+    d = (body.get("dir") or "").strip()
+    name = (body.get("name") or "").strip()
+    if not d or not name:
+        return JSONResponse({"error": "缺少 dir/name"}, status_code=400)
+    r = projects.reference_file_in_dir(d, name)
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r

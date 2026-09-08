@@ -483,8 +483,66 @@ export function createViewer(opts) {
     } else if (tab === 'preview') {
       _renderPreview(body);
     } else {
-      body.innerHTML = `<div class="vw-empty">调用轨迹随 0.9.10 实装<br><small>模型↔工具交替的时间线会出现在这里</small></div>`;
+      _renderTrace(body);
     }
+  }
+
+  // ===== 轨迹 tab（M2-6 转正）：从已持久化的 agent_timeline 渲染
+  // 全会话模型↔工具时间线（BoardUI agent-log 树形引导线语言的 CSS 近似）。
+  // 数据源零新增（卡片系统落盘的 timeline 即真相），完整 trace.jsonl
+  // （请求/响应体级）记 0.10.2 候选池。
+  let _traceFor = '';
+  async function _renderTrace(body) {
+    const cur = opts.getCurrentChat();
+    if (!cur) { body.innerHTML = '<div class="vw-empty">还没有会话</div>'; return; }
+    body.innerHTML = '<div class="vw-empty">加载中…</div>';
+    let msgs = [];
+    try {
+      const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/messages');
+      const d = await r.json();
+      msgs = (d && d.messages) || (Array.isArray(d) ? d : []);
+    } catch (e) { /* fallthrough */ }
+    const rounds = [];
+    msgs.forEach(m => {
+      if (m.role !== 'assistant') return;
+      const tl = m.agent_timeline || [];
+      if (!tl.length) return;
+      rounds.push({ ts: m.ts || '', engine: m.engine || '', items: tl });
+    });
+    if (!rounds.length) {
+      body.innerHTML = '<div class="vw-empty">还没有调用轨迹<br><small>在线模式下 AI 调工具时，轨迹会记录在这里</small></div>';
+      return;
+    }
+    body.innerHTML = `<div class="vw-trace">
+      <div class="vw-trace-sum">${rounds.length} 轮 · 共 ${rounds.reduce((s, r) => s + r.items.length, 0)} 次工具调用</div>
+      ${rounds.map((r, ri) => `<div class="vw-trace-round">
+        <div class="vw-trace-rh">${icon('chat')} 第 ${ri + 1} 轮 <span class="vw-trace-ts">${esc(r.ts)}${r.engine ? ' · ' + esc(r.engine === 'cloud' ? '在线' : r.engine === 'local' ? '离线' : r.engine) : ''}</span></div>
+        <div class="vw-trace-steps">
+          ${r.items.map(it => `<div class="vw-trace-step">
+            <span class="vw-trace-dot"></span>
+            <span class="vw-trace-lbl">${esc(_traceLabel(it))}</span>
+            ${it.elapsed_ms ? `<span class="vw-trace-ms">${(it.elapsed_ms / 1000).toFixed(1)}s</span>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  function _traceLabel(it) {
+    const s = it.status || '';
+    const det = it.query || it.name || it.url || '';
+    const map = {
+      kb_done: '检索知识库', search_done: '联网搜索', fetch_done: '阅读网页',
+      workspace_write_done: '写入文档', workspace_read_done: '读取文档',
+      workspace_listed: '列出文件', ppt_done: 'PPT 操作', plan_done: '编排执行',
+      readers_done: '并行深读', session_read_done: '读历史会话',
+      project_write_done: '写项目文件', proj_kb_done: '项目知识库检索',
+      deliver_pack_done: '打成果包', doc_status_done: '生成文档',
+      completed: '生成文档', calculating_done: '计算', format_converting_done: '格式转换',
+      table_operating_done: '表格操作', deep_read_done: '深度分析',
+    };
+    const base = map[s] || s.replace(/_/g, ' ');
+    return det ? base + '：' + det : base;
   }
 
   // ===== 预览 tab：PPT 逐页 SVG（M1-E）=====

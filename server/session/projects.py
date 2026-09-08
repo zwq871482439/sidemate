@@ -37,7 +37,7 @@ _lock = threading.Lock()
 
 # 与 /api/file_upload 同一份白名单（能被 LLM 消费的类型）
 ALLOWED_REF_EXTS = {
-    ".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf",
+    ".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf", ".pptx",
     ".epub", ".html", ".htm", ".srt",
 }
 
@@ -391,7 +391,29 @@ def reference_file(chat_name, name):
     proj = resolve_chat_project(chat_name)
     if proj.get("legacy") or not proj.get("dir"):
         return {"error": "旧版会话不支持引用项目目录"}
-    root = proj["dir"]
+    return _reference_in_root(proj["dir"], name)
+
+
+def reference_file_in_dir(dir_path, name):
+    """跨项目引用（M2-6 用户级文件区消融：文件本就住在各项目目录里，
+    跨项目直接引用即可，不建第二个存储层）。dir_path 必须是注册项目目录
+    （含默认项目）。
+    """
+    d = _norm(dir_path)
+    if not d:
+        return {"error": "非法项目目录"}
+    root = None
+    entry = _find(_load(), d)
+    if entry:
+        root = _norm(entry.get("dir"))
+    if not root and os.path.normcase(os.path.realpath(d)) == os.path.normcase(os.path.realpath(DEFAULT_PROJECT_DIR)):
+        root = DEFAULT_PROJECT_DIR
+    if not root:
+        return {"error": "不是注册项目目录"}
+    return _reference_in_root(root, name)
+
+
+def _reference_in_root(root, name):
     rel = (name or "").replace("/", os.sep).lstrip(os.sep)
     base_check = rel.split(os.sep)
     if any(seg in ("", ".", "..") for seg in base_check):
@@ -415,7 +437,7 @@ def reference_file(chat_name, name):
             tokens = int(cn / 1.5 + (len(text) - cn) / 4.0)
     except Exception as e:
         log.warning("[PROJECT] 引用 token 估算失败: %s", str(e)[:80])
-    log.info("[PROJECT] 引用目录文件（直读）: %s ← 会话 %s", rel, chat_name)
+    log.info("[PROJECT] 引用目录文件（直读）: %s", rel)
     return {"path": src, "filename": os.path.basename(src), "size": size, "tokens": tokens}
 
 

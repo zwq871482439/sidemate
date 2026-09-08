@@ -662,6 +662,17 @@ sup.ref-n:hover { text-decoration: underline; }
 .vw-pkb-hit-x { font-size: var(--d1-fs-tiny); color: var(--d1-ink-2); }
 .vw-pkb-hint { font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); padding: 6px 10px; background: rgba(232,181,77,.08); border-radius: var(--d1-r-sm); margin-bottom: 8px; }
 .vw-mini.on { border-color: var(--d1-gold); color: var(--d1-gold-2); }
+/* 轨迹 tab（M2-6）：树形引导线（BoardUI agent-log 语言的 CSS 近似） */
+.vw-trace { padding: 4px 2px 10px; }
+.vw-trace-sum { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); padding: 2px 2px 10px; }
+.vw-trace-round { margin-bottom: 12px; }
+.vw-trace-rh { font-size: var(--d1-fs-small); font-weight: 600; color: var(--d1-ink); display: flex; align-items: center; gap: 6px; padding: 2px 0 4px; }
+.vw-trace-ts { font-weight: 400; color: var(--d1-ink-3); font-size: var(--d1-fs-tiny); }
+.vw-trace-steps { border-left: 1.5px solid var(--d1-n-line); margin-left: 7px; padding-left: 12px; }
+.vw-trace-step { display: flex; align-items: baseline; gap: 7px; padding: 3px 0; position: relative; }
+.vw-trace-dot { position: absolute; left: -16px; top: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--d1-gold); border: 1.5px solid var(--d1-paper); }
+.vw-trace-lbl { font-size: var(--d1-fs-small); color: var(--d1-ink-2); flex: 1; min-width: 0; }
+.vw-trace-ms { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); flex-shrink: 0; }
 .vw-dir-acts { display: flex; gap: 6px; flex-shrink: 0; }
 .wd-lock-note {
   font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); padding: 7px 10px;

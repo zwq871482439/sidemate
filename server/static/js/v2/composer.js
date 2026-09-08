@@ -66,6 +66,7 @@ export function renderComposer(state, events) {
       <div class="cb-add-menu" style="display:none">
         <button data-act="upload">附加文档到聊天</button>
         <button data-act="kb">引用知识库文档</button>
+        <button data-act="projfile">引用项目里的文件…</button>
       </div>
     </div>
     <input type="file" style="display:none">
@@ -353,6 +354,70 @@ export function renderComposer(state, events) {
       });
     } catch (e) { console.warn('[v2] KB 列表失败', e); }
   });
+
+  // ---- 附件：引用项目里的文件（跨项目，M2-6 用户级文件区消融） ----
+  wrap.querySelector('[data-act="projfile"]').addEventListener('click', async () => {
+    try {
+      const r = await api.listProjects();
+      const projs = (r.projects || []).filter(p => p.status !== 'missing');
+      if (!projs.length) { alert('还没有项目'); return; }
+      _showProjFilePicker(projs);
+    } catch (e) { console.warn('[v2] 项目列表失败', e); }
+  });
+
+  // 项目文件选择模态：选项目 → 列出该项目根目录文件 → 点选引用（直读不复制）
+  function _showProjFilePicker(projs) {
+    const overlay = document.createElement('div');
+    overlay.className = 'kb-pk-overlay';
+    overlay.innerHTML = `
+      <div class="kb-pk">
+        <div class="kb-pk-title">引用项目里的文件（直读，AI 读原文件）</div>
+        <div class="kb-pk-list">
+          <select class="kb-pk-proj">${projs.map(p => `<option value="${esc(p.dir)}">${esc(p.display)}</option>`).join('')}</select>
+          <div class="kb-pk-files"><div class="vw-empty"><small>加载中…</small></div></div>
+        </div>
+        <div class="kb-pk-acts"><button class="kb-pk-cancel">取消</button></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const sel = overlay.querySelector('.kb-pk-proj');
+    const box = overlay.querySelector('.kb-pk-files');
+    async function loadFiles() {
+      box.innerHTML = '<div class="vw-empty"><small>加载中…</small></div>';
+      try {
+        const d = await api.listProjectFiles(sel.value);
+        const files = (d.files || []).filter(f => !f.is_dir);
+        box.innerHTML = files.length
+          ? files.map(f => `<button class="kb-pk-item kb-pk-file" data-name="${esc(f.name)}">${icon('fileText')} ${esc(f.name)} <span class="vw-pkb-sz">${f.size || ''}</span></button>`).join('')
+          : '<div class="vw-empty"><small>这个项目根目录还没有文件</small></div>';
+        box.querySelectorAll('.kb-pk-file').forEach(b => b.addEventListener('click', async () => {
+          b.disabled = true;
+          try {
+            const rr = await fetch('/api/projects/reference', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dir: sel.value, name: b.dataset.name }),
+            });
+            const rd = await rr.json();
+            if (rd && rd.path) {
+              attach = { kind: 'upload', name: rd.filename, path: rd.path };
+              attachTokens = rd.tokens || 0;
+              renderTray();
+              updateTokenBar();
+              events.onAttachChange(attach);
+              overlay.remove();
+            } else {
+              alert((rd && rd.error) || '引用失败');
+              b.disabled = false;
+            }
+          } catch (e) { alert('引用失败'); b.disabled = false; }
+        }));
+      } catch (e) {
+        box.innerHTML = '<div class="vw-empty"><small>读取失败</small></div>';
+      }
+    }
+    sel.addEventListener('change', loadFiles);
+    overlay.querySelector('.kb-pk-cancel').addEventListener('click', () => overlay.remove());
+    loadFiles();
+  }
 
   function _showKbPicker(files, onOk) {
     const overlay = document.createElement('div');

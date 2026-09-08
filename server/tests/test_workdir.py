@@ -214,3 +214,30 @@ class TestBrowse:
         assert [e["name"] for e in r2["entries"]] == ["子目录A"]
         assert isinstance(r2["quick"], list)
         assert projects.browse_dirs("Z:\\不存在") is None
+
+
+class TestCrossProjectReference:
+    """M2-6：跨项目引用（用户级文件区消融——文件住项目里，直接引用）"""
+
+    def test_cross_project_reference(self, isolated):
+        chats, ext, proot = isolated
+        projects.create_project_external(ext)  # 注册为项目（否则拒引，见下一条）
+        with open(os.path.join(ext, "共享材料.md"), "w", encoding="utf-8") as f:
+            f.write("桌伴跨项目引用测试内容")
+        r = projects.reference_file_in_dir(ext, "共享材料.md")
+        assert "error" not in r
+        assert r["filename"] == "共享材料.md"
+        assert r["tokens"] > 0
+
+    def test_unregistered_dir_rejected(self, isolated, tmp_path):
+        rogue = str(tmp_path / "野目录")
+        os.makedirs(rogue)
+        with open(os.path.join(rogue, "x.md"), "w") as f:
+            f.write("x")
+        r = projects.reference_file_in_dir(rogue, "x.md")
+        assert "error" in r  # 非注册项目目录拒引
+
+    def test_pptx_referenceable(self):
+        """pptx 进引用白名单（冲刺 1 补齐摄入后，引用直读 pptx 可用）。"""
+        from session.projects import ALLOWED_REF_EXTS
+        assert ".pptx" in ALLOWED_REF_EXTS
