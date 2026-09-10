@@ -825,7 +825,7 @@ function showDirPicker(onPick) {
       d = await api.browseDirs(path);
     } catch (e) {
       listEl.innerHTML = '<div class="vw-empty">目录不存在或不可读</div>';
-      return;
+      return false;
     }
     cur = d.path;
     pathIn.value = cur || '';
@@ -880,13 +880,21 @@ function showDirPicker(onPick) {
         listEl.appendChild(it);
       });
     }
+    return true;
   }
   pathIn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { const v = pathIn.value.trim(); if (v) nav(v); }
   });
   ov.querySelector('.kb-pk-cancel').addEventListener('click', () => ov.remove());
   ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
-  okBtn.addEventListener('click', () => {
+  okBtn.addEventListener('click', async () => {
+    // 输入框里有已粘贴但未回车跳转的路径时，先按输入框导航——
+    // 否则会把上一次浏览停留的目录（而非用户输入的路径）注册成项目（验收 B-3）
+    const v = pathIn.value.trim();
+    if (v && v !== (cur || '')) {
+      const okNav = await nav(v);
+      if (!okNav || !cur) return;
+    }
     if (!cur) return;
     const p = cur;
     ov.remove();
