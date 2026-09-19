@@ -86,8 +86,10 @@ def auto_name_if_default(chat_name: str, user_text: str, ai_mode: str) -> None:
             "不要标点收尾，不要引号书名号，只输出标题本身。\n\n用户消息：\n" + text[:300]
         )
         title = run_text_once(prompt, ai_mode)
-        # 清洗：取首行、去首尾引号/书名号/标点、限长
+        # 清洗：取首行、去 markdown 强调符（本地小模型爱用 **加粗**）、
+        # 去首尾引号/书名号/标点、限长（GUI 探索实测：标题曾带 **星号** 落库）
         title = (title or "").splitlines()[0].strip() if title else ""
+        title = _re.sub(r"[*_`#~]+", "", title).strip()
         title = _re.sub(r"^[\"'《<「『]+|[\"'》>」』。！？!?.:：,，;；\s]+$", "", title).strip()
         if not title or len(title) < 2:
             return

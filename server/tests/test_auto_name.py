@@ -90,6 +90,13 @@ class TestAutoName:
         pipelines.auto_name_if_default(name, "你好", "cloud")
         assert chat_store.read_meta(name).get("title", name) == name
 
+    def test_markdown_stars_stripped(self, chat_dir, monkeypatch):
+        # GUI 探索实测：本地小模型返回 **标题** 带星号落库，侧栏显示 **…**
+        monkeypatch.setattr(pipelines, "run_text_once", lambda p, m: "**为产品介绍生成 300 字文案**")
+        name = _new_chat()
+        pipelines.auto_name_if_default(name, "帮我写300字产品介绍", "local")
+        assert chat_store.read_meta(name)["title"] == "为产品介绍生成 300 字文案"
+
 
 class TestTitleStorage:
     def test_set_chat_title(self, chat_dir):

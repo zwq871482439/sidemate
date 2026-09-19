@@ -180,6 +180,8 @@ function render() {
       if (c.current && state.messages !== null) return;
       _viewedProject = null;  // 切会话清掉跨项目查看
       _handoffPrompted = false;  // 换会话重置 80% 交接提示
+      state.scene = '';       // 场景 chip 是会话级状态，随会话切换清掉（防跨会话泄漏）
+      state.actionMode = 'chat';
       await api.switchChat(c.path);
       state.sessions = await loadSessions();
       state.tab = 'chat';
@@ -192,6 +194,8 @@ function render() {
       // 新建任务：默认项目下建会话，空状态里可用项目选择器换项目（0 消息窗口）
       _viewedProject = null;
       state.pendingProjectDir = null;  // 会话已建，pending 移交 chip 选择器
+      state.scene = '';
+      state.actionMode = 'chat';
       await api.newChat();
       state.sessions = await loadSessions();
       state.tab = 'chat';
@@ -201,6 +205,8 @@ function render() {
     },
     onNewChatInProject: async (dir) => {
       _viewedProject = null;
+      state.scene = '';
+      state.actionMode = 'chat';
       await api.newChat(dir);
       state.sessions = await loadSessions();
       state.tab = 'chat';
@@ -311,6 +317,8 @@ function render() {
       getViewedProject: () => _viewedProject,
       onSwitchSession: async (c) => {
         _viewedProject = null;
+        state.scene = '';
+        state.actionMode = 'chat';
         await api.switchChat(c.path);
         state.sessions = await loadSessions();
         state.tab = 'chat';
