@@ -727,6 +727,19 @@ class AgentLoop:
             if used_chars > HISTORY_TOKEN_BUDGET * 2:
                 log.info("[AGENT] 历史压缩: 保留 %d 条, %d 字符(预算 %d)", len(recent), used_chars, HISTORY_TOKEN_BUDGET * 3)
 
+        # 防澄清螺旋（0.10.1 验收 B-8）：近几轮连续多张 ask 确认卡且任务无推进时，
+        # 注入强提示逼模型停止追问、基于现有信息直接执行（与 P8-2 搜索后不读文同一族护栏）
+        if recent:
+            _tail = recent[-6:]
+            _ask_n = sum(1 for m in _tail
+                         if m.get("role") == "assistant" and "```ask" in (m.get("content") or ""))
+            if _ask_n >= 2:
+                messages.append({"role": "system", "content": (
+                    "系统提示：你在最近几轮已连续向用户发出多张确认卡，用户每次都回答了，"
+                    "但任务始终没有实际推进。从现在起禁止再输出 ask 块：基于已有信息立即"
+                    "执行任务（调用工具干活或直接产出），不确定的细节选合理默认值，"
+                    "并在完成后说明哪些是你的默认假设。")})
+
         # 当前用户消息
         messages.append({"role": "user", "content": message})
 
