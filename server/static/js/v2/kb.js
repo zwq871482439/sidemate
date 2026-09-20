@@ -580,6 +580,13 @@ export function createKBView(events) {
   }
 
   return { el, mount, destroy,
+    // KB 详情跳转（挂账清账）：ref 卡「详情」按钮按文件名打开文档详情弹窗
+    openDetailByName: (filename) => {
+      const d = state.docs.find(x => (x.filename || '') === filename)
+             || state.docs.find(x => (x.filename || '').includes(filename));
+      if (d) showDetail(d.doc_id);
+      return !!d;
+    },
     getDocs: () => state.docs,
     getOverview: () => state.overview,
     setFilter: (kf) => { state.filterCat = kf || ''; renderChips(); renderGrid(); },

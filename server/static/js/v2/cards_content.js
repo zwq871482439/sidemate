@@ -152,7 +152,7 @@ export function hydrateCards(container, opts) {
     let sources = [];
     try { sources = JSON.parse(decodeURIComponent(slot.dataset.refs || '')); } catch (e) { /* 忽略 */ }
     if (!sources.length) { slot.remove(); return; }
-    slot.replaceWith(_renderRefCard(sources));
+    slot.replaceWith(_renderRefCard(sources, opts));
   });
   // 上标互链：点击 [n] 跳到 ref 卡对应条目
   container.querySelectorAll('sup.ref-n').forEach(sup => {
@@ -238,7 +238,7 @@ function _renderAsk(card, spec, opts) {
 }
 
 // ===== 引用卡（ref）：唯一跨两界——同渲染组件，两数据来路（kb_sources/agent results） =====
-function _renderRefCard(sources) {
+function _renderRefCard(sources, opts) {
   const card = document.createElement('div');
   card.className = 'cc-card cc-ref';
   card.innerHTML = `<div class="cc-head"><span class="cc-badge">${iconSvg('search')}</span>
@@ -249,11 +249,19 @@ function _renderRefCard(sources) {
     const item = document.createElement('div');
     item.className = 'cc-ref-item';
     item.dataset.n = String(i + 1);
+    const kbBtn = (s.kind !== 'web' && opts && opts.onKbDetail)
+      ? `<button class="cc-ref-detail" title="在知识库中查看文档详情">${iconSvg('info')} 详情</button>` : '';
     item.innerHTML = `<span class="cc-ref-n">[${i + 1}]</span>
       <span class="cc-ref-badge ${s.kind === 'web' ? 'web' : 'kb'}">${iconSvg(s.kind === 'web' ? 'globe' : 'book')}</span>
       <span class="cc-ref-t">${esc(s.title)}</span>
+      ${kbBtn}
       <div class="cc-ref-x">${esc(s.excerpt || '')}</div>`;
     item.addEventListener('click', () => item.classList.toggle('open'));
+    const dbtn = item.querySelector('.cc-ref-detail');
+    if (dbtn) dbtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      opts.onKbDetail(s.title);
+    });
     list.appendChild(item);
   });
   return card;

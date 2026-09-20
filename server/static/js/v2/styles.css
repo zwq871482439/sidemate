@@ -1293,3 +1293,13 @@ body.narrow #viewer.open ~ .vw-backdrop {
 /* 侧栏私密会话锁标（0.10.1 D-1 真修配套） */
 .si-priv { display: inline-flex; vertical-align: -2px; margin-right: 2px; color: var(--d1-gold-2); }
 .si-priv svg { width: 12px; height: 12px; }
+
+/* ref 卡「详情」按钮（KB 详情跳转，挂账清账） */
+.cc-ref-detail {
+  flex: none; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+  font-size: var(--d1-fs-tiny); color: var(--d1-accent-3);
+  border: 1px solid var(--d1-n-line); border-radius: 6px; padding: 1px 7px;
+  background: var(--d1-paper-2); margin-left: 6px;
+}
+.cc-ref-detail svg { width: 11px; height: 11px; }
+.cc-ref-detail:hover { border-color: var(--d1-accent-3); }

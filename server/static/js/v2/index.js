@@ -382,6 +382,7 @@ function renderChatArea() {
       getSession: () => state.sessions.find(c => c.current),
       onAskAnswer, getCardAnswer,
       onPreviewDoc: (url) => _previewDoc(url),  // 消息下载栏「预览」→ 视窗预览 tab
+      onKbDetail: (filename) => _openKbDetail(filename),  // ref 卡「详情」→ KB 页文档详情（挂账清账）
     });
     // 提纲待确认恢复（快照重建/刷新共用入口）
     const pendingOutline = _lastOutlineMsg();
@@ -614,6 +615,16 @@ async function _docPhase2(outline) {
 }
 
 // 流式气泡：生成中追加在消息区末尾（不污染 state.messages，流末快照重建）
+// ref 卡「详情」→ 切 KB 页并按文件名打开文档详情弹窗（KB 详情跳转，挂账清账）
+async function _openKbDetail(filename) {
+  if (state.tab !== 'kb') { state.tab = 'kb'; render(); }
+  // 等视图挂载（切 tab 异步渲染）
+  for (let i = 0; i < 10 && !_kbView; i++) await new Promise(r => setTimeout(r, 120));
+  if (!_kbView) return;
+  const ok = _kbView.openDetailByName(filename);
+  if (!ok) alert('知识库里没找到《' + filename + '》——它可能来自联网或已被删除');
+}
+
 // 消息下载栏「预览」：打开视窗预览 tab 并滚到对应 HTML 报告（0.10.1 收尾）
 function _previewDoc(url) {
   if (!_viewer) return;
