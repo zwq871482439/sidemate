@@ -210,6 +210,9 @@ function _renderAsk(card, spec, opts) {
       optsRow.querySelectorAll('.cc-ask-opt').forEach(x => x.classList.toggle('on', x === b));
       input.value = o;
       input.dispatchEvent(new Event('input'));
+      // 计划确认卡：选项点击即提交（一步生效）——「同意，执行写入」点一次就该动，
+      // 再要求点「确认」是反直觉二段式（用户实测点同意无后续）
+      if (isPlan) submit();
     });
     optsRow.appendChild(b);
   });

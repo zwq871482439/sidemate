@@ -142,7 +142,9 @@ export function renderComposer(state, events) {
       const d = await r.json();
       const isExec = d.exec_mode === 'execute';
       xmodeBtn.style.display = '';
-      xmodeBtn.textContent = isExec ? '执行' : '计划';
+      // 图标+文字同步（设计一致性：同排「添加」pill 带图标，此 pill 跟随同一约定）
+      xmodeBtn.innerHTML = iconSvg(isExec ? 'clipboardCheck' : 'target')
+        + (isExec ? ' 执行' : ' 计划');
       xmodeBtn.classList.toggle('exec', isExec);
       xmodeBtn.title = isExec
         ? '执行模式：AI 写项目文件直接落盘（点我切回计划模式）'
