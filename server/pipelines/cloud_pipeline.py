@@ -416,7 +416,12 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                         # 与 KB 多文档分支同构）——不标注时模型分不清两份
                         # 模板近似的材料（十五五实战：编制说明与规划修订稿
                         # 开篇雷同，模型误判「新文件没到」）
-                        _doc_texts.append("=== 文档：%s（本条消息新选定） ===\n%s" % (os.path.basename(_path), _content))
+                        # 相似材料指纹（0.10.1 小修）：字数+修改时间随文件名注入——
+                        # 编制说明 vs 修订稿这类开篇雷同的文档，模型可凭指纹分辨
+                        _st = os.stat(_path)
+                        _mt = time.strftime("%m-%d %H:%M", time.localtime(_st.st_mtime))
+                        _doc_texts.append("=== 文档：%s（本条消息新选定 · %d字 · 修改于 %s） ===\n%s"
+                                          % (os.path.basename(_path), len(_content), _mt, _content))
                         _doc_names.append(os.path.basename(_path))
                         log.info("[CLOUD-AGENT] 预读取上传文件: %s, %d 字", os.path.basename(_path), len(_content))
                 except Exception as _e:
@@ -435,6 +440,11 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         # 注入内容到 context_cache
         if _doc_texts:
             _kb_content = "\n\n".join(_doc_texts)
+            # 相似材料混淆防线（0.10.1 小修）：多文档并存时显式提醒按分节头区分
+            if len(_doc_names) >= 2:
+                _kb_content = ("[注意：本条消息引用了 %d 份文档，各文档独立存在。"
+                               "严格按「=== 文档：文件名 ===」分节头区分，"
+                               "不要把不同文档的内容混为一谈]\n\n" % len(_doc_names)) + _kb_content
             if not context_cache:
                 context_cache = {}
             context_cache['kb_context'] = _kb_content

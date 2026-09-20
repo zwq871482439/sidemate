@@ -1195,7 +1195,9 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
                         break
                 if _lines:
                     out += ("\n\n[项目会话索引 · 同项目最近 %d 条会话，"
-                            "需要细节用 read_session 读取（每会话只读一次）]\n%s"
+                            "需要细节用 read_session 读取（每会话只读一次）；"
+                            "回答中如需提醒用户延续前情：可在右侧视窗·会话 tab"
+                            "用「携」按钮把某条前情会话的摘要注入本会话]\n%s"
                             % (len(_lines), "\n".join(_lines)))
         except Exception:
             pass

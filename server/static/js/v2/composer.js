@@ -118,10 +118,13 @@ export function renderComposer(state, events) {
   function renderTray() {
     if (!attach) { trayEl.style.display = 'none'; trayEl.innerHTML = ''; return; }
     trayEl.style.display = 'flex';
+    // 悬停指纹（相似材料小修）：token/大小，多份相近材料时可分辨选没选对
+    const _tip = (attach.tokens ? '约 ' + attach.tokens + ' tokens' : '') +
+      (attach.size ? (attach.tokens ? ' · ' : '') + (attach.size / 1024).toFixed(0) + 'KB' : '');
     if (attach.kind === 'upload') {
-      trayEl.innerHTML = `<span class="attach-chip">${icon('fileText')} ${esc(attach.name)}<span class="x" title="移除">×</span></span>`;
+      trayEl.innerHTML = `<span class="attach-chip" title="${esc(attach.name)}${_tip ? ' · ' + _tip : ''}">${icon('fileText')} ${esc(attach.name)}<span class="x" title="移除">×</span></span>`;
     } else {
-      trayEl.innerHTML = `<span class="attach-chip">${icon('book')} KB：${esc(attach.names.join('、'))}<span class="x" title="移除">×</span></span>`;
+      trayEl.innerHTML = `<span class="attach-chip" title="知识库文档：${esc(attach.names.join('、'))}${_tip ? ' · ' + _tip : ''}">${icon('book')} KB：${esc(attach.names.join('、'))}<span class="x" title="移除">×</span></span>`;
     }
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); _syncSendEnabled(); events.onAttachChange(null); });
   }

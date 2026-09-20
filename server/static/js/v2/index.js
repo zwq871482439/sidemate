@@ -397,11 +397,17 @@ function renderChatArea() {
     scroll.innerHTML = '';
     // 空状态带项目选择器：无会话时用 pendingProjectDir 的显示名，有 0 消息会话时用其项目名
     const projLabel = _pickerLabel();
+    // 跨会话发现性（0.10.1 MiniMax 短板①）：新会话同项目有近期会话时，
+    // 空状态给一行「可接续」提示（携按钮在视窗·会话 tab，此前用户发现不到）
+    const _curProj = (state.workdir && state.workdir.dir) || null;
+    const _peers = _curProj ? state.sessions.filter(c =>
+      c.project_dir === _curProj && !c.current && !c.private && !c.legacy) : [];
     scroll.appendChild(renderEmptyState(state.mode, {
       onScene: onScene,
       projectLabel: projLabel,
       onPickProject: (anchor) => showProjectPicker(anchor),
       handoffMeta: state.handoff ? { source_chat: state.handoff.source_chat, updated_at: state.handoff.updated_at } : null,
+      peersMeta: _peers.length ? { count: Math.min(_peers.length, 8) } : null,
     }));
   }
   if (state.generating && _streamState) renderStreamingBubble(_streamState);
