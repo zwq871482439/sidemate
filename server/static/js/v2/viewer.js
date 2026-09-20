@@ -37,6 +37,8 @@ export function createViewer(opts) {
   let uploading = false;
   let ppt = null;      // PPT decks 回放：{ decks:[{deck,title,pages:[{n,url}],pptx,pptx_url}] } | null=未加载
   let pptLive = {};    // 流式期间即时累积：deck -> { title, pages: {n: url} }
+  let htmlLive = [];   // 流式期间 doc_complete 的 HTML 报告：[{url, name}]
+  const htmlCache = {}; // url -> 文本（iframe srcdoc 用；换版重发生效靠 no-store 拉新）
   const pptCache = {}; // url -> svg 文本（避免每页到达时全量重拉）
 
   async function loadFiles() {
@@ -573,30 +575,55 @@ export function createViewer(opts) {
     return Object.values(map);
   }
 
+  // 预览产物清单：HTML 报告（live 事件优先 + workspace 回放补充）
+  function _htmlArtifacts() {
+    const cur = opts.getCurrentChat();
+    const out = htmlLive.slice();
+    if (cur && Array.isArray(files)) {
+      files.forEach(f => {
+        if (!/\.html?$/i.test(f.name || '')) return;
+        const url = '/api/chat/' + encodeURIComponent(cur.name) +
+          '/workspace/download?path=' + encodeURIComponent(f.name);
+        if (!out.some(h => h.url === url)) out.push({ url, name: f.name, size: f.size });
+      });
+    }
+    return out;
+  }
+
   function _renderPreview(body) {
-    if (ppt === null) {
+    if (ppt === null || files === null) {
       body.innerHTML = '<div class="vw-empty">加载中…</div>';
-      _loadPpt().then(() => { if (tab === 'preview') renderBody(); });
+      Promise.all([ppt === null ? _loadPpt() : null, files === null ? loadFiles() : null])
+        .then(() => { if (tab === 'preview') renderBody(); });
       return;
     }
     const decks = _pptMergedDecks();
-    if (!decks.length) {
-      body.innerHTML = `<div class="vw-empty">还没有可预览的产物<br><small>AI 制作 PPT 时，逐页设计会实时出现在这里</small></div>`;
+    const reports = _htmlArtifacts();
+    if (!decks.length && !reports.length) {
+      body.innerHTML = `<div class="vw-empty">还没有可预览的产物<br><small>AI 制作 PPT 或生成报告时，会实时出现在这里</small></div>`;
       return;
     }
-    body.innerHTML = decks.map(d => {
-      const nums = Object.keys(d.pages).map(Number).sort((a, b) => a - b);
-      return `<div class="vw-ppt-deck">
+    body.innerHTML =
+      decks.map(d => {
+        const nums = Object.keys(d.pages).map(Number).sort((a, b) => a - b);
+        return `<div class="vw-ppt-deck">
+          <div class="vw-ppt-head">
+            <span class="vw-ppt-title">${icon('presentation')} ${esc(d.title)}</span>
+            <span class="vw-ppt-meta">${nums.length} 页${d.pptx_url ? ` · <a class="vw-ppt-dl" href="${d.pptx_url}" download>下载 PPTX</a>` : ''}</span>
+          </div>
+          ${nums.map(n => `<div class="vw-ppt-page">
+            <div class="vw-ppt-num">P${String(n).padStart(2, '0')}</div>
+            <div class="vw-ppt-svg" data-url="${esc(d.pages[n])}"><div class="vw-empty"><small>渲染中…</small></div></div>
+          </div>`).join('')}
+        </div>`;
+      }).join('') +
+      reports.map(h => `<div class="vw-ppt-deck vw-html-deck">
         <div class="vw-ppt-head">
-          <span class="vw-ppt-title">${icon('presentation')} ${esc(d.title)}</span>
-          <span class="vw-ppt-meta">${nums.length} 页${d.pptx_url ? ` · <a class="vw-ppt-dl" href="${d.pptx_url}" download>下载 PPTX</a>` : ''}</span>
+          <span class="vw-ppt-title">${icon('globe')} ${esc(h.name)}</span>
+          <span class="vw-ppt-meta">${h.size ? _fmtSize(h.size) + ' · ' : ''}<a class="vw-ppt-dl" href="${esc(h.url)}" download>下载</a></span>
         </div>
-        ${nums.map(n => `<div class="vw-ppt-page">
-          <div class="vw-ppt-num">P${String(n).padStart(2, '0')}</div>
-          <div class="vw-ppt-svg" data-url="${esc(d.pages[n])}"><div class="vw-empty"><small>渲染中…</small></div></div>
-        </div>`).join('')}
-      </div>`;
-    }).join('');
+        <div class="vw-html-frame" data-url="${esc(h.url)}"><div class="vw-empty"><small>渲染中…</small></div></div>
+      </div>`).join('');
     // 逐页拉 SVG 内联渲染（no-store：修复重发的同页要拿新内容）
     body.querySelectorAll('.vw-ppt-svg[data-url]').forEach(box => {
       const url = box.dataset.url;
@@ -611,6 +638,35 @@ export function createViewer(opts) {
         if (box.isConnected) draw(t);
       }).catch(() => { box.innerHTML = '<div class="vw-empty"><small>加载失败</small></div>'; });
     });
+    // HTML 报告：拉文本进 sandbox iframe 渲染（allow-same-origin 不带 allow-scripts——
+    // 预览内 JS 禁跑，经典版同款安全姿势；下载端点带 attachment 头不影响 fetch）
+    body.querySelectorAll('.vw-html-frame[data-url]').forEach(box => {
+      const url = box.dataset.url;
+      const draw = t => {
+        box.innerHTML = '';
+        const iframe = document.createElement('iframe');
+        iframe.className = 'vw-html-iframe';
+        iframe.setAttribute('sandbox', 'allow-same-origin');
+        box.appendChild(iframe);
+        iframe.onload = () => {
+          try {
+            const h = iframe.contentWindow.document.body.scrollHeight;
+            iframe.style.height = Math.min(h + 24, 2000) + 'px';
+          } catch (e) { iframe.style.height = '420px'; }
+        };
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        doc.open();
+        doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">' +
+          '<style>body{font-family:system-ui,"Microsoft YaHei",sans-serif;margin:0;padding:16px;color:#1F2937}' +
+          '*{box-sizing:border-box}</style></head><body>' + t + '</body></html>');
+        doc.close();
+      };
+      if (htmlCache[url]) { draw(htmlCache[url]); return; }
+      fetch(url, { cache: 'no-store' }).then(r => r.text()).then(t => {
+        htmlCache[url] = t;
+        if (box.isConnected) draw(t);
+      }).catch(() => { box.innerHTML = '<div class="vw-empty"><small>加载失败</small></div>'; });
+    });
   }
 
   // 流式 ppt_page 事件入口（index.js 转发）
@@ -622,6 +678,18 @@ export function createViewer(opts) {
     if (!open) { setOpen(true, 'preview'); return; }  // 视窗关着：自动展开切预览（首页的「亮相」时刻）
     if (tab === 'preview') renderBody();
     // 视窗开着但在别的 tab：不抢，用户自己点「预览」
+  }
+
+  // 流式 doc_complete 事件入口（index.js 转发，限 .html/.ppt.html 产物）：
+  // HTML 报告的「亮相」时刻，行为对齐 onPptPage
+  function onDocComplete(d) {
+    if (!d || !d.url) return;
+    if (htmlLive.some(h => h.url === d.url)) return;
+    delete htmlCache[d.url];
+    htmlLive.unshift({ url: d.url, name: d.name || '报告.html' });
+    if (!open) { setOpen(true, 'preview'); return; }  // 视窗关着：自动展开切预览
+    if (tab === 'preview') renderBody();
+    // 开着但在别的 tab：不抢，用户自己点「预览」
   }
 
   function _fmtSize(bytes) {    if (!bytes) return '0KB';
@@ -650,6 +718,7 @@ export function createViewer(opts) {
   function onSessionChange() {
     files = null; wd = null; handoff = null;
     ppt = null; pptLive = {}; Object.keys(pptCache).forEach(k => delete pptCache[k]);
+    htmlLive = []; Object.keys(htmlCache).forEach(k => delete htmlCache[k]);
     if (open) renderBody();
   }
 
@@ -659,6 +728,7 @@ export function createViewer(opts) {
     toggle: () => setOpen(!open),
     onSessionChange,
     onPptPage,
+    onDocComplete,
     get isOpen() { return open; },
   };
 }

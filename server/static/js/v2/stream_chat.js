@@ -166,6 +166,11 @@ function _handleEvent(d, st, hooks) {
     case 'doc_complete':
       st.docUrl = d.url || d.doc_url || '';
       st.docName = d.filename || d.doc_filename || 'document.docx';
+      // HTML 报告/演示文稿（.html / .ppt.html）转视窗预览（0.10.1 收尾缺口：
+      // doc_complete 的 docUrl 此前是死字段，下游无人消费）
+      if (hooks.onDocComplete && /\.html?$/i.test(st.docName || '')) {
+        hooks.onDocComplete({ url: st.docUrl, name: st.docName });
+      }
       hooks.onStreamTick(st, 'token');
       break;
     case 'compress':

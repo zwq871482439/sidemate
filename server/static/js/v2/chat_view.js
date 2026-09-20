@@ -83,7 +83,7 @@ function _linkRefSup(html, count) {
   });
 }
 
-function _renderMsg(m) {
+function _renderMsg(m, opts) {
   const isUser = m.role === 'user';
   // 0.10.1 定稿：无头像框（用户评审：用处不大还影响视线）；气泡左右分布（我右/AI 左）
   const name = isUser ? ('我' + (m.ts ? ' · ' + m.ts : '')) : ('桌伴' + (m.ts ? ' · ' + m.ts : ''));
@@ -130,7 +130,10 @@ function _renderMsg(m) {
     docBar = '<div class="m-doc-bar">' + arts.map(a => {
       const url = a.url || a.doc_url || '';
       const fn = a.filename || a.doc_filename || 'document.docx';
-      return `<a href="${esc(url)}" download="${esc(fn)}" target="_blank">下载 ${esc(fn)}</a>`;
+      // HTML 报告/演示文稿带「预览」：点开右视窗预览 tab 就地渲染（0.10.1 收尾）
+      const pv = /\.html?$/i.test(fn) && opts && opts.onPreviewDoc
+        ? `<button class="m-doc-preview" data-url="${esc(url)}" title="在右侧视窗预览">${icon('globe')} 预览</button>` : '';
+      return `${pv}<a href="${esc(url)}" download="${esc(fn)}" target="_blank">下载 ${esc(fn)}</a>`;
     }).join('') + '</div>';
   }
   const stats = _statsLine(m);
@@ -153,12 +156,17 @@ function _renderMsg(m) {
 export function renderChatFlow(container, messages, opts) {
   const flow = document.createElement('div');
   flow.className = 'chat-flow';
-  flow.innerHTML = messages.map(_renderMsg).join('');
+  flow.innerHTML = messages.map(m => _renderMsg(m, opts)).join('');
   container.innerHTML = '';
   container.appendChild(flow);
   // 水合恒执行（ref 卡跨两界离线也要；围栏块槽只在 _cardMode 提取后存在）
   hydrateCards(flow, opts || {});
   hydrateMermaid(flow);
+  // HTML 报告「预览」按钮 → opts.onPreviewDoc（index.js 转视窗预览 tab）
+  if (opts && opts.onPreviewDoc) {
+    flow.querySelectorAll('.m-doc-preview').forEach(b =>
+      b.addEventListener('click', () => opts.onPreviewDoc(b.dataset.url)));
+  }
   // 滚到底部（最新消息）。同步设置在布局完成前会被滚动夹持清零
   // （后台标签 rAF 又不触发），setTimeout 是唯一能扛住的路径
   setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);

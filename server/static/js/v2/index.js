@@ -101,6 +101,7 @@ const chatStream = createChatStream({
   onStreamTick: (st, phase) => { _streamState = st; renderStreamingBubble(st); },
   onCardEvent: (d) => { if (_cards) _cards.handleEvent(d); },
   onPptPage: (d) => { if (_viewer) _viewer.onPptPage(d); },  // M1-E：PPT 逐页预览直转视窗
+  onDocComplete: (d) => { if (_viewer) _viewer.onDocComplete(d); },  // HTML 报告完成 → 视窗预览
   onDocOutline: (outline) => {
     // 文档 Phase 1 完成：提纲确认栏（经典版同款交互，v2 DNA 样式）
     _showDocConfirmBar(outline);
@@ -380,6 +381,7 @@ function renderChatArea() {
     renderChatFlow(scroll, state.messages, {
       getSession: () => state.sessions.find(c => c.current),
       onAskAnswer, getCardAnswer,
+      onPreviewDoc: (url) => _previewDoc(url),  // 消息下载栏「预览」→ 视窗预览 tab
     });
     // 提纲待确认恢复（快照重建/刷新共用入口）
     const pendingOutline = _lastOutlineMsg();
@@ -606,6 +608,16 @@ async function _docPhase2(outline) {
 }
 
 // 流式气泡：生成中追加在消息区末尾（不污染 state.messages，流末快照重建）
+// 消息下载栏「预览」：打开视窗预览 tab 并滚到对应 HTML 报告（0.10.1 收尾）
+function _previewDoc(url) {
+  if (!_viewer) return;
+  _viewer.setOpen(true, 'preview');
+  setTimeout(() => {
+    const frame = _viewer.el && _viewer.el.querySelector('.vw-html-frame[data-url="' + (url || '').replace(/"/g, '\\"') + '"]');
+    if (frame) frame.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 120);
+}
+
 function renderStreamingBubble(st) {
   const flow = document.querySelector('.chat-flow');
   if (!flow) return;

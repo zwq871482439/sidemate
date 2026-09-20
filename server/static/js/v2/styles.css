@@ -344,6 +344,14 @@ body {
   background: var(--d1-paper-2);
 }
 .m-doc-bar a:hover { border-color: var(--d1-accent-3); }
+/* HTML 报告「预览」按钮（0.10.1 收尾：消息栏 → 视窗预览 tab） */
+.m-doc-bar .m-doc-preview {
+  font-size: var(--d1-fs-small); color: var(--d1-accent-3); cursor: pointer;
+  border: 1px solid var(--d1-n-line); border-radius: 7px; padding: 4px 10px;
+  background: var(--d1-paper-2); display: inline-flex; align-items: center; gap: 4px;
+}
+.m-doc-bar .m-doc-preview svg { width: 13px; height: 13px; }
+.m-doc-bar .m-doc-preview:hover { border-color: var(--d1-accent-3); }
 .m-stats { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); margin-top: 7px; font-family: var(--d1-outlier); }
 
 /* markdown 正文基础排版 */
@@ -1234,6 +1242,9 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .vw-ppt-num { font-size: var(--d1-fs-small); color: var(--d1-ink-3); padding: 0 2px 4px; }
 .vw-ppt-svg { border-radius: var(--d1-r-sm); overflow: hidden; box-shadow: var(--d1-shadow-card, 0 1px 4px rgba(15,43,70,.12)); background: var(--d1-accent); }
 .vw-ppt-svg svg { display: block; width: 100%; height: auto; }
+/* HTML 报告预览（0.10.1 收尾）：sandbox iframe 就地渲染 */
+.vw-html-frame { border-radius: var(--d1-r-sm); overflow: hidden; box-shadow: var(--d1-shadow-card, 0 1px 4px rgba(15,43,70,.12)); background: #fff; }
+.vw-html-iframe { width: 100%; border: none; display: block; height: 420px; }
 
 /* 空状态 stagger 入场（DNA-01 动效） */
 @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
