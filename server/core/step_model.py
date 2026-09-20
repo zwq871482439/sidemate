@@ -165,14 +165,6 @@ class Step:
         elif self._start_ts is not None:
             self.elapsed_ms = int((time.time() - self._start_ts) * 1000)
 
-    def mark_error(self, error: str, elapsed_ms: Optional[int] = None) -> None:
-        """标记为失败，记录错误文本。"""
-        self.status = "error"
-        self.error = error
-        if elapsed_ms is not None:
-            self.elapsed_ms = int(elapsed_ms)
-        elif self._start_ts is not None:
-            self.elapsed_ms = int((time.time() - self._start_ts) * 1000)
 
     # ---- 序列化 ----
 
@@ -202,26 +194,6 @@ class Step:
 #  反序列化（从历史 messages.json 重建）
 # ============================================================
 
-def step_from_dict(d: dict) -> Step:
-    """从 dict 重建 Step（读取历史消息时用）。
-
-    兼容旧 agent_timeline 的 step 字段：若没有 id 则用 step 兜底。
-    """
-    output = None
-    o = d.get("output")
-    if o and isinstance(o, dict):
-        output = StepOutput(type=o.get("type", "text"), data=o.get("data"))
-    return Step(
-        id=d.get("id") or d.get("step", ""),    # 兼容旧 agent_timeline 的 step 字段
-        label=d.get("label") or d.get("step", ""),
-        status=d.get("status", "done"),
-        group=d.get("group"),
-        output=output,
-        elapsed_ms=d.get("elapsed_ms"),
-        output_elapsed_ms=d.get("output_elapsed_ms"),
-        thinking=d.get("thinking"),
-        error=d.get("error"),
-    )
 
 
 # ============================================================

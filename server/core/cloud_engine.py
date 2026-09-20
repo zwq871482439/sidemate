@@ -383,11 +383,6 @@ class CloudEngine:
             cap["max_output"] = fallback["max_output"]
         return cap
 
-    def get_context_window(self, model: str = None) -> int:
-        """获取模型上下文窗口大小"""
-        if model is None:
-            model = _cfg("cloud_model", "gpt-4o-mini")
-        return self._lookup_capabilities(model)["context_window"]
 
     def _capabilities_matched(self, model: str) -> bool:
         """模型是否在内置表中匹配到（false = 回落 _default，前端应引导手填输入上限）"""

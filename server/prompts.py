@@ -417,18 +417,6 @@ PARALLEL_SYSTEM_PROMPT = (
     "如果知识库没有相关内容，明确说明'未找到'。"
 )
 
-def get_module_info():
-    """返回模块信息（供 API 调用）"""
-    return {
-        "name": MODULE_INFO["name"],
-        "version": __version__,
-        "description": MODULE_INFO["description"],
-        "changelog": CHANGELOG[:3],  # 最近 3 条
-        "scenes": {
-            "chat": {"prompt_preview": IDENTITY_PROMPT[:60] + "...", "think_control": "V2: /no_think"},
-            "kb": {"prompt_preview": KB_SYSTEM_PROMPT_TEMPLATE[:60] + "..."},
-        },
-    }
 
 
 # ===== 长文本分段处理提示词 =====

@@ -90,12 +90,7 @@ DEFAULTS = {
 
     # ----- Agent 设置（已废弃：实际由 agent_loop.py 硬编码常量控制）-----
     # 真实生效值：MAX_ROUNDS=20, MAX_TOOL_HISTORY_CHARS=60000 等
-    # "agent_max_iterations": 8,
-    # "agent_timeout": 120,
-    # "agent_result_max_chars": 800,
     # "agent_max_rounds": 10,
-    # "agent_tool_timeout": 20,
-    # "agent_total_timeout": 300,
 
     # ----- 会话缓存 -----
     "cache_keep_ratio": 0.4,          # 保留最近 40% 的原始消息
@@ -122,7 +117,6 @@ DEFAULTS = {
     # P7-4 新增 llama.cpp 专属配置
     "llamacpp_ctx_size": 8192,           # 上下文窗口大小（--ctx-size 启动参数）
     "llamacpp_gpu_layers": 99,           # GPU offload 层数（-ngl，0=纯CPU）
-    "llamacpp_model": "",                # 默认模型 model_id（空时自动选最大可用）
 
     # ----- 云端 AI 模式 -----
     "ai_mode": "local",                          # "local" | "cloud"
@@ -140,9 +134,6 @@ DEFAULTS = {
     # 搜索引擎零配置：本机直搜 Bing，无需 API Key
 
     # ----- 蒸馏（对话摘要，已废弃：代码内未引用，早期功能遗留）-----
-    # "distill_summary_max_chars": 100,
-    # "distill_question_max_chars": 200,
-    # "distill_answer_max_chars": 500,
 
     # ----- 上下文压缩器 -----
     "compress_max_code_chars": 600,      # 压缩后代码超过此长度时截断
@@ -152,12 +143,8 @@ DEFAULTS = {
 
     # ----- 长文本分段处理（已废弃：实际由 agent_loop.py 内硬编码控制）-----
     # 真实生效值：chunk_size=3000, deep_read 截断 15000 等
-    # "chunk_threshold_chars": 8000,
     # "chunk_max_chars": 2500,
     # "chunk_overlap_chars": 200,
-    # "chunk_memory_max_chars": 800,
-    # "chunk_max_chunks": 30,
-    # "chunk_per_chunk_timeout": 30,
 
     # ----- 知识库权限（Patch 3）-----
     "kb_permission": "full",              # "full" | "search-only" | "disabled"
@@ -178,36 +165,19 @@ DEFAULTS = {
     "kb_chunk_max_chars": 500,          # 每块最大字符（Patch5 A4：2500→500，隐私边界 + 检索精度）
     "kb_chunk_overlap_chars": 50,       # 重叠字符（保持 10% overlap 比例）
     "kb_search_top_k": 5,               # 检索返回 top-k（云端默认，本地模式动态降为 3）
-    "kb_embedding_model": "BAAI/bge-m3",  # Patch4 v3.1：bge-base-zh-v1.5 → bge-m3（多语言+8192长序列）
-    "kb_vector_dim": 1024,              # 向量维度（bge-m3 = 1024）
     "kb_embed_batch_size": 50,           # 嵌入批处理大小
-    "kb_async": True,                    # 异步处理开关
-    "kb_data_dir": "",                   # 数据目录（空=项目根目录下 data/kb/）
 
     # ----- 录音纪要（Patch 6 纪要 Tab，P6-9+ 实现）-----
-    "recorder_chunk_seconds": 10,        # D25: 录音分块秒数
-    "recorder_max_duration": 3600,       # 最长录音时长（秒）
-    "recorder_sample_rate": 16000,       # 采样率
-    "recorder_format": "webm/opus",      # 音频格式
-    "recorder_max_file_size": 52428800,  # 导入音频最大 50MB
-    "recorder_max_sessions": 20,         # D39: 录音 session 上限
-    "recorder_keep_audio": True,         # D35: 默认长期保留音频
-    "recorder_crash_recovery": True,     # D36: 崩溃恢复
 
     # ----- Whisper（Patch 6 扩展包，P6-10+ 实现）-----
     "whisper_model": "small",            # D21: small/medium（安装时锁定）
     "whisper_language": "zh",            # D42: 默认中文
     # whisper_device 已废弃（固定 CPU，代码内未引用）
-    "whisper_keep_loaded": True,         # 模型常驻内存
-    "whisper_enable_refine": True,       # D20: 启用 8B 辅助纠错
-    "whisper_realtime_chunk_sec": 10,    # D25: 实时转写每 chunk 秒数
-    "whisper_lock_on_transcribe": True,  # D22: 转写期间锁定对话 Tab
     "whisper_refine_batch_chars": 800,   # D37: 8B 纠错批次大小
 
     # ----- Reranker 空闲卸载（Patch 8，B5 移除内存预算后保留）-----
     "reranker_idle_timeout_sec": 300,      # Reranker 空闲超时（秒）
     "reranker_resident": False,            # Reranker 是否常驻（True=不自动卸载）
-    "recorder_resident": False,            # 纪要引擎(Whisper)是否常驻（True=不自动卸载）
 
     # ----- 权限工具开关（Patch5 B3，3 预设可批量改）-----
     "tool_enabled_web_search": True,       # 互联网搜索（search_web/fetch_url）
@@ -218,7 +188,6 @@ DEFAULTS = {
     # ----- 文库检索参数（Patch 8 P8-10，从硬编码提取）-----
     "kb_vector_score_threshold": 0.35,    # 向量检索最低余弦相似度（Patch4 v3.1：0.28→0.35，适配 bge-m3 分数分布）
     "kb_relevance_floor": 0.30,           # MMR 重排序相关性地板（低于此值的候选跳过）
-    "kb_reranker_top_k": 5,              # Reranker 精排返回数量
     "kb_context_max_chars_local": 5000,   # 本地模式注入 LLM 的总字符上限（Patch4 v3.1 新增）
     "kb_context_max_chars_cloud": 12000,  # 云端模式注入 LLM 的总字符上限（Patch4 v3.1 新增）
     "kb_search_top_k_local": 3,           # 本地模式 top-k（少而精，适配 4B 模型 16K 上下文）
@@ -292,10 +261,8 @@ _CONFIG_VALIDATORS = {
     "default_mode": lambda v: v in ("qa", "exec"),
     "confirm_external_read": lambda v: isinstance(v, bool),
     "auto_warmup_llm": lambda v: isinstance(v, bool),
-    "kb_async": lambda v: isinstance(v, bool),
     "kb_enable_sparse": lambda v: isinstance(v, bool),
     "reranker_resident": lambda v: isinstance(v, bool),
-    "recorder_resident": lambda v: isinstance(v, bool),
     "tool_enabled_web_search": lambda v: isinstance(v, bool),
     "tool_enabled_file_rw": lambda v: isinstance(v, bool),
     "tool_enabled_code_exec": lambda v: isinstance(v, bool),

@@ -64,16 +64,6 @@ def _safe_filename(name: str) -> bool:
     return bool(re.match(FILENAME_PATTERN, name)) and len(name) <= MAX_FILENAME_LEN
 
 
-def _add_paragraph_with_font(doc, text: str, style=None, font_size: int = None,
-                              bold: bool = False, font_name: str = DEFAULT_FONT_NAME):
-    """添加段落并设置字体"""
-    para = doc.add_paragraph(text, style=style)
-    for run in para.runs:
-        run.font.name = font_name
-        if font_size:
-            run.font.size = __import__('docx.shared', fromlist=['Pt']).Pt(font_size)
-        run.font.bold = bold
-    return para
 
 
 def _build_report(params: dict) -> dict:

@@ -136,9 +136,6 @@ class ModelManager:
 
     # ====== Prompt 构建方法（委托给 PromptBuilder）======
 
-    def _get_system_prompt_rules(self):
-        """延迟加载系统提示词"""
-        return self._prompt_builder.get_system_prompt_rules()
 
     def _build_prompt(self, pipe, message: str, history: Optional[List] = None,
                       model_name: str = None, context_cache: str = None,
@@ -196,37 +193,6 @@ class ModelManager:
 
     # ====== 环境检测 ======
 
-    def _detect_env(self) -> str:
-        """检测运行环境，返回简短环境描述文本"""
-        import platform
-        import importlib
-
-        parts = []
-        os_name = platform.system()
-        if os_name == "Windows":
-            parts.append("Windows 系统")
-        elif os_name == "Darwin":
-            parts.append("macOS 系统")
-        else:
-            parts.append("%s 系统" % os_name)
-
-        py_ver = platform.python_version()
-        parts.append("Python %s" % py_ver)
-        parts.append("llama.cpp + %s" % self._ollama_model)
-
-        data_libs = []
-        for lib in ["numpy", "pandas", "PIL", "matplotlib", "requests"]:
-            try:
-                importlib.import_module(lib)
-                data_libs.append(lib if lib != "PIL" else "Pillow")
-            except ImportError:
-                pass
-        if data_libs:
-            parts.append("已装: %s" % ", ".join(data_libs))
-
-        env_text = "环境: " + "，".join(parts)
-        log_scan.info("[ENV] %s" % env_text)
-        return env_text
 
     # ====== Ollama 模型扫描 ======
 
@@ -297,11 +263,6 @@ class ModelManager:
         base = model_id.split(":")[0] if ":" in model_id else model_id
         return base
 
-    def _make_description(self, model_id, dirname):
-        """生成模型描述"""
-        base = model_id.split(":")[0] if ":" in model_id else model_id
-        return self._KNOWN_MODELS.get(base,
-               self._KNOWN_MODELS.get(model_id, "Ollama LLM (%s)" % dirname))
 
     # ====== 状态报告 ======
 
@@ -401,12 +362,6 @@ class ModelManager:
             log.warning("[Model] 删除模型异常: %s" % str(e)[:80])
             return {"ok": False, "error": "删除失败: %s" % str(e)[:100]}
 
-    def load_all(self) -> Dict:
-        """加载所有模型（Ollama 中为 no-op，模型按需加载）"""
-        results = {}
-        for name in self.model_configs:
-            results[name] = self.load(name)
-        return results
 
     # ====== 查询 ======
 

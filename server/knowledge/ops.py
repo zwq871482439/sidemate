@@ -1176,88 +1176,6 @@ class _KBOpsMixin:
         log.info("[KB] 文档删除: %s (%s), 移除 %d chunks", doc.filename, doc_id, len(doc_chunk_ids))
         return {"ok": True, "removed_chunks": len(doc_chunk_ids)}
 
-    def delete_documents_batch(self, doc_ids: List[str]) -> Dict:
-        """批量删除文档（B1 优化版）
-
-        减少重复 _save_meta() 和 _build_bm25_index() 调用次数：
-        - 所有文档的 chunk 删除在一次遍历中完成
-        - _save_meta() 和 _save_vectors() 各只调用一次
-        - _build_bm25_index() 只在最后调用一次
-
-        Args:
-            doc_ids: 要删除的文档 ID 列表
-
-        Returns:
-            {"ok": True, "deleted": N, "failed": [{"doc_id": "...", "error": "..."}]}
-        """
-        deleted = 0
-        failed = []
-        valid_doc_ids = set()
-        total_removed_chunks = 0
-
-        # 预检查：确认文档存在，取消正在处理的文档
-        for doc_id in doc_ids:
-            doc = self.documents.get(doc_id)
-            if not doc:
-                failed.append({"doc_id": doc_id, "error": "文档不存在"})
-                continue
-            # 如果正在处理中，先取消
-            if doc.status in ('processing', 'chunking', 'indexing'):
-                self.cancel_processing(doc_id)
-            valid_doc_ids.add(doc_id)
-
-        if not valid_doc_ids:
-            return {"ok": True, "deleted": 0, "failed": failed}
-
-        # 收集所有要删除的 chunk_id
-        all_doc_chunk_ids = set()
-        for doc_id in valid_doc_ids:
-            doc_chunk_ids = [cid for cid, c in self.chunks.items() if c.doc_id == doc_id]
-            all_doc_chunk_ids.update(doc_chunk_ids)
-            total_removed_chunks += len(doc_chunk_ids)
-
-        with self._processing_lock:
-            # 删除 chunk 记录和文本文件
-            for cid in all_doc_chunk_ids:
-                self.chunks.pop(cid, None)
-                text_path = os.path.join(self.texts_dir, cid + ".txt")
-                if os.path.exists(text_path):
-                    try:
-                        os.remove(text_path)
-                    except OSError:
-                        pass
-
-            # 过滤 chunk_order
-            self.chunk_order = [cid for cid in self.chunk_order if cid not in all_doc_chunk_ids]
-
-            # Patch5 T03: 清理 sparse 索引
-            for cid in all_doc_chunk_ids:
-                self._sparse_index.pop(cid, None)
-
-            # 重建向量索引（移除对应行）
-            if self.vectors is not None and all_doc_chunk_ids:
-                keep_indices = [i for i, cid in enumerate(self.chunk_order) if cid in self.chunks]
-                if keep_indices:
-                    self.vectors = self.vectors[keep_indices]
-                else:
-                    self.vectors = None
-                self.chunk_order = [cid for cid in self.chunk_order if cid in self.chunks]
-                self._save_vectors()
-
-            # 删除文档记录
-            for doc_id in valid_doc_ids:
-                if doc_id in self.documents:
-                    doc = self.documents[doc_id]
-                    del self.documents[doc_id]
-                    deleted += 1
-
-            # 统一只保存一次 meta
-            self._save_meta()
-
-            # Patch5: BM25 已移除（bge-m3 sparse 替代），不再重建
-
-        log.info("[KB] 批量删除: %d 个文档, 移除 %d chunks", deleted, total_removed_chunks)
-        return {"ok": True, "deleted": deleted, "removed_chunks": total_removed_chunks, "failed": failed}
 
     # ===== 处理控制（D31/D32）=====
 
@@ -1347,10 +1265,6 @@ class _KBOpsMixin:
         except Exception:
             pass
 
-    def pause_all(self):
-        """全局暂停文库处理（D31：录音时让步）"""
-        self._global_paused = True
-        log.info("[KB] 全局暂停（录音让步）")
 
     def resume_all(self):
         """全局恢复文库处理（D31：录音结束后）"""

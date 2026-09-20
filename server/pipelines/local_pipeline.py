@@ -34,46 +34,6 @@ from typing import Generator
 log = logging.getLogger(__name__)
 
 
-def _trim_history_by_token_budget(history: list) -> list:
-    """按 token 预算自适应裁剪历史（从最旧消息开始）
-
-    Args:
-        history: 消息列表 [{"role": "...", "content": "..."}, ...]
-
-    Returns:
-        裁剪后的消息列表
-    """
-    try:
-        from config import get as _cfg
-        budget = _cfg("history_token_budget", 3000)
-    except Exception:
-        budget = 3000
-
-    if not history:
-        return history
-
-    # 从最旧消息开始累加 token 数
-    total_tokens = 0
-    cutoff_idx = 0
-    for i, msg in enumerate(history):
-        content = msg.get("content", "")
-        # Token 估算：优先用 token_stats，否则用 chars/1.5
-        ts = msg.get("token_stats", None)
-        if ts and isinstance(ts, dict):
-            msg_tokens = ts.get("input_tokens", 0) + ts.get("output_tokens", 0)
-        else:
-            msg_tokens = len(content) / 1.5 if content else 0
-
-        if total_tokens + msg_tokens > budget:
-            break
-        total_tokens += msg_tokens
-        cutoff_idx = i + 1
-
-    trimmed = history[cutoff_idx:]
-    if cutoff_idx > 0:
-        log.info("[LOCAL] 历史裁剪: %d条→%d条 (budget=%d tokens, used=%.0f)",
-                 len(history), len(trimmed), budget, total_tokens)
-    return trimmed
 
 
 def run_local_pipeline(ctx) -> Generator[str, None, None]:

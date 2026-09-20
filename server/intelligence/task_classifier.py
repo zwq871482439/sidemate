@@ -147,25 +147,16 @@ def classify_task(message: str, history: list = None, scene: str = None) -> tupl
     task_type = _MAP.get(strategy["type"], "text")
     return (task_type, 0.8)
 
-def get_think_instruction(task_type: str) -> str:
-    """向后兼容：返回空字符串（不再控制思考模式）"""
-    return ""
 
 def get_temperature_offset(task_type: str) -> float:
     """向后兼容：返回 0.0（由 strategy 替代）"""
     return 0.0
 
-def get_max_tokens(task_type: str) -> int:
-    """向后兼容：返回 0（不限制）"""
-    return 0
 
 def get_dynamic_max_tokens(task_type: str, message: str) -> int:
     """向后兼容：返回 0"""
     return 0
 
-def get_classify_signals(message: str, task_type: str = None) -> dict:
-    """向后兼容：返回空字典"""
-    return {}
 
 def check_mode_hint(current_scene: str, message: str) -> str:
     """向后兼容：返回空字符串"""
@@ -174,9 +165,5 @@ def check_mode_hint(current_scene: str, message: str) -> str:
 # P6: check_topic_drift 已移除（死代码，误报率高，全链路清理）
 # P6: extract_keywords 已移除（仅被 check_topic_drift 调用）
 
-def get_agent_hint(message: str) -> dict:
-    """向后兼容：返回默认 agent hint"""
-    return {"task_type": "agent", "suggested_tools": [], "hint": "",
-            "estimated_steps": 0, "sub_intent": "unknown"}
 
 # P6: extract_keywords 已移除（仅被 check_topic_drift 调用，已随该函数删除）

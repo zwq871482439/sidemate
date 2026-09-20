@@ -93,6 +93,3 @@ def resolve_action(message: str, current_action: str = "chat") -> dict:
     return result
 
 
-def get_slash_hints() -> dict:
-    """返回所有 /xx 提示文本（供前端使用）"""
-    return dict(_SLASH_HINTS)

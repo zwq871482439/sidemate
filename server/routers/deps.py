@@ -33,19 +33,11 @@ def get_kb():
 # P6 归档：get_recorder() 已移除（recorder_pkg 已归档）
 
 
-def get_ollama():
-    """获取全局 OllamaManager 实例"""
-    from server import ollama_manager
-    return ollama_manager
 
 
 # (get_skill_loader 已移除 — Skill 框架已归档)
 
 
-def get_notebook():
-    """获取全局 PetNotebook 实例（挂在 mgr.notebook）"""
-    from server import mgr
-    return mgr.notebook
 
 
 def get_current_chat_file():

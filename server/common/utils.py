@@ -42,9 +42,6 @@ class CancellationToken:
         """触发取消"""
         self._event.set()
 
-    @property
-    def is_cancelled(self) -> bool:
-        return self._event.is_set()
 
     def check(self) -> bool:
         """非阻塞检查是否被取消"""
@@ -63,17 +60,6 @@ class CancellationToken:
         if self._event.wait(timeout=timeout):
             raise TaskCancelledError(self.doc_id)
 
-    def sleep_check(self, seconds: float, interval: float = 1.0):
-        """睡眠指定秒数，每 interval 秒检查取消
-
-        用于替代 for _ in range(n): time.sleep(1) + if cancel 的组合。
-        """
-        elapsed = 0.0
-        while elapsed < seconds:
-            wait = min(interval, seconds - elapsed)
-            if self._event.wait(timeout=wait):
-                raise TaskCancelledError(self.doc_id)
-            elapsed += wait
 
 
 # =====================================================================

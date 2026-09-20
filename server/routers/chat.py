@@ -89,13 +89,7 @@ async def _lazy_load_engine(ollama_manager, timeout_s: float = 150.0) -> bool:
                 r = ollama_manager.start()
                 log.info("[LAZY-LOAD] 懒加载引擎: %s" % r.get("status", r.get("error", "?")))
                 if r.get("status") in ("started", "already_running"):
-                    _mp = r.get("model", "")
-                    if _mp:
-                        from server import mgr as _mgr
-                        for _m in ollama_manager.registry.scan():
-                            if str(_m.gguf_path) == _mp:
-                                _mgr._loaded[_m.model_id] = True
-                                break
+                    ollama_manager.mark_model_loaded(gguf_path=r.get("model", ""))
             except Exception as e:
                 log.warning("[LAZY-LOAD] 启动异常: %s" % str(e)[:100])
             finally:

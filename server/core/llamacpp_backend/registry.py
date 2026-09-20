@@ -322,17 +322,6 @@ class ModelRegistry:
         candidates.sort(key=lambda m: m.size_b, reverse=True)
         return candidates[0]
 
-    def add_meta(self, model_dir: Path, meta: dict) -> ModelInfo:
-        """写入 meta.json 并注册（安装新模型时用）"""
-        model_dir = Path(model_dir)
-        model_dir.mkdir(parents=True, exist_ok=True)
-        meta_path = model_dir / "meta.json"
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=2)
-        info = ModelInfo(meta, model_dir)
-        self._models[info.model_id] = info
-        log.info("[REGISTRY] 注册新模型: %s" % info.model_id)
-        return info
 
     def remove(self, model_id: str) -> bool:
         """删除模型 GGUF 文件（释放磁盘），保留 meta.json（用户可重新下载）"""

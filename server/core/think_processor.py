@@ -60,26 +60,3 @@ class ThinkProcessor:
             "len": len(content),
         }
 
-    def clean_response(self, text: str) -> str:
-        """V2 回复后处理：strip think 标签 + 首字修正。
-
-        防幻觉兜底：
-          1. 移除残留的 think 标签（/no_think 失效时）
-          2. 首字修正：如果以逗号、顿号开头，截掉（幻觉续写的典型特征）
-
-        Args:
-            text: 模型输出的文本
-
-        Returns:
-            str: 清理后的文本
-        """
-        if not text:
-            return text
-
-        # 1. 移除 think 标签
-        text = self._strip_think(text)
-
-        # 2. 首字修正：截掉开头的标点（逗号/顿号/分号/冒号）
-        text = re.sub(r'^[，、；：]\s*', '', text)
-
-        return text.strip()

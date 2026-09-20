@@ -29,29 +29,6 @@ _installed_actions: dict = {}
 _actions_lock = threading.Lock()
 
 
-def register_action(meta: dict):
-    """安装 .sidemate action 扩展时调用
-    
-    Args:
-        meta: 包含 action_id, action_label, action_title, action_placeholder, steps 等字段
-    
-    Raises:
-        ValueError: 如果 action_id 与内置 Action 冲突
-    """
-    action_id = meta.get("action_id", "")
-    if not action_id:
-        raise ValueError("action_id 不能为空")
-    if action_id in BUILTIN_ACTIONS:
-        raise ValueError("内置 Action '%s' 不允许被覆盖" % action_id)
-    
-    with _actions_lock:
-        _installed_actions[action_id] = {
-            "label": meta.get("action_label", ""),
-            "title": meta.get("action_title", action_id),
-            "placeholder": meta.get("action_placeholder", "输入指令…"),
-            "action_config": meta.get("steps", []),
-        }
-    log.info("[ACTION] 注册扩展 Action: %s (%s)" % (action_id, meta.get("action_title", "")))
 
 
 def unregister_action(action_id: str):
@@ -78,10 +55,3 @@ def get_available_actions() -> list:
     return actions
 
 
-def get_action_config(action_id: str) -> dict:
-    """获取指定 Action 的配置（扩展用）"""
-    if action_id in BUILTIN_ACTIONS:
-        return {"id": action_id, "builtin": True, **BUILTIN_ACTIONS[action_id]}
-    if action_id in _installed_actions:
-        return {"id": action_id, "builtin": False, **_installed_actions[action_id]}
-    return None

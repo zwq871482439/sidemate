@@ -199,35 +199,3 @@ class SidemateValidator:
             return True
         return ext in ALLOWED_EXTENSIONS
 
-    def infer_type(self, zf: zipfile.ZipFile, names: list) -> str:
-        """自动推断包类型（基于 manifest.type 优先，回退到结构推断）"""
-        name_set = set(n.lower() for n in names)
-
-        # 优先级 1：manifest.json 中显式声明了 type
-        manifest = None
-        for info in zf.infolist():
-            if info.filename == 'manifest.json':
-                try:
-                    raw = zf.read(info)
-                    candidate = json.loads(raw)
-                    if 'type' in candidate:
-                        manifest = candidate
-                        break
-                    elif manifest is None:
-                        manifest = candidate
-                except Exception:
-                    pass  # inferrer 只做最佳推测，失败不影响主流程
-
-        if manifest and manifest.get("type") in ("extension-knowledge", "knowledge"):
-            return "knowledge"
-        if manifest and manifest.get("type") == "llm":
-            return "llm"
-
-        # 优先级 2：结构推断（旧格式兼容）
-        # 有 models/ + wheels/ -> "knowledge"
-        has_models = any(n.lower().startswith('models/') for n in names)
-        has_wheels = any(n.lower().startswith('wheels/') for n in names)
-        if has_models and has_wheels:
-            return "knowledge"
-
-        return "unknown"

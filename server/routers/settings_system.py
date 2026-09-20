@@ -87,7 +87,8 @@ def api_warmup():
             )
             elapsed = time.time() - t0
             if resp.status_code == 200:
-                mgr._loaded[model_name] = True
+                from server import ollama_manager as _om
+                _om.mark_model_loaded(model_id=model_name)
                 mgr._load_times[model_name] = elapsed
                 mgr._last_loaded_model = model_name
                 log.info("[WARMUP] %s 预热完成 (%.1fs)", model_name, elapsed)

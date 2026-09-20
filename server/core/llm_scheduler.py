@@ -122,18 +122,6 @@ class LLMScheduler:
                     return True
             return False
 
-    def get_queue_status(self) -> dict:
-        """队列状态快照"""
-        with self._lock:
-            p0_count = sum(1 for p, _, _, _ in self._queue if p == self.P0)
-            p2_count = sum(1 for p, _, _, _ in self._queue if p == self.P2)
-            return {
-                "active_priority": self._active_priority,
-                "active_since": self._active_since,
-                "queue_length": len(self._queue),
-                "p0_waiting": p0_count,
-                "p2_waiting": p2_count,
-            }
 
     def _cancel_p2_locked(self):
         """内部：取消排队中的 P2 请求（已持有锁）"""

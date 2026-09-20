@@ -107,6 +107,25 @@ class OllamaManager:
     def get_status(self) -> dict:
         return self._impl.get_status()
 
+    def mark_model_loaded(self, model_id: str = "", gguf_path: str = "") -> None:
+        """引擎加载成功后的唯一 _loaded 标记点（B1 去重：此前 4 处复制此逻辑）。
+
+        传 model_id 直接标记；传 gguf_path 时反查 model_id。
+        对话接口的 get_loaded_llms() 门禁读 model_manager._loaded，
+        不标记会误报"请先在设置页加载模型"（P0 修复语义收口于此）。
+        """
+        try:
+            if not model_id and gguf_path:
+                for _m in self._registry.scan():
+                    if str(_m.gguf_path) == str(gguf_path):
+                        model_id = _m.model_id
+                        break
+            if model_id:
+                from server import mgr as _mgr
+                _mgr._loaded[model_id] = True
+        except Exception as e:
+            log.warning("[OLLAMA-MGR] mark_model_loaded 失败: %s" % str(e)[:80])
+
     def switch_model(self, model_path: str) -> dict:
         """切换模型（stop + start），成功后写 last_loaded_model 配置"""
         # P7 动态 ctx：切换前按目标模型的 default_num_ctx 更新 --ctx-size
@@ -140,15 +159,14 @@ class OllamaManager:
                 from config import set_value as _cfg_set
                 _cfg_set("last_loaded_model", _model_id)
                 log.info("[OLLAMA-MGR] 记忆 last_loaded_model: %s" % _model_id)
-                # P0 修复：同步 model_manager._loaded——对话接口的
-                # get_loaded_llms() 门禁读这里，不标记会误报"请先在设置页加载模型"。
-                # llama-server 是单模型常驻，先清空再标记当前模型。
+                # P0 修复：llama-server 单模型常驻，切换即先清空再标记
+                # （标记收口：ollama_manager.mark_model_loaded，B1 去重）
                 try:
                     from server import mgr as _mm
                     _mm._loaded.clear()
-                    _mm._loaded[_model_id] = True
                 except Exception:
                     pass
+                self.mark_model_loaded(model_id=_model_id)
                 # 切换后预热：后台线程发一次 tiny 请求，提前支付首次推理成本
                 # （系统提示词 prefill + GPU kernel 编译 + KV cache 初始化），
                 # 否则用户首条消息要多等数秒。直接 httpx 绕过生成队列，不占用 is_busy。

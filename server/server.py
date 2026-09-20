@@ -5,7 +5,7 @@ Sidemate — FastAPI + llama.cpp + Qwen3.5
 启动: python server.py
 
 本文件(server.py)是主服务进程，负责：
-  1. 全局服务实例化（mgr, kb, recorder, ollama_manager, ...）
+  1. 全局服务实例化（mgr, kb, ollama_manager, ...；recorder 已归档）
   2. 注册所有 Router 模块
   3. 静态页面路由
   4. main() 启动逻辑（uvicorn）
@@ -248,15 +248,10 @@ def _bg_init_worker():
                 if result.get("status") in ("started", "already_running"):
                     log.info("[BG-INIT] 模型引擎就绪: %s" % result.get("status"))
                     _llm_started_ok = True
-                    # S3: 标记实际加载的模型为 loaded（从启动结果取 model_id）
+                    # S3: 标记实际加载的模型为 loaded（唯一标记点见 ollama_manager.mark_model_loaded）
                     _loaded_model_path = result.get("model", "")
                     if _loaded_model_path:
-                        # 从路径反查 model_id
-                        _registry = ollama_manager.registry
-                        for _m in _registry.scan():
-                            if str(_m.gguf_path) == _loaded_model_path:
-                                mgr._loaded[_m.model_id] = True
-                                break
+                        ollama_manager.mark_model_loaded(gguf_path=_loaded_model_path)
                 else:
                     _add_bg_error("模型引擎启动失败: %s" % result.get("error", "unknown"))
             except Exception as e:
@@ -295,8 +290,8 @@ def _bg_init_worker():
                         log.info("[BG-INIT] 模型预热完成 (%.1fs)，模型已常驻显存" % _elapsed)
                         # 标记为已加载，后续首次提问无需再检查
                         _matched = mgr._find_model_name(_warmup_model)
-                        if _matched and _matched not in mgr._loaded:
-                            mgr._loaded[_matched] = True
+                        if _matched:
+                            ollama_manager.mark_model_loaded(model_id=_matched)
                     else:
                         _add_bg_error("模型预热请求失败: HTTP %d" % _resp.status_code)
                 except Exception as e:

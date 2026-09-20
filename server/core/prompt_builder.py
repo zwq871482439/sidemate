@@ -93,54 +93,6 @@ class PromptBuilder:
 
         return "\n".join(parts)
 
-    def get_sampler_overrides(self, strategy_name: str, user_message: str = "") -> dict:
-        """返回策略对应的采样参数覆盖 + 短输入保护。
-
-        Args:
-            strategy_name: 策略名称
-            user_message: 用户消息（用于短输入检测）
-
-        Returns:
-            dict: {temperature, top_p, repeat_penalty, ...} 或空 dict
-        """
-        try:
-            from prompts import STRATEGY_CONFIG_V2, SHORT_INPUT_PROTECTION, SHORT_INPUT_THRESHOLD
-        except ImportError:
-            return {}
-
-        config = STRATEGY_CONFIG_V2.get(strategy_name, STRATEGY_CONFIG_V2.get("default", {}))
-        mm = self._mm
-        profile = mm._get_profile(mm._get_default_llm())
-        overrides = {}
-
-        # 温度偏移
-        temp_offset = config.get("temperature_offset", 0.0)
-        if temp_offset:
-            base_temp = profile.get("temperature", 0.7)
-            overrides["temperature"] = max(0.1, min(1.5, base_temp + temp_offset))
-
-        # top_p 偏移
-        top_p_offset = config.get("top_p_offset", 0.0)
-        if top_p_offset:
-            base_top_p = profile.get("top_p", 0.9)
-            overrides["top_p"] = max(0.1, min(1.0, base_top_p + top_p_offset))
-
-        # repeat_penalty 偏移
-        rp_offset = config.get("repeat_penalty_offset", 0.0)
-        if rp_offset:
-            base_rp = profile.get("repeat_penalty", 1.1)
-            overrides["repeat_penalty"] = base_rp + rp_offset
-
-        # 短输入保护
-        msg_len = len(user_message.strip())
-        if msg_len <= SHORT_INPUT_THRESHOLD:
-            for k, v in SHORT_INPUT_PROTECTION.items():
-                if k == "repeat_penalty":
-                    overrides[k] = max(overrides.get(k, 1.1), v)
-                elif k == "temperature":
-                    overrides[k] = min(overrides.get(k, 0.7), v)
-
-        return overrides
 
     def build(self, pipe, message: str, history: Optional[List] = None,
               model_name: str = None, context_cache: str = None,

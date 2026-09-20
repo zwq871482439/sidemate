@@ -228,25 +228,6 @@ class _KBSearchMixin:
 
     # Patch5：_rrf_merge 已删除（bge-m3 dense+sparse 是唯一路径，不再需要 RRF 融合 BM25）
 
-    @staticmethod
-    def _diversify_results(results: List[Dict], max_per_doc: int = 3) -> List[Dict]:
-        """源多样性采样：限制每个文档最多返回 max_per_doc 条结果
-
-        按 score 降序遍历，保证高分结果优先保留。
-        如果某文档的 chunk 很多（覆盖率偏差），也不会霸占全部 Top-K。
-        """
-        from collections import Counter
-        seen = Counter()
-        filtered = []
-        for r in results:
-            doc_id = r.get("doc_id", "")
-            if seen[doc_id] < max_per_doc:
-                filtered.append(r)
-                seen[doc_id] += 1
-        if len(filtered) < len(results):
-            log.info("[KB] 源多样性采样: %d条→%d条 (每文档限%d条)",
-                     len(results), len(filtered), max_per_doc)
-        return filtered
 
     def _blend_with_reranker(self, candidates: List[Dict], top_k: int = None) -> List[Dict]:
         """自适应加权融合：RRF 分数 + Reranker 分数

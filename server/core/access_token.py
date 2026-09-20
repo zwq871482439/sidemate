@@ -206,17 +206,6 @@ class AccessTokenManager:
 
             return True, access_token.level
 
-    def revoke_token(self, token: str) -> bool:
-        """撤销指定令牌（线程安全）
-
-        Args:
-            token: 令牌字符串
-
-        Returns:
-            是否撤销成功
-        """
-        with self._lock:
-            return self._remove_token_unlocked(token)
 
     def revoke_doc_tokens(self, doc_id: str) -> int:
         """撤销某文档的所有令牌（线程安全）

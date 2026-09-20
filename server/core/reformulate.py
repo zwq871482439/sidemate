@@ -107,88 +107,8 @@ _STOP_WORDS = {
 }
 
 
-def _has_anaphora(query: str) -> bool:
-    """检测查询是否包含追问/指代词（需要 LLM 补全上下文的信号）"""
-    return bool(_ANAPHORA_PATTERNS.search(query))
 
 
-def _rule_extract_keywords(query: str) -> str:
-    """规则提取搜索关键词（不调 LLM）
-
-    策略：
-    1. 去掉常见问句前缀（"请问"、"帮我"、"我想了解"等）
-    2. 提取中文 2+ 字词和英文 2+ 字母词
-    3. 过滤停用词
-    4. 如果剩余词 >= 2 个，用空格拼接返回；否则返回 None（规则无信心）
-
-    Returns:
-        关键词字符串（如 "中医 流派"），或 None（规则无信心，需 fallback 到 LLM）
-    """
-    text = query.strip()
-
-    # 去掉常见问句前缀/后缀
-    _PREFIXES = [
-        '请问', '请帮我', '帮我', '请告诉我', '告诉我', '我想了解', '我想知道',
-        '想知道', '了解一下', '请教', '问一下', '请问一下',
-        'can you', 'could you', 'please', 'help me', 'i want to', 'tell me',
-    ]
-    # 疑问词前缀（这些词后面跟的才是真正要搜的内容）
-    _QUESTION_PREFIXES = [
-        '什么是', '什么叫', '怎么', '如何', '为什么',
-        '有哪些', '哪种', '哪个', '哪些', '谁', '哪里', '何时',
-        '请问说', '请说', '说下', '说说', '介绍一下', '介绍下',
-        '请帮我', '帮我', '请给我', '给我',
-        'what is', 'what are', 'how to', 'how do', 'how does', 'why',
-        'who is', 'who are', 'where is', 'where are', 'when is',
-    ]
-    # 疑问词后缀（在句尾的）
-    _QUESTION_SUFFIXES = ['是什么', '是什么意思', '是什么意思？', '是什么？',
-                          '有哪些', '有哪些？', '是什么的呢',
-                          '吗？', '呢？', '吧？', '啊？',
-                          '吗', '呢', '吧', '啊', '？', '?', '。', '.', '的呢', '的说']
-    _SUFFIXES = _QUESTION_SUFFIXES
-    for p in _PREFIXES:
-        if text.lower().startswith(p.lower()):
-            text = text[len(p):].strip()
-    for p in _QUESTION_PREFIXES:
-        if text.lower().startswith(p.lower()):
-            text = text[len(p):].strip()
-            break
-    for s in _SUFFIXES:
-        if text.endswith(s):
-            text = text[:-len(s)].strip()
-
-    # 内部疑问词断句（去掉句子中间的 "有哪些"、"是什么" 等，保留两侧实词）
-    _INTERNAL_Q = ['有哪些', '是什么', '有几种', '有几种类型', '包括哪些', '包含哪些']
-    for q in _INTERNAL_Q:
-        if q in text:
-            text = text.replace(q, ' ')
-
-    # 提取中文 2+ 字连续词
-    cn_words = re.findall(r'[\u4e00-\u9fff]{2,}', text)
-    # 提取英文 2+ 字母词
-    en_words = re.findall(r'[a-zA-Z]{2,}', text)
-
-    # 合并 + 过滤停用词
-    keywords = []
-    for w in cn_words + en_words:
-        if w.lower() not in _STOP_WORDS and len(w) >= 2:
-            keywords.append(w)
-
-    # 去重（保持顺序）
-    seen = set()
-    unique = []
-    for w in keywords:
-        if w not in seen:
-            seen.add(w)
-            unique.append(w)
-
-    # 规则有信心的条件：至少 1 个关键词（单个核心词也值得搜）
-    if len(unique) >= 1:
-        return ' '.join(unique[:8])  # 最多 8 个
-
-    # 没提取到任何词 — 规则无信心
-    return None
 
 
 def _strip_prompt_echo(text: str, original: str) -> str:
