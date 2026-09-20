@@ -810,7 +810,7 @@ function maybeShowWorkdirTip() {
       <p>· 项目 = 一个文件夹：材料放项目根目录，AI 产出的东西在 <strong>.sidemate</strong> 子目录。</p>
       <p>· 对话记录保存在软件内部（data/），不往项目文件夹里写。</p>
       <p>· 与知识库<strong>完全独立</strong>：项目里的文件不会进知识库、不会被向量化。</p>
-      <p>· 当前为<strong>只读</strong>版本：AI 不会写入、修改或删除项目里的任何文件；点「引用」把文件交给 AI 读。</p>
+      <p>· AI 写项目文件走<strong>计划模式</strong>（默认）：先给确认清单，点同意才落盘；输入框左下可切执行模式。误写可在视窗撤销。</p>
     </div>
     <div class="kb-pk-acts"><button class="kb-pk-ok">知道了</button></div>
   </div>`;
@@ -1022,7 +1022,19 @@ function showProjectPicker(anchorEl) {
     menuEl.remove(); if (_pkMenuEl === menuEl) _pkMenuEl = null;
     showDirPicker(async (path) => {
       try {
-        const r = await api.createProjectExternal(path);
+        let r;
+        try {
+          r = await api.createProjectExternal(path);
+        } catch (e) {
+          // 已注册的文件夹：直接切换过去（而不是报错——sprint 测试 T5c 实测缺口）
+          if (((e && e.message) || '').includes('已经是项目')) {
+            await loadProjects();
+            await assign(path);
+            maybeShowWorkdirTip();
+            return;
+          }
+          throw e;
+        }
         await loadProjects();
         await assign(r.project.dir);
         maybeShowWorkdirTip();

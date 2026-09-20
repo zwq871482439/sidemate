@@ -347,15 +347,15 @@ export function createSettingsView(events) {
     });
 
     // 用量统计（0.10.1 收尾：经典版迁入；今日=按小时 / 本周=按天联动，不交叉）
-    loadCloudUsage(body);
+    loadCloudUsage();
   }
 
   // ============ 云端用量统计 ============
   let _usageRange = 7;  // 1=今日(小时粒度) 7=本周(天粒度)
   const _usageGran = () => (_usageRange === 1 ? 'hour' : 'day');
 
-  async function loadCloudUsage(body) {
-    const panel = body.querySelector('#cfUsage');
+  async function loadCloudUsage() {
+    const panel = document.querySelector('#cfUsage');  // 自查面板（renderCloudUsage 是模块级，闭包里没有 body）
     if (!panel) return;
     try {
       const r = await fetch('/api/cloud/usage?range_days=' + _usageRange + '&granularity=' + _usageGran());
@@ -453,7 +453,7 @@ export function createSettingsView(events) {
     }
     panel.innerHTML = h;
     panel.querySelectorAll('.usage-rbtn').forEach(b =>
-      b.addEventListener('click', () => { _usageRange = parseInt(b.dataset.r, 10); loadCloudUsage(body); }));
+      b.addEventListener('click', () => { _usageRange = parseInt(b.dataset.r, 10); loadCloudUsage(); }));
   }
 
   // ============ 知识库子页 ============

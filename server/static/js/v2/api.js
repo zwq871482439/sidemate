@@ -2,7 +2,16 @@
 // 只读/显式动作的薄封装，全部走既有 REST 端点（与经典版同一后端）。
 
 async function _json(resp) {
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  if (!resp.ok) {
+    // 透传服务端 error 字段（此前只抛 HTTP 400——错误细节全丢，
+    // "已是项目可直接切换"这类按 message 分流的处理永远不中）
+    let msg = 'HTTP ' + resp.status;
+    try {
+      const d = await resp.json();
+      if (d && d.error) msg = d.error;
+    } catch (e) { /* 非 JSON 响应保持 HTTP 码 */ }
+    throw new Error(msg);
+  }
   return resp.json();
 }
 
