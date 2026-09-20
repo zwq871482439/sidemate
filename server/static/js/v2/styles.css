@@ -828,6 +828,21 @@ sup.ref-n:hover { text-decoration: underline; }
   border-radius: var(--d1-r-sm); cursor: pointer; font-size: var(--d1-fs-body);
 }
 .kb-pk-item:hover { background: var(--d1-paper); }
+/* 引用项目文件选择器（kb-pk-file）：浏览器默认按钮样式必须重置，
+   与 .cb-add-menu button 同一族（此前原生灰底边框按钮裸奔——设计一致性审计） */
+.kb-pk-file {
+  border: none; background: none; text-align: left; font-family: inherit;
+  width: 100%; color: var(--d1-ink); font-size: var(--d1-fs-small);
+  padding: 8px 12px; border-radius: var(--d1-r-sm);
+}
+.kb-pk-file:hover { background: var(--d1-paper-2); }
+.kb-pk-file:disabled { opacity: .5; cursor: default; }
+.kb-pk-file .fn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-pk-proj {
+  font-family: inherit; font-size: var(--d1-fs-small); color: var(--d1-ink);
+  border: 1px solid var(--d1-n-line); border-radius: 7px; background: var(--d1-paper);
+  padding: 6px 10px; margin-bottom: 8px; cursor: pointer;
+}
 .kb-pk-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .kb-pk-acts button {
   font-family: inherit; font-size: var(--d1-fs-small); border-radius: 7px;

@@ -394,8 +394,9 @@ export function renderComposer(state, events) {
       try {
         const d = await api.listProjectFiles(sel.value);
         const files = (d.files || []).filter(f => !f.is_dir);
+        const _sz = n => !n ? '' : n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
         box.innerHTML = files.length
-          ? files.map(f => `<button class="kb-pk-item kb-pk-file" data-name="${esc(f.name)}">${icon('fileText')} ${esc(f.name)} <span class="vw-pkb-sz">${f.size || ''}</span></button>`).join('')
+          ? files.map(f => `<button class="kb-pk-item kb-pk-file" data-name="${esc(f.name)}" title="${esc(f.name)}">${icon('fileText')}<span class="fn">${esc(f.name)}</span><span class="vw-pkb-sz">${_sz(f.size)}</span></button>`).join('')
           : '<div class="vw-empty"><small>这个项目根目录还没有文件</small></div>';
         box.querySelectorAll('.kb-pk-file').forEach(b => b.addEventListener('click', async () => {
           b.disabled = true;
