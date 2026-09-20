@@ -902,6 +902,11 @@ function showDirPicker(onPick) {
     }
     return true;
   }
+  pathIn.addEventListener('input', () => {
+    // 粘贴路径未回车也放开 OK（R2-1 实测缺口：从未导航过时 cur=null，
+    // 按钮死锁只能靠回车——点 OK 时会先按输入框值导航，见下方 handler）
+    okBtn.disabled = !cur && !pathIn.value.trim();
+  });
   pathIn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { const v = pathIn.value.trim(); if (v) nav(v); }
   });

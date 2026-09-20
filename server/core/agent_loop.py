@@ -701,8 +701,8 @@ class AgentLoop:
         # P7 修复上下文爆炸：从最新往回加，超 token 预算就停（不再无脑取 20 条）
         # 用户场景：第一轮写了超长 HTML 报告，第二轮对话时整篇报告进 messages → 400
         HISTORY_TOKEN_BUDGET = 120000  # 历史最多 ~12 万 token（约 18 万字符）
+        recent = []  # 必须在 if history 外初始化：新会话空历史也要走到下方守卫
         if history:
-            recent = []
             used_chars = 0
             # 从最新往回取，超预算就停
             for item in reversed(history):

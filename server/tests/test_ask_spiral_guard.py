@@ -71,3 +71,13 @@ def test_guard_only_counts_recent_window():
     ]
     msgs = _build(history, "再来")
     assert not any(m["role"] == "system" for m in msgs[1:-1])
+
+
+def test_empty_history_does_not_crash():
+    # R2 实测回归钉：新会话空历史曾触发 UnboundLocalError（recent 未绑定），
+    # 云端 agent 全部秒崩 → 前端表现为"生成中"卡死（R2-3/R2-9）
+    for hist in ([], None):
+        msgs = _build(hist, "你好")
+        assert msgs[0]["role"] == "system"
+        assert msgs[-1]["role"] == "user"
+        assert msgs[-1]["content"] == "你好"

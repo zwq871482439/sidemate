@@ -64,6 +64,9 @@ export function createViewer(opts) {
     }
     const cur = opts.getCurrentChat();
     if (!cur) { wd = false; return; }
+    // 各段独立 8s 超时（R2-4 教训：串行 await 里一个请求被慢生成拖住，
+    // 后面的段全饿死——项目知识库区块因此整段消失）
+    const T = () => AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {};
     try {
       wd = await api.listWorkdirFiles(cur.name);
     } catch (e) { wd = false; }
@@ -75,19 +78,19 @@ export function createViewer(opts) {
     } catch (e) { handoff = null; }
     // M2 选带层：本会话携带的前情会话清单
     try {
-      const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/carry');
+      const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/carry', T());
       const d = await r.json();
       carrySids = d.sids || [];
     } catch (e) { carrySids = []; }
     // M2-3：harness 状态（计划/执行模式、任务目标、待执行计划、外部变更）
     try {
-      const r2 = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/harness-state');
+      const r2 = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/harness-state', T());
       hs = await r2.json();
     } catch (e) { hs = null; }
     // M2-5：项目知识库状态（仅当前项目、非跨项目查看时）
     try {
       if (wd && wd.dir && !wd.legacy) {
-        const r3 = await fetch('/api/projects/kb/status?dir=' + encodeURIComponent(wd.dir));
+        const r3 = await fetch('/api/projects/kb/status?dir=' + encodeURIComponent(wd.dir), T());
         pkb = await r3.json();
       } else { pkb = null; }
     } catch (e) { pkb = null; }
