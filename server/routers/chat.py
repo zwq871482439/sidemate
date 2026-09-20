@@ -659,6 +659,51 @@ async def api_chats_rename(chat_name: str, request: Request):
     return result
 
 
+@router.post("/api/chats/{chat_name}/private")
+async def api_chats_set_private(chat_name: str, request: Request):
+    """会话私密标记开关（0.10.1 D-1 真修：补写入端）。
+
+    语义：离线引擎会话可标私密——此后不进在线会话索引/携候选/read_session
+    （注入层过滤早已就位，本端点补的是 UI 入口）。engine_origin 取当前
+    ai_mode（local 才允许标私密；在线会话本来就在云端，标了无意义）。
+    """
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    safe_name = _safe_chat_name(chat_name)
+    if not safe_name:
+        return JSONResponse({"error": "非法对话名称"}, status_code=400)
+    body = await request.json()
+    on = bool(body.get("private"))
+    from config import get as _cfg_get
+    from session import chat_store as _cs
+    import os as _os
+    from config import CHAT_DIR as _CD
+    meta_path = _os.path.join(_CD, safe_name, "meta.json")
+    if not _os.path.isfile(meta_path):
+        return JSONResponse({"error": "会话不存在"}, status_code=404)
+    from common.utils import atomic_write_json
+    import json as _json
+    import time as _t
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = _json.load(f)
+    except Exception:
+        return JSONResponse({"error": "meta 不可读"}, status_code=500)
+    if on:
+        _mode = _cfg_get("ai_mode", "cloud")
+        if _mode != "local":
+            return JSONResponse({"error": "仅离线模式的会话可标为私密（在线会话内容本就在云端服务方）"},
+                                status_code=400)
+        meta["engine_origin"] = "local"
+        meta["private"] = True
+    else:
+        meta["private"] = False
+    meta["updated_at"] = _t.strftime("%Y-%m-%d %H:%M:%S")
+    atomic_write_json(meta_path, meta)
+    log.info("[CHAT] 会话 %s 私密标记: %s", safe_name, on)
+    return {"ok": True, "private": on}
+
+
 @router.post("/api/chats/{chat_name}/group")
 async def api_chats_set_group(chat_name: str, request: Request):
     """设置会话的项目分组（0.10.1 M1-D 项目分组）"""
@@ -706,6 +751,8 @@ async def api_chats_set_carry(chat_name: str, request: Request):
             continue
         if not _os.path.isdir(_os.path.join(_CD, sid)):
             continue
+        if chat_store.is_private_session(sid):
+            continue  # 隐私铁律：私密会话不可携带（D-1 真修）
         if cur_proj.get("dir") and projects.resolve_chat_project(sid).get("dir") != cur_proj.get("dir"):
             continue  # 只允许携带同项目会话
         if sid not in valid:

@@ -320,7 +320,8 @@ export function createViewer(opts) {
 
   function _sessionList() {    if (!wd || wd.legacy || !wd.dir) return '';
     const sessions = (opts.getSessions ? opts.getSessions() : []);
-    const peers = sessions.filter(s => s.project_dir === wd.dir);
+    // 隐私铁律（D-1 真修）：私密会话不进同项目清单/携候选（当前会话自身除外）
+    const peers = sessions.filter(s => s.project_dir === wd.dir && (!s.private || s.current));
     if (!peers.length) return '';
     return `<div class="vw-sec">同项目会话 · ${peers.length}${carrySids.length ? `<span class="vw-carry-hint">（携带 ${carrySids.length} 条前情）</span>` : ''}</div>
       <div class="vw-peers">
@@ -536,6 +537,14 @@ export function createViewer(opts) {
   function _traceLabel(it) {
     const s = it.status || '';
     const det = it.query || it.name || it.url || '';
+    // create_ppt 三动作区分（GUI 探索瑕疵①：此前五次调用全显「PPT 操作」）
+    if (s === 'ppt_done') {
+      const a = it.action || '';
+      if (a === 'begin') return 'PPT 开题：' + (it.title || it.deck || '').slice(0, 24);
+      if (a === 'page') return 'PPT 设计：第 ' + (it.page || '?') + ' 页';
+      if (a === 'build') return 'PPT 编译导出：' + (it.pptx_name || 'pptx');
+      return 'PPT 操作';
+    }
     const map = {
       kb_done: '检索知识库', search_done: '联网搜索', fetch_done: '阅读网页',
       workspace_write_done: '写入文档', workspace_read_done: '读取文档',

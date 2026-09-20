@@ -525,6 +525,7 @@ def list_chats():
             chat_group = "日常"  # 旧会话 meta 无 group → 默认「日常」（免迁移）
             chat_project_dir = None  # 0.10.1 项目即文件夹：无 project_dir = 旧版只读会话
             chat_title = name
+            _private = False  # meta 缺失时无私密标记
             try:
                 meta_path = os.path.join(entry_path, "meta.json")
                 if os.path.exists(meta_path):
@@ -534,6 +535,8 @@ def list_chats():
                     chat_group = meta.get("group") or "日常"
                     chat_project_dir = meta.get("project_dir") or None
                     chat_title = meta.get("title") or name  # M1-E：自动命名显示名（默认=文件夹名）
+                    # 0.10.1 D-1 真修：私密标记随列表下发（viewer 过滤携候选；侧栏仍显示——用户自己的会话自己可见）
+                    _private = bool(meta.get("private")) and meta.get("engine_origin") == "local"
                 else:
                     # fallback: 读 messages.json 计数
                     msgs_path = os.path.join(entry_path, "messages.json")
@@ -557,6 +560,7 @@ def list_chats():
                 "group": chat_group,
                 "project_dir": chat_project_dir,
                 "legacy": not chat_project_dir,
+                "private": _private,
             })
 
     # 第二遍：扫描旧 .json 格式，跳过已被同名文件夹占用的

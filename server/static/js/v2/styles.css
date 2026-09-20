@@ -1319,3 +1319,7 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .usage-rec-head { color: var(--d1-ink-3); border-bottom: 1px solid var(--d1-n-line); font-weight: 500; }
 .usage-rec { color: var(--d1-ink-2); border-bottom: 1px solid var(--d1-paper-2); }
 .usage-rec span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 侧栏私密会话锁标（0.10.1 D-1 真修配套） */
+.si-priv { display: inline-flex; vertical-align: -2px; margin-right: 2px; color: var(--d1-gold-2); }
+.si-priv svg { width: 12px; height: 12px; }

@@ -667,7 +667,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                         enriched.setdefault("elapsed_ms", elapsed_ms)
                     # Patch4 v3.1 BUG#7：收集 done 状态到 timeline 缓冲（用于持久化到 messages.json）
                     if enriched.get("phase") == "done" and status_val not in ("thinking",):
-                        _agent_timeline_buf.append({
+                        _tl_entry = {
                             "status": status_val,
                             "name": enriched.get("name") or enriched.get("filename") or "",
                             "query": enriched.get("query") or "",
@@ -676,7 +676,13 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             "length": enriched.get("length") or 0,
                             "elapsed_ms": enriched.get("elapsed_ms") or 0,
                             "ts": now_ts,
-                        })
+                        }
+                        # create_ppt 三动作区分（轨迹 tab 此前五次调用全显「PPT 操作」）
+                        if status_val == "ppt_done":
+                            for _k in ("action", "page", "title", "pptx_name"):
+                                if enriched.get(_k):
+                                    _tl_entry[_k] = enriched[_k]
+                        _agent_timeline_buf.append(_tl_entry)
                     yield sse_event("agent_status", enriched)
                 else:
                     yield sse_event("agent_status", content)

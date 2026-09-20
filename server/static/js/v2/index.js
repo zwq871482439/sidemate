@@ -1103,6 +1103,7 @@ function showSessionMenu(chat, anchorEl) {
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
     <button data-a="handoff">生成交接（写进项目 handoff.md）</button>
+    ${state.mode === 'local' ? `<button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>` : ''}
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
@@ -1149,7 +1150,24 @@ function showSessionMenu(chat, anchorEl) {
   menuEl.querySelector('[data-a="handoff"]').addEventListener('click', async () => {
     menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
     await generateHandoffFlow(null, false);
+  });  const _privBtn = menuEl.querySelector('[data-a="private"]');
+  if (_privBtn) _privBtn.addEventListener('click', async () => {
+    menuEl.remove(); _menuEl = null;
+    const on = !chat.private;
+    if (on && !confirm('把这条会话标为私密？\n\n私密会话的内容不会出现在：其他会话的「同项目会话」清单、「携」前情注入、AI 的 read_session 读取。适合放敏感内容。')) return;
+    try {
+      const r = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/private', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ private: on }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || '设置失败'); return; }
+      state.sessions = await loadSessions();
+      if (_viewer) _viewer.onSessionChange();
+      render();
+    } catch (e) { alert('设置失败：' + (e && e.message ? e.message : '')); }
   });
+
   menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
     const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
     if (!confirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`)) return;

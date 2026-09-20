@@ -123,7 +123,7 @@ export function renderComposer(state, events) {
     } else {
       trayEl.innerHTML = `<span class="attach-chip">${icon('book')} KB：${esc(attach.names.join('、'))}<span class="x" title="移除">×</span></span>`;
     }
-    trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); events.onAttachChange(null); });
+    trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); _syncSendEnabled(); events.onAttachChange(null); });
   }
 
   // ---- 计划/执行 pill（M2-3 写权限双模式；仅在线+有项目的会话显示） ----
@@ -447,7 +447,18 @@ export function renderComposer(state, events) {
     sendBtn.style.display = running ? 'none' : '';
     stopBtn.style.display = running ? '' : 'none';
     textarea.disabled = running || isLegacy;
+    if (!running) _syncSendEnabled();  // 结束态按内容重算（空输入保持置灰）
   }
+
+  // 空输入发送按钮置灰（GUI 探索瑕疵③：doSend 守卫早已 no-op，这里补视觉；
+  // 附件/引用在位时保持可用——发送语义成立）
+  function _syncSendEnabled() {
+    if (attachPending || isLegacy) return;  // 这两态由各自门禁管
+    sendBtn.disabled = !textarea.value.trim() && !attach;
+    sendBtn.style.opacity = sendBtn.disabled ? '.45' : '';
+  }
+  textarea.addEventListener('input', _syncSendEnabled);
+  _syncSendEnabled();  // 初始空输入即置灰
 
   // 外部注入附件（工作目录「引用」：import 返回与上传同构的 {path, filename, tokens}）
   function setAttach(att) {

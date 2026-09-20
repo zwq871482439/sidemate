@@ -82,7 +82,7 @@ export function createSettingsView(events) {
           <button class="kb-tool-btn" id="setGoClassic">回经典版</button></div>
         <div class="set-row"><div class="stx"><b>深色模式</b><p>新版深色主题在后续版本实装（DNA-01 深色档）；需要深色请用经典版</p></div>
           <span style="font-size:11.5px;color:var(--d1-ink-3)">暂不可用</span></div>
-        <div class="set-row"><div class="stx"><b>当前模型</b><p id="setModel">${esc(modelDesc)}</p></div></div>
+        <div class="set-row"><div class="stx"><b>离线模式模型</b><p id="setModel">${esc(modelDesc)}（在线模式用上方「在线 AI」页配置的云端模型）</p></div></div>
         <div class="set-row"><div class="stx"><b>上下文窗口</b><p>最大输入 ${(mode.context_window || 0) / 1000 | 0}K tokens · 最大输出 ${(budget.max_output_tokens || 0) / 1000 | 0}K tokens</p></div></div>
         <div class="set-row"><div class="stx"><b>推理设备</b><p>切换后自动重启模型加载。知识库模型不受影响（固定 CPU 运行）</p></div>
           <select class="set-input" id="setDevice" style="width:auto">
