@@ -82,6 +82,16 @@ class TestRegistry:
         assert "error" in projects.create_project_external(ext)  # 重复注册
         assert "error" in projects.create_project_external("Z:\\不存在")
 
+    def test_drive_root_rejected(self, isolated):
+        # B-3 防复发闸：磁盘根目录不能注册成项目（项目名叫「C:\」
+        # 会让删除确认等操作读起来像在动系统盘——用户反馈 2026-09-20）
+        drive = os.path.abspath(os.sep)  # 当前盘根，如 C:\
+        r = projects.create_project_external(drive)
+        assert "error" in r and "根目录" in r["error"]
+        # 确认没有半成品落进注册表
+        lst = projects.list_projects()
+        assert all(os.path.dirname(p["dir"]) != p["dir"] for p in lst)
+
     def test_rename_and_default_guard(self, isolated):
         _, ext, _ = isolated
         projects.create_project_external(ext)

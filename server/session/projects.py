@@ -160,6 +160,11 @@ def create_project_external(path):
     d = _norm(path)
     if not d or not os.path.isdir(d):
         return {"error": "目录不存在或不是绝对路径"}
+    # 磁盘根目录（C:\ / UNC 根）拒绝注册（0.10.1 验收 B-3 防复发闸）：
+    # 根目录当项目 → 项目名显示为「C:\」，后续删除确认等操作读起来像在动系统盘；
+    # 且整盘进项目目录列表/引用范围也不合理
+    if os.path.dirname(d) == d:
+        return {"error": "不能把磁盘根目录（如 C:\\）注册为项目，请选择里面的具体文件夹"}
     if os.path.normcase(os.path.realpath(d)) == os.path.normcase(os.path.realpath(DEFAULT_PROJECT_DIR)):
         return {"error": "该目录就是默认项目"}
     with _lock:

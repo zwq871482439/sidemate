@@ -904,6 +904,13 @@ function showDirPicker(onPick) {
       if (!okNav || !cur) return;
     }
     if (!cur) return;
+    // 磁盘根目录不给选（后端也有一道闸）：项目名叫「C:\」会让后续
+    // 删除确认等操作读起来像在动系统盘（验收 B-3 用户反馈）
+    if (/^[a-zA-Z]:\\?$|^\\\\[^\\]+\\[^\\]+\\?$/.test(cur)) {
+      listEl.insertAdjacentHTML('afterbegin',
+        '<div class="vw-empty" style="color:var(--d1-warn-rust)">磁盘根目录不能作为项目——请进入里面的具体文件夹再选</div>');
+      return;
+    }
     const p = cur;
     ov.remove();
     onPick(p);
