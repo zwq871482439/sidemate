@@ -27,6 +27,19 @@ log = logging.getLogger(__name__)
 # Qwen3.5 思考结束标签（从 stream_engine 搬迁）
 _THINK_END_TAG = "\u200b\u2502\u2581end\u2581of\u2581thinking\u2581\u2502\u200b"
 
+# 0.10.1 闲置自动卸载：记录最近一次本地推理调用时间（chat/chat_stream 统一打点）
+import time as _time_mod
+_last_llm_use = _time_mod.time()
+
+
+def mark_llm_use():
+    global _last_llm_use
+    _last_llm_use = _time_mod.time()
+
+
+def last_llm_use() -> float:
+    return _last_llm_use
+
 
 class LlamaCppClient:
     """通过 OpenAI 兼容协议调用 llama-server"""
@@ -75,6 +88,7 @@ class LlamaCppClient:
             - done: 完成事件
             - raw: 错误
         """
+        mark_llm_use()
         self._stop_requested = False
 
         kwargs = dict(
@@ -202,6 +216,7 @@ class LlamaCppClient:
         Returns:
             dict: {"content": str, "think": str, "usage": {...}}
         """
+        mark_llm_use()
         kwargs = dict(
             model=model,
             messages=messages,

@@ -111,9 +111,13 @@ DEFAULTS = {
     "ollama_host": "127.0.0.1",          # llama-server 服务地址
     "ollama_port": 11434,                # llama-server 服务端口
     "ollama_model": "qwen3.5-4b-q4",     # 默认模型 model_id（实际由 last_loaded_model 优先）
-    "last_loaded_model": "",             # 用户上次加载的模型 ID（启动时优先；空则按硬件推荐）
+    "last_loaded_model": "",             # 用户上次加载的模型 ID（懒加载时优先选择它；空则按硬件推荐）
     "ollama_auto_start": True,           # 是否自动启动 llama-server 进程
     "auto_warmup_llm": True,             # 启动时是否预热（llama-server 启动即加载，预热可选）
+    # 0.10.1 启动不预载（用户拍板五条）：默认启动只起服务不加载模型，
+    # 首条离线/并行消息触发懒加载；想启动即载的用户在设置页打开此开关
+    "preload_model_at_start": False,
+    "idle_unload_minutes": 30,           # 闲置自动卸载（分钟，0=关闭）：无本地推理调用即卸载引擎
     # ollama_health_interval / connect/read_timeout / max_concurrent 已废弃（P7-4 换 llama.cpp 后遗留，代码内未引用）
     # P7-4 新增 llama.cpp 专属配置
     "llamacpp_ctx_size": 8192,           # 上下文窗口大小（--ctx-size 启动参数）

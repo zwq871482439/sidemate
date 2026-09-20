@@ -58,12 +58,15 @@ export function createSettingsView(events) {
   // ============ 常规子页 ============
   async function renderGeneral(body) {
     body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
-    const [mode, status, budget, devices] = await Promise.all([
+    const [mode, status, budget, devices, cfg] = await Promise.all([
       fetch('/api/mode').then(r => r.json()).catch(() => ({})),
       fetch('/api/status').then(r => r.json()).catch(() => ({})),
       fetch('/api/token-budget').then(r => r.json()).catch(() => ({})),
       fetch('/api/devices').then(r => r.json()).catch(() => ({})),
+      fetch('/api/config').then(r => r.json()).catch(() => ({})),
     ]);
+    const preloadOn = !!(cfg.config && cfg.config.preload_model_at_start);
+    const idleMin = cfg.config ? cfg.config.idle_unload_minutes : undefined;
     const loadedModel = Object.keys(status).find(k => status[k] && status[k].type === 'llm' && status[k].loaded);
     const modelDesc = loadedModel ? `${status[loadedModel].description || loadedModel}（${loadedModel}）` : '未加载';
     const devList = (devices.devices || []).map(d => typeof d === 'string'
@@ -85,6 +88,9 @@ export function createSettingsView(events) {
           <select class="set-input" id="setDevice" style="width:auto">
             ${devList.map(d => `<option value="${esc(d.id)}" ${d.id === curDev ? 'selected' : ''}>${esc(d.label || d.id)}</option>`).join('')}
           </select></div>
+        <div class="set-row"><div class="stx"><b>启动时预载上次模型</b>
+          <p>默认关闭：启动只起服务不加载模型（启动快、后台不占资源），首条离线消息自动加载；闲置 ${idleMin || 30} 分钟自动卸载。需要启动即载的老用户可打开</p></div>
+          <button class="switch ${preloadOn ? 'on' : ''}" id="setPreload" title="idle_unload_minutes 可在配置中调整（0=关闭闲置卸载）"></button></div>
       </div>
       <div class="set-group">
         <h2>数据维护</h2>
@@ -118,6 +124,18 @@ export function createSettingsView(events) {
         body: JSON.stringify({ device: e.target.value }),
       }).catch(() => {});
       e.target.disabled = false;
+    });
+
+    // 启动时预载上次模型（0.10.1 五条之③，默认关）
+    body.querySelector('#setPreload').addEventListener('click', async (e) => {
+      const on = !e.target.classList.contains('on');
+      e.target.classList.add('busy');
+      await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preload_model_at_start: on }),
+      }).catch(() => {});
+      e.target.classList.remove('busy');
+      e.target.classList.toggle('on', on);
     });
 
     // 缓存文件
@@ -241,6 +259,9 @@ export function createSettingsView(events) {
           <input class="set-input" id="cfRounds" type="number" min="8" max="100" placeholder="26" value="${rounds}"></div>
         <div class="set-row"><div class="stx"><b>知识对比（实验）</b><p>KB 问答时本地与云端结果对比展示</p></div>
           <button class="switch ${cfg.kb_compare_enabled ? 'on' : ''}" id="cfCompare"></button></div>
+        <h2>用量统计</h2>
+        <div class="sub">云端调用的 token 消耗（本地引擎不计费）</div>
+        <div class="set-usage" id="cfUsage"><span class="mut">加载中…</span></div>
       </div>`;
 
     const note = (msg, ok) => {
@@ -324,6 +345,115 @@ export function createSettingsView(events) {
       });
       e.target.classList.toggle('on', on);
     });
+
+    // 用量统计（0.10.1 收尾：经典版迁入；今日=按小时 / 本周=按天联动，不交叉）
+    loadCloudUsage(body);
+  }
+
+  // ============ 云端用量统计 ============
+  let _usageRange = 7;  // 1=今日(小时粒度) 7=本周(天粒度)
+  const _usageGran = () => (_usageRange === 1 ? 'hour' : 'day');
+
+  async function loadCloudUsage(body) {
+    const panel = body.querySelector('#cfUsage');
+    if (!panel) return;
+    try {
+      const r = await fetch('/api/cloud/usage?range_days=' + _usageRange + '&granularity=' + _usageGran());
+      renderCloudUsage(panel, await r.json());
+    } catch (e) {
+      panel.innerHTML = '<span class="mut">用量统计暂不可用</span>';
+    }
+  }
+
+  function _usageAxis() {
+    // 补齐空桶的完整时间轴（单点数据不撑满整图）
+    const axis = [], now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    if (_usageRange === 1) {
+      for (let h = 0; h <= now.getHours(); h++) {
+        axis.push({ label: pad(h) + '时', bucket: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + ' ' + pad(h) + ':00', tokens: 0, calls: 0 });
+      }
+    } else {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        axis.push({ label: (d.getMonth() + 1) + '/' + d.getDate(), bucket: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()), tokens: 0, calls: 0 });
+      }
+    }
+    return axis;
+  }
+
+  function renderCloudUsage(panel, data) {
+    if (!data) { panel.innerHTML = '<span class="mut">暂无数据</span>'; return; }
+    const total = data.total_tokens || 0, calls = data.total_calls || 0;
+    const tIn = data.total_input || 0, tOut = data.total_output || 0, tRea = data.total_reasoning || 0;
+    const fmt = n => n.toLocaleString();
+    let h = '<div class="usage-range">'
+      + '<button class="usage-rbtn' + (_usageRange === 1 ? ' on' : '') + '" data-r="1">今日（按小时）</button>'
+      + '<button class="usage-rbtn' + (_usageRange === 7 ? ' on' : '') + '" data-r="7">本周（按天）</button></div>';
+    h += '<div class="usage-sum">' + (_usageRange === 1 ? '今日' : '本周') + '累计 <b>' + fmt(total) + '</b> token · <b>' + calls + '</b> 次调用'
+      + (data.all_accurate ? '' : ' <span class="usage-warn">（部分调用未返回用量数据）</span>') + '</div>';
+    if (tIn + tOut + tRea > 0) {
+      h += '<div class="usage-legend">'
+        + '<span><i style="background:#60A5FA"></i>输入 ' + fmt(tIn) + '</span>'
+        + '<span><i style="background:#34D399"></i>输出 ' + fmt(tOut) + '</span>'
+        + (tRea > 0 ? '<span><i style="background:#A78BFA"></i>推理 ' + fmt(tRea) + '</span>' : '') + '</div>';
+    }
+    // 时间轴柱状图（分段：输入/输出/推理，flex 等宽列）
+    const axis = _usageAxis();
+    const byKey = {};
+    (data.by_bucket || []).forEach(b => { byKey[b.bucket] = b; });
+    axis.forEach(a => {
+      const hit = byKey[a.bucket];
+      if (hit) { a.tokens = hit.tokens || 0; a.input = hit.input || 0; a.output = hit.output || 0; a.reasoning = hit.reasoning || 0; }
+    });
+    const max = Math.max.apply(null, axis.map(a => a.tokens).concat([1]));
+    h += '<div class="usage-chart">' + axis.map(a => {
+      const pct = a.tokens / max * 100;
+      let segs = '';
+      if (a.tokens > 0) {
+        const s = a.input + a.output + a.reasoning || 1;
+        const w = [a.input / s * 100, a.output / s * 100, a.reasoning / s * 100];
+        ['in', 'out', 'rea'].forEach((k, i) => {
+          if (w[i] > 0) segs += '<i style="height:' + (w[i]) + '%;background:' + ['#60A5FA', '#34D399', '#A78BFA'][i] + '"></i>';
+        });
+      }
+      return '<div class="usage-col" title="' + a.bucket + ' · ' + fmt(a.tokens) + ' token">'
+        + '<div class="usage-bar"' + (pct > 0 ? ' style="height:' + Math.max(pct, 2) + '%"' : '') + '>'
+        + (pct > 0 ? '<div class="usage-segs">' + segs + '</div>' : '') + '</div>'
+        + '<span>' + a.label + '</span></div>';
+    }).join('') + '</div>';
+    // 按模型
+    if (data.by_model && data.by_model.length) {
+      const maxM = Math.max.apply(null, data.by_model.map(m => m.tokens));
+      h += '<div class="usage-mlabel">按模型</div>';
+      data.by_model.forEach(m => {
+        const share = total > 0 ? Math.round(m.tokens / total * 100) : 0;
+        const w = maxM > 0 ? m.tokens / maxM * 100 : 0;
+        const s = (m.input || 0) + (m.output || 0) + (m.reasoning || 0) || 1;
+        const segs = [['in', (m.input || 0) / s * 100, '#60A5FA'], ['out', (m.output || 0) / s * 100, '#34D399'], ['rea', (m.reasoning || 0) / s * 100, '#A78BFA']]
+          .filter(x => x[1] > 0).map(x => '<i style="width:' + x[1] + '%;background:' + x[2] + '"></i>').join('');
+        h += '<div class="usage-mrow" title="' + esc(m.model) + ' · 输入 ' + fmt(m.input || 0) + ' / 输出 ' + fmt(m.output || 0) + ' / 推理 ' + fmt(m.reasoning || 0) + '">'
+          + '<span class="usage-mname">' + esc(m.model) + '</span>'
+          + '<div class="usage-mtrack"><div class="usage-mbar" style="width:' + w + '%">' + (segs ? '<div class="usage-segs">' + segs + '</div>' : '') + '</div></div>'
+          + '<span class="usage-mnum">' + fmt(m.tokens) + ' (' + share + '%)</span></div>';
+      });
+    }
+    // 最近调用
+    if (data.records && data.records.length) {
+      h += '<details class="usage-recs"><summary>最近调用 (' + data.records.length + ')</summary><div>'
+        + '<div class="usage-rec-head"><span>时间</span><span>模型</span><span>输入</span><span>输出</span><span>耗时</span></div>'
+        + data.records.map(r => {
+          const dt = new Date(r.ts * 1000);
+          const t = (dt.getMonth() + 1) + '-' + dt.getDate() + ' ' + String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+          return '<div class="usage-rec"><span>' + t + '</span><span>' + esc(r.model) + '</span>'
+            + '<span>' + (r.accurate && r.input != null ? fmt(r.input) : '?') + '</span>'
+            + '<span>' + (r.accurate && r.output != null ? fmt(r.output) : '?') + '</span>'
+            + '<span>' + (r.elapsed_ms != null ? (r.elapsed_ms / 1000).toFixed(1) + 's' : '-') + '</span></div>';
+        }).join('') + '</div></details>';
+    }
+    panel.innerHTML = h;
+    panel.querySelectorAll('.usage-rbtn').forEach(b =>
+      b.addEventListener('click', () => { _usageRange = parseInt(b.dataset.r, 10); loadCloudUsage(body); }));
   }
 
   // ============ 知识库子页 ============

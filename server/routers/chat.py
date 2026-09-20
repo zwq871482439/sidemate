@@ -59,6 +59,58 @@ from session.continuation import (
 router = APIRouter()
 log = get_log()
 
+# ===== 0.10.1 启动不预载：懒加载单飞（并发请求只触发一次 start）=====
+import threading as _threading
+_lazy_load_mu = _threading.Lock()
+_lazy_loading = False
+
+
+async def _lazy_load_engine(ollama_manager, timeout_s: float = 150.0) -> bool:
+    """触发本地引擎懒加载并等待就绪（单飞）。
+
+    返回 True=引擎就绪可继续生成；False=超时/失败。
+    加载成功后同步 model_manager._loaded（对话门禁读这里，
+    不标记会误报"请先在设置页加载模型"——镜像 server.py S3 逻辑）。
+    """
+    global _lazy_loading
+    with _lazy_load_mu:
+        # 单飞：仅当既无在途加载、引擎也未就绪时才触发 start（并占位）；
+        # 非触发方不动 _lazy_loading（占位由 _do_start 的 finally 归还）
+        if _lazy_loading or ollama_manager.is_healthy():
+            _should_kick = False
+        else:
+            _should_kick = True
+            _lazy_loading = True
+
+    if _should_kick:
+        def _do_start():
+            global _lazy_loading
+            try:
+                r = ollama_manager.start()
+                log.info("[LAZY-LOAD] 懒加载引擎: %s" % r.get("status", r.get("error", "?")))
+                if r.get("status") in ("started", "already_running"):
+                    _mp = r.get("model", "")
+                    if _mp:
+                        from server import mgr as _mgr
+                        for _m in ollama_manager.registry.scan():
+                            if str(_m.gguf_path) == _mp:
+                                _mgr._loaded[_m.model_id] = True
+                                break
+            except Exception as e:
+                log.warning("[LAZY-LOAD] 启动异常: %s" % str(e)[:100])
+            finally:
+                with _lazy_load_mu:
+                    _lazy_loading = False
+        _threading.Thread(target=_do_start, daemon=True).start()
+
+    import asyncio
+    _t0 = time.time()
+    while time.time() - _t0 < timeout_s:
+        if ollama_manager.is_healthy():
+            return True
+        await asyncio.sleep(2)
+    return ollama_manager.is_healthy()
+
 
 # ============================================================
 #  Pydantic 请求模型
@@ -294,10 +346,15 @@ async def api_chat_stream(request: Request):
     if _needs_local:
         from server import ollama_manager
         if not ollama_manager.is_healthy():
-            def _not_ready_gen():
-                yield 'data: {"type": "error", "content": "模型服务正在启动中，请稍候几秒后再试。如果长时间未就绪，请到「设置→模型下载」确认模型已安装并加载。"}\n\n'
-                yield 'data: [DONE]\n\n'
-            return StreamingResponse(_not_ready_gen(), media_type="text/event-stream")
+            # 0.10.1 启动不预载：首条离线/并行消息触发懒加载。
+            # 同步等待引擎就绪（上限 150s）——连接静默期由前端看门狗兜底
+            # （60s 给等待提示并继续等，P8-7）；就绪后落入正常生成路径。
+            _lz_ok = await _lazy_load_engine(ollama_manager)
+            if not _lz_ok:
+                def _not_ready_gen():
+                    yield 'data: {"type": "error", "content": "模型加载失败或超时。请到「设置→模型下载」确认模型已安装，或稍后重试。"}\n\n'
+                    yield 'data: [DONE]\n\n'
+                return StreamingResponse(_not_ready_gen(), media_type="text/event-stream")
 
     # (OCR 图片处理已移除 — OCR 已归档)
 

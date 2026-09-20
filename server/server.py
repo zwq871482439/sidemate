@@ -238,8 +238,10 @@ def _bg_init_worker():
     _llm_started_ok = False  # P7: 追踪模型是否真正启动成功
     try:
         # ---- 步骤1：Ollama 检查（幂等：Go 已起则秒返回）----
+        # 0.10.1 启动不预载：默认不在启动时加载模型（用户反馈占资源+启动慢），
+        # 首条离线/并行消息触发懒加载；设置页「启动时预载上次模型」可恢复旧行为
         _set_bg_phase("ollama")
-        if _cfg_get("ollama_auto_start", True):
+        if _cfg_get("ollama_auto_start", True) and _cfg_get("preload_model_at_start", False):
             try:
                 _report_startup("ollama_start", 70, "启动推理引擎...")
                 result = ollama_manager.start()
@@ -261,10 +263,13 @@ def _bg_init_worker():
                 _add_bg_error("模型引擎异常: %s" % str(e)[:100])
         else:
             log.info("[BG-INIT] ollama_auto_start=False，跳过推理引擎启动")
+        if not _llm_started_ok:
+            log.info("[BG-INIT] 启动不预载模型（默认）：首条离线/并行消息时懒加载；"
+                     "设置页「启动时预载上次模型」可恢复启动即载")
 
-        # ---- 步骤2：LLM 预热（受 auto_warmup_llm 控制）----
+        # ---- 步骤2：LLM 预热（受 auto_warmup_llm 控制；引擎没起就不热）----
         _set_bg_phase("warmup")
-        if _cfg_get("auto_warmup_llm", True):
+        if _cfg_get("auto_warmup_llm", True) and ollama_manager.is_healthy():
             _warmup_model = mgr._get_default_llm()
             if _warmup_model:
                 try:
@@ -641,6 +646,43 @@ try:
     log.info("[STARTUP] 日志定期清理已启动（间隔 24h，保留 30 天）")
 except Exception as e:
     log.warning("[STARTUP] 日志清理初始化失败: %s" % str(e)[:80])
+
+
+# ===== 0.10.1 闲置自动卸载（默认 30 分钟无本地推理调用 → 卸载引擎） =====
+def _idle_unload_worker():
+    import time as _t
+    from config import get as _cfg
+    while True:
+        _t.sleep(60)
+        try:
+            _minutes = int(_cfg("idle_unload_minutes", 30) or 0)
+            if _minutes <= 0:
+                continue  # 0=关闭
+            if not ollama_manager.is_healthy():
+                continue  # 引擎本来就没在跑
+            from core.llamacpp_backend.client import last_llm_use
+            _idle = _t.time() - last_llm_use()
+            if _idle > _minutes * 60:
+                try:
+                    ollama_manager.stop()
+                    mgr._loaded.clear()
+                    log.info("[IDLE-UNLOAD] 本地引擎闲置 %d 分钟，已卸载（下次离线消息自动懒加载）"
+                             % int(_idle / 60))
+                except Exception as e:
+                    log.warning("[IDLE-UNLOAD] 卸载失败（下轮重试）: %s" % str(e)[:80])
+        except Exception as e:
+            log.warning("[IDLE-UNLOAD] 巡检异常: %s" % str(e)[:80])
+
+
+try:
+    # 单例守卫（进程级）：server 模块会被双导入为不同模块身份
+    # （__main__ 与 server，globals 各自独立），同进程唯一标志只能用 environ
+    if os.environ.get("SIDEMATE_IDLE_UNLOAD_STARTED") != "1":
+        os.environ["SIDEMATE_IDLE_UNLOAD_STARTED"] = "1"
+        _threading.Thread(target=_idle_unload_worker, daemon=True).start()
+        log.info("[STARTUP] 闲置自动卸载已启动（默认 30 分钟，idle_unload_minutes=0 关闭）")
+except Exception as e:
+    log.warning("[STARTUP] 闲置卸载初始化失败: %s" % str(e)[:80])
 
 # ===== 启动 =====
 _report_startup("pre_start", 65, "准备启动 HTTP 服务...")
