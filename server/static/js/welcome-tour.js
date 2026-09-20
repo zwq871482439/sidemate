@@ -115,6 +115,7 @@ var _tourSteps = [
   { id: 'input',    tab: 'chat', targetSel: '#msgInput',           title: '开始对话',             desc: '输入问题，按 <b>Enter</b> 发送。<br><br>不仅能聊天，还能让 AI 直接生成 Word 文档、引用知识库回答、上传文件辅助提问。<br>顶部 Token 条显示剩余可用长度。', pos: 'top' },
   { id: 'kb1',      tab: 'qa',   targetSel: '#kbToolbar button',   title: '上传你的文档',         desc: '上传文档后，<b>离线 AI</b> 会自动通读全文，<br>生成摘要、打上标签并归类。<br><br>离线 / 并行模式下文档内容仅在本地处理；<br>在线模式下 Agent 调用知识库检索时，检索结果会发送到在线服务。', pos: 'bottom' },
   { id: 'kb2',      tab: 'qa',   targetSel: '#kbAIOverview .s-hdr', title: 'AI 洞察',             desc: '点击 <b>「整理」</b>，<b>离线 AI</b> 会通读你的整个文库，<br>给出主题归类、适用场景和建议追问。', pos: 'bottom' },
+  { id: 'v2ui',     tab: 'settings', targetSel: '#uiVerNew', title: '新版界面（0.10.1）', desc: '0.10.1 全新三栏界面：<b>项目即文件夹</b>（一个文件夹=一个项目，材料/产物全在里面）、<b>真 PPT</b>（AI 逐页设计、下载可编辑 pptx）、HTML 报告预览、写文件先出确认清单、会话可标私密。<br>数据与经典版完全互通，随时切回。', pos: 'bottom' },
   { id: 'recap',    tab: 'chat', targetSel: '.tabs-nav button[onclick*="settings"]', title: '设置入口',   desc: '配置在线 API Key、安装扩展包、管理离线模型……<br>都在设置 Tab 里完成。<br><br>这就是桌伴的全部，开始使用吧！', pos: 'bottom' }
 ];
 
