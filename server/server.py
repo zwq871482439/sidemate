@@ -377,8 +377,11 @@ def _bg_init_worker():
     except Exception as e:
         _add_bg_error("后台初始化未捕获异常: %s" % str(e)[:200])
     finally:
-        # P7: 如果模型引擎启动失败，把错误传递给 Go launcher（段2 会检查 load_error）
-        if not _llm_started_ok and _cfg_get("ollama_auto_start", True):
+        # P7: 如果模型引擎启动失败，把错误传递给 Go launcher（段2 会检查 load_error）。
+        # 0.10.1 启动不预载：默认不在启动时加载模型（懒加载），此时引擎"未就绪"
+        # 是设计态不是错误——只有用户开了预载开关且引擎仍没起来才上报
+        _want_preload = _cfg_get("ollama_auto_start", True) and _cfg_get("preload_model_at_start", False)
+        if _want_preload and not _llm_started_ok:
             _existing_errors = _bg_init_state.get("load_error", "")
             _model_error = "模型引擎未就绪，请到「设置→模型下载」确认模型已安装"
             if _existing_errors:
