@@ -1145,8 +1145,11 @@ function showSessionMenu(chat, anchorEl) {
 
   menuEl.querySelector('[data-a="rename"]').addEventListener('click', async () => {
     menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
-    const nv = await v2Prompt('重命名会话', chat.name);
-    if (!nv || nv === chat.name) return;
+    // 预填当前显示标题（自动命名后 title≠文件夹名——此前预填 chat.name
+    // 把自动命名"泄露"回原始编号，用户实测：过桥米线重命名变成 2026-09-21_006）
+    const curTitle = chat.title || chat.name;
+    const nv = await v2Prompt('重命名会话', curTitle);
+    if (!nv || nv === curTitle) return;
     await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/rename', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ new_name: nv }),
