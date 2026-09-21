@@ -53,6 +53,7 @@ export function renderSidebar(root, state, events) {
 
   // 会话列表（搜索过滤）+ 项目树（项目即文件夹，PLAN 1.5 四次定稿：
   // 组按 project_dir 归集；无 project_dir 的进「旧版本会话」只读桶）
+  const listEl = sb.querySelector('.sb-sessions');
   const filter = (state.filter || '').toLowerCase();
   const sessions = state.sessions.filter(c => !filter
     || (c.title || c.name || '').toLowerCase().includes(filter)
