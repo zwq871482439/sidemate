@@ -618,7 +618,7 @@ export function createSettingsView(events) {
       <div class="set-group">
         <h2>运行状态</h2>
         <div class="set-row"><div class="stx"><b>总内存</b></div><span>${mem.total_gb || mem.total_mem_gb || '--'} GB</span></div>
-        <div class="set-row"><div class="stx"><b>可用内存</b></div><span>${mem.available_gb || mem.avail_gb || '--'} GB</span></div>
+        <div class="set-row"><div class="stx"><b>可用内存</b></div><span>${mem.available_mem_gb || '--'} GB</span></div>
         <div class="set-row"><div class="stx"><b>Python</b></div><span>${esc(res.python || res.python_version || '--')}</span></div>
         <div class="set-row"><div class="stx"><b>操作系统</b></div><span style="font-size:12px">${esc(res.os || '--')}</span></div>
         <div class="set-row"><div class="stx"></div><button class="kb-tool-btn" id="abDiag">导出诊断报告</button></div>

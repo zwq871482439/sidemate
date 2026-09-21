@@ -1175,10 +1175,13 @@ def api_system_info():
 
     # 总内存 + 操作系统
     total_mem_gb = 0
+    available_mem_gb = 0
     os_info = ""
     try:
         import psutil
-        total_mem_gb = round(psutil.virtual_memory().total / (1024 ** 3), 1)
+        _vm = psutil.virtual_memory()
+        total_mem_gb = round(_vm.total / (1024 ** 3), 1)
+        available_mem_gb = round(_vm.available / (1024 ** 3), 1)
     except Exception:
         pass
     try:
@@ -1215,6 +1218,7 @@ def api_system_info():
         "data_dir": data_dir,
         "data_size_mb": data_size_mb,
         "total_mem_gb": total_mem_gb,
+        "available_mem_gb": available_mem_gb,
         "os_info": os_info,
     }
 

@@ -47,32 +47,9 @@ export function renderSidebar(root, state, events) {
       <button class="sb-nav-item ${state.tab === 'settings' ? 'on' : ''}" data-tab="settings"><span class="ic">${ICONS.settings}</span><span class="sb-label">设置</span></button>
     </nav>
     <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建任务</span></button>
-    ${state.tab === 'kb' && state.kbTree
-      ? '<div class="sb-sess-title sb-label">文档范围</div><div class="sb-sessions kb-tree"></div>'
-      : '<div class="sb-sess-title sb-label">会话</div><div class="sb-sessions"></div>'}
+    <div class="sb-sess-title sb-label">会话</div><div class="sb-sessions"></div>
     <button class="sb-back"><span>‹</span><span class="sb-label">回经典版界面</span></button>
   `;
-
-  // 知识库模式：左栏下段换文档范围树（原型 v14）
-  const listEl = sb.querySelector('.sb-sessions');
-  if (state.tab === 'kb' && state.kbTree) {
-    const t = state.kbTree;
-    const sel = state.kbTree.kbFilterSel || '';
-    const item = (id, label, cnt, icon, sub) => `
-      <div class="kt-item ${sel === id ? 'on' : ''}" data-kf="${id}"${sub ? ' style="padding-left:26px"' : ''}>
-        <span class="ki">${icon}</span>${esc(label)}<span class="cnt">${cnt}</span>
-      </div>`;
-    listEl.innerHTML =
-      item('', '全部文档', t.total, iconSvg('book')) +
-      item('__recent7__', '最近上传', t.recent, iconSvg('clock')) +
-      t.cats.map(c => item('cat:' + c.name, c.name, c.count, iconSvg('tag')) +
-        (c.subs || []).map(sb2 => item('cat:' + c.name + '/' + sb2.name, sb2.name, sb2.count, '·', true)).join('')).join('') +
-      item('__priv__', '私密文档', t.privates, iconSvg('lock')) +
-      item('__none__', '未分组', t.ungrouped, iconSvg('folder'));
-    listEl.querySelectorAll('.kt-item').forEach(b =>
-      b.addEventListener('click', () => events.onKbFilter(b.dataset.kf)));
-    return _bindCommon(sb, state, events);
-  }
 
   // 会话列表（搜索过滤）+ 项目树（项目即文件夹，PLAN 1.5 四次定稿：
   // 组按 project_dir 归集；无 project_dir 的进「旧版本会话」只读桶）

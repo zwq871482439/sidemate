@@ -196,6 +196,12 @@ export function createKBView(events) {
     el.querySelector('#kbFile').addEventListener('change', (e) => { uploadFiles([...e.target.files]); e.target.value = ''; });
     const hero = el.querySelector('#kbHero');
     if (hero) hero.addEventListener('click', () => el.querySelector('#kbFile').click());
+    // B1 去重：上传恒走 banner 按钮 + 全页拖拽；hero 仅零文档空态显示（空态引导）
+    const _syncHero = () => {
+      if (hero) hero.style.display = state.docs.length ? 'none' : '';
+    };
+    el._syncHero = _syncHero;
+    _syncHero();
     // 拖拽上传
     el.ondragover = (e) => { e.preventDefault(); el.classList.add('drag-over'); };
     el.ondragleave = () => el.classList.remove('drag-over');
@@ -214,6 +220,7 @@ export function createKBView(events) {
     });
     const chipsEl = el.querySelector('#kbChips');
     if (!chipsEl) return;
+    if (el._syncHero) el._syncHero();
     const entries = Object.entries(cats).sort((a, b) => b[1] - a[1]);
     chipsEl.innerHTML = '';
     const mk = (val, label, cnt) => {

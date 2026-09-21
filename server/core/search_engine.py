@@ -284,7 +284,16 @@ class SearchEngine:
                             "headers": dict(resp.headers or {}),
                             "text": resp.text}
             except Exception as e:
-                log.warning("[SEARCH] curl_cffi 请求失败，fallback httpx: %s", str(e)[:80])
+                # 超时类失败（curl 28 等）说明网络层不通，httpx 大概率也通不了——
+                # fallback 用短超时快速确认，不再陪等（终验实测：单次失败曾叠 30s，
+                # 中医案例调研被连续双超时拖断）
+                _e = str(e).lower()
+                _timeout_like = ("timed out" in _e) or ("timeout" in _e)
+                _fb_timeout = 8.0 if _timeout_like else 15.0
+                log.warning("[SEARCH] curl_cffi 请求失败，fallback httpx(%.0fs): %s",
+                            _fb_timeout, str(e)[:80])
+        else:
+            _fb_timeout = 15.0
 
         # Fallback: httpx
         try:
@@ -295,7 +304,7 @@ class SearchEngine:
 
         try:
             resp = httpx.get(url, params=params, headers=_HEADERS,
-                             timeout=15.0, follow_redirects=allow_redirects)
+                             timeout=_fb_timeout, follow_redirects=allow_redirects)
             return {"status": resp.status_code,
                     "headers": dict(resp.headers or {}),
                     "text": resp.text}

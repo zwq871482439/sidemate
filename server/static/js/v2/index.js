@@ -28,7 +28,7 @@ const state = {
   contextWindow: 8192,
   modelTag: '',
   scene: '',          // 场景占位符 tag（空状态场景卡落 tag，不打字进输入框）
-  kbTree: null,       // KB 模式下左栏文档范围树
+  kbTree: null,       // （已退役：侧栏范围树移除，仅 buildKbTree 的 subMap 副作用在用）
   collapsedGroups: {},     // 项目分组折叠态（key=项目目录 / __legacy__）
   projects: [],            // 项目列表 [{dir, display, is_default, status}]（默认项目恒在）
   workdir: null,           // 当前会话所属项目 {legacy} | {dir, display, is_default, status}
@@ -86,7 +86,7 @@ function buildKbTree(docs, overview) {
     return { name, count, subs: Object.entries(subs).map(([n2, c2]) => ({ name: n2, count: c2 })) };
   });
   return { total: docs.length, recent, cats: catArr, privates, ungrouped,
-    kbFilterSel: _kbView ? _kbView.getFilter() : '' };
+  };
 }
 
 // ===== 对话发送（M1-B 单写：流末拉后端快照重建） =====
@@ -251,13 +251,7 @@ function render() {
       render();
     },
     onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
-    onKbFilter: (kf) => {
-      if (!_kbView) return;
-      _kbView.setFilter(kf);
-      state.kbTree = buildKbTree(_kbView.getDocs(), _kbView.getOverview());
-      state.kbTree.kbFilterSel = kf;
-      render();
-    },
+    // onKbFilter 已随侧栏文档范围树移除（B2：筛选统一走主区 chips）
   }));
 
   const main = document.createElement('main');
@@ -291,7 +285,8 @@ function render() {
           if (ta) { ta.value = q; ta.focus(); }
         },
         onDocsChange: (docs) => {
-          state.kbTree = buildKbTree(docs, _kbView ? _kbView.getOverview() : null);
+          // buildKbTree 保留调用：其副作用 window._v2KbSubMap 供 chips 子分类筛选用
+          buildKbTree(docs, _kbView ? _kbView.getOverview() : null);
           render();
         },
       });
