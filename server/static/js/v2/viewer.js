@@ -623,8 +623,8 @@ export function createViewer(opts) {
     }
     const decks = _pptMergedDecks();
     const reports = _htmlArtifacts();
-    if (!decks.length && !reports.length) {
-      body.innerHTML = `<div class="vw-empty">还没有可预览的产物<br><small>AI 制作 PPT 或生成报告时，会实时出现在这里</small></div>`;
+    if (!decks.length && !reports.length && !(docxDocs || []).length) {
+      body.innerHTML = `<div class="vw-empty">还没有可预览的产物<br><small>AI 制作 PPT、Word 或生成报告时，会实时出现在这里</small></div>`;
       return;
     }
     body.innerHTML =
