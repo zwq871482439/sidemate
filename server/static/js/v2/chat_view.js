@@ -106,9 +106,19 @@ function _renderMsg(m, opts) {
     refSlot = `<div class="cc-ref-slot" data-refs="${encodeURIComponent(JSON.stringify(refSources))}"></div>`;
   }
 
-  // 思考折叠
+  // 思考折叠（0.10 M1 分段：有 think_segments 按轮渲染多段折叠，与流式"推理第N轮"同构；
+  // 旧消息无该字段走单块兼容）
   let thinkHtml = '';
-  if (m.think && String(m.think).trim()) {
+  if (Array.isArray(m.think_segments) && m.think_segments.length) {
+    const segs = m.think_segments.filter(x => x && x.text && String(x.text).trim());
+    if (segs.length === 1) {
+      thinkHtml = `<details class="m-think"><summary>思考过程（${String(segs[0].text).length}字）</summary><div class="m-think-body">${esc(segs[0].text)}</div></details>`;
+    } else if (segs.length > 1) {
+      thinkHtml = `<details class="m-think m-think-multi"><summary>思考过程 · ${segs.length} 段（${segs.reduce((a, x) => a + String(x.text).length, 0)}字）</summary>` +
+        segs.map((x, i) => `<details class="m-think-seg"><summary>思考 ${i + 1}（第${x.round || i + 1}轮 · ${String(x.text).length}字）</summary><div class="m-think-body">${esc(x.text)}</div></details>`).join('') +
+        `</details>`;
+    }
+  } else if (m.think && String(m.think).trim()) {
     thinkHtml = `<details class="m-think"><summary>思考过程（${(m.think_chars || String(m.think).length)}字）</summary><div class="m-think-body">${esc(m.think)}</div></details>`;
   }
   // 明盒卡片回放（card_data，与流式固化同构）

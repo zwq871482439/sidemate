@@ -202,6 +202,9 @@ TOOL_LIMITS = {
 
 # 剩余轮次预警阈值（剩 N 轮时开始注入 hint 促收尾）
 LOW_ROUNDS_WARN = 5
+# 0.10 M1 收敛策略：过半轮次注入"开始收尾"引导（终验实测 21 轮仍在搜——
+# 剩 5 轮才警告太晚，长链调研任务会一路搜到上限被强制截断）
+ROUND_CONVERGE_HINT = 10
 
 
 def _extract_md_title(md_content):
@@ -359,6 +362,15 @@ class AgentLoop:
             return
 
         while rounds < get_max_rounds():
+            # 0.10 M1 停止即时：轮次边界检查（工具执行返回后立即判断，
+            # 不再发起下一轮 API 调用——此前要等下一轮流式首个 chunk 才断）
+            try:
+                from server import mgr as _mm
+                if _mm.stop_requested:
+                    log.info("[AGENT] 用户停止（轮次边界），提前收尾")
+                    break
+            except Exception:
+                pass
             # 注意：rounds 不在这里 +=1。改为：本轮工具是 expensive 才 +1，cheap 不计
             # 这样 read_workspace 连读 19 次也不会触发 20 轮上限
             _round_incremented = False
@@ -440,10 +452,14 @@ class AgentLoop:
                     elif phase == "think_start":
                         think_started = True
                     elif phase == "think_token":
-                        yield ("agent_think", {"content": content})
+                        # 0.10 M1 思考分段：think 事件带轮次号（前端按轮折叠）
+                        if not think_started:
+                            yield ("agent_think", {"content": "", "round": rounds + 1,
+                                                   "round_start": True})
+                        yield ("agent_think", {"content": content, "round": rounds + 1})
                     elif phase == "think_end":
                         think_started = False
-                        yield ("agent_think", {"content": ""})  # 结束标记
+                        yield ("agent_think", {"content": "", "round": rounds + 1})  # 结束标记
                     elif phase == "token_stats":
                         # 透传 token_stats
                         yield ("token_stats", content)
@@ -584,6 +600,13 @@ class AgentLoop:
                 # Patch4 修复 3：剩 N 轮时注入预警 hint
                 # （通过 result 的 hint 字段附加到 tool_result 消息内容）
                 rounds_left = get_max_rounds() - rounds
+                if rounds >= ROUND_CONVERGE_HINT and rounds_left > LOW_ROUNDS_WARN:
+                    conv_hint = (
+                        "[进度] 已用 %d 轮。信息量已足够概率很高——请停止扩展新的搜索/阅读，"
+                        "基于已有材料开始组织最终回答（确有缺口最多再补 1-2 次检索）。" % rounds
+                    )
+                    if isinstance(result, dict):
+                        result["hint"] = ((result.get("hint", "") + "\n" + conv_hint).strip())
                 if rounds_left <= LOW_ROUNDS_WARN:
                     warn_hint = (
                         "⚠️ 你还剩 %d 轮预算，请尽快完成剩余写作或调用 "

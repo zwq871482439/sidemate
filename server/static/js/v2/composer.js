@@ -57,6 +57,7 @@ export function renderComposer(state, events) {
         <div class="cb-pills">
           <button class="cb-pill" data-act="add" title="添加材料到对话">${iconSvg('plus')} 添加</button>
           <button class="cb-pill cb-xmode" data-act="execmode" style="display:none" title="计划模式：AI 写项目文件前先给你确认清单；执行模式：确认后直接落盘">计划</button>
+          <button class="cb-pill cb-think" data-act="thinkmode" style="display:none" title="思考档位">思考</button>
         </div>
         <div class="cb-right">
           <button class="cb-send">发送</button>
@@ -151,6 +152,43 @@ export function renderComposer(state, events) {
         : '计划模式：AI 写项目文件前先给你确认清单（点我切到执行模式）';
     } catch (e) { xmodeBtn.style.display = 'none'; }
   }
+  // ---- 思考档位 pill（0.10 M1：高/低/关 三态循环，仅在线） ----
+  const thinkBtn = wrap.querySelector('.cb-think');
+  const THINK_LEVELS = [
+    { v: 'high', icon: 'circleFull', label: '思考·高', tip: '思考·高：完整推理（默认）。点我降档' },
+    { v: 'low', icon: 'circleHalf', label: '思考·低', tip: '思考·低：轻量推理，更快更省。点我关闭' },
+    { v: 'off', icon: 'circleEmpty', label: '思考·关', tip: '思考·关：不推理，直接回答（最快）。点我开高' },
+  ];
+  let _thinkLevel = null;
+  async function renderThinkPill() {
+    const session = events.getSession && events.getSession();
+    const show = !!(session && state.mode === 'cloud');
+    if (!show) { thinkBtn.style.display = 'none'; return; }
+    if (_thinkLevel === null) {
+      try {
+        const r = await fetch('/api/config');
+        const d = await r.json();
+        _thinkLevel = (d.config && d.config.cloud_thinking_level) || 'high';
+      } catch (e) { _thinkLevel = 'high'; }
+    }
+    const cfg = THINK_LEVELS.find(x => x.v === _thinkLevel) || THINK_LEVELS[0];
+    thinkBtn.style.display = '';
+    thinkBtn.innerHTML = iconSvg(cfg.icon) + ' ' + cfg.label.split('·')[1];
+    thinkBtn.title = cfg.tip;
+  }
+  thinkBtn.addEventListener('click', async () => {
+    const idx = THINK_LEVELS.findIndex(x => x.v === _thinkLevel);
+    _thinkLevel = THINK_LEVELS[(idx + 1) % THINK_LEVELS.length].v;
+    const cfg = THINK_LEVELS.find(x => x.v === _thinkLevel);
+    thinkBtn.innerHTML = iconSvg(cfg.icon) + ' ' + cfg.label.split('·')[1];
+    thinkBtn.title = cfg.tip;
+    await fetch('/api/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cloud_thinking_level: _thinkLevel }),
+    }).catch(() => {});
+  });
+  renderThinkPill();  // composer 随 renderChatArea 重建，模式切换自然重跑
+
   xmodeBtn.addEventListener('click', async () => {
     const session = events.getSession && events.getSession();
     if (!session || xmodeBusy) return;

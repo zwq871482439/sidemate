@@ -495,6 +495,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
 
     full_text = ""
     think_text = ""
+    _think_segments = []  # 0.10 M1：按轮思考段 [{round, text}]，落库 think_segments
     think_len = 0
     agent_summary = None
     # BUG-2 修复：_agent_timeline_buf 已上移到 preload 块之前初始化，此处不再重置，
@@ -556,17 +557,25 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                 yield sse_event("token", {"content": content})
 
             elif phase == "agent_think":
-                # Agent 推理思考
+                # Agent 推理思考（0.10 M1 分段：事件带 round 号，按轮收集/透传）
                 token = content.get("content", "")
-                if token == "":
-                    # 开始/结束标记，跳过
-                    pass
+                _rd = content.get("round") or 0
+                if token == "" and not content.get("round_start"):
+                    pass  # 结束标记，跳过
                 else:
-                    think_text += token
-                    think_len = len(think_text)
-                    _collect["think_content"] = think_text  # M1-B：外壳 finally 中断兜底用
-                    # 模块3a：透传 think token 到前端（供推理单元展示思考过程）
-                    yield sse_event("agent_think", {"content": token})
+                    if content.get("round_start"):
+                        # 轮次边界：给前端分段信号（思考N 开始）
+                        yield sse_event("agent_think", {"content": "", "round": _rd,
+                                                        "round_start": True})
+                    if token:
+                        think_text += token
+                        think_len = len(think_text)
+                        _collect["think_content"] = think_text  # M1-B：外壳 finally 中断兜底用
+                        # 按轮分段收集（落库用；round=0 兜底归第 1 段）
+                        if not _think_segments or _think_segments[-1]["round"] != (_rd or 1):
+                            _think_segments.append({"round": _rd or 1, "text": ""})
+                        _think_segments[-1]["text"] += token
+                        yield sse_event("agent_think", {"content": token, "round": _rd})
 
             elif phase == "agent_status":
                 # Patch4 v3：在 status=="doc_status_done" 时派生 doc_complete 事件
@@ -802,6 +811,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             "content": final_response,
             "ts": time.strftime("%H:%M:%S"),
             "think": (_clean_think(think_text) if think_len >= 20 else ""),
+            "think_segments": _think_segments,  # 0.10 M1：按轮思考段（前端分段折叠；旧消息无此字段走 think 单块兼容）
             "model": model_choice,
             "chars": response_chars,
             "think_chars": think_chars,

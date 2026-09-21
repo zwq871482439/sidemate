@@ -974,6 +974,44 @@ class CloudEngine:
         """当前接口格式（openai | anthropic）"""
         return _cfg("cloud_api_format", "openai") or "openai"
 
+    # ===== 思考档位（0.10 M1：high/low/off，按接口格式分发传参）=====
+    @staticmethod
+    def _thinking_kwargs(model: str) -> dict:
+        """按接口格式/服务商返回思考控制参数（空 dict = 不控制，保持模型默认）。
+
+        分发表（用户定方案 2026-09-21，行业核实）：
+        - DeepSeek（V3.2+/v4）：thinking {type: enabled/disabled}（low 无分档→enabled）
+        - OpenAI（GPT-5/o 系）：reasoning {effort: high/low/minimal}
+          （老 o 系网关只认顶层 reasoning_effort——一并带上，双保险）
+        - Anthropic：thinking {type: enabled, budget_tokens: 8192/1024} | disabled
+        """
+        level = (_cfg("cloud_thinking_level", "high") or "high").lower()
+        if level == "high":
+            return {}  # high = 平台默认行为（不传参，模型全量思考）——零兼容风险
+        fmt = CloudEngine._api_format()
+        _m = (model or "").lower()
+        _is_deepseek = "deepseek" in _m or "deepseek" in (_cfg("cloud_base_url", "") or "").lower()
+        if fmt == "anthropic":
+            if level == "off":
+                return {"thinking": {"type": "disabled"}}
+            return {"thinking": {"type": "enabled", "budget_tokens": 1024 if level == "low" else 8192}}
+        if _is_deepseek:
+            # DeepSeek 只有开/关；low 映射为开（无 effort 分档）
+            return {"thinking": {"type": "disabled" if level == "off" else "enabled"}}
+        # 其余 OpenAI 兼容：reasoning 对象 + 顶层 reasoning_effort 双保险
+        effort = "minimal" if level == "off" else "low"
+        return {"reasoning": {"effort": effort}, "reasoning_effort": effort}
+
+    @staticmethod
+    def _is_param_reject(e: Exception) -> bool:
+        """判断异常是否为'参数不被认'（400 类），用于思考参数降级重发。"""
+        msg = str(e).lower()
+        if "400" in msg or "invalid_request" in msg or "unknown field" in msg \
+           or "unexpected" in msg or "not supported" in msg or "unrecognized" in msg:
+            return True
+        status = getattr(e, "status_code", None) or getattr(getattr(e, "response", None), "status_code", None)
+        return status == 400
+
     def _iter_openai_events(self, client, model, messages, max_tokens,
                             tools=None, temperature=0.7):
         """OpenAI 兼容流 → 归一化事件（与 anthropic_adapter.iter_stream_events 同约定）"""
@@ -982,7 +1020,19 @@ class CloudEngine:
                       temperature=temperature)
         if tools:
             kwargs["tools"] = tools
-        stream = client.chat.completions.create(**kwargs)
+        # 思考档位传参（0.10 M1，仅在线）：按服务商分发；400 时去参重发一次
+        _think_kwargs = self._thinking_kwargs(model)
+        kwargs.update(_think_kwargs)
+        try:
+            stream = client.chat.completions.create(**kwargs)
+        except Exception as e:
+            if _think_kwargs and self._is_param_reject(e):
+                log.warning("[CLOUD] 服务商不认思考参数（%s），去参重发", str(e)[:80])
+                for k in _think_kwargs:
+                    kwargs.pop(k, None)
+                stream = client.chat.completions.create(**kwargs)
+            else:
+                raise
         for chunk in stream:
             # 提取 usage（最后一个有效 chunk 的 usage 即为最终统计）
             if getattr(chunk, 'usage', None):
@@ -1024,8 +1074,11 @@ class CloudEngine:
         from core import anthropic_adapter as _ant
         base_url = _cfg("cloud_base_url", "")
         api_key = self._decode_api_key(_cfg("cloud_api_key", ""))
+        _tk = self._thinking_kwargs(model)
+        # anthropic 格式的 thinking 参数已是适配器原生形态，直接透传
         return _ant.iter_stream_events(base_url, api_key, model, messages,
-                                       max_tokens, tools, temperature)
+                                       max_tokens, tools, temperature,
+                                       thinking=_tk.get("thinking"))
 
     def _iter_events_guarded(self, event_factory):
         """看门狗包裹：worker 线程运行事件源，主生成器按超时拉取。

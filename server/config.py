@@ -129,6 +129,7 @@ DEFAULTS = {
     "cloud_context_policy": "full",              # "full" | "current_only" | "slim_history"
     "cloud_slim_history_rounds": 6,               # slim_history 策略保留的轮数
     "cloud_context_window": 0,                    # 用户手动配置的上下文窗口（0=使用模型默认值）
+    "cloud_thinking_level": "high",               # 思考档位（0.10 M1，仅在线）："high"|"low"|"off"——按接口格式分发传参；400 时自动去参重发
 
     # ----- 联网研究（Patch 2）-----
     # 搜索引擎零配置：本机直搜 Bing，无需 API Key
@@ -255,6 +256,7 @@ _CONFIG_VALIDATORS = {
     "kb_ai_mode": lambda v: v in ("local", "cloud"),
     "cloud_context_policy": lambda v: v in ("full", "current_only", "slim_history"),
     "cloud_api_format": lambda v: v in ("openai", "anthropic"),
+    "cloud_thinking_level": lambda v: v in ("high", "low", "off"),
     "cloud_proxy_mode": lambda v: v in ("system", "direct"),
     "kb_permission": lambda v: v in ("full", "search-only", "disabled"),
     "sandbox_cleanup": lambda v: v in ("on_start", "24h", "7d", "never"),

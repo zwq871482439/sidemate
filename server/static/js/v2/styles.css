@@ -1319,3 +1319,8 @@ body.narrow #viewer.open ~ .vw-backdrop {
 }
 .cc-ref-detail svg { width: 11px; height: 11px; }
 .cc-ref-detail:hover { border-color: var(--d1-accent-3); }
+
+/* 思考分段折叠（0.10 M1 回放态，与流式推理单元同构） */
+.m-think-seg { margin: 4px 0 4px 14px; border-left: 2px solid var(--d1-n-line); padding-left: 10px; }
+.m-think-seg summary { cursor: pointer; font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); padding: 3px 0; }
+.m-think-seg[open] summary { color: var(--d1-ink-2); }

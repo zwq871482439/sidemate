@@ -168,8 +168,9 @@ def convert_tools(tools: list) -> list:
 
 
 def build_request_body(model: str, openai_messages: list, max_tokens: int,
-                       tools: list = None, temperature: float = 0.7) -> dict:
-    """组装 /v1/messages 请求体（max_tokens 必填）"""
+                       tools: list = None, temperature: float = 0.7,
+                       thinking: dict = None) -> dict:
+    """组装 /v1/messages 请求体（max_tokens 必填；thinking 为思考档位参数，0.10 M1）"""
     system, messages = convert_messages(openai_messages)
     if not messages:
         messages = [{"role": "user", "content": "（空对话）"}]
@@ -180,6 +181,11 @@ def build_request_body(model: str, openai_messages: list, max_tokens: int,
         "stream": True,
         "temperature": temperature,
     }
+    if thinking:
+        body["thinking"] = thinking
+        # thinking enabled 时 temperature 必须为 1（Anthropic 约束）
+        if thinking.get("type") == "enabled":
+            body["temperature"] = 1
     if system:
         body["system"] = system
     if tools:
@@ -201,14 +207,15 @@ _STOP_REASON_MAP = {
 
 def iter_stream_events(base_url: str, api_key: str, model: str,
                        openai_messages: list, max_tokens: int,
-                       tools: list = None, temperature: float = 0.7):
+                       tools: list = None, temperature: float = 0.7,
+                       thinking: dict = None):
     """发起 Anthropic 流式请求，yield 归一化事件（见模块docstring）。
 
     网络/HTTP 错误抛 AnthropicAPIError（或 httpx 原生异常），
     由 CloudEngine 外层统一重试/翻译。
     """
     url = build_messages_url(base_url)
-    body = build_request_body(model, openai_messages, max_tokens, tools, temperature)
+    body = build_request_body(model, openai_messages, max_tokens, tools, temperature, thinking)
     log.info("[ANTHROPIC] POST %s model=%s messages=%d max_tokens=%d",
              url, model, len(body["messages"]), max_tokens)
 
