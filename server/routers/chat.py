@@ -503,9 +503,23 @@ async def api_chat_stream(request: Request):
 
     log.info("[CHAT] 即将创建 StreamingResponse, ai_mode=%s, model_choice=%s" % (_ai_mode, model_choice))
 
-    from pipelines import create_pipeline
+    # 0.10 M2-P1 生成任务化：pipeline 在后台线程跑，事件入缓冲；
+    # HTTP 响应只是订阅者——连接断（刷新）生成不死，可经 gen-live 重附
+    from core.gen_manager import get_gen_manager
+    from pipelines import create_pipeline as _cp
+    _gm = get_gen_manager()
+    # chat_file 是会话文件夹完整路径（...\chats\<chat_id>）——basename 即 task_id
+    _task_id = os.path.basename(chat_file.rstrip("\\/")) if chat_file else "unknown"
+    _chat_dir = chat_file  # 会话目录本身（gen_events.jsonl 落这里）
+    try:
+        _task = _gm.start(_task_id, _chat_dir, _cp(ctx))
+    except RuntimeError:
+        def _busy_gen():
+            yield 'data: {"type": "error", "content": "该会话已有进行中的生成，等完成或点停止"}\n\n'
+            yield 'data: [DONE]\n\n'
+        return StreamingResponse(_busy_gen(), media_type="text/event-stream")
     return StreamingResponse(
-        create_pipeline(ctx),
+        _task.subscribe_async(),
         media_type="text/event-stream",
     )
 
@@ -709,6 +723,33 @@ async def api_chats_set_group(chat_name: str, request: Request):
     body = await request.json()
     from session.chat_store import set_chat_group
     return set_chat_group(safe_name, body.get("group", ""))
+
+
+@router.get("/api/chats/{chat_name}/gen-state")
+def api_chats_gen_state(chat_name: str):
+    """0.10 M2-P2：查询会话的生成状态（前端刷新后判断是否需重附）。"""
+    from core.gen_manager import get_gen_manager
+    safe_name = _safe_chat_name(chat_name)
+    if not safe_name:
+        return JSONResponse({"error": "非法对话名称"}, status_code=400)
+    state = get_gen_manager().state(safe_name)
+    return state or {"chat_id": safe_name, "status": "idle", "seq": 0, "events_tail": []}
+
+
+@router.get("/api/chats/{chat_name}/gen-live")
+def api_chats_gen_live(chat_name: str):
+    """0.10 M2-P2：重附到进行中的生成流（刷新后 SSE 重连）。"""
+    from core.gen_manager import get_gen_manager
+    safe_name = _safe_chat_name(chat_name)
+    if not safe_name:
+        return JSONResponse({"error": "非法对话名称"}, status_code=400)
+    task = get_gen_manager().get(safe_name)
+    if not task:
+        def _idle_gen():
+            yield 'data: {"type": "error", "content": "该会话当前没有进行中的生成"}\n\n'
+            yield 'data: [DONE]\n\n'
+        return StreamingResponse(_idle_gen(), media_type="text/event-stream")
+    return StreamingResponse(task.subscribe_async(), media_type="text/event-stream")
 
 
 @router.get("/api/chats/{chat_name}/carry")

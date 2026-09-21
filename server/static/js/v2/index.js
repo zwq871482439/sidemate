@@ -768,8 +768,74 @@ function getCardAnswer(question) {
   return null;
 }
 
+// 0.10 M2-P2 刷新恢复：检测进行中生成并重附（DeepSeek 网页版同能力）
+async function _maybeReattachGen(cur) {
+  if (!cur || state.generating) return;  // 已在生成中不重附
+  try {
+    const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/gen-state');
+    const d = await r.json();
+    if (d.status !== 'generating') return;
+    // 有进行中生成 → 设置状态 + 重附 SSE
+    log.info('[V2] 检测到进行中生成，重附:', cur.name);
+    state.generating = true;
+    render();  // 触发流式气泡渲染
+    // 用 EventSource 连 gen-live（GET SSE）
+    const es = new EventSource('/api/chats/' + encodeURIComponent(cur.name) + '/gen-live');
+    window._v2GenReattach = es;  // 全局引用防 GC
+    es.onmessage = (ev) => {
+      if (ev.data === '[DONE]') {
+        es.close();
+        window._v2GenReattach = null;
+        state.generating = false;
+        // 刷新消息（快照=真相）
+        loadSessions().then(() => loadCurrentMessages().then(() => render()));
+        return;
+      }
+      try {
+        const d2 = JSON.parse(ev.data);
+        _handleReattachEvent(d2);
+      } catch (e) { /* 非 JSON 忽略 */ }
+    };
+    es.onerror = () => {
+      es.close();
+      window._v2GenReattach = null;
+      // 可能生成已结束（服务端关流）
+      state.generating = false;
+      loadSessions().then(() => loadCurrentMessages().then(() => render()));
+    };
+  } catch (e) { /* gen-state 查询失败静默 */ }
+}
+
+// 重附事件处理：轻量版——只更新状态条+流式文本（卡片/复杂事件走快照）
+function _handleReattachEvent(d) {
+  if (d.type === 'token' || d.type === 'content') {
+    if (!_streamState) _streamState = { text: '', think: '', status: '' };
+    _streamState.text += d.content || '';
+    renderStreamingBubble(_streamState);
+  } else if (d.type === 'agent_think') {
+    if (!_streamState) _streamState = { text: '', think: '', status: '' };
+    _streamState.think += (d.content && d.content.content) || '';
+    renderStreamingBubble(_streamState);
+  } else if (d.type === 'agent_status') {
+    if (!_streamState) _streamState = { text: '', think: '', status: '' };
+    _streamState.status = _agentStatusLabel(d.status || '');
+    renderStreamingBubble(_streamState);
+  } else if (d.type === 'done') {
+    // done 由 [DONE] 统一处理
+  }
+}
+
+function _agentStatusLabel(s) {
+  const map = { thinking: '思考中', kb_searching: '检索知识库', searching: '联网搜索',
+                fetching: '阅读网页', writing: '写入文档', ppt_working: '制作 PPT',
+                docx_working: '制作 Word' };
+  return map[s] || s;
+}
+
 async function loadCurrentMessages() {
   const cur = state.sessions.find(c => c.current);
+  // 0.10 M2-P2 刷新恢复：检测进行中生成 → 重附 SSE
+  _maybeReattachGen(cur);
   if (!cur || !cur.msg_count) {
     state.messages = null;
     return;
