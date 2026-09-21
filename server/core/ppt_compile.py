@@ -146,11 +146,11 @@ def list_decks(chat_id):
     return decks
 
 
-def begin_deck(chat_id, title):
-    """开新 deck：建目录 + 写 spec_lock.md（DNA-01 深蓝金默认）。
+def begin_deck(chat_id, title, user_hint=""):
+    """开新 deck：建目录 + 写 spec_lock.md（DNA 选卡：默认 01，用户 hint 可换）。
 
     Returns:
-        dict: {ok, deck, title, canvas, max_pages, next}
+        dict: {ok, deck, title, canvas, max_pages, next, dna}
     """
     if not (title or "").strip():
         return {"ok": False, "error": "missing_title",
@@ -168,10 +168,14 @@ def begin_deck(chat_id, title):
         if dd["deck"] == deck:
             pages = dd["pages"]
             break
+    # 0.10 M1-5b 选卡：用户意图 hint → DNA 卡（begin 返回注入 prompt）
+    from core.design_dna import card_prompt_block, pick_card
+    _cid = pick_card("ppt", user_hint or "")
     return {
         "ok": True, "deck": deck, "title": title.strip(),
         "canvas": CANVAS_VIEWBOX, "max_pages": MAX_PAGES,
-        "existing_pages": pages,
+        "existing_pages": pages, "dna": _cid,
+        "design_rules": card_prompt_block("ppt", user_hint or ""),
         "next": "用 create_ppt(action='page', page=1, svg=...) 逐页提交；"
                 "全部完成后 create_ppt(action='build') 编译下载",
     }

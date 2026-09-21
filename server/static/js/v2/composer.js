@@ -315,11 +315,26 @@ export function renderComposer(state, events) {
   // ---- 发送/停止 ----
   let attachPending = false;  // 引用直读异步取 token 期间禁发送（大文件估算要几秒，
                               // 十五五实战：读取未完就发 = 文件没进上下文，AI 报"没收到"）
+  let _running = false;
+  let _queued = null;  // 0.10 M1-5a 消息队列：生成中排队，完成自动发
+
   function doSend() {
     if (isLegacy) return;
     if (attachPending) return;  // 附件读取中——chip 出现才放行
     const text = textarea.value.trim();
     if (!text && !attach) return;
+    // 生成中：入队而非丢弃（DeepSeek/OpenWebUI 消息队列模式——
+    // 排队提示 + 完成后自动发送）
+    if (_running) {
+      const q = { text, actionMode: state.actionMode, filePath: attach ? (attach.kind === 'upload' ? attach.path : attach.ids) : null,
+                  fileTag: attach ? (attach.kind === 'upload' ? { name: attach.name, source: 'upload' } : { name: attach.names.join('、'), source: 'kb' }) : null };
+      _queued = (_queued && _queued.text) ? [_queued, q] : q;  // 已有一条则改数组（上限2）
+      if (Array.isArray(_queued) && _queued.length > 2) _queued = _queued.slice(-2);
+      _showQueueHint();
+      textarea.value = '';
+      _syncSendEnabled();
+      return;
+    }
     const payload = {
       text,
       actionMode: state.actionMode,
@@ -488,10 +503,40 @@ export function renderComposer(state, events) {
 
   // 生成中切换发送/停止（旧版会话恒禁用，不被 setRunning 复活）
   function setRunning(running) {
+    _running = running;
     sendBtn.style.display = running ? 'none' : '';
     stopBtn.style.display = running ? '' : 'none';
     textarea.disabled = running || isLegacy;
-    if (!running) _syncSendEnabled();  // 结束态按内容重算（空输入保持置灰）
+    if (!running) {
+      _syncSendEnabled();  // 结束态按内容重算（空输入保持置灰）
+      _flushQueue();       // 0.10 M1-5a：完成自动发排队消息
+    }
+  }
+
+  function _showQueueHint() {
+    let hint = wrap.querySelector('.cb-queue-hint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.className = 'cb-queue-hint';
+      wrap.querySelector('.composer-box').appendChild(hint);
+    }
+    const n = Array.isArray(_queued) ? _queued.length : 1;
+    hint.textContent = '⏳ 已排队 ' + n + ' 条，当前回复完成后自动发送';
+    hint.style.display = '';
+  }
+
+  function _flushQueue() {
+    if (!_queued) return;
+    const q = Array.isArray(_queued) ? _queued.shift() : _queued;
+    if (Array.isArray(_queued) && !_queued.length) _queued = null;
+    else if (!Array.isArray(_queued)) _queued = null;
+    const hint = wrap.querySelector('.cb-queue-hint');
+    if (hint && !_queued) hint.style.display = 'none';
+    else if (hint) _showQueueHint();
+    if (q && q.text) {
+      events.onSend({ text: q.text, actionMode: q.actionMode,
+                      filePath: q.filePath, fileTag: q.fileTag });
+    }
   }
 
   // 空输入发送按钮置灰（GUI 探索瑕疵③：doSend 守卫早已 no-op，这里补视觉；

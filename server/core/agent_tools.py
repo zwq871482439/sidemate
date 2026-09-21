@@ -674,6 +674,34 @@ TOOL_REGISTRY = {
         "condition": None,
         "prompt_fragment": "ppt",  # M2：协议 fragment 随启用自动进 prompt（注册表拼装）
     },
+    # ===== 0.10 M1-4：create_docx（精排版 Word：markdown 章节 → DNA 版式 docx）=====
+    "create_docx": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "create_docx",
+                "description": "制作精排版的 Word 文档（.docx，正式文档级版式：封面/标题层级/页眉页脚/1.5倍行距）。工作流：① action='begin' 开题（给标题，返回版式规则）→ ② action='section' 逐章提交 markdown 正文（每章独立调用，支持标题/列表/表格/粗体）→ ③ action='build' 编译为可下载 docx。适用：用户要\"Word/文档/docx/报告/方案\"且需要正式排版文件。与 set_doc_status 的区别：那是工作区 md 的简单转写，本工具是精排版产物。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["begin", "section", "build"],
+                                   "description": "begin=开题建文档；section=提交一章；build=编译 docx"},
+                        "title": {"type": "string", "description": "begin 必填：文档标题"},
+                        "deck": {"type": "string", "description": "section/build 必填：begin 返回的文档 id"},
+                        "section": {"type": "string", "description": "section 必填：本章标题"},
+                        "content": {"type": "string", "description": "section 必填：本章 markdown 正文（实质内容，不接受提纲）"},
+                        "filename": {"type": "string", "description": "build 可选：输出文件名（不含扩展名）"}
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "docx_working", "done": "docx_done"},
+        "stat_key": "docx_actions",
+        "condition": None,
+        "prompt_fragment": "docx",
+    },
     # ===== M2：PTC 调用计划（一次编排多步工具，省 LLM 轮次）=====
     "run_plan": {
         "schema": {
@@ -913,6 +941,7 @@ TOOL_REGISTRY = {
 _FRAGMENT_LOADERS = {
     "cards": lambda: __import__("prompts").CARD_PROTOCOL_PROMPT,
     "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,
+    "docx": lambda: __import__("prompts").DOCX_PROTOCOL_PROMPT,
     "plan": lambda: __import__("prompts").PLAN_PROTOCOL_PROMPT,
     "reader": lambda: __import__("prompts").READER_PROTOCOL_PROMPT,
     "read_session": lambda: __import__("prompts").SESSION_READ_PROMPT,

@@ -241,6 +241,20 @@ def list_ppt_pages(chat_id: str):
         return JSONResponse({"error": str(e)[:120]}, status_code=500)
 
 
+@router.get("/api/chat/{chat_id}/docx/docs")
+def list_docx_docs(chat_id: str):
+    """列出会话的精排版 docx 文档与章节（视窗预览 tab 回放用，0.10 M1-4）。"""
+    from core import docx_compile
+    if _chat_folder_path(chat_id) is None:
+        return JSONResponse({"error": "非法或不存在会话"}, status_code=404)
+    try:
+        docs = docx_compile.list_docs(chat_id)
+        return {"ok": True, "docs": docs}
+    except Exception as e:
+        log.warning("[DOCX] docs 列表失败 chat=%s: %s", chat_id, str(e)[:100])
+        return JSONResponse({"error": str(e)[:120]}, status_code=500)
+
+
 @router.get("/api/chat/{chat_id}/workspace")
 def list_workspace(chat_id: str):
     """列出会话 workspace 内的文件。"""

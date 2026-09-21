@@ -36,6 +36,7 @@ export function createViewer(opts) {
   let pkb = null;      // M2-5 项目知识库：{enabled, files, chunks, size_bytes, hints}
   let uploading = false;
   let ppt = null;      // PPT decks 回放：{ decks:[{deck,title,pages:[{n,url}],pptx,pptx_url}] } | null=未加载
+  let docxDocs = null;  // 0.10 M1-4：精排版 docx 回放 [{deck,title,sections,section_list}] | null=未加载
   let pptLive = {};    // 流式期间即时累积：deck -> { title, pages: {n: url} }
   let htmlLive = [];   // 流式期间 doc_complete 的 HTML 报告：[{url, name}]
   const htmlCache = {}; // url -> 文本（iframe srcdoc 用；换版重发生效靠 no-store 拉新）
@@ -602,10 +603,21 @@ export function createViewer(opts) {
     return out;
   }
 
+  async function _loadDocx() {
+    const cur = opts.getCurrentChat();
+    if (!cur) { docxDocs = []; return; }
+    try {
+      const r = await fetch('/api/chat/' + encodeURIComponent(cur.name) + '/docx/docs');
+      const d = await r.json();
+      docxDocs = d.docs || [];
+    } catch (e) { docxDocs = []; }
+  }
+
   function _renderPreview(body) {
-    if (ppt === null || files === null) {
+    if (ppt === null || files === null || docxDocs === null) {
       body.innerHTML = '<div class="vw-empty">加载中…</div>';
-      Promise.all([ppt === null ? _loadPpt() : null, files === null ? loadFiles() : null])
+      Promise.all([ppt === null ? _loadPpt() : null, files === null ? loadFiles() : null,
+                   docxDocs === null ? _loadDocx() : null])
         .then(() => { if (tab === 'preview') renderBody(); });
       return;
     }
@@ -636,6 +648,18 @@ export function createViewer(opts) {
         </div>
         <div class="vw-html-frame" data-url="${esc(h.url)}"><div class="vw-empty"><small>渲染中…</small></div></div>
       </div>`).join('');
+    // 0.10 M1-4：精排版 Word 文档（章节 markdown 预览）
+    const _docxHtml = (docxDocs || []).map(doc => `<div class="vw-ppt-deck vw-docx-deck">
+      <div class="vw-ppt-head">
+        <span class="vw-ppt-title">${icon('fileText')} ${esc(doc.title)} · Word</span>
+        <span class="vw-ppt-meta">${doc.sections || 0} 章</span>
+      </div>
+      ${(doc.section_list || []).map(sec2 => `<details class="vw-docx-sec">
+        <summary>${esc(sec2.section)}<span class="vw-docx-n">${sec2.chars || 0} 字</span></summary>
+        <div class="vw-docx-body">${esc(sec2.content || '')}</div>
+      </details>`).join('')}
+    </div>`).join('');
+    body.innerHTML = body.innerHTML + _docxHtml;
     // 逐页拉 SVG 内联渲染（no-store：修复重发的同页要拿新内容）
     body.querySelectorAll('.vw-ppt-svg[data-url]').forEach(box => {
       const url = box.dataset.url;

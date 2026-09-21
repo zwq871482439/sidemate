@@ -299,6 +299,7 @@ class AgentLoop:
         }
 
     def run(self, message, mode="chat", history=None, context_cache=None, template=None):
+        self._user_msg = message if isinstance(message, str) else ""
         """Agent 主循环 — yield (phase, content)
 
         Args:
@@ -1530,6 +1531,42 @@ class AgentLoop:
                     "message": "深读 %d 篇，成功 %d 篇" % (len(readers), ok_n),
                 }
 
+            elif tool_name == "create_docx":
+                # 0.10 M1-4：精排版 Word（begin/section/build 三动作，core/docx_compile.py）
+                from core import docx_compile as _dcx
+                _action = args.get("action", "")
+                if _action == "begin":
+                    _r, _meta = _dcx.begin_doc(self.chat_id, args.get("title", ""),
+                                               user_hint=getattr(self, "_user_msg", ""))
+                    r = _r
+                elif _action == "section":
+                    _r, _meta = _dcx.add_section(self.chat_id, args.get("deck", ""),
+                                                  args.get("section", ""), args.get("content", ""))
+                    r = _r
+                elif _action == "build":
+                    _r, _meta = _dcx.build_doc(self.chat_id, args.get("deck", ""),
+                                                args.get("filename"))
+                    r = _r
+                    if r.get("ok"):
+                        r["url"] = "/api/chat/%s/workspace/download?path=%s" % (
+                            self.chat_id, r["filename"])
+                else:
+                    r = {"ok": False, "error": "bad_action",
+                         "message": "action 必须是 begin/section/build 之一"}
+                if r.get("ok"):
+                    return {"success": True, "tool": "create_docx",
+                            "data": {k: v for k, v in r.items() if k != "rules"}
+                                  | ({"rules": r["rules"]} if _action == "begin" else {}),
+                            "message": ("文档已开题：%s" % r.get("deck") if _action == "begin"
+                                        else "第 %s 章已提交（累计 %s 章）" % (r.get("n"), r.get("total_sections"))
+                                        if _action == "section"
+                                        else "docx 已生成：%s（%s 章 %s 字）" % (
+                                            r.get("filename"), r.get("sections"), r.get("chars")))}
+                return {"success": False, "tool": "create_docx",
+                        "error": r.get("error", "docx_error"),
+                        "message": r.get("message", "create_docx 执行失败"),
+                        "data": r}
+
             elif tool_name == "run_plan":
                 # M2：PTC 调用计划——一批相互独立的信息获取类调用一次执行
                 # （省 LLM 轮次；顺序执行，写操作/嵌套/超限步骤逐个跳过并说明）
@@ -1592,7 +1629,8 @@ class AgentLoop:
                 from core import ppt_compile as _pptc
                 action = args.get("action", "")
                 if action == "begin":
-                    r = _pptc.begin_deck(self.chat_id, args.get("title", ""))
+                    _hint = getattr(self, "_user_msg", "")
+                    r = _pptc.begin_deck(self.chat_id, args.get("title", ""), user_hint=_hint)
                 elif action == "page":
                     r = _pptc.add_page(self.chat_id, args.get("deck", ""),
                                        args.get("page"), args.get("svg", ""))

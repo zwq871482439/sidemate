@@ -1324,3 +1324,20 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .m-think-seg { margin: 4px 0 4px 14px; border-left: 2px solid var(--d1-n-line); padding-left: 10px; }
 .m-think-seg summary { cursor: pointer; font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); padding: 3px 0; }
 .m-think-seg[open] summary { color: var(--d1-ink-2); }
+
+/* 精排版 Word 章节预览（0.10 M1-4） */
+.vw-docx-sec { margin: 2px 0 2px 12px; border-left: 2px solid var(--d1-n-line); padding-left: 10px; }
+.vw-docx-sec summary { cursor: pointer; font-size: var(--d1-fs-small); color: var(--d1-ink-2); padding: 4px 0; display: flex; gap: 8px; align-items: baseline; }
+.vw-docx-sec summary:hover { color: var(--d1-accent-3); }
+.vw-docx-n { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); }
+.vw-docx-body { font-size: var(--d1-fs-small); color: var(--d1-ink-2); line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow-y: auto;
+  padding: 6px 0 8px; }
+
+/* 消息队列提示（0.10 M1-5a） */
+.cb-queue-hint {
+  position: absolute; right: 12px; bottom: 52px; z-index: 20;
+  font-size: var(--d1-fs-tiny); color: var(--d1-gold-2);
+  background: var(--d1-paper); border: 1px solid var(--d1-n-line);
+  border-radius: 8px; padding: 4px 10px; box-shadow: var(--d1-shadow-pop, 0 4px 16px rgba(15,43,70,.14));
+}
