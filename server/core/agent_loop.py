@@ -1568,6 +1568,22 @@ class AgentLoop:
                         "message": r.get("message", "create_docx 执行失败"),
                         "data": r}
 
+            elif tool_name.startswith("mcp_"):
+                # 0.10 M4-5：MCP 工具代理调用（mcp_{server}_{tool}）
+                from core.mcp_client import get_mcp_manager
+                _parts = tool_name.split("_", 2)  # ["mcp", server, tool]
+                if len(_parts) >= 3:
+                    _srv, _tool = _parts[1], _parts[2]
+                    r = get_mcp_manager().call(_srv, _tool, args)
+                    if r.get("ok"):
+                        return {"success": True, "tool": tool_name,
+                                "data": {"text": r.get("text", "")},
+                                "message": (r.get("text") or "")[:150]}
+                    return {"success": False, "tool": tool_name,
+                            "error": r.get("error", "mcp_error"),
+                            "message": r.get("error", "MCP 调用失败")}
+                return {"success": False, "tool": tool_name, "error": "bad_mcp_tool_name"}
+
             elif tool_name == "set_todos":
                 # 0.10 M4-2：任务步骤追踪（学 Claude Code Todo 可视化）
                 from core import project_write as _pw4

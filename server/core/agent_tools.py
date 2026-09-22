@@ -992,6 +992,40 @@ TOOL_REGISTRY = {
 # ===== prompt fragment 惰性加载表（M2 能力注册表拼装）=====
 # 注册工具/能力时把协议文本挂这里：工具启用 → fragment 自动进 system prompt，
 # 不再各处手工 append（M1-D-24 手工注入漏一处的教训、②++ 定稿的落地）。
+def register_mcp_tools():
+    """把 MCP 服务器的工具注册进 TOOL_REGISTRY（0.10 M4-5）。
+
+    工具名格式：mcp_{server}_{tool}（避免与内置工具冲突）。
+    需在 MCP 服务器连接后调用（settings 页连接或启动时自动连接）。
+    """
+    from core.mcp_client import get_mcp_manager
+    mgr = get_mcp_manager()
+    tools = mgr.get_all_tools()
+    registered = 0
+    for t in tools:
+        prefixed = "mcp_%s_%s" % (t["server"], t["name"])
+        if prefixed in TOOL_REGISTRY:
+            continue  # 已注册
+        TOOL_REGISTRY[prefixed] = {
+            "schema": {
+                "type": "function",
+                "function": {
+                    "name": prefixed,
+                    "description": "[MCP:%s] %s" % (t["server"], t["description"] or t["name"]),
+                    "parameters": t.get("inputSchema", {"type": "object", "properties": {}}),
+                }
+            },
+            "handler": None,
+            "status_map": {"start": "mcp_calling", "done": "mcp_done"},
+            "stat_key": "mcp_calls",
+            "condition": None,
+        }
+        registered += 1
+    if registered:
+        log.info("[MCP] %d 个工具已注册进 TOOL_REGISTRY", registered)
+    return registered
+
+
 _FRAGMENT_LOADERS = {
     "cards": lambda: __import__("prompts").CARD_PROTOCOL_PROMPT,
     "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,

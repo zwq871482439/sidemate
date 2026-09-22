@@ -1323,3 +1323,85 @@ def api_cloud_usage(range_days: int = 7, granularity: str = "hour"):
              "by_model": [], "by_bucket": [], "records": []},
             status_code=500,
         )
+
+
+# ============================================================
+#  MCP 服务器管理（0.10 M4-5）
+# ============================================================
+
+@router.get("/api/mcp/servers")
+def api_mcp_list():
+    """列出 MCP 服务器配置+连接状态。"""
+    from core.mcp_client import load_mcp_config, get_mcp_manager
+    config = load_mcp_config()
+    mgr = get_mcp_manager()
+    servers = []
+    for srv in config.get("servers", []):
+        conn = mgr.connections.get(srv.get("name", ""))
+        servers.append({
+            "name": srv.get("name", ""),
+            "command": srv.get("command", ""),
+            "args": srv.get("args", []),
+            "status": conn.status if conn else "disconnected",
+            "tools": len(conn.tools) if conn else 0,
+            "tool_names": [t["name"] for t in conn.tools] if conn else [],
+            "error": conn.error if conn else "",
+        })
+    return {"servers": servers}
+
+
+@router.post("/api/mcp/servers")
+async def api_mcp_add(request: Request):
+    """添加 MCP 服务器配置。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    command = (body.get("command") or "").strip()
+    if not name or not command:
+        return JSONResponse({"error": "name 和 command 必填"}, status_code=400)
+    from core.mcp_client import load_mcp_config, save_mcp_config
+    config = load_mcp_config()
+    if any(s.get("name") == name for s in config["servers"]):
+        return JSONResponse({"error": "同名服务器已存在"}, status_code=400)
+    config["servers"].append({
+        "name": name, "command": command,
+        "args": body.get("args", []),
+    })
+    save_mcp_config(config)
+    return {"ok": True}
+
+
+@router.delete("/api/mcp/servers/{name}")
+def api_mcp_delete(name: str):
+    """删除 MCP 服务器配置并断开。"""
+    from core.mcp_client import load_mcp_config, save_mcp_config, get_mcp_manager
+    config = load_mcp_config()
+    config["servers"] = [s for s in config["servers"] if s.get("name") != name]
+    save_mcp_config(config)
+    mgr = get_mcp_manager()
+    if name in mgr.connections:
+        mgr.connections[name].disconnect()
+        del mgr.connections[name]
+    return {"ok": True}
+
+
+@router.post("/api/mcp/connect")
+async def api_mcp_connect(request: Request):
+    """连接所有已配置的 MCP 服务器并注册工具。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    from core.mcp_client import get_mcp_manager
+    from core.agent_tools import register_mcp_tools
+    mgr = get_mcp_manager()
+    connected = mgr.connect_all()
+    registered = register_mcp_tools()
+    return {"ok": True, "connected": connected, "tools_registered": registered,
+            "status": mgr.status()}
+
+
+@router.get("/api/mcp/status")
+def api_mcp_status():
+    """MCP 连接状态。"""
+    from core.mcp_client import get_mcp_manager
+    return {"servers": get_mcp_manager().status()}
