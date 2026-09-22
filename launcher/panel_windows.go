@@ -286,15 +286,22 @@ func panelPaint(hWnd syscall.Handle) {
 	panelDrawLine(hdc, sc(20), sy, pw-sc(20), sy, pnlColorSep)
 
 	// === 服务状态 ===
+	// 0.10：启动不预载后模型停止是正常态（懒加载+闲置卸载），不再作为故障指示；
+	// 面板只监控基础服务（Python 后端）是否活着
 	sy += sc(16)
-	sy += panelDrawServiceRow(hdc, "模型服务",
-		fmt.Sprintf("127.0.0.1:%d", panelState.ollamaPort),
-		panelState.ollamaAlive, sc(20), sy, pw, d)
-
-	sy += sc(12)
 	sy += panelDrawServiceRow(hdc, "基础服务",
 		fmt.Sprintf("127.0.0.1:%d", panelState.serverPort),
 		panelState.serverAlive, sc(20), sy, pw, d)
+
+	// 模型状态改为信息行（非红绿判定）：显示当前是否有模型在跑
+	modelStatus := "按需加载（首次使用时自动加载）"
+	if panelState.ollamaAlive {
+		modelStatus = fmt.Sprintf("运行中 · 127.0.0.1:%d", panelState.ollamaPort)
+	}
+	sy += sc(12)
+	sy += panelDrawServiceRow(hdc, "模型服务",
+		modelStatus,
+		true, sc(20), sy, pw, d) // 恒绿：不是故障判定
 
 	// === 分隔线 ===
 	sy += sc(8)
