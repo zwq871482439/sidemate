@@ -71,12 +71,22 @@ async def _lazy_load_engine(ollama_manager, timeout_s: float = 150.0) -> bool:
     返回 True=引擎就绪可继续生成；False=超时/失败。
     加载成功后同步 model_manager._loaded（对话门禁读这里，
     不标记会误报"请先在设置页加载模型"——镜像 server.py S3 逻辑）。
+
+    0.10.1 修复：就绪判定从 is_healthy 收紧为 serves_our_models——
+    用户自装 Ollama 常驻 11434 时 is_healthy 恒真（有模型但名字不是我们的），
+    生成请求发给不存在的 model id 只得空输出。
     """
     global _lazy_loading
+
+    def _ready() -> bool:
+        # 防御：老桩/测试替身可能只有 is_healthy（语义退化为"进程在跑"）
+        _s = getattr(ollama_manager, "serves_our_models", None)
+        return _s() if callable(_s) else ollama_manager.is_healthy()
+
     with _lazy_load_mu:
         # 单飞：仅当既无在途加载、引擎也未就绪时才触发 start（并占位）；
         # 非触发方不动 _lazy_loading（占位由 _do_start 的 finally 归还）
-        if _lazy_loading or ollama_manager.is_healthy():
+        if _lazy_loading or _ready():
             _should_kick = False
         else:
             _should_kick = True
@@ -87,7 +97,8 @@ async def _lazy_load_engine(ollama_manager, timeout_s: float = 150.0) -> bool:
             global _lazy_loading
             try:
                 r = ollama_manager.start()
-                log.info("[LAZY-LOAD] 懒加载引擎: %s" % r.get("status", r.get("error", "?")))
+                log.info("[LAZY-LOAD] 懒加载引擎: %s (port=%s)" % (
+                    r.get("status", r.get("error", "?")), r.get("port", "?")))
                 if r.get("status") in ("started", "already_running"):
                     ollama_manager.mark_model_loaded(gguf_path=r.get("model", ""))
             except Exception as e:
@@ -100,10 +111,10 @@ async def _lazy_load_engine(ollama_manager, timeout_s: float = 150.0) -> bool:
     import asyncio
     _t0 = time.time()
     while time.time() - _t0 < timeout_s:
-        if ollama_manager.is_healthy():
+        if _ready():
             return True
         await asyncio.sleep(2)
-    return ollama_manager.is_healthy()
+    return _ready()
 
 
 # ============================================================
@@ -339,7 +350,9 @@ async def api_chat_stream(request: Request):
     _needs_local = _ai_mode in ("local", "parallel")
     if _needs_local:
         from server import ollama_manager
-        if not ollama_manager.is_healthy():
+        # 0.10.1 修复：is_healthy 会被用户自装 Ollama（常驻 11434、有自己的模型）
+        # 误判为就绪 → 生成发给不存在的 model id 得空输出。就绪=健康且服务我们的模型。
+        if not ollama_manager.serves_our_models():
             # 0.10.1 启动不预载：首条离线/并行消息触发懒加载。
             # 同步等待引擎就绪（上限 150s）——连接静默期由前端看门狗兜底
             # （60s 给等待提示并继续等，P8-7）；就绪后落入正常生成路径。
@@ -444,6 +457,21 @@ async def api_chat_stream(request: Request):
     # 检查模型是否加载（云模式跳过；并行模式需要本地模型）
     if _ai_mode != "cloud":
         loaded = mgr.get_loaded_llms()
+        if not loaded:
+            # 0.10.1 自愈：IDLE-UNLOAD/进程换代后引擎可能在跑但 _loaded 已清
+            # （典型：llama-server 孤儿进程仍服务我们的模型）——补标而不是拒绝
+            try:
+                from server import ollama_manager as _om
+                if _om.serves_our_models():
+                    _served = _om.impl.served_model_ids()
+                    for _m in (_om.registry.scan() or []):
+                        _fn = os.path.basename(str(_m.gguf_path))
+                        _stem = os.path.splitext(_fn)[0]
+                        if any(_fn.lower() in s.lower() or _stem.lower() in s.lower() for s in _served):
+                            _om.mark_model_loaded(model_id=_m.model_id)
+                    loaded = mgr.get_loaded_llms()
+            except Exception as _e:
+                log.warning("[CHAT] _loaded 自愈失败: %s" % str(_e)[:80])
         if not loaded:
             def error_gen():
                 yield 'data: {"type": "error", "content": "请先在设置页加载模型"}\n\n'

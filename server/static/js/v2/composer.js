@@ -4,6 +4,7 @@
 
 import { api } from './api.js';
 import { icon, iconSvg } from './icons.js';
+import { uiAlert } from './ui_dialog.js';
 
 // Token 估算（照搬经典版 token-estimator.js：中文 ~1.5 字/token，英文 ~4 字/token）
 // 模块级消息队列（composer 重建不丢失——终验 T-7 修复）
@@ -358,10 +359,10 @@ export function renderComposer(state, events) {
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
   });
-  // 自适应高度 + token 聚合条联动
+  // 自适应高度 + token 聚合条联动（上限 110px = 5 行，与 CSS max-height 一致）
   textarea.addEventListener('input', () => {
     textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
+    textarea.style.height = Math.min(textarea.scrollHeight, 110) + 'px';
     updateTokenBar();
   });
 
@@ -405,7 +406,7 @@ export function renderComposer(state, events) {
       const resp = await fetch('/api/kb/documents');
       const data = await resp.json();
       const files = (Array.isArray(data) ? data : (data.files || [])).filter(f => f.status === 'ready');
-      if (!files.length) { alert('知识库中没有文档，请先上传'); return; }
+      if (!files.length) { uiAlert('知识库中没有文档，请先上传'); return; }
       _showKbPicker(files, (picked) => {
         attach = { kind: 'kb', names: picked.map(p => p.filename), ids: picked.map(p => p.id || p.doc_id).join(',') };
         attachTokens = Math.ceil(picked.reduce((sum, p) => sum + (p.total_chars || 0), 0) / 1.5);
@@ -421,7 +422,7 @@ export function renderComposer(state, events) {
     try {
       const r = await api.listProjects();
       const projs = (r.projects || []).filter(p => p.status !== 'missing');
-      if (!projs.length) { alert('还没有项目'); return; }
+      if (!projs.length) { uiAlert('还没有项目'); return; }
       _showProjFilePicker(projs);
     } catch (e) { console.warn('[v2] 项目列表失败', e); }
   });
@@ -467,10 +468,10 @@ export function renderComposer(state, events) {
               events.onAttachChange(attach);
               overlay.remove();
             } else {
-              alert((rd && rd.error) || '引用失败');
+              uiAlert((rd && rd.error) || '引用失败');
               b.disabled = false;
             }
-          } catch (e) { alert('引用失败'); b.disabled = false; }
+          } catch (e) { uiAlert('引用失败'); b.disabled = false; }
         }));
       } catch (e) {
         box.innerHTML = '<div class="vw-empty"><small>读取失败</small></div>';

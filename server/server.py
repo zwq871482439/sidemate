@@ -670,10 +670,18 @@ def _idle_unload_worker():
             _idle = _t.time() - last_llm_use()
             if _idle > _minutes * 60:
                 try:
-                    ollama_manager.stop()
-                    mgr._loaded.clear()
-                    log.info("[IDLE-UNLOAD] 本地引擎闲置 %d 分钟，已卸载（下次离线消息自动懒加载）"
-                             % int(_idle / 60))
+                    _r = ollama_manager.stop()
+                    # 0.10.1 修复：仅真停掉才清 _loaded。EXTERNAL 孤儿进程
+                    # （前代 server 启的 llama-server）stop 不掉，若照清 _loaded，
+                    # 下一条离线消息会被"请先加载模型"拒绝，而引擎其实在跑
+                    # ——此 bug 每分钟被巡检重新制造一次。
+                    if _r.get("status") == "stopped":
+                        mgr._loaded.clear()
+                        log.info("[IDLE-UNLOAD] 本地引擎闲置 %d 分钟，已卸载（下次离线消息自动懒加载）"
+                                 % int(_idle / 60))
+                    else:
+                        log.info("[IDLE-UNLOAD] 引擎为外部实例（%s），不清理加载标记",
+                                 _r.get("status", "?"))
                 except Exception as e:
                     log.warning("[IDLE-UNLOAD] 卸载失败（下轮重试）: %s" % str(e)[:80])
         except Exception as e:

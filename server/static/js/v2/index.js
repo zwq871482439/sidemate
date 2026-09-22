@@ -15,6 +15,7 @@ import { createSettingsView } from './settings.js';
 import { createSkillsView } from './skills.js';
 import { createViewer } from './viewer.js';
 import { createCardArea } from './cards.js';
+import { uiAlert, uiConfirm } from './ui_dialog.js';
 
 const state = {
   mode: 'cloud',      // 后端值：local/cloud/parallel
@@ -344,10 +345,10 @@ function render() {
             // 直读不复制：附件栏指向项目目录里的原文件，发送走既有管道
             if (_composer) _composer.setAttach({ kind: 'upload', name: r.filename, path: r.path, tokens: r.tokens });
           } else {
-            alert((r && r.error) || '引用失败');
+            uiAlert((r && r.error) || '引用失败');
           }
         } catch (e) {
-          alert('引用失败：' + (e && e.message ? e.message : '未知错误'));
+          uiAlert('引用失败：' + (e && e.message ? e.message : '未知错误'));
         }
         if (_composer) _composer.setAttachPending(false);
         if (btn) { btn.disabled = false; btn.textContent = '引用'; }
@@ -468,7 +469,7 @@ async function generateHandoffFlow(btn, thenMove) {
   _handoffGenerating = false;
   if (btn) { btn.disabled = false; btn.textContent = '重新生成'; }
   if (!r || !r.ok) {
-    alert((r && r.error) || '交接生成失败');
+    uiAlert((r && r.error) || '交接生成失败');
     return null;
   }
   if (thenMove) {
@@ -583,7 +584,7 @@ function _showDocConfirmBar(outlineText) {
     }));
   bar.querySelector('[data-a="ok"]').addEventListener('click', () => {
     const outline = editor.value.trim();
-    if (!outline) { alert('提纲内容为空，无法生成'); return; }
+    if (!outline) { uiAlert('提纲内容为空，无法生成'); return; }
     bar.remove();
     const pending = _lastOutlineMsg();
     if (pending) _outlineDismissed = pending.key;  // 确认后提纲消息仍在列表尾，Phase 2 期间不再出栏
@@ -627,7 +628,7 @@ async function _openKbDetail(filename) {
   for (let i = 0; i < 10 && !_kbView; i++) await new Promise(r => setTimeout(r, 120));
   if (!_kbView) return;
   const ok = _kbView.openDetailByName(filename);
-  if (!ok) alert('知识库里没找到《' + filename + '》——它可能来自联网或已被删除');
+  if (!ok) uiAlert('知识库里没找到《' + filename + '》——它可能来自联网或已被删除');
 }
 
 // 消息下载栏「预览」：打开视窗预览 tab 并滚到对应 HTML 报告（0.10.1 收尾）
@@ -725,7 +726,7 @@ async function onSend(payload) {
   if (state.generating) return;
   // 旧版会话只读（后端 stream 同样拒绝，这里是前置提示）
   if (state.workdir && state.workdir.legacy) {
-    alert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建任务」。');
+    uiAlert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建任务」。');
     return;
   }
   // 无会话则先建（零摩擦开始：空状态直达；落在空状态选择器选定的项目）
@@ -1069,7 +1070,7 @@ function showProjectPicker(anchorEl) {
       try {
         await api.setChatProject(cur.name, dir);
       } catch (e) {
-        alert('设置项目失败：' + (e && e.message ? e.message : ''));
+        uiAlert('设置项目失败：' + (e && e.message ? e.message : ''));
         return;
       }
       state.sessions = await loadSessions();  // 会话换了组，侧栏要重排
@@ -1097,7 +1098,7 @@ function showProjectPicker(anchorEl) {
       await assign(r.project.dir);
       maybeShowWorkdirTip();
     } catch (e) {
-      alert('新建项目失败：' + (e && e.message ? e.message : '名称不可用'));
+      uiAlert('新建项目失败：' + (e && e.message ? e.message : '名称不可用'));
     }
   });
   menuEl.querySelector('[data-a="new_ext"]').addEventListener('click', () => {
@@ -1121,7 +1122,7 @@ function showProjectPicker(anchorEl) {
         await assign(r.project.dir);
         maybeShowWorkdirTip();
       } catch (e) {
-        alert('设置失败：' + (e && e.message ? e.message : '目录不可用'));
+        uiAlert('设置失败：' + (e && e.message ? e.message : '目录不可用'));
       }
     });
   });
@@ -1131,13 +1132,13 @@ function showProjectPicker(anchorEl) {
 async function deleteProject(proj) {
   const peers = state.sessions.filter(c => c.project_dir === proj.dir);
   const fileCount = (proj.files || []).length + (proj.artifacts || []).length;
-  if (!confirm('删除项目「' + proj.display + '」？\n\n· 将删除 ' + peers.length +
+  if (!(await uiConfirm('删除项目「' + proj.display + '」？\n\n· 将删除 ' + peers.length +
     ' 个会话的记录（消息/卡片/轨迹）\n· 文件夹和里面的 ' + fileCount +
-    ' 个文件（材料/产物/上传）原处保留：' + proj.dir + '\n\n需要对话原文可先在该会话 ⋯ 菜单导出 txt。此操作不可撤销。')) return;
+    ' 个文件（材料/产物/上传）原处保留：' + proj.dir + '\n\n需要对话原文可先在该会话 ⋯ 菜单导出 txt。此操作不可撤销。', { danger: true, okLabel: '删除' }))) return;
   try {
     await api.deleteProject(proj.dir);
   } catch (e) {
-    alert('删除失败：' + (e && e.message ? e.message : ''));
+    uiAlert('删除失败：' + (e && e.message ? e.message : ''));
     return;
   }
   _viewedProject = null;
@@ -1156,7 +1157,7 @@ async function renameProject(proj) {
   try {
     await api.renameProject(proj.dir, nv);
   } catch (e) {
-    alert('改名失败：' + (e && e.message ? e.message : ''));
+    uiAlert('改名失败：' + (e && e.message ? e.message : ''));
     return;
   }
   await loadProjects();
@@ -1257,23 +1258,23 @@ function showSessionMenu(chat, anchorEl) {
   if (_privBtn) _privBtn.addEventListener('click', async () => {
     menuEl.remove(); _menuEl = null;
     const on = !chat.private;
-    if (on && !confirm('把这条会话标为私密？\n\n私密会话的内容不会出现在：其他会话的「同项目会话」清单、「携」前情注入、AI 的 read_session 读取。适合放敏感内容。')) return;
+    if (on && !(await uiConfirm('把这条会话标为私密？\n\n私密会话的内容不会出现在：其他会话的「同项目会话」清单、「携」前情注入、AI 的 read_session 读取。适合放敏感内容。'))) return;
     try {
       const r = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/private', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ private: on }),
       });
       const d = await r.json();
-      if (!r.ok) { alert(d.error || '设置失败'); return; }
+      if (!r.ok) { uiAlert(d.error || '设置失败'); return; }
       state.sessions = await loadSessions();
       if (_viewer) _viewer.onSessionChange();
       render();
-    } catch (e) { alert('设置失败：' + (e && e.message ? e.message : '')); }
+    } catch (e) { uiAlert('设置失败：' + (e && e.message ? e.message : '')); }
   });
 
   menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
     const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
-    if (!confirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`)) return;
+    if (!(await uiConfirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`))) return;
     await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });
     state.sessions = await loadSessions();
     await loadCurrentMessages();

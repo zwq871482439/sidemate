@@ -162,13 +162,17 @@ class ModelManager:
                     strategy_enhancement: str = "",
                     kb_mode: bool = False,
                     kb_history_turns: int = 0,
-                    _priority: str = None):
+                    _priority: str = None,
+                    _engine: str = None):
         """LLM 流式对话生成器（根据 ai_mode 路由到本地或云端）
 
         所有对话（含 KB 问答）统一由全局 ai_mode 控制引擎选择。
         kb_mode 仅用于调整生成参数（如 context 预算），不影响引擎路由。
+        _engine: 管线显式指定引擎（local/cloud），优先于全局 ai_mode——
+        0.10.1 修复：请求模式与全局配置不一致时（UI 已切离线但全局残留
+        cloud），原逻辑会把本地模型名发给云端 API，400 后空回复。
         """
-        ai_mode = _cfg("ai_mode", "local") if _cfg else "local"
+        ai_mode = _engine or (_cfg("ai_mode", "local") if _cfg else "local")
         if ai_mode == "cloud":
             if not hasattr(self, '_cloud_engine'):
                 from core.cloud_engine import CloudEngine

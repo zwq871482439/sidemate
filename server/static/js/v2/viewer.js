@@ -9,6 +9,7 @@
 
 import { api } from './api.js';
 import { icon, iconSvg } from './icons.js';
+import { uiAlert, uiConfirm } from './ui_dialog.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -199,7 +200,7 @@ export function createViewer(opts) {
     const tBtn = body.querySelector('[data-a="pkb-toggle"]');
     if (tBtn) tBtn.addEventListener('click', async () => {
       if (pkb && pkb.enabled) {
-        if (!confirm('关闭项目知识库？索引（约 ' + ((pkb.size_bytes / 1024).toFixed(0)) + 'KB）将被清除；材料文件不受影响。')) return;
+        if (!(await uiConfirm('关闭项目知识库？索引（约 ' + ((pkb.size_bytes / 1024).toFixed(0)) + 'KB）将被清除；材料文件不受影响。'))) return;
       }
       tBtn.disabled = true;
       try {
@@ -208,9 +209,9 @@ export function createViewer(opts) {
           body: JSON.stringify({ dir, on: !(pkb && pkb.enabled) }),
         });
         const d = await r.json();
-        if (d.error) alert(d.error);
+        if (d.error) uiAlert(d.error);
         pkb = null; await loadWd(); renderBody();
-      } catch (e) { alert('操作失败'); tBtn.disabled = false; }
+      } catch (e) { uiAlert('操作失败'); tBtn.disabled = false; }
     });
     body.querySelectorAll('[data-pkb-add]').forEach(cb =>
       cb.addEventListener('change', async () => {
@@ -222,9 +223,9 @@ export function createViewer(opts) {
             body: JSON.stringify({ dir, path: cb.dataset.pkbAdd }),
           });
           const d = await r.json();
-          if (d.error) { alert(d.error); cb.checked = false; cb.disabled = false; return; }
+          if (d.error) { uiAlert(d.error); cb.checked = false; cb.disabled = false; return; }
           pkb = null; await loadWd(); renderBody();
-        } catch (e) { alert('入库失败'); cb.checked = false; cb.disabled = false; }
+        } catch (e) { uiAlert('入库失败'); cb.checked = false; cb.disabled = false; }
       }));
     body.querySelectorAll('[data-pkb-del]').forEach(b =>
       b.addEventListener('click', async () => {
@@ -260,9 +261,9 @@ export function createViewer(opts) {
           body: JSON.stringify({ dir, src_path: p }),
         });
         const d = await r.json();
-        if (d.error) { alert(d.error); extBtn.disabled = false; return; }
+        if (d.error) { uiAlert(d.error); extBtn.disabled = false; return; }
         pkb = null; await loadWd(); renderBody();
-      } catch (e) { alert('入库失败'); extBtn.disabled = false; }
+      } catch (e) { uiAlert('入库失败'); extBtn.disabled = false; }
     });
     const qBtn = body.querySelector('[data-a="pkb-query"]');
     const qIn = body.querySelector('.vw-pkb-q-in');
@@ -431,8 +432,8 @@ export function createViewer(opts) {
         try {
           const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/undo-write', { method: 'POST' });
           const d = await r.json();
-          alert(d.message || d.error || '已处理');
-        } catch (e) { alert('撤销失败'); }
+          uiAlert(d.message || d.error || '已处理');
+        } catch (e) { uiAlert('撤销失败'); }
         hs = null; files = null;
         await loadWd();
         renderBody();
@@ -482,9 +483,9 @@ export function createViewer(opts) {
             fd.append('file', f);
             const resp = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/workdir/upload', { method: 'POST', body: fd });
             const d = await resp.json();
-            if (d.error) alert(d.error);
+            if (d.error) uiAlert(d.error);
           } catch (e) {
-            alert('上传失败');
+            uiAlert('上传失败');
           }
           uploading = false;
           upBtn.textContent = '上传';

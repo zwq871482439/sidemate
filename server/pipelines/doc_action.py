@@ -139,6 +139,7 @@ def _run_phase1(
         outline_prompt, model_name, max_tokens or 1024, history,
         context_cache=context_cache,
         strategy_enhancement=strategy_enhancement,
+        _engine='local',
     ):
         if phase == "text":
             outline_text += content
@@ -190,6 +191,7 @@ def _run_phase2(
         full_prompt, model_name, max_tokens, history,
         context_cache=context_cache,
         strategy_enhancement=strategy_enhancement,
+        _engine='local',
     ):
         yield (phase, content)
 

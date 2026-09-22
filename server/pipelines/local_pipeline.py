@@ -330,6 +330,7 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                     context_cache=context_cache,
                     strategy_enhancement=strategy.get("system_enhancement", ""),
                     kb_mode=_kb_mode,
+                    _engine='local',
                 ):
                     if phase == "task_type":
                         tt, conf = content
@@ -406,6 +407,7 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                     context_cache=context_cache,
                     override_task_type=body_override_type,
                     kb_mode=_kb_mode,
+                    _engine='local',
                 ):
                     if phase == "raw":
                         body_text += content
@@ -451,6 +453,7 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                     model_choice, max_tokens, cont_history,
                     context_cache=context_cache,
                     kb_mode=_kb_mode,
+                    _engine='local',
                 ):
                     if phase == "raw":
                         cont_text += content

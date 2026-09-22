@@ -2,6 +2,7 @@
 // 侧栏第三 tab：系统 skill（协议+权限）+ 管线 skill + 用户 SKILL.md + MCP
 import { api } from './api.js';
 import { icon, iconSvg } from './icons.js';
+import { uiAlert, uiConfirm, uiPrompt } from './ui_dialog.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -89,7 +90,7 @@ export function createSkillsView(opts) {
             </div>
           `).join('') || '<div class="sk-empty">还没有用户技能——将 SKILL.md 文件放入 data/skills/ 目录</div>'}
         </div>
-        <div class="sk-add" onclick="alert('将 SKILL.md 文件复制到 data/skills/ 目录即可。\\n\\n格式示例：\\n---\\nname: 我的技能\\ndescription: 描述\\npipeline_types: [docx]\\n---\\n\\n技能内容（注入 AI 的指导文本）')">
+        <div class="sk-add" onclick="uiAlert('将 SKILL.md 文件复制到 data/skills/ 目录即可。\\n\\n格式示例：\\n---\\nname: 我的技能\\ndescription: 描述\\npipeline_types: [docx]\\n---\\n\\n技能内容（注入 AI 的指导文本）')">
           ${iconSvg('plus')} 添加技能（放入 SKILL.md 文件）
         </div>
       </div>
@@ -136,7 +137,7 @@ export function createSkillsView(opts) {
     // 用户 skill 删除
     root.querySelectorAll('.sk-del[data-skill]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!confirm('删除此技能？')) return;
+        if (!(await uiConfirm('删除此技能？'))) return;
         await fetch('/api/skills/delete', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: btn.dataset.skill }),
@@ -156,10 +157,10 @@ export function createSkillsView(opts) {
     // 添加 MCP
     const addMcp = root.querySelector('#skAddMcp');
     if (addMcp) {
-      addMcp.addEventListener('click', () => {
-        const name = prompt('MCP 服务器名称（如 filesystem）：');
+      addMcp.addEventListener('click', async () => {
+        const name = await uiPrompt('MCP 服务器名称（如 filesystem）：');
         if (!name) return;
-        const cmd = prompt('启动命令（如 npx -y @anthropic/mcp-server-filesystem /path）：');
+        const cmd = await uiPrompt('启动命令（如 npx -y @anthropic/mcp-server-filesystem /path）：');
         if (!cmd) return;
         const parts = cmd.split(' ');
         fetch('/api/mcp/servers', {
@@ -167,7 +168,7 @@ export function createSkillsView(opts) {
           body: JSON.stringify({ name, command: parts[0], args: parts.slice(1) }),
         }).then(() => fetch('/api/mcp/connect', { method: 'POST' }))
           .then(() => load())
-          .catch(() => alert('添加或连接失败'));
+          .catch(() => uiAlert('添加或连接失败'));
       });
     }
   }

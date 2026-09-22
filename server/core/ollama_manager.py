@@ -51,6 +51,18 @@ class OllamaManager:
             n_gpu_layers=_n_gpu_layers,
         )
         self._registry = ModelRegistry(_MODELS_DIR)
+        # 0.10.1 修复：注入本产品模型文件名，EXTERNAL 复用判定用——
+        # 用户自装 Ollama 常驻 11434 时模型名对不上，不能复用（见 LlamaCppManager.start）
+        try:
+            self._impl.our_model_names = [m.gguf_filename for m in self._registry.scan()]
+        except Exception:
+            self._impl.our_model_names = []
+
+    def serves_our_models(self) -> bool:
+        """当前端口上的服务方是否提供本产品 registry 的模型（懒加载门禁用）"""
+        if not self._impl.is_healthy():
+            return False
+        return self._impl.serves_any(self._impl.our_model_names or [])
 
     def _find_llama_server(self, fallback: str) -> str:
         """查找 llama-server.exe 路径"""
@@ -91,7 +103,22 @@ class OllamaManager:
             if model_path is None:
                 return {"status": "error", "error": "未找到可用的模型文件（models/ 下无 meta.json 或 GGUF）"}
 
-        return self._impl.start(model_path)
+        r = self._impl.start(model_path)
+        # 端口让位后生成侧必须跟随（0.10.1：外部 Ollama 占 11434 → 自起在空闲端口）
+        if r.get("status") in ("started", "already_running") and r.get("port"):
+            self._sync_endpoint()
+        return r
+
+    def _sync_endpoint(self):
+        """把 impl 实际端口同步到 model_manager 的 base_url（缓存 client 作废）"""
+        try:
+            from server import mgr as _mm
+            _new = "http://%s:%d" % (self._impl.host, self._impl.port)
+            if getattr(_mm, "_ollama_base_url", None) != _new:
+                _mm._ollama_base_url = _new
+                _mm._llamacpp_client = None
+        except Exception:
+            pass  # 单测环境无 server.mgr，静默
 
     def stop(self) -> dict:
         return self._impl.stop()

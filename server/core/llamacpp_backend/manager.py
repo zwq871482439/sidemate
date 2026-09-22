@@ -55,6 +55,7 @@ class LlamaCppManager:
         self._restart_count = 0
         self._MAX_RESTART_ATTEMPTS = 3
         self._ownership = None  # MANAGED / EXTERNAL / None
+        self.our_model_names: List[str] = []  # 本产品 registry 的模型文件名（复用判定用，由包装层注入）
 
     @property
     def base_url(self) -> str:
@@ -98,6 +99,53 @@ class LlamaCppManager:
         except (httpx.ConnectError, httpx.TimeoutException, OSError, Exception):
             return False
 
+    def served_model_ids(self) -> List[str]:
+        """当前端口上服务方报告的模型 id 列表（失败返回空）"""
+        try:
+            resp = httpx.get(
+                "http://%s:%d/v1/models" % (self._host, self._port),
+                timeout=5.0, trust_env=False,
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json().get("data") or []
+            return [str(m.get("id") or "") for m in data if m.get("id")]
+        except Exception:
+            return []
+
+    def serves_any(self, names: List[str]) -> bool:
+        """服务方是否提供任一指定模型（宽松匹配：id 含文件名或去扩展名主干）。
+
+        0.10.1 修复：用户自装 Ollama 常驻 11434 时，/v1/models 有模型（健康）
+        但全是 Ollama 自己的名字——按"有模型即复用"会把生成请求发给不存在的
+        model id，得到空输出。复用必须验证服务的是本产品 registry 的模型。
+        """
+        if not names:
+            return False
+        served = self.served_model_ids()
+        if not served:
+            return False
+        joined = " ".join(served).lower()
+        for n in names:
+            base = os.path.basename(n).lower()
+            stem = os.path.splitext(base)[0]
+            if base and base in joined:
+                return True
+            if stem and stem in joined:
+                return True
+        return False
+
+    def _find_free_port(self, start_port: int) -> int:
+        """从 start_port 起找一个可绑定端口（含 start_port）"""
+        for p in range(start_port, start_port + 20):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind((self._host, p))
+                    return p
+            except OSError:
+                continue
+        return start_port + 20
+
     def start(self, model_path: str = None, timeout: int = 120) -> dict:
         """启动 llama-server。
 
@@ -111,7 +159,16 @@ class LlamaCppManager:
         """
         # 已有健康进程
         if self.is_healthy():
-            if model_path and self._current_model and os.path.abspath(self._current_model) != os.path.abspath(model_path):
+            _ours = self.serves_any(self.our_model_names or []) or (
+                model_path and self.serves_any([model_path]))
+            if not _ours:
+                # 0.10.1 修复：端口上是别人的服务（典型：用户自装 Ollama 常驻
+                # 11434）且不含我们的模型 → 不复用也不杀，让位到空闲端口自起
+                _np = self._find_free_port(self._port + 1)
+                log.warning("[LLAMACPP] 端口 %d 被外部服务占用（模型不符），改用端口 %d"
+                            % (self._port, _np))
+                self._port = _np
+            elif model_path and self._current_model and os.path.abspath(self._current_model) != os.path.abspath(model_path):
                 # 加载的是不同模型 → 需要重启切换
                 log.info("[LLAMACPP] 当前模型 %s ≠ 目标 %s，重启切换" % (
                     os.path.basename(self._current_model or ""), os.path.basename(model_path)))
@@ -128,16 +185,24 @@ class LlamaCppManager:
         if self._is_port_in_use() and not self.is_healthy():
             # 先重试等它变健康（llama-server 正在加载模型的情况）
             if self._wait_healthy_with_retry(retries=3, interval=3):
-                self._ownership = "EXTERNAL"
-                if model_path:
-                    self._restart_model = model_path
-                self._start_watchdog()  # P8-9：同上，收养即盯
-                log.info("[LLAMACPP] 复用已有 llama-server 实例（EXTERNAL 模式）")
-                return {"status": "already_running", "host": self._host, "port": self._port}
-            # 仍不健康 → 可能是 Ollama 残留，杀掉占用端口的进程
-            log.warning("[LLAMACPP] 端口 %d 被占用但不健康，尝试清理..." % self._port)
-            self._kill_port_owner()
-            time.sleep(2)
+                _ours2 = self.serves_any(self.our_model_names or []) or (
+                    model_path and self.serves_any([model_path]))
+                if _ours2:
+                    self._ownership = "EXTERNAL"
+                    if model_path:
+                        self._restart_model = model_path
+                    self._start_watchdog()  # P8-9：同上，收养即盯
+                    log.info("[LLAMACPP] 复用已有 llama-server 实例（EXTERNAL 模式）")
+                    return {"status": "already_running", "host": self._host, "port": self._port}
+                _np2 = self._find_free_port(self._port + 1)
+                log.warning("[LLAMACPP] 端口 %d 上的外部服务模型不符，改用端口 %d"
+                            % (self._port, _np2))
+                self._port = _np2
+            else:
+                # 仍不健康 → 可能是 Ollama 残留，杀掉占用端口的进程
+                log.warning("[LLAMACPP] 端口 %d 被占用但不健康，尝试清理..." % self._port)
+                self._kill_port_owner()
+                time.sleep(2)
 
         if model_path and not os.path.exists(model_path):
             return {"status": "error", "error": "模型文件不存在: %s" % model_path}

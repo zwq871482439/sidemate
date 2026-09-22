@@ -6,6 +6,7 @@
 
 import { createStarView, fetchMapExplain } from './kb_star.js';
 import { icon, iconSvg } from './icons.js';
+import { uiConfirm } from './ui_dialog.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -351,7 +352,7 @@ export function createKBView(events) {
       card.querySelector('[data-act="del"]').addEventListener('click', async (e) => {
         e.stopPropagation();
         const doc = state.docs.find(x => x.doc_id === id);
-        if (!confirm(`删除文档「${doc.filename}」？此操作不可撤销。`)) return;
+        if (!(await uiConfirm(`删除文档「${doc.filename}」？此操作不可撤销。`))) return;
         await fetch(`/api/kb/documents/${id}`, { method: 'DELETE' });
         state.selected.delete(id);
         await loadDocs(); render();
@@ -378,7 +379,7 @@ export function createKBView(events) {
       <button data-b="clear">清除</button>
     `;
     bar.querySelector('[data-b="del"]').addEventListener('click', async () => {
-      if (!confirm(`批量删除 ${n} 篇文档？此操作不可撤销。`)) return;
+      if (!(await uiConfirm(`批量删除 ${n} 篇文档？此操作不可撤销。`))) return;
       await fetch('/api/kb/documents/batch_delete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ doc_ids: [...state.selected] }),

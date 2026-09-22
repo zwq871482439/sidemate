@@ -1,4 +1,5 @@
 import { iconSvg } from './icons.js';
+import { uiAlert, uiConfirm } from './ui_dialog.js';
 // 桌伴 0.10.1 新版 UI — 设置（M1-D 设置迁入增量 1）
 // 壳：左竖导航 + 右内容区（PLAN 结构）。常规子页全真功能（界面版本/模型与设备/
 // 数据维护/备份恢复）；其余子页占位 + 经典版直达，逐页迁入。
@@ -143,12 +144,12 @@ export function createSettingsView(events) {
           });
           const d = await r.json();
           if (!r.ok) {
-            alert('切换失败：' + (d.error || '未知错误'));
+            uiAlert('切换失败：' + (d.error || '未知错误'));
           }
           // 刷新页面数据
           renderGeneral(body);
         } catch (err) {
-          alert('切换失败：' + (err.message || '网络错误'));
+          uiAlert('切换失败：' + (err.message || '网络错误'));
         }
         e.target.disabled = false;
       });
@@ -195,7 +196,7 @@ export function createSettingsView(events) {
     }
     body.querySelector('#cacheRefresh').addEventListener('click', refreshCache);
     body.querySelector('#cacheClear').addEventListener('click', async () => {
-      if (!confirm('清空全部缓存文件？')) return;
+      if (!(await uiConfirm('清空全部缓存文件？'))) return;
       await fetch('/api/cache/files', { method: 'DELETE' }).catch(() => {});
       refreshCache();
     });
@@ -222,12 +223,12 @@ export function createSettingsView(events) {
     });
     body.querySelector('#backupImport').addEventListener('click', async () => {
       const fi = body.querySelector('#backupFile');
-      if (!fi.files || !fi.files[0]) { alert('请先选择备份 ZIP 文件'); return; }
-      if (!confirm('恢复备份会覆盖现有数据，确定继续？')) return;
+      if (!fi.files || !fi.files[0]) { uiAlert('请先选择备份 ZIP 文件'); return; }
+      if (!(await uiConfirm('恢复备份会覆盖现有数据，确定继续？'))) return;
       const fd = new FormData();
       fd.append('file', fi.files[0]);
       const r = await fetch('/api/backup/import', { method: 'POST', body: fd }).then(r => r.json()).catch(() => null);
-      alert(r && r.ok !== false ? '恢复完成，建议重启应用' : ('恢复失败：' + ((r && r.error) || '未知错误')));
+      uiAlert(r && r.ok !== false ? '恢复完成，建议重启应用' : ('恢复失败：' + ((r && r.error) || '未知错误')));
     });
   }
 
@@ -580,14 +581,14 @@ export function createSettingsView(events) {
       await saveCfg({ reranker_idle_timeout_sec: min * 60 });
     });
     body.querySelector('#kbAuditClear').addEventListener('click', async () => {
-      if (!confirm('清空全部审计日志？')) return;
+      if (!(await uiConfirm('清空全部审计日志？'))) return;
       await fetch('/api/kb/audit_log/clear_all', { method: 'POST' });
       renderKbSettings(body);
     });
     body.querySelector('#kbReset').addEventListener('click', async () => {
-      if (!confirm('重置知识库将删除全部文档与向量索引，不可撤销。确定继续？')) return;
+      if (!(await uiConfirm('重置知识库将删除全部文档与向量索引，不可撤销。确定继续？'))) return;
       const r = await fetch('/api/kb/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) }).then(r => r.json()).catch(() => null);
-      alert(r && r.ok ? `已重置（删除 ${r.deleted_docs || 0} 篇文档）` : '重置失败：' + ((r && r.error) || '未知错误'));
+      uiAlert(r && r.ok ? `已重置（删除 ${r.deleted_docs || 0} 篇文档）` : '重置失败：' + ((r && r.error) || '未知错误'));
       renderKbSettings(body);
     });
   }
@@ -629,7 +630,7 @@ export function createSettingsView(events) {
 
     body.querySelector('#pvCors').addEventListener('click', async (e) => {
       const allowLan = !e.target.classList.contains('on');
-      if (allowLan && !confirm('允许局域网访问后，同一网络内的其他设备可以访问本应用。确定开启？')) return;
+      if (allowLan && !(await uiConfirm('允许局域网访问后，同一网络内的其他设备可以访问本应用。确定开启？'))) return;
       // 语义：勾选=允许第三方=cors_strict=false
       await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cors_strict: !allowLan }) });
       e.target.classList.toggle('on', allowLan);
@@ -837,7 +838,7 @@ export function createSettingsView(events) {
         showProg('开始下载…', 0);
         attachSSE(r.task_id);
       } else {
-        alert('启动下载失败：' + ((r && (r.error || r.message)) || '未知错误'));
+        uiAlert('启动下载失败：' + ((r && (r.error || r.message)) || '未知错误'));
       }
     }));
     body.querySelector('#dlCancel').addEventListener('click', async () => {
@@ -845,7 +846,7 @@ export function createSettingsView(events) {
       body.querySelector('#dlProgGroup').style.display = 'none';
     });
     body.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
-      if (!confirm(`删除模型「${b.dataset.name}」？删除后需重新下载才能使用。`)) return;
+      if (!(await uiConfirm(`删除模型「${b.dataset.name}」？删除后需重新下载才能使用。`))) return;
       await fetch('/api/model/delete', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_id: b.dataset.del }),
@@ -854,7 +855,7 @@ export function createSettingsView(events) {
     }));
     const kbUn = body.querySelector('#kbUninstall');
     if (kbUn) kbUn.addEventListener('click', async () => {
-      if (!confirm('卸载知识库模型？知识库功能将不可用。')) return;
+      if (!(await uiConfirm('卸载知识库模型？知识库功能将不可用。'))) return;
       await fetch('/api/extensions/uninstall', { method: 'POST' }).catch(() => {});
       renderDownload(body);
     });
