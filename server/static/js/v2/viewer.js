@@ -302,10 +302,31 @@ export function createViewer(opts) {
           </span>
         </span></div>
       ${hs.goal ? `<div class="vw-goal" title="任务目标（AI 在任务开始时记录）">${icon('target')} ${esc(hs.goal)}</div>` : ''}
+      ${(hs.todos && hs.todos.length) ? _todoHtml(hs.todos) : ''}
       ${pend.length ? `<div class="vw-pend"><div class="vw-pend-t">待执行计划 · ${pend.length}（确认后 AI 才会真正写入）</div>
         ${pend.slice(0, 6).map(p => `<div class="vw-pend-i">${p.overwrite ? '<span class="vw-ow">覆盖</span>' : ''}${esc(p.path)}</div>`).join('')}</div>` : ''}
       ${chg ? `<div class="vw-chg">${icon('alertTriangle')} 项目目录有外部改动：${[...(chg.changed || []), ...(chg.added || []), ...(chg.removed || [])].slice(0, 4).map(esc).join('、')}${chg.total > 4 ? ' 等 ' + chg.total + ' 项' : ''}（AI 已被告知）</div>` : ''}
       ${hs.can_undo ? `<div class="vw-card-r"><button class="vw-mini" data-a="undo" title="恢复最近一次 AI 写入前的状态（覆盖→还原旧版，新建→移除）">${icon('undo')} 撤销上次写入</button></div>` : ''}`;
+  }
+
+  // 0.10 M4-2：Todo 可视化（学 Claude Code——步骤进度实时可见）
+  function _todoHtml(todos) {
+    const done = todos.filter(t => t.done).length;
+    const total = todos.length;
+    const pct = total > 0 ? Math.round(done / total * 100) : 0;
+    return `<div class="vw-todo">
+      <div class="vw-todo-head">
+        <span class="vw-todo-title">${icon('clipboardCheck')} 任务步骤</span>
+        <span class="vw-todo-count">${done}/${total}</span>
+      </div>
+      <div class="vw-todo-bar"><div class="vw-todo-fill" style="width:${pct}%"></div></div>
+      <div class="vw-todo-list">
+        ${todos.map(t => `<div class="vw-todo-item ${t.done ? 'done' : ''}">
+          <span class="vw-todo-dot">${t.done ? '✓' : '○'}</span>
+          <span class="vw-todo-text">${esc(t.text)}</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
   }
 
   function _handoffSection() {    if (!wd || wd.legacy || !wd.dir) return '';

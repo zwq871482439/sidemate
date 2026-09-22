@@ -286,6 +286,38 @@ def write_file(chat_name, rel_path, content, note=""):
     }
 
 
+def set_todos(chat_name, todos):
+    """设置任务步骤清单（0.10 M4-2，学 Claude Code Todo 可视化）。
+
+    Args:
+        todos: [{"text": "步骤描述", "done": true/false}, ...]
+    """
+    mp = _meta_path(chat_name)
+    if not os.path.isfile(mp):
+        return {"error": "会话不存在"}
+    with _lock:
+        meta = _read_json(mp)
+        meta["todos"] = [
+            {"text": str(t.get("text", ""))[:120],
+             "done": bool(t.get("done", False)),
+             "ts": time.strftime("%H:%M:%S")}
+            for t in (todos or []) if t.get("text")
+        ][:20]  # 最多 20 步
+        meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _write_json(mp, meta)
+    log.info("[PWRITE] %s todos 更新: %d 步（%d 完成）",
+             chat_name, len(meta["todos"]),
+             sum(1 for t in meta["todos"] if t["done"]))
+    return {"ok": True, "count": len(meta["todos"]),
+            "done_count": sum(1 for t in meta["todos"] if t["done"])}
+
+
+def get_todos(chat_name):
+    """读取任务步骤清单。"""
+    meta = _read_meta(chat_name)
+    return meta.get("todos") or []
+
+
 def discard_plan(chat_name):
     """清空待执行计划（用户取消时模型调用）。"""
     meta = _read_meta(chat_name)

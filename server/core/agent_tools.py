@@ -702,6 +702,38 @@ TOOL_REGISTRY = {
         "condition": None,
         "prompt_fragment": "docx",
     },
+    # ===== 0.10 M4-2：set_todos（任务步骤追踪，学 Claude Code）=====
+    "set_todos": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "set_todos",
+                "description": "设置/更新任务步骤清单（用户在视窗实时看到进度）。在开始多步任务时列出全部步骤（done=false），每完成一步更新对应项为 done=true。适合：调研报告（查资料→写大纲→逐章写→导出）、数据分析（读数据→清洗→计算→出报告）等多步骤任务。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todos": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "text": {"type": "string", "description": "步骤描述（简短一句话）"},
+                                    "done": {"type": "boolean", "description": "是否已完成"}
+                                },
+                                "required": ["text"]
+                            },
+                            "description": "步骤列表（全量覆盖，每次传当前最新状态）"
+                        }
+                    },
+                    "required": ["todos"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "todos_updating", "done": "todos_updated"},
+        "stat_key": "todo_updates",
+        "condition": None,
+    },
     # ===== 0.10 M4-1：code_exec（受限子进程 Python 执行）=====
     "code_exec": {
         "schema": {

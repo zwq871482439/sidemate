@@ -1568,6 +1568,15 @@ class AgentLoop:
                         "message": r.get("message", "create_docx 执行失败"),
                         "data": r}
 
+            elif tool_name == "set_todos":
+                # 0.10 M4-2：任务步骤追踪（学 Claude Code Todo 可视化）
+                from core import project_write as _pw4
+                r = _pw4.set_todos(self.chat_id, args.get("todos", []))
+                if "error" in r:
+                    return {"success": False, "tool": "set_todos", "error": r["error"]}
+                return {"success": True, "tool": "set_todos", "data": r,
+                        "message": "步骤清单已更新（%d/%d 完成）" % (r.get("done_count", 0), r.get("count", 0))}
+
             elif tool_name == "code_exec":
                 # 0.10 M4-1：受限子进程 Python 执行（方案 3）
                 from core.code_exec import execute_code

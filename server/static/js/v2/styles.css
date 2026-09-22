@@ -1353,3 +1353,19 @@ body.narrow #viewer.open ~ .vw-backdrop {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .4; transform: scale(.75); }
 }
+
+/* Todo 任务步骤可视化（0.10 M4-2，学 Claude Code） */
+.vw-todo { margin: 6px 0; }
+.vw-todo-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.vw-todo-title { font-size: var(--d1-fs-small); color: var(--d1-ink-2); display: inline-flex; gap: 4px; align-items: center; }
+.vw-todo-title svg { width: 13px; height: 13px; color: var(--d1-accent-3); }
+.vw-todo-count { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); }
+.vw-todo-bar { height: 4px; background: var(--d1-paper-2); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
+.vw-todo-fill { height: 100%; background: var(--d1-ok, #2E8B57); border-radius: 2px; transition: width .3s ease; }
+.vw-todo-list { display: flex; flex-direction: column; gap: 2px; }
+.vw-todo-item { display: flex; gap: 8px; align-items: baseline; font-size: var(--d1-fs-small); padding: 2px 0; }
+.vw-todo-dot { width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; flex-shrink: 0; border: 1.5px solid var(--d1-n-line); color: var(--d1-ink-3); }
+.vw-todo-item.done .vw-todo-dot { background: var(--d1-ok, #2E8B57); border-color: var(--d1-ok, #2E8B57); color: white; }
+.vw-todo-text { color: var(--d1-ink-2); }
+.vw-todo-item.done .vw-todo-text { color: var(--d1-ink-3); text-decoration: line-through; }
