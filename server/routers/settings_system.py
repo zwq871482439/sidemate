@@ -1405,3 +1405,46 @@ def api_mcp_status():
     """MCP 连接状态。"""
     from core.mcp_client import get_mcp_manager
     return {"servers": get_mcp_manager().status()}
+
+
+# ============================================================
+#  定时任务管理（0.10 M4-6）
+# ============================================================
+
+@router.get("/api/schedule/tasks")
+def api_schedule_list():
+    """列出定时任务。"""
+    from core.scheduled_tasks import list_tasks
+    return {"tasks": list_tasks()}
+
+
+@router.post("/api/schedule/tasks")
+async def api_schedule_add(request: Request):
+    """添加定时任务。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    prompt = (body.get("prompt") or "").strip()
+    if not name or not prompt:
+        return JSONResponse({"error": "name 和 prompt 必填"}, status_code=400)
+    from core.scheduled_tasks import add_task
+    task = add_task(name, prompt, body.get("project_dir", ""),
+                    body.get("schedule_type", "daily"), body.get("time", "09:00"),
+                    body.get("interval_minutes", 60))
+    return {"ok": True, "task": task}
+
+
+@router.delete("/api/schedule/tasks/{task_id}")
+def api_schedule_delete(task_id: str):
+    from core.scheduled_tasks import remove_task
+    return {"ok": remove_task(task_id)}
+
+
+@router.post("/api/schedule/tasks/{task_id}/toggle")
+async def api_schedule_toggle(request: Request, task_id: str):
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.scheduled_tasks import toggle_task
+    return {"ok": toggle_task(task_id, bool(body.get("enabled", True)))}

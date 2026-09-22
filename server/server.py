@@ -682,6 +682,13 @@ try:
 except Exception as e:
     log.warning("[STARTUP] 闲置卸载初始化失败: %s" % str(e)[:80])
 
+# 0.10 M4-6：定时任务调度器
+try:
+    from core.scheduled_tasks import start_scheduler
+    start_scheduler()
+except Exception as e:
+    log.warning("[STARTUP] 定时任务调度器启动失败: %s" % str(e)[:80])
+
 # ===== 启动 =====
 _report_startup("pre_start", 65, "准备启动 HTTP 服务...")
 
