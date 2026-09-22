@@ -60,19 +60,20 @@ def _safe_filename(name):
 # ---------------------------------------------------------------------------
 
 def begin_doc(chat_id, title, user_hint=""):
-    """开题：建 doc.json，返回版式规则要点（拼进工具结果给模型；选卡注入语气）。"""
+    """开题：建 doc.json，返回版式规则要点（M3-1 通用 skill 挂载注入）。"""
     from core.design_dna import pick_card
+    from core.pipeline_skills import get_skill_prompts
     d = _doc_dir(chat_id, title)
     os.makedirs(d, exist_ok=True)
     meta = {"deck": _safe_deck_id(title), "title": (title or "").strip(),
             "sections": [], "created_at": _now(), "dna": pick_card("docx", user_hint or "")}
     with open(os.path.join(d, "doc.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
+    _skill_prompts = get_skill_prompts("docx", user_hint or "")
     return {"ok": True, "deck": meta["deck"], "dna": meta["dna"],
-            "rules": "正式文档级版式已锁定：封面（22pt 标题+副标题+日期）/"
-                     "H1 18pt·H2 15pt·H3 13pt 加粗/正文 11pt·1.5 倍行距·首行缩进 2 字符/"
-                     "页眉标题·页脚页码/支持列表与表格。语气参照 %s 卡。逐章用 section 提交 markdown 正文。"
-                     % meta["dna"]}, meta
+            "rules": "正式文档级版式：封面 22pt/H1-H3 层级/正文 11pt·1.5 行距/页眉页码。\n"
+                     + "\n".join(_skill_prompts)
+                     + "\n逐章用 section 提交 markdown 正文。"}, meta
 
 
 def add_section(chat_id, deck, section, content):

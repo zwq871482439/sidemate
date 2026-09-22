@@ -169,13 +169,15 @@ def begin_deck(chat_id, title, user_hint=""):
             pages = dd["pages"]
             break
     # 0.10 M1-5b 选卡：用户意图 hint → DNA 卡（begin 返回注入 prompt）
-    from core.design_dna import card_prompt_block, pick_card
+    from core.design_dna import pick_card
+    from core.pipeline_skills import get_skill_prompts
     _cid = pick_card("ppt", user_hint or "")
+    _skill_prompts = get_skill_prompts("ppt", user_hint or "")
     return {
         "ok": True, "deck": deck, "title": title.strip(),
         "canvas": CANVAS_VIEWBOX, "max_pages": MAX_PAGES,
         "existing_pages": pages, "dna": _cid,
-        "design_rules": card_prompt_block("ppt", user_hint or ""),
+        "design_rules": "\n".join(_skill_prompts),
         "next": "用 create_ppt(action='page', page=1, svg=...) 逐页提交；"
                 "全部完成后 create_ppt(action='build') 编译下载",
     }

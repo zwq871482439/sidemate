@@ -186,3 +186,56 @@
   --fs-12h: 12.5px; --fs-14: 14px; --fs-16: 16px;
   --fs-20: 20px; --fs-22: 22px; --fs-28: 28px;
 }
+
+/* ===== DNA 生成区（gen_css_tokens.py 自动生成，勿手改）===== */
+/* DNA-01 深蓝金——正式、权威、汇报感——适合工作汇报、方案评审、对外演示 */
+[data-dna="dna01"] {
+  --dna-dna01-bg: #0F2B46;
+  --dna-dna01-bg-rgb: 15, 43, 70;
+  --dna-dna01-primary: #0F2B46;
+  --dna-dna01-primary-rgb: 15, 43, 70;
+  --dna-dna01-accent: #E8B54D;
+  --dna-dna01-accent-rgb: 232, 181, 77;
+  --dna-dna01-text: #FFFFFF;
+  --dna-dna01-text-rgb: 255, 255, 255;
+  --dna-dna01-muted: #B8C4D4;
+  --dna-dna01-muted-rgb: 184, 196, 212;
+}
+
+/* DNA-02 素白极简——冷静、克制、文档感——适合技术文档、发布说明、操作手册 */
+[data-dna="dna02"] {
+  --dna-dna02-bg: #FFFFFF;
+  --dna-dna02-bg-rgb: 255, 255, 255;
+  --dna-dna02-primary: #1A1A1A;
+  --dna-dna02-primary-rgb: 26, 26, 26;
+  --dna-dna02-accent: #2563EB;
+  --dna-dna02-accent-rgb: 37, 99, 235;
+  --dna-dna02-text: #1A1A1A;
+  --dna-dna02-text-rgb: 26, 26, 26;
+  --dna-dna02-muted: #6B7280;
+  --dna-dna02-muted-rgb: 107, 114, 128;
+}
+
+/* DNA-03 暖砂杂志——温和、人文、叙事感——适合文化介绍、品牌故事、知识科普 */
+[data-dna="dna03"] {
+  --dna-dna03-bg: #FAF6F0;
+  --dna-dna03-bg-rgb: 250, 246, 240;
+  --dna-dna03-primary: #3D2E24;
+  --dna-dna03-primary-rgb: 61, 46, 36;
+  --dna-dna03-accent: #C0763B;
+  --dna-dna03-accent-rgb: 192, 118, 59;
+  --dna-dna03-text: #3D2E24;
+  --dna-dna03-text-rgb: 61, 46, 36;
+  --dna-dna03-muted: #8C7B6B;
+  --dna-dna03-muted-rgb: 140, 123, 107;
+}
+
+/* 语义别名（默认 DNA-01 深蓝金）*/
+--d1-accent: #0F2B46;
+--d1-accent-2: #0F2B46;
+--d1-accent-3: #E8B54D;
+--d1-gold: #E8B54D;
+--d1-gold-2: #E8B54D;
+--d1-paper: #0F2B46;
+
+/* ===== DNA 生成区结束 ===== */
