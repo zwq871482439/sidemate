@@ -380,7 +380,7 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     if chat_file:
         from core.doc_session import chat_id_from_path
         _chat_id = chat_id_from_path(chat_file)
-    agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id, history=model_history)
+    agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id, history=model_history, skip_queue=True)  # M2-P3：纯云跳过 GPU 队列
 
     # BUG-2 修复：timeline 缓冲必须在 preload 块之前初始化（下方 preload 分支会 append），
     # 否则在赋值前引用会触发 UnboundLocalError。

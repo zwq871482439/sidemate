@@ -1341,3 +1341,15 @@ body.narrow #viewer.open ~ .vw-backdrop {
   background: var(--d1-paper); border: 1px solid var(--d1-n-line);
   border-radius: 8px; padding: 4px 10px; box-shadow: var(--d1-shadow-pop, 0 4px 16px rgba(15,43,70,.14));
 }
+
+/* 侧栏生成中脉冲标记（0.10 M2-P3，OpenWebUI setChatActive 模式） */
+.si-gen-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--d1-ok, #2E8B57); margin-right: 5px; vertical-align: 1px;
+  animation: si-gen-pulse 1.4s ease-in-out infinite;
+}
+.si-gen-t { color: var(--d1-ok, #2E8B57); font-size: var(--d1-fs-tiny); }
+@keyframes si-gen-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(.75); }
+}

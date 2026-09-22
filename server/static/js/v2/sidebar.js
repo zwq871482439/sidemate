@@ -80,7 +80,7 @@ export function renderSidebar(root, state, events) {
   const renderSessItem = (c) => {
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
-    item.innerHTML = `<div class="si-bar"><div class="st">${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc(c.title || c.name)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息</div>`;
+    item.innerHTML = `<div class="si-bar"><div class="st">${c.generating ? '<span class="si-gen-dot" title="生成中"></span>' : ''}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc(c.title || c.name)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${c.generating ? ' · <span class="si-gen-t">生成中…</span>' : ''}</div>`;
     item.addEventListener('click', (e) => {
       if (e.target.closest('.sess-more')) return;
       events.onSelectSession(c);

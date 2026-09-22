@@ -501,6 +501,15 @@ def load_chat_cache(filepath):
         return None
 
 
+def _gen_status(chat_name):
+    """0.10 M2-P3：查会话是否在生成中（gen_manager，惰性 import 防循环）。"""
+    try:
+        from core.gen_manager import get_gen_manager
+        return get_gen_manager().is_generating(chat_name)
+    except Exception:
+        return False
+
+
 def list_chats():
     """列出所有对话（文件夹格式 + 旧 .json 格式，P1-A8: 只读 meta 信息）
 
@@ -561,6 +570,8 @@ def list_chats():
                 "project_dir": chat_project_dir,
                 "legacy": not chat_project_dir,
                 "private": _private,
+                # 0.10 M2-P3：生成中标记（侧栏脉冲点；gen_manager 查，idle 缺省）
+                "generating": _gen_status(name),
             })
 
     # 第二遍：扫描旧 .json 格式，跳过已被同名文件夹占用的

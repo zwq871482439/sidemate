@@ -273,7 +273,7 @@ def _keyword_excerpt(text, question, width=1200):
 class AgentLoop:
     """ReAct Agent 循环 — 在线模式专用"""
 
-    def __init__(self, cloud_engine, search_engine, kb=None, chat_id=None, history=None):
+    def __init__(self, cloud_engine, search_engine, kb=None, chat_id=None, history=None, skip_queue=False):
         """
         Args:
             cloud_engine: CloudEngine 实例
@@ -287,6 +287,7 @@ class AgentLoop:
         self.kb = kb
         self.chat_id = chat_id or ""
         self._history_snapshot = history or []  # Patch5 G.一致性：用于 summarize_history
+        self._skip_queue = skip_queue  # 0.10 M2-P3：纯云模式跳过 GPU 队列（多会话并行）
 
     def _workspace_error(self, tool_name, err):
         """workspace 工具的通用错误返回。"""
@@ -441,7 +442,7 @@ class AgentLoop:
 
             try:
                 for phase, content in self.cloud_engine.run_with_tools(
-                    messages, tools=tools,
+                    messages, tools=tools, _skip_queue=self._skip_queue,
                 ):
                     if phase == "tool_calls":
                         # 模型调用了工具
@@ -656,7 +657,7 @@ class AgentLoop:
                     _final_text = ""
                     # 不传 tools，CloudEngine 走纯对话分支（不触发 FC）
                     for phase, content in self.cloud_engine.run_with_tools(
-                        messages, tools=None,
+                        messages, tools=None, _skip_queue=self._skip_queue,
                     ):
                         if phase == "text":
                             _final_text += content
@@ -2130,7 +2131,7 @@ class AgentLoop:
 
     def _pure_chat(self, messages):
         """纯对话 fallback（无工具调用）"""
-        for phase, content in self.cloud_engine.run_with_tools(messages, tools=None):
+        for phase, content in self.cloud_engine.run_with_tools(messages, tools=None, _skip_queue=getattr(self, '_skip_queue', False)):
             if phase == "text":
                 yield ("text", content)
             elif phase == "think_token":
@@ -2265,7 +2266,7 @@ class AgentLoop:
         # 用 CloudEngine 单轮非流式调用
         summary_text = ""
         try:
-            for phase, content in self.cloud_engine.run_with_tools(messages, tools=None):
+            for phase, content in self.cloud_engine.run_with_tools(messages, tools=None, _skip_queue=getattr(self, '_skip_queue', False)):
                 if phase == "text":
                     summary_text += content
                 elif phase == "raw":
