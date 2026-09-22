@@ -97,8 +97,9 @@ def api_project_files(request: Request, dir: str = ""):
     from config import PROJECT_ARTIFACT_DIR
     files = projects.list_dir_entries(found["dir"]) or []
     artifacts = projects.list_dir_entries(os.path.join(found["dir"], PROJECT_ARTIFACT_DIR)) or []
+    versions = projects.list_dir_entries(os.path.join(found["dir"], PROJECT_ARTIFACT_DIR, "versions")) or []
     files = [f for f in files if f["name"] != PROJECT_ARTIFACT_DIR]
-    return {"files": files, "artifacts": artifacts, **found}
+    return {"files": files, "artifacts": artifacts, "versions": versions, **found}
 
 
 @router.post("/api/projects/new_blank")
@@ -234,9 +235,10 @@ def api_workdir_files(chat_name: str, request: Request):
     from config import PROJECT_ARTIFACT_DIR
     files = projects.list_dir_entries(root)
     artifacts = projects.list_dir_entries(os.path.join(root, PROJECT_ARTIFACT_DIR)) or []
+    versions = projects.list_dir_entries(os.path.join(root, PROJECT_ARTIFACT_DIR, "versions")) or []
     # 材料区不混进产物区条目
     files = [f for f in (files or []) if f["name"] != PROJECT_ARTIFACT_DIR]
-    return {"files": files, "artifacts": artifacts, **proj}
+    return {"files": files, "artifacts": artifacts, "versions": versions, **proj}
 
 
 @router.post("/api/chats/{chat_name}/workdir/reference")

@@ -669,7 +669,13 @@
       <div class="vw-sub">\u6750\u6599</div>
       ${R.length?R.map(I=>s(I,"",L)).join(""):'<div class="vw-empty"><small>\u8FD8\u6CA1\u6709\u6750\u6599\u2014\u2014\u70B9\u300C\u4E0A\u4F20\u300D\u653E\u8FDB\u6765\uFF0C\u6216\u5F80\u6587\u4EF6\u5939\u91CC\u76F4\u63A5\u4E22\u6587\u4EF6</small></div>'}
       <div class="vw-sub">\u4EA7\u7269\uFF08.sidemate\uFF09</div>
-      ${A.length?A.map(I=>s(I,".sidemate/",L)).join(""):'<div class="vw-empty"><small>AI \u4EA7\u51FA\u7684\u6587\u4EF6\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC</small></div>'}`}function u(){let d=t.querySelector(".vw-body");if(d)if(n==="session"){if(o===null){d.innerHTML='<div class="vw-empty">\u52A0\u8F7D\u4E2D\u2026</div>',C().then(u);return}d.innerHTML=`<div class="vw-files">
+      ${A.length?A.map(I=>s(I,".sidemate/",L)).join(""):'<div class="vw-empty"><small>\u8FD8\u6CA1\u6709\u4EA7\u7269</small></div>'}
+      ${o.versions&&o.versions.length?`<div class="vw-sub" style="margin-top:8px">\u7248\u672C\u5386\u53F2\uFF08\u5199\u524D\u5907\u4EFD\uFF09</div>
+      ${o.versions.map(I=>`<div class="vw-file vw-file-ro" title="\u5199\u524D\u81EA\u52A8\u5907\u4EFD">
+        <span class="fi">${te("clock")}</span>
+        <span class="ftx"><span class="fn">${G(I.name)}</span><span class="fm">${G(I.mtime||"")}</span></span>
+      </div>`).join("")}`:""}
+        : '<div class="vw-empty"><small>AI \u4EA7\u51FA\u7684\u6587\u4EF6\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC</small></div>'}`}function u(){let d=t.querySelector(".vw-body");if(d)if(n==="session"){if(o===null){d.innerHTML='<div class="vw-empty">\u52A0\u8F7D\u4E2D\u2026</div>',C().then(u);return}d.innerHTML=`<div class="vw-files">
         ${V()}
         ${D()}
         ${i()}

@@ -380,6 +380,12 @@ export function createViewer(opts) {
         : '<div class="vw-empty"><small>还没有材料——点「上传」放进来，或往文件夹里直接丢文件</small></div>'}
       <div class="vw-sub">产物（.sidemate）</div>
       ${artifacts.length ? artifacts.map(f => _fileRow(f, '.sidemate/', canRef)).join('')
+      : '<div class="vw-empty"><small>还没有产物</small></div>'}
+      ${(wd.versions && wd.versions.length) ? `<div class="vw-sub" style="margin-top:8px">版本历史（写前备份）</div>
+      ${wd.versions.map(v => `<div class="vw-file vw-file-ro" title="写前自动备份">
+        <span class="fi">${iconSvg('clock')}</span>
+        <span class="ftx"><span class="fn">${esc(v.name)}</span><span class="fm">${esc(v.mtime || '')}</span></span>
+      </div>`).join('')}` : ''}
         : '<div class="vw-empty"><small>AI 产出的文件会出现在这里</small></div>'}`;
   }
 
