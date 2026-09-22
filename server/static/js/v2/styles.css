@@ -775,12 +775,15 @@ sup.ref-n:hover { text-decoration: underline; }
 .cb-pills { display: flex; gap: 6px; align-items: center; }
 .cb-right { display: flex; gap: 6px; align-items: center; margin-left: auto; }
 .cb-pill {
-  display: inline-flex; align-items: center; gap: 4px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   border: 1px solid var(--d1-n-line); background: var(--d1-paper);
   color: var(--d1-ink-2); border-radius: 999px; font-size: var(--d1-fs-small);
   padding: 4px 12px; cursor: pointer; font-family: inherit;
+  height: 26px; min-width: 56px; box-sizing: border-box;
   transition: border-color var(--d1-dur-micro), color var(--d1-dur-micro);
 }
+/* 统一 pill 内 SVG 尺寸（0.10 用户反馈：三 pill 大小不一） */
+.cb-pill svg { width: 13px; height: 13px; flex-shrink: 0; }
 .cb-pill:hover { border-color: var(--d1-gold); color: var(--d1-accent); }
 .cb-pill.exec { background: var(--d1-gold); border-color: var(--d1-gold); color: var(--d1-on-gold); font-weight: 600; }
 .composer-box { position: relative; }

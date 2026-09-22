@@ -204,27 +204,11 @@ export function renderComposer(state, events) {
     renderXmodePill();
   });
 
-  // ---- 项目 chip（项目即文件夹：对话中显示所属项目，点击打开信息卡；
-  // 空状态（无消息）时隐藏——项目选择由空状态归属条承接，避免双入口重复） ----
+  // ---- 项目 chip（0.10 用户反馈：污染聊天区，移除——项目信息走视窗·会话 tab） ----
   const wdStrip = wrap.querySelector('.workdir-strip');
   function renderWorkdirChip() {
-    const hasSession = !!(events.getSession && events.getSession());
-    const wd = state.workdir;
-    if (!hasSession || !wd || !state.hasMessages) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
-    wdStrip.style.display = '';
-    if (wd.legacy) {
-      wdStrip.innerHTML = `<button class="wd-chip legacy" title="旧版本会话：只读存档，可查看/导出/下载产物">${icon('archive')} 旧版本会话</button>`;
-      wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
-        events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
-      });
-      return;
-    }
-    if (!wd.dir) { wdStrip.style.display = 'none'; wdStrip.innerHTML = ''; return; }
-    const name = wd.display || '默认项目';
-    wdStrip.innerHTML = `<button class="wd-chip" title="${esc(wd.dir)}（点击查看项目信息）">${icon('folder')} ${esc(name)}</button>`;
-    wdStrip.querySelector('.wd-chip').addEventListener('click', (e) => {
-      events.onWorkdirClick && events.onWorkdirClick(e.target.closest('.wd-chip'));
-    });
+    wdStrip.style.display = 'none';
+    wdStrip.innerHTML = '';
   }
   renderWorkdirChip();
   renderXmodePill();
