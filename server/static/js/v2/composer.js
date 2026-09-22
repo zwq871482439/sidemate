@@ -506,8 +506,13 @@ export function renderComposer(state, events) {
     _running = running;
     sendBtn.style.display = running ? 'none' : '';
     stopBtn.style.display = running ? '' : 'none';
-    textarea.disabled = running || isLegacy;
-    if (!running) {
+    // 生成中保持可输入：此时 Enter = 排队（消息队列），当前回复完成后自动发送；
+    // 仅旧版只读会话禁用输入
+    textarea.disabled = isLegacy;
+    if (running) {
+      textarea.placeholder = '正在回复…此时发送会排队，当前回复完成后自动发出';
+    } else {
+      renderSceneTag();     // 还原场景 placeholder
       _syncSendEnabled();  // 结束态按内容重算（空输入保持置灰）
       _flushQueue();       // 0.10 M1-5a：完成自动发排队消息
     }

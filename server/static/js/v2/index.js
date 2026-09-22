@@ -260,7 +260,7 @@ function render() {
   main.id = 'main';
   main.innerHTML = `
     <div class="topbar">
-      <span class="tb-title">${state.tab === 'chat' ? '对话' : state.tab === 'kb' ? '知识库' : '设置'}</span>
+      <span class="tb-title">${state.tab === 'chat' ? '对话' : state.tab === 'kb' ? '知识库' : state.tab === 'skills' ? '技能' : '设置'}</span>
       ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model">${esc(state.modelTag)}</span>` : ''}
       ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
@@ -296,6 +296,14 @@ function render() {
     }
     scroll.appendChild(_kbView.el);
     _kbView.renderTopbar();  // KB 工具区在顶栏（星图覆盖内容区也可切回清单）
+  } else if (state.tab === 'skills') {
+    // 技能视图（M4 增补：系统 skill 开关 + 用户 SKILL.md + MCP 服务器管理）
+    const scroll = main.querySelector('#main-scroll');
+    if (!_skillsView) {
+      _skillsView = createSkillsView({});
+    }
+    scroll.appendChild(_skillsView.el);
+    _skillsView.reload();
   } else {
     // 设置：壳 + 常规子页已迁入；其余子页在设置内占位逐页迁
     const scroll = main.querySelector('#main-scroll');
@@ -778,7 +786,7 @@ async function _maybeReattachGen(cur) {
     const d = await r.json();
     if (d.status !== 'generating') return;
     // 有进行中生成 → 设置状态 + 重附 SSE
-    log.info('[V2] 检测到进行中生成，重附:', cur.name);
+    console.info('[V2] 检测到进行中生成，重附:', cur.name);
     state.generating = true;
     render();  // 触发流式气泡渲染
     // 用 EventSource 连 gen-live（GET SSE）
