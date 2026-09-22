@@ -267,10 +267,6 @@ def _format_report(info: dict) -> str:
 #  API 端点
 # ============================================================
 
-@router.get("/api/diagnostics/info")
-def api_diagnostics_info():
-    """返回 JSON 格式的诊断信息"""
-    return _build_info()
 
 
 @router.get("/api/diagnostics/export")

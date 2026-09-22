@@ -112,24 +112,6 @@ def api_warmup():
 #  系统信息端点
 # ============================================================
 
-@router.get("/api/info")
-def api_info():
-    """返回版本等信息（前端统一从此接口获取，不硬编码）"""
-    from server import FULL_VERSION
-    modules = {}
-    for mod_name in ("intelligence.task_classifier", "intelligence.response_filter",
-                     "common.context_compressor", "prompts", "config"):
-        try:
-            parts = mod_name.split(".")
-            mod = __import__(mod_name, fromlist=[parts[-1]])
-            modules[mod_name] = getattr(mod, "__version__", "?")
-        except ImportError:
-            pass
-    return {
-        "version": FULL_VERSION,                           # "0.9.5"（从 config.py 单一来源）
-        "version_display": "v%s" % FULL_VERSION,           # "v0.9.5"（统一格式，不再带 Patch 编号）
-        "modules": modules,
-    }
 
 
 @router.get("/api/status")
@@ -172,19 +154,6 @@ def api_status():
     return result
 
 
-@router.get("/api/health")
-def api_health():
-    """健康检查端点（适合外部监控）"""
-    from server import FULL_VERSION
-    mgr = get_mgr()
-    loaded = mgr.get_loaded_llms()
-    return {
-        "status": "ok",
-        "model_loaded": bool(loaded),
-        "loaded_models": loaded,
-        "device": mgr._default_device,
-        "version": FULL_VERSION,
-    }
 
 
 @router.get("/api/token-budget")
@@ -800,13 +769,6 @@ async def api_models_switch(request: Request):
 #  模型导入
 # ============================================================
 
-@router.post("/api/models/import")
-async def api_models_import(file: UploadFile = File(...)):
-    """[已废弃] 模型导入已合并到 /api/extensions/upload，请使用 .sidemate 格式上传"""
-    return JSONResponse(
-        {"error": "此端点已废弃，请使用 /api/extensions/upload 上传 .sidemate 包"},
-        status_code=410,
-    )
 
 
 # ============================================================
@@ -1007,48 +969,6 @@ def api_resource_info():
 #  SSE 进度端点
 # ============================================================
 
-@router.get("/api/load-progress")
-def api_load_progress(model_name: str, device: str = None):
-    """SSE 模型加载进度（支持 device 参数，在加载前切换设备）"""
-    mgr = get_mgr()
-
-    # 如果传了 device 且与当前不同，先切换
-    if device and device.lower() != mgr._default_device.lower():
-        switch_result = mgr.switch_device(device)
-        if "error" in switch_result:
-            def error_stream():
-                yield ('data: {"type":"error","message":"%s"}\n\n' % switch_result["error"]).encode("utf-8")
-                yield b'data: [DONE]\n\n'
-            from fastapi.responses import StreamingResponse
-            return StreamingResponse(error_stream(), media_type="text/event-stream")
-
-    def event_stream():
-        import queue
-        q = queue.Queue()
-
-        def callback(percent, stage):
-            q.put('data: {"type":"progress","percent":%d,"stage":"%s"}\n\n' % (percent, stage))
-
-        def load_worker():
-            result = mgr.load(model_name, progress_callback=callback)
-            if "error" in result:
-                q.put('data: {"type":"error","message":"%s"}\n\n' % result["error"])
-            else:
-                q.put('data: {"type":"done","percent":100,"model":"%s"}\n\n' % model_name)
-            q.put(None)
-
-        import threading
-        t = threading.Thread(target=load_worker)
-        t.start()
-
-        while True:
-            item = q.get()
-            if item is None:
-                break
-            yield item
-
-    from fastapi.responses import StreamingResponse
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ============================================================
