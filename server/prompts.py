@@ -239,7 +239,7 @@ KB_SYSTEM_PROMPT_TEMPLATE = (
 )
 
 
-# ===== [DEPRECATED] V1 策略配置（task_classifier 仍引用，待简化）=====
+# ===== V1 策略配置（task_classifier.resolve_strategy 活跃使用；0.11 随 skill 系统重构）=====
 STRATEGY_CONFIG = {
     "greeting": {
         "system_enhancement": "简短友好回复，1-2句话。",
