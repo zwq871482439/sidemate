@@ -276,7 +276,7 @@ function render() {
     const scroll = main.querySelector('#main-scroll');
     if (!_kbView) {
       _kbView = createKBView({
-        onGoClassic: () => { location.href = '/'; },
+        onGoClassic: () => { location.href = '/classic.html'; },
         onAskChat: (q) => {
           // 推荐追问：切聊天 tab 预填输入框
           state.tab = 'chat';
@@ -298,7 +298,7 @@ function render() {
     // 设置：壳 + 常规子页已迁入；其余子页在设置内占位逐页迁
     const scroll = main.querySelector('#main-scroll');
     if (!_settingsView) {
-      _settingsView = createSettingsView({ onGoClassic: () => { location.href = '/'; } });
+      _settingsView = createSettingsView({ onGoClassic: () => { location.href = '/classic.html'; } });
       _settingsView.mount();
     }
     scroll.appendChild(_settingsView.el);

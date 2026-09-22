@@ -78,7 +78,7 @@ export function createSettingsView(events) {
       <div class="set-group">
         <h2>外观与状态</h2>
         <div class="sub">界面版本、当前模型与推理设备</div>
-        <div class="set-row"><div class="stx"><b>界面版本</b><p>0.10.1 新版三栏界面（预览中），与经典版数据完全互通，随时可切回</p></div>
+        <div class="set-row"><div class="stx"><b>界面版本</b><p>0.10 新版三栏界面（默认），经典版可在 /classic.html 访问（保留一个版本后移除）</p></div>
           <button class="kb-tool-btn" id="setGoClassic">回经典版</button></div>
         <div class="set-row"><div class="stx"><b>深色模式</b><p>新版深色主题在后续版本实装（DNA-01 深色档）；需要深色请用经典版</p></div>
           <span style="font-size:11.5px;color:var(--d1-ink-3)">暂不可用</span></div>
