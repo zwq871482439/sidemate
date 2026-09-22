@@ -39,7 +39,7 @@ export function renderComposer(state, events) {
         <div class="tb-labels">
           <span class="tb-lbl-left">
             <span class="tb-tag tb-tag-status status-ok" id="v2TokenStatus">空间充足</span>
-            <span class="tb-tag tb-tag-used">已用 <span id="v2TokenHist">0.0K</span></span>
+            <span class="tb-tag tb-tag-used" id="v2TokenUsedTag" title="">已用 <span id="v2TokenHist">0.0K</span></span>
             <span class="tb-tag tb-tag-cur">本轮 <span id="v2TokenCur">0.0K</span></span>
           </span>
           <span class="tb-lbl-right">剩余 <span class="tb-remain" id="v2TokenRemain">0.0K词元</span>
@@ -287,6 +287,18 @@ export function renderComposer(state, events) {
     wrap.querySelector('.tb-cur').style.width = curPct + '%';
     wrap.querySelector('#v2TokenCur').textContent = fmtK(curTotal);
     wrap.querySelector('#v2TokenHist').textContent = fmtK(hist);
+    // 0.10 M4-3：上下文透明化——悬停明细（system/历史/KB/本轮）
+    const sysK = fmtK(0.5);  // 系统提示词约 500 token（在线 agent 全量注册表）
+    const kbK = fmtK(attachTokens || 0);
+    const usedTag = wrap.querySelector('#v2TokenUsedTag');
+    if (usedTag) {
+      usedTag.title = `上下文明细：
+· 系统提示词 ≈${sysK}
+· 对话历史 ${fmtK(hist)}
+· 附件/KB ${kbK}
+· 本轮生成 ${fmtK(curTotal)}
+· 剩余 ${fmtK(maxTokens - hist - curTotal - (attachTokens||0))}`;
+    }
     wrap.querySelector('#v2TokenLimit').textContent = fmtKU(maxTokens);
     const ratio = maxTokens > 0 ? total / maxTokens : 0;
     const statusEl = wrap.querySelector('#v2TokenStatus');
