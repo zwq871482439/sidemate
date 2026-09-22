@@ -405,7 +405,7 @@ body {
 .tb-tag-status.status-warn { background: var(--a-warn-12); color: var(--pal-amber-dark); }
 .tb-tag-status.status-over { background: rgba(185,28,28,.12); color: var(--pal-danger); }
 
-.quick-chips { max-width: 760px; margin: 0 auto 7px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 0 2px; }
+.quick-chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-left: auto; }
 
 /* ---- 工作目录（M1 只读版） ---- */
 .workdir-strip { max-width: 760px; margin: 0 auto 6px; display: flex; padding: 0 2px; }
@@ -756,6 +756,14 @@ sup.ref-n:hover { text-decoration: underline; }
   box-shadow: var(--d1-shadow-card); padding: 12px 14px 10px;
   position: relative;
 }
+/* 输入框顶部工具行（pills + quick chips 移入框内，用户定 0.10 M5 增补） */
+.cb-top { display: flex; align-items: center; gap: 8px; padding: 8px 12px 0; flex-wrap: wrap; }
+.composer-box textarea {
+  min-height: 66px;  /* 3 行（~22px/行） */
+  max-height: 110px; /* 5 行 */
+  resize: none; overflow-y: auto;
+}
+
 .composer-box:focus-within { border-color: var(--d1-accent-3); }
 /* 场景卡点击后的视线引导：一次性金色描边环（只动 opacity/transform，DNA-01 动效规范） */
 .composer-box.attn::after {

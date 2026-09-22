@@ -138,17 +138,19 @@
       </div>
     </div>
     <div class="workdir-strip"></div>
-    <div class="quick-chips"></div>
     <div class="attach-tray" style="display:none"></div>
     <div class="composer-box">
-      <div class="scene-tag-wrap" style="display:none"></div>
-      <textarea placeholder="\u53D1\u6D88\u606F\u7ED9\u684C\u4F34\u2026\uFF08Enter \u53D1\u9001 / Shift+Enter \u6362\u884C\uFF09" rows="1"></textarea>
-      <div class="composer-bar">
+      <div class="cb-top">
         <div class="cb-pills">
           <button class="cb-pill" data-act="add" title="\u6DFB\u52A0\u6750\u6599\u5230\u5BF9\u8BDD">${te("plus")} \u6DFB\u52A0</button>
           <button class="cb-pill cb-xmode" data-act="execmode" style="display:none" title="\u8BA1\u5212\u6A21\u5F0F\uFF1AAI \u5199\u9879\u76EE\u6587\u4EF6\u524D\u5148\u7ED9\u4F60\u786E\u8BA4\u6E05\u5355\uFF1B\u6267\u884C\u6A21\u5F0F\uFF1A\u786E\u8BA4\u540E\u76F4\u63A5\u843D\u76D8">\u8BA1\u5212</button>
           <button class="cb-pill cb-think" data-act="thinkmode" style="display:none" title="\u601D\u8003\u6863\u4F4D">\u601D\u8003</button>
         </div>
+        <div class="quick-chips"></div>
+      </div>
+      <div class="scene-tag-wrap" style="display:none"></div>
+      <textarea placeholder="\u53D1\u6D88\u606F\u7ED9\u684C\u4F34\u2026\uFF08Enter \u53D1\u9001 / Shift+Enter \u6362\u884C\uFF09" rows="3"></textarea>
+      <div class="composer-bar">
         <div class="cb-right">
           <button class="cb-send">\u53D1\u9001</button>
           <button class="cb-send cb-stop" style="display:none">\u505C\u6B62</button>

@@ -48,17 +48,19 @@ export function renderComposer(state, events) {
       </div>
     </div>
     <div class="workdir-strip"></div>
-    <div class="quick-chips"></div>
     <div class="attach-tray" style="display:none"></div>
     <div class="composer-box">
-      <div class="scene-tag-wrap" style="display:none"></div>
-      <textarea placeholder="发消息给桌伴…（Enter 发送 / Shift+Enter 换行）" rows="1"></textarea>
-      <div class="composer-bar">
+      <div class="cb-top">
         <div class="cb-pills">
           <button class="cb-pill" data-act="add" title="添加材料到对话">${iconSvg('plus')} 添加</button>
           <button class="cb-pill cb-xmode" data-act="execmode" style="display:none" title="计划模式：AI 写项目文件前先给你确认清单；执行模式：确认后直接落盘">计划</button>
           <button class="cb-pill cb-think" data-act="thinkmode" style="display:none" title="思考档位">思考</button>
         </div>
+        <div class="quick-chips"></div>
+      </div>
+      <div class="scene-tag-wrap" style="display:none"></div>
+      <textarea placeholder="发消息给桌伴…（Enter 发送 / Shift+Enter 换行）" rows="3"></textarea>
+      <div class="composer-bar">
         <div class="cb-right">
           <button class="cb-send">发送</button>
           <button class="cb-send cb-stop" style="display:none">停止</button>
