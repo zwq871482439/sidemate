@@ -720,7 +720,7 @@ class CloudEngine:
             total_chars, elapsed, cloud_model))
 
     def run_with_tools(self, messages, tools=None, model=None, max_tokens=None,
-                       temperature=0.7):
+                       temperature=0.7, _skip_queue=False):
         """带 FC 工具的流式调用 — 供 AgentLoop 使用
 
         与 run() 的区别：
@@ -763,11 +763,15 @@ class CloudEngine:
 
         ticket = None
         try:
-            from core.generate_queue import GenerateQueue
-            ticket = mm.generate_queue.submit(priority=GenerateQueue.HIGH, timeout=60)
-            if ticket is None:
-                yield ("raw", "[ERROR] 等待设备释放超时（60s）或请求被取消")
-                return
+            if _skip_queue:
+                # M2-P3：纯云模式跳过 GPU 队列（云端无资源冲突）
+                ticket = None
+            else:
+                from core.generate_queue import GenerateQueue
+                ticket = mm.generate_queue.submit(priority=GenerateQueue.HIGH, timeout=60)
+                if ticket is None:
+                    yield ("raw", "[ERROR] 等待设备释放超时（60s）或请求被取消")
+                    return
 
             client = self._get_client() if fmt == "openai" else None
 

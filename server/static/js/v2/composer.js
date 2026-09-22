@@ -6,6 +6,9 @@ import { api } from './api.js';
 import { icon, iconSvg } from './icons.js';
 
 // Token 估算（照搬经典版 token-estimator.js：中文 ~1.5 字/token，英文 ~4 字/token）
+// 模块级消息队列（composer 重建不丢失——终验 T-7 修复）
+let _M_QUEUED = null;
+
 export function estimateTokens(text) {
   if (!text) return 0;
   const cn = (text.match(/[\u4e00-\u9fff]/g) || []).length;
@@ -314,7 +317,6 @@ export function renderComposer(state, events) {
   let attachPending = false;  // 引用直读异步取 token 期间禁发送（大文件估算要几秒，
                               // 十五五实战：读取未完就发 = 文件没进上下文，AI 报"没收到"）
   let _running = false;
-  let _queued = null;  // 0.10 M1-5a 消息队列：生成中排队，完成自动发
 
   function doSend() {
     if (isLegacy) return;
@@ -326,8 +328,8 @@ export function renderComposer(state, events) {
     if (_running) {
       const q = { text, actionMode: state.actionMode, filePath: attach ? (attach.kind === 'upload' ? attach.path : attach.ids) : null,
                   fileTag: attach ? (attach.kind === 'upload' ? { name: attach.name, source: 'upload' } : { name: attach.names.join('、'), source: 'kb' }) : null };
-      _queued = (_queued && _queued.text) ? [_queued, q] : q;  // 已有一条则改数组（上限2）
-      if (Array.isArray(_queued) && _queued.length > 2) _queued = _queued.slice(-2);
+      _M_QUEUED = (_M_QUEUED && _M_QUEUED.text) ? [_M_QUEUED, q] : q;  // 已有一条则改数组（上限2）
+      if (Array.isArray(_M_QUEUED) && _M_QUEUED.length > 2) _M_QUEUED = _M_QUEUED.slice(-2);
       _showQueueHint();
       textarea.value = '';
       _syncSendEnabled();
@@ -518,18 +520,18 @@ export function renderComposer(state, events) {
       hint.className = 'cb-queue-hint';
       wrap.querySelector('.composer-box').appendChild(hint);
     }
-    const n = Array.isArray(_queued) ? _queued.length : 1;
+    const n = Array.isArray(_M_QUEUED) ? _M_QUEUED.length : 1;
     hint.textContent = '⏳ 已排队 ' + n + ' 条，当前回复完成后自动发送';
     hint.style.display = '';
   }
 
   function _flushQueue() {
-    if (!_queued) return;
-    const q = Array.isArray(_queued) ? _queued.shift() : _queued;
-    if (Array.isArray(_queued) && !_queued.length) _queued = null;
-    else if (!Array.isArray(_queued)) _queued = null;
+    if (!_M_QUEUED) return;
+    const q = Array.isArray(_M_QUEUED) ? _M_QUEUED.shift() : _M_QUEUED;
+    if (Array.isArray(_M_QUEUED) && !_M_QUEUED.length) _M_QUEUED = null;
+    else if (!Array.isArray(_M_QUEUED)) _M_QUEUED = null;
     const hint = wrap.querySelector('.cb-queue-hint');
-    if (hint && !_queued) hint.style.display = 'none';
+    if (hint && !_M_QUEUED) hint.style.display = 'none';
     else if (hint) _showQueueHint();
     if (q && q.text) {
       events.onSend({ text: q.text, actionMode: q.actionMode,

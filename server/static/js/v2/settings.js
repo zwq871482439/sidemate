@@ -58,12 +58,13 @@ export function createSettingsView(events) {
   // ============ 常规子页 ============
   async function renderGeneral(body) {
     body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
-    const [mode, status, budget, devices, cfg] = await Promise.all([
+    const [mode, status, budget, devices, cfg, availModels] = await Promise.all([
       fetch('/api/mode').then(r => r.json()).catch(() => ({})),
       fetch('/api/status').then(r => r.json()).catch(() => ({})),
       fetch('/api/token-budget').then(r => r.json()).catch(() => ({})),
       fetch('/api/devices').then(r => r.json()).catch(() => ({})),
       fetch('/api/config').then(r => r.json()).catch(() => ({})),
+      fetch('/api/models/available').then(r => r.json()).catch(() => ({models:[]})),
     ]);
     const preloadOn = !!(cfg.config && cfg.config.preload_model_at_start);
     const idleMin = cfg.config ? cfg.config.idle_unload_minutes : undefined;
@@ -82,7 +83,10 @@ export function createSettingsView(events) {
           <button class="kb-tool-btn" id="setGoClassic">回经典版</button></div>
         <div class="set-row"><div class="stx"><b>深色模式</b><p>新版深色主题在后续版本实装（DNA-01 深色档）；需要深色请用经典版</p></div>
           <span style="font-size:11.5px;color:var(--d1-ink-3)">暂不可用</span></div>
-        <div class="set-row"><div class="stx"><b>离线模式模型</b><p id="setModel">${esc(modelDesc)}（在线模式用上方「在线 AI」页配置的云端模型）</p></div></div>
+        <div class="set-row"><div class="stx"><b>离线模式模型</b><p>当前使用（在线模式用上方「在线 AI」页配置的云端模型）。切换后自动加载（懒加载模式下首次使用时加载）</p></div>
+          <select class="set-input" id="setModelSel" style="width:auto">
+            <option value="">${esc(modelDesc)}</option>
+          </select></div>
         <div class="set-row"><div class="stx"><b>上下文窗口</b><p>最大输入 ${(mode.context_window || 0) / 1000 | 0}K tokens · 最大输出 ${(budget.max_output_tokens || 0) / 1000 | 0}K tokens</p></div></div>
         <div class="set-row"><div class="stx"><b>推理设备</b><p>切换后自动重启模型加载。知识库模型不受影响（固定 CPU 运行）</p></div>
           <select class="set-input" id="setDevice" style="width:auto">
@@ -115,6 +119,40 @@ export function createSettingsView(events) {
       </div>`;
 
     body.querySelector('#setGoClassic').addEventListener('click', () => events.onGoClassic());
+
+    // 离线模型选择（0.10 补回：旧版有此功能，v2 遗漏）
+    const modelSel = body.querySelector('#setModelSel');
+    if (modelSel && availModels.models) {
+      const cur = (availModels.models || []).find(m => m.current);
+      modelSel.innerHTML = (availModels.models || []).map(m =>
+        `<option value="${esc(m.model_id)}" ${m.current ? 'selected' : ''}>${esc(m.display_name || m.model_id)}${m.current ? '（当前）' : ''} · ${m.estimated_ram_gb || '?'}GB</option>`
+      ).join('');
+      if (!(availModels.models || []).length) {
+        modelSel.innerHTML = '<option value="">未找到可用模型（请到模型下载页安装）</option>';
+        modelSel.disabled = true;
+      }
+      modelSel.addEventListener('change', async (e) => {
+        if (!e.target.value) return;
+        e.target.disabled = true;
+        const opt = e.target.selectedOptions[0];
+        if (opt) opt.textContent = '切换中…（首次加载约 10-30 秒）';
+        try {
+          const r = await fetch('/api/models/switch', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_id: e.target.value }),
+          });
+          const d = await r.json();
+          if (!r.ok) {
+            alert('切换失败：' + (d.error || '未知错误'));
+          }
+          // 刷新页面数据
+          renderGeneral(body);
+        } catch (err) {
+          alert('切换失败：' + (err.message || '网络错误'));
+        }
+        e.target.disabled = false;
+      });
+    }
 
     // 推理设备切换
     body.querySelector('#setDevice').addEventListener('change', async (e) => {
