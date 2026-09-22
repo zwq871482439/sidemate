@@ -12,6 +12,7 @@ import { renderComposer, loadLocalActions, estimateTokens } from './composer.js'
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
 import { createSettingsView } from './settings.js';
+import { createSkillsView } from './skills.js';
 import { createViewer } from './viewer.js';
 import { createCardArea } from './cards.js';
 
@@ -137,7 +138,8 @@ let _streamState = null;
 let _composer = null;
 let _cards = null;      // 本轮明盒卡片区
 let _doneData = null;   // done 事件数据（含 msg_id）
-let _kbView = null;  // KB 视图单例（切走销毁，切回新建）
+let _kbView = null;  // KB 视图单例
+let _skillsView = null;  // 技能视图单例  // KB 视图单例（切走销毁，切回新建）
 let _settingsView = null;  // 设置视图单例（无后台资源，常驻即可）
 
 function render() {

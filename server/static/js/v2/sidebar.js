@@ -44,6 +44,7 @@ export function renderSidebar(root, state, events) {
     <nav class="sb-nav">
       <button class="sb-nav-item ${state.tab === 'chat' ? 'on' : ''}" data-tab="chat"><span class="ic">${ICONS.chat}</span><span class="sb-label">聊天</span></button>
       <button class="sb-nav-item ${state.tab === 'kb' ? 'on' : ''}" data-tab="kb"><span class="ic">${ICONS.kb}</span><span class="sb-label">知识库</span></button>
+    <button class="sb-nav-item ${state.tab === 'skills' ? 'on' : ''}" data-tab="skills"><span class="ic">${iconSvg('puzzle')}</span><span class="sb-label">技能</span></button>
       <button class="sb-nav-item ${state.tab === 'settings' ? 'on' : ''}" data-tab="settings"><span class="ic">${ICONS.settings}</span><span class="sb-label">设置</span></button>
     </nav>
     <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建任务</span></button>

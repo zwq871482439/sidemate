@@ -521,6 +521,14 @@ export function createSettingsView(events) {
       </div>
       <div class="set-group">
         <h2>知识库引擎</h2>
+        <div class="sub">知识库自身功能（文档打标、标签分组）使用的 AI 引擎</div>
+        <div class="set-row"><div class="stx"><b>打标引擎</b><p>文档打标和 AI 洞察使用的模型（不影响对话）</p></div>
+          <select class="set-input" id="kbEngineSel" style="width:auto">
+            <option value="local">离线模型（隐私优先）</option>
+            <option value="cloud">在线模型（质量优先）</option>
+          </select></div>
+        <div class="set-row"><div class="stx"><b>Reranker 常驻</b><p>重排序模型常驻内存（检索更快，占用约 300MB）</p></div>
+          <button class="switch" id="kbReranker"></button></div>
         <div class="sub">选择知识库自身功能（文档打标、标签分组）使用的 AI 引擎。不影响对话——对话由左栏离线/在线/并行模式控制。</div>
         <div class="set-row"><div class="stx">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;margin-bottom:8px">

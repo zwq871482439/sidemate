@@ -1380,3 +1380,48 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .vw-todo-item.done .vw-todo-dot { background: var(--d1-ok, #2E8B57); border-color: var(--d1-ok, #2E8B57); color: white; }
 .vw-todo-text { color: var(--d1-ink-2); }
 .vw-todo-item.done .vw-todo-text { color: var(--d1-ink-3); text-decoration: line-through; }
+
+/* ===== 技能选项卡（0.10 M4 增补） ===== */
+.skills-view { padding: 20px; max-width: 900px; margin: 0 auto; }
+.sk-header h2 { font-size: 18px; color: var(--d1-dark-ink); margin-bottom: 4px; }
+.sk-sub { font-size: 12px; color: var(--d1-ink-3); margin-bottom: 16px; }
+.sk-stats { display: flex; gap: 12px; margin-bottom: 20px; }
+.sk-stat { background: var(--d1-paper-2); border: 1px solid var(--d1-n-line); border-radius: 10px; padding: 10px 16px; flex: 1; text-align: center; }
+.sk-stat .num { font-size: 20px; font-weight: 700; color: var(--d1-dark-ink); }
+.sk-stat .lbl { font-size: 11px; color: var(--d1-ink-3); margin-top: 2px; }
+.sk-section { margin-bottom: 24px; }
+.sk-sec-title { font-size: 14px; font-weight: 600; color: var(--d1-dark-ink); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.sk-sec-title svg { width: 16px; height: 16px; color: var(--d1-accent-3); }
+.sk-cnt { font-size: 11px; color: var(--d1-ink-3); font-weight: 400; }
+.sk-note { font-size: 11px; color: var(--d1-ink-3); margin-bottom: 10px; }
+.sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.sk-card { border: 1px solid var(--d1-n-line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 6px; background: var(--d1-paper); }
+.sk-card.disabled { opacity: .5; }
+.sk-card-head { display: flex; justify-content: space-between; align-items: center; }
+.sk-name { font-size: 14px; font-weight: 600; color: var(--d1-dark-ink); }
+.sk-desc { font-size: 12px; color: var(--d1-ink-2); line-height: 1.5; flex: 1; }
+.sk-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--d1-ink-3); }
+.sk-tag { padding: 1px 6px; border-radius: 4px; font-size: 10px; }
+.sk-tag.sys { background: #eff6ff; color: #2563eb; }
+.sk-tag.user { background: #f0fdf4; color: #16a34a; }
+.sk-del { border: none; background: none; color: var(--d1-ink-3); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; }
+.sk-del:hover { color: #dc2626; background: #fef2f2; }
+.sk-empty { font-size: 12px; color: var(--d1-ink-3); padding: 12px; text-align: center; grid-column: 1/-1; border: 1px dashed var(--d1-n-line); border-radius: 8px; }
+.sk-add { display: flex; align-items: center; justify-content: center; gap: 6px; border: 2px dashed var(--d1-n-line); border-radius: 10px; padding: 14px; color: var(--d1-ink-3); font-size: 13px; cursor: pointer; margin-top: 8px; }
+.sk-add:hover { border-color: var(--d1-accent-3); color: var(--d1-accent-3); }
+.sk-add svg { width: 14px; height: 14px; }
+.sk-mcp-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--d1-n-line); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; background: var(--d1-paper); }
+.sk-mcp-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sk-mcp-dot.connected { background: var(--d1-ok, #22c55e); }
+.sk-mcp-dot.disconnected { background: var(--d1-n-line); }
+.sk-mcp-dot.error { background: #ef4444; }
+.sk-mcp-info { flex: 1; }
+.sk-mcp-name { font-size: 14px; font-weight: 600; color: var(--d1-dark-ink); }
+.sk-mcp-tools { font-size: 11px; color: var(--d1-ink-3); margin-top: 2px; }
+.sk-mcp-btn { font-size: 11px; padding: 4px 12px; border: 1px solid var(--d1-n-line); border-radius: 6px; background: var(--d1-paper); cursor: pointer; color: var(--d1-ink-2); }
+.sk-mcp-btn:hover { border-color: #dc2626; color: #dc2626; }
+/* switch 开关（复用设置页样式） */
+.skills-view .switch { position: relative; width: 36px; height: 20px; background: var(--d1-n-line); border-radius: 10px; cursor: pointer; transition: .2s; border: none; padding: 0; }
+.skills-view .switch.on { background: var(--d1-ok, #2563eb); }
+.skills-view .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: .2s; }
+.skills-view .switch.on::after { left: 18px; }

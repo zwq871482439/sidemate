@@ -697,6 +697,27 @@ try:
 except Exception as e:
     log.warning("[STARTUP] 定时任务调度器启动失败: %s" % str(e)[:80])
 
+# 0.10 M4：MCP 自动连接（有配置时启动即连）
+try:
+    from core.mcp_client import load_mcp_config, get_mcp_manager
+    from core.agent_tools import register_mcp_tools
+    _mcp_cfg = load_mcp_config()
+    if _mcp_cfg.get("servers"):
+        import threading as _mt
+        def _mcp_auto():
+            import time; time.sleep(8)  # 等服务完全启动
+            try:
+                mgr = get_mcp_manager()
+                n = mgr.connect_all()
+                if n:
+                    register_mcp_tools()
+                    log.info("[STARTUP] MCP 自动连接: %d 个服务器", n)
+            except Exception as e:
+                log.warning("[STARTUP] MCP 自动连接失败: %s", str(e)[:80])
+        _mt.Thread(target=_mcp_auto, daemon=True).start()
+except Exception:
+    pass
+
 # ===== 启动 =====
 _report_startup("pre_start", 65, "准备启动 HTTP 服务...")
 

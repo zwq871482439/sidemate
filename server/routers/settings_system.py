@@ -1448,3 +1448,104 @@ async def api_schedule_toggle(request: Request, task_id: str):
     body = await request.json()
     from core.scheduled_tasks import toggle_task
     return {"ok": toggle_task(task_id, bool(body.get("enabled", True)))}
+
+
+# ============================================================
+#  技能管理 API（0.10 M4 增补：系统 skill + 用户 skill + MCP 入口）
+# ============================================================
+
+@router.get("/api/skills/list")
+def api_skills_list():
+    """列出全部技能：系统（协议+权限）+ 用户（SKILL.md）。"""
+    from core.pipeline_skills import _SKILLS
+    from core.skill_loader import discover_skills
+    from config import get as _cfg
+
+    # 系统 skill：pipeline_skills 注册的 + 工具权限组的
+    system = []
+    # 协议 skill（pipeline_skills 注册的）
+    for sk in _SKILLS:
+        system.append({
+            "id": "pipe_" + sk["name"],
+            "name": sk["name"],
+            "description": (sk.get("prompt_fragment") or "")[:80],
+            "pipeline_types": sk.get("pipeline_types", []),
+            "enabled": True,  # 管线 skill 当前不支持单独禁用（简化）
+            "source": "pipeline",
+        })
+    # 工具权限 skill（替代旧版权限开关）
+    for t in _PERMISSION_TOOLS:
+        cfg_val = _cfg(t["config_key"], t["default_enabled"])
+        enabled = (not cfg_val) if t.get("inverted") else cfg_val
+        system.append({
+            "id": "perm_" + t["tool_id"],
+            "name": t["name"],
+            "description": t["description"],
+            "pipeline_types": [],
+            "enabled": enabled,
+            "config_key": t["config_key"],
+            "inverted": t.get("inverted", False),
+            "source": "permission",
+        })
+
+    # 用户 skill
+    user = []
+    for sk in discover_skills():
+        user.append({
+            "id": "user_" + sk["name"],
+            "name": sk["name"],
+            "description": sk.get("description", ""),
+            "pipeline_types": sk.get("pipeline_types", []),
+        })
+
+    return {"system_skills": system, "user_skills": user}
+
+
+@router.post("/api/skills/toggle")
+async def api_skills_toggle(request: Request):
+    """启用/禁用一个技能（当前支持权限类）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    skill_id = body.get("id", "")
+    enabled = bool(body.get("enabled", True))
+    if not skill_id.startswith("perm_"):
+        return JSONResponse({"error": "仅权限类技能支持开关"}, status_code=400)
+    tool_id = skill_id[5:]
+    for t in _PERMISSION_TOOLS:
+        if t["tool_id"] == tool_id:
+            from config import set_value
+            # inverted 取反
+            cfg_val = (not enabled) if t.get("inverted") else enabled
+            set_value(t["config_key"], cfg_val)
+            return {"ok": True, "id": skill_id, "enabled": enabled}
+    return JSONResponse({"error": "技能不存在"}, status_code=404)
+
+
+@router.post("/api/skills/delete")
+async def api_skills_delete(request: Request):
+    """删除一个用户技能。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    skill_id = body.get("id", "")
+    if not skill_id.startswith("user_"):
+        return JSONResponse({"error": "仅用户技能可删除"}, status_code=400)
+    name = skill_id[5:]
+    from core.skill_loader import _skills_dir
+    import os
+    root = _skills_dir()
+    for entry in os.listdir(root):
+        if entry == name + ".md":
+            os.remove(os.path.join(root, entry))
+            return {"ok": True}
+        sub = os.path.join(root, entry, "SKILL.md")
+        if os.path.isfile(sub):
+            import json as _j
+            meta = _j.load(open(os.path.join(root, entry, "meta.json"), encoding="utf-8")) if os.path.isfile(os.path.join(root, entry, "meta.json")) else {}
+            # 简单匹配：子目录名或 SKILL.md 里的 name
+            if entry == name or meta.get("name") == name:
+                import shutil
+                shutil.rmtree(os.path.join(root, entry))
+                return {"ok": True}
+    return JSONResponse({"error": "未找到技能文件"}, status_code=404)
