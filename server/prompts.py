@@ -92,6 +92,17 @@ CARD_PROTOCOL_PROMPT = (
 
 # 真 PPT 协议（0.10.1 M1-E：create_ppt 工具，SVG 单一中间表示 + DNA-01 设计卡）
 # 追加在在线 agent system prompt 尾部（create_ppt 工具启用时）；离线不注入
+CODE_EXEC_PROTOCOL_PROMPT = (
+    "\n11. 代码执行（code_exec 工具）：需要数值计算、数据处理、文本批量处理时使用。\n"
+    "   规则：\n"
+    "   - 传完整可执行的 Python 脚本（不是片段）\n"
+    "   - 结果用 print() 输出（stdout 会被捕获）\n"
+    "   - 支持标准库 + pandas/numpy 等已安装包\n"
+    "   - 超时 30 秒；产出文件在临时沙箱（可用 output_files 查看产生了什么）\n"
+    "   - 不用于系统管理或文件操作（那些走 project_write）\n"
+    "   - 计算量大时先 print 中间结果再算最终结果（防超时丢全部）"
+)
+
 DOCX_PROTOCOL_PROMPT = (
     "\n10. 精排版 Word（create_docx 工具）：用户要\"Word/文档/docx/报告/方案\"且需要正式"
     "排版文件时使用（工作区 md 的简单转写仍走 set_doc_status，二者不要混用）。\n"

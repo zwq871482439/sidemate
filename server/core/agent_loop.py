@@ -1568,6 +1568,18 @@ class AgentLoop:
                         "message": r.get("message", "create_docx 执行失败"),
                         "data": r}
 
+            elif tool_name == "code_exec":
+                # 0.10 M4-1：受限子进程 Python 执行（方案 3）
+                from core.code_exec import execute_code
+                r = execute_code(args.get("code", ""))
+                if r.get("ok"):
+                    return {"success": True, "tool": "code_exec", "data": r,
+                            "message": "执行成功（%.1fs）：%s" % (r.get("elapsed", 0), (r.get("stdout") or "")[:120])}
+                return {"success": False, "tool": "code_exec",
+                        "error": r.get("error", "exec_failed"),
+                        "message": r.get("error", r.get("stderr", "执行失败")),
+                        "data": r}
+
             elif tool_name == "run_plan":
                 # M2：PTC 调用计划——一批相互独立的信息获取类调用一次执行
                 # （省 LLM 轮次；顺序执行，写操作/嵌套/超限步骤逐个跳过并说明）

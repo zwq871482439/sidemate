@@ -702,6 +702,28 @@ TOOL_REGISTRY = {
         "condition": None,
         "prompt_fragment": "docx",
     },
+    # ===== 0.10 M4-1：code_exec（受限子进程 Python 执行）=====
+    "code_exec": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "code_exec",
+                "description": "在受限沙箱中执行 Python 代码（数据计算/文本处理/快速脚本）。自动捕获 stdout/stderr，超时 30 秒。支持标准库+已安装包（pandas/numpy 等）。产出文件留在临时沙箱（可读回）。适用：数值计算、数据处理、格式转换、正则提取。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {"type": "string", "description": "Python 代码（完整可执行脚本）"}
+                    },
+                    "required": ["code"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {"start": "code_executing", "done": "code_exec_done"},
+        "stat_key": "code_execs",
+        "condition": None,
+        "prompt_fragment": "codeexec",
+    },
     # ===== M2：PTC 调用计划（一次编排多步工具，省 LLM 轮次）=====
     "run_plan": {
         "schema": {
@@ -942,6 +964,7 @@ _FRAGMENT_LOADERS = {
     "cards": lambda: __import__("prompts").CARD_PROTOCOL_PROMPT,
     "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,
     "docx": lambda: __import__("prompts").DOCX_PROTOCOL_PROMPT,
+    "codeexec": lambda: __import__("prompts").CODE_EXEC_PROTOCOL_PROMPT,
     "plan": lambda: __import__("prompts").PLAN_PROTOCOL_PROMPT,
     "reader": lambda: __import__("prompts").READER_PROTOCOL_PROMPT,
     "read_session": lambda: __import__("prompts").SESSION_READ_PROMPT,
