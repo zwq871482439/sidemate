@@ -5,7 +5,7 @@
 import { api } from './api.js';
 import { icon } from './icons.js';
 import { renderCardHistory } from './cards.js';
-import { extractCards, hydrateCards, extractMermaid, hydrateMermaid } from './cards_content.js';
+import { extractCards, hydrateCards, extractMermaid, hydrateMermaid, extractD2, hydrateD2 } from './cards_content.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -22,6 +22,7 @@ function md(text, cardOk) {
   if (typeof marked !== 'undefined') {
     // mermaid 双模式都提取（纯展示特性）；卡片围栏块仅在线产出时解析
     let t = extractMermaid(text);
+    t = extractD2(t);
     if (cardOk) t = extractCards(t);
     const html = marked.parse(t, { breaks: true });
     if (typeof DOMPurify !== 'undefined') return DOMPurify.sanitize(html);
@@ -172,6 +173,7 @@ export function renderChatFlow(container, messages, opts) {
   // 水合恒执行（ref 卡跨两界离线也要；围栏块槽只在 _cardMode 提取后存在）
   hydrateCards(flow, opts || {});
   hydrateMermaid(flow);
+  hydrateD2(flow);
   // HTML 报告「预览」按钮 → opts.onPreviewDoc（index.js 转视窗预览 tab）
   if (opts && opts.onPreviewDoc) {
     flow.querySelectorAll('.m-doc-preview').forEach(b =>

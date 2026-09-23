@@ -21,6 +21,8 @@ const jsOptions = {
   sourcemap: watch,
   minify: !watch,
   outfile: join(outdir, 'bundle.js'),
+  // d2.js 是运行时懒加载的 vendor（8.2MB ESM+WASM），不参与打包
+  external: ['/static/vendor/d2.js'],
   logLevel: 'info',
   // index.js import './styles.css' → esbuild 自动产出伴随 bundle.css
 };

@@ -674,6 +674,33 @@ TOOL_REGISTRY = {
         "condition": None,
         "prompt_fragment": "ppt",  # M2：协议 fragment 随启用自动进 prompt（注册表拼装）
     },
+    # ===== 0.10：render_d2（D2 图表 → 服务端渲染 SVG 入工作区；PPT 页可 svg_file 引用） =====
+    "render_d2": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "render_d2",
+                "description": "把 D2 语言（d2lang）源码渲染成高质量 SVG 图表文件，存入工作区。适用于流程/架构/ER/状态/关系图。图表类需求优先用它（比 mermaid 版式更稳更美观）；输出文件可在视窗-文件查看，PPT 页可用 create_ppt(action='page', svg_file='文件名') 直接引用，报告/文档可用 read_workspace 取 SVG 内联。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "D2 源码。语法要点：a -> b: 连线标签；a: 标签 {shape: person|cylinder|rectangle}；分组 a: 组名 { ... }；序列图 shape: sequence_diagram"
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "输出文件名（可选，默认 d2-时间戳.svg，自动加 .svg 后缀）"
+                        }
+                    },
+                    "required": ["source"]
+                }
+            }
+        },
+        "stat_key": "d2_renders",
+        "condition": None,
+        "prompt_fragment": "d2",
+    },
     # ===== 0.10 M1-4：create_docx（精排版 Word：markdown 章节 → DNA 版式 docx）=====
     "create_docx": {
         "schema": {
@@ -1029,6 +1056,7 @@ def register_mcp_tools():
 _FRAGMENT_LOADERS = {
     "cards": lambda: __import__("prompts").CARD_PROTOCOL_PROMPT,
     "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,
+    "d2": lambda: __import__("prompts").D2_PROTOCOL_PROMPT,
     "docx": lambda: __import__("prompts").DOCX_PROTOCOL_PROMPT,
     "codeexec": lambda: __import__("prompts").CODE_EXEC_PROTOCOL_PROMPT,
     "plan": lambda: __import__("prompts").PLAN_PROTOCOL_PROMPT,

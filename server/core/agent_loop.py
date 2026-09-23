@@ -1661,6 +1661,18 @@ class AgentLoop:
                     "message": "编排执行 %d 步，成功 %d 步" % (len(results), ok_count),
                 }
 
+            elif tool_name == "render_d2":
+                # 0.10：D2 → 服务端 SVG（lib/d2/d2.exe），产物入工作区
+                from core import d2_render as _d2r
+                r = _d2r.render_to_workspace(self.chat_id, args.get("name", ""),
+                                             args.get("source", ""))
+                if r.get("ok"):
+                    stats["d2_renders"] = stats.get("d2_renders", 0) + 1
+                    return {"success": True, "tool": "render_d2", "data": r}
+                return {"success": False, "tool": "render_d2",
+                        "error": r.get("error", "d2_error"),
+                        "message": r.get("message", "render_d2 执行失败")}
+
             elif tool_name == "create_ppt":
                 # 0.10.1 M1-E：真 PPT（LLM 逐页手写 SVG → 编译 native PPTX）
                 # begin/page/build 三动作，实现在 core/ppt_compile.py
@@ -1670,8 +1682,18 @@ class AgentLoop:
                     _hint = getattr(self, "_user_msg", "")
                     r = _pptc.begin_deck(self.chat_id, args.get("title", ""), user_hint=_hint)
                 elif action == "page":
+                    _svg = args.get("svg", "")
+                    # 0.10：svg_file —— 直接引用工作区 SVG（render_d2 产物）作整页图
+                    _sf = (args.get("svg_file") or "").strip()
+                    if _sf and not _svg:
+                        try:
+                            from core.doc_session import read_workspace_file
+                            _svg = read_workspace_file(self.chat_id, _sf)
+                        except Exception as _e:
+                            return {"success": False, "tool": "create_ppt", "error": "svg_file_read",
+                                    "message": "读取 %s 失败：%s" % (_sf, str(_e)[:80])}
                     r = _pptc.add_page(self.chat_id, args.get("deck", ""),
-                                       args.get("page"), args.get("svg", ""))
+                                       args.get("page"), _svg)
                 elif action == "build":
                     r = _pptc.build_deck(self.chat_id, args.get("deck", ""),
                                          args.get("filename"))

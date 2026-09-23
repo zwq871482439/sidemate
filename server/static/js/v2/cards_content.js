@@ -24,6 +24,53 @@ export function extractMermaid(text) {
   });
 }
 
+// ===== D2 渲染（0.10：d2lang 支持，d2 优先 mermaid 兜底的另一半） =====
+// A/B 实测：deepseek 出 d2 合法率 90% vs mermaid 85%，双渲染器并存。
+export function extractD2(text) {
+  if (!text) return text;
+  return text.replace(/```d2\s*\n([\s\S]*?)```/g, (m, body) => {
+    return '\n\n<div class="d2-container" data-d2="'
+      + encodeURIComponent(body.trim()) + '"><div class="mermaid-wait">D2 图表渲染中…</div></div>\n\n';
+  });
+}
+
+let _d2Mod = null, _d2Loading = null;
+function _loadD2() {
+  if (_d2Mod) return Promise.resolve(_d2Mod);
+  if (!_d2Loading) {
+    _d2Loading = import('/static/vendor/d2.js').then(m => { _d2Mod = m; return m; });
+  }
+  return _d2Loading;
+}
+
+export function hydrateD2(container) {
+  const boxes = Array.from(container.querySelectorAll('.d2-container:not([data-rendered])'));
+  if (!boxes.length) return;
+  boxes.forEach(b => b.setAttribute('data-rendered', '1'));  // 防重复触发
+  _loadD2().then(async mod => {
+    const inst = new mod.D2();
+    for (const box of boxes) {
+      const code = decodeURIComponent(box.getAttribute('data-d2') || '');
+      if (!code) continue;
+      try {
+        const result = await inst.compile(code);
+        const svg = await inst.render(result.diagram, result.renderOptions);
+        box.innerHTML = svg;
+      } catch (err) {
+        box.innerHTML = `<div class="mermaid-err">${iconSvg('alertTriangle')} D2 图表语法有误，无法渲染（${esc(String(err && err.message || err).slice(0, 120))}）</div>
+          <pre class="cc-raw">${esc(code)}</pre>`;
+      }
+    }
+  }).catch(err => {
+    // WASM 加载失败（罕见）：全部降级为源码展示
+    boxes.forEach(box => {
+      const code = decodeURIComponent(box.getAttribute('data-d2') || '');
+      box.innerHTML = `<div class="mermaid-err">${iconSvg('alertTriangle')} D2 渲染器加载失败</div>
+        <pre class="cc-raw">${esc(code)}</pre>`;
+    });
+  });
+}
+
 let _mermaidInited = false;
 // DNA-01 深蓝金 mermaid 主题（0.10.1 用户实测反馈「内嵌 mermaid 太难看」）：
 // theme:'base' + themeVariables 全面换皮成自家色板（纸面/深墨/金线/雅黑）。
@@ -58,16 +105,39 @@ function _initMermaid() {
   });
 }
 
+// mermaid 懒加载（0.10：3.3MB 不再急加载拖累首屏——首个图表块出现才注入）
+let _mermaidLoading = null;
+function _loadMermaid() {
+  if (typeof mermaid !== 'undefined') return Promise.resolve();
+  if (!_mermaidLoading) {
+    _mermaidLoading = new Promise((res, rej) => {
+      const sc = document.createElement('script');
+      sc.src = '/static/vendor/mermaid.min.js';
+      sc.onload = res; sc.onerror = () => rej(new Error('mermaid.min.js 加载失败'));
+      document.head.appendChild(sc);
+    });
+  }
+  return _mermaidLoading;
+}
+
 export function hydrateMermaid(container) {
-  if (typeof mermaid === 'undefined') return;
-  _initMermaid();
+  const boxes = Array.from(container.querySelectorAll('.mermaid-container:not([data-rendered])'));
+  if (!boxes.length) return;
+  _loadMermaid().then(() => { _initMermaid(); _renderMermaidBoxes(boxes); })
+    .catch(() => {
+      boxes.forEach(b => b.setAttribute('data-rendered', '1'));
+    });
+}
+
+function _renderMermaidBoxes(boxes) {
   const _cleanOrphans = () => {
     // mermaid 渲染期的临时容器（id 前缀 dmm-）失败时会挂着原生报错图残留在 body 末尾
     document.querySelectorAll('body > div[id^="dmm-"]').forEach(el => el.remove());
   };
-  container.querySelectorAll('.mermaid-container:not([data-rendered])').forEach(box => {
+  boxes.forEach(box => {
     const code = decodeURIComponent(box.getAttribute('data-mermaid') || '');
     if (!code) return;
+    box.setAttribute('data-rendered', '1');
     const parent = box.parentElement;
     const next = box.nextSibling;
     mermaid.render('mm-' + Math.random().toString(36).slice(2, 10), code)

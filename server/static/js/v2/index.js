@@ -7,7 +7,7 @@ import { icon, iconSvg } from './icons.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
 import { renderEmptyState } from './empty_state.js';
 import { renderChatFlow, loadMessages, setCardMode } from './chat_view.js';
-import { extractCards, hydrateCards, extractMermaid, hydrateMermaid } from './cards_content.js';
+import { extractCards, hydrateCards, extractMermaid, hydrateMermaid, extractD2, hydrateD2 } from './cards_content.js';
 import { renderComposer, loadLocalActions, estimateTokens } from './composer.js';
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
@@ -728,6 +728,7 @@ function renderStreamingBubble(st) {
   bubble.innerHTML = mdStream(st.text + (st.error ? '\n\n⚠️ ' + st.error : ''));
   hydrateCards(bubble, { getSession: () => state.sessions.find(c => c.current), onAskAnswer, getCardAnswer });
   hydrateMermaid(bubble);
+  hydrateD2(bubble);
   const scroll = document.getElementById('main-scroll');
   if (scroll) scroll.scrollTop = scroll.scrollHeight;
 }
@@ -767,6 +768,7 @@ function mdStream(text) {
   if (typeof marked !== 'undefined') {
     setCardMode(state.mode !== 'local');
     let t = extractMermaid(text);
+    t = extractD2(t);
     if (state.mode !== 'local') t = extractCards(t);
     const html = marked.parse(t, { breaks: true });
     return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;

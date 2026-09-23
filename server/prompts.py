@@ -119,13 +119,30 @@ DOCX_PROTOCOL_PROMPT = (
     "章末自然衔接下章。"
 )
 
+# ===== 0.10：D2 图表协议（render_d2 工具；A/B 实测合法率 90% vs mermaid 85%） =====
+D2_PROTOCOL_PROMPT = (
+    "\nD2 图表（render_d2 工具）：流程/架构/ER/状态/关系图优先用 D2 出图——"
+    "服务端渲染 SVG 入工作区，版式自动布局，比手写 SVG 或 mermaid 更稳。\n"
+    "   语法要点（严格遵循，不要发明语法）：\n"
+    "   - 声明与连线：a -> b: 连线标签；节点标签：a: 显示名\n"
+    "   - 形状：a: 显示名 {shape: person}（person 人物 / cylinder 圆柱=存储）\n"
+    "   - 分组：组名: 标签 { ...子节点... }；组内连线照常写\n"
+    "   - 序列图：seq: {shape: sequence_diagram} 后接 a -> b: 消息\n"
+    "   - 中文标签直接写；注释用 #；不要用 HTML 实体\n"
+    "   失败自修：报错含行列号，按提示改一处重试；两次仍失败改用 mermaid"
+    "（```mermaid 代码块，前端可渲染）。聊天内嵌小图直接写 ```d2 代码块"
+    "（前端自动渲染）——需要生成正式 SVG 文件时才调 render_d2。\n"
+)
+
 PPT_PROTOCOL_PROMPT = (
     "\n9. 真 PPT 制作（create_ppt 工具）：用户要\"PPT/pptx/幻灯片/汇报/演示\"且需要"
     "可编辑的原生 PPT 文件时使用（纯网页演示仍走 .ppt.html 赛道，二者不要混用）。\n"
     "   工作流（严格按序）：\n"
     "   ① create_ppt(action=\"begin\", title=\"主题\") 开题；\n"
     "   ② create_ppt(action=\"page\", deck=..., page=页码, svg=\"...\") 逐页提交"
-    "（页码从 1 递增，每次只提交一页，提交后用户右侧会实时看到该页）；\n"
+    "（页码从 1 递增，每次只提交一页，提交后用户右侧会实时看到该页）。"
+    "含流程/架构/关系图的页优先先 render_d2 出图，再用 svg_file=\"图.svg\" 引用"
+    "（自动布局比手写稳）；纯文字/标题页仍手写 svg；\n"
     "   ③ 全部页提交完（通常 5-8 页，含封面/目录/内容页/结尾）"
     "调 create_ppt(action=\"build\", deck=...) 生成可下载 pptx。\n"
     "   开做纪律：主题、页数、受众至少一项明确就直接 begin 开做——不要连环追问"
