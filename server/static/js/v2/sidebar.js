@@ -137,7 +137,15 @@ export function renderSidebar(root, state, events) {
     listEl.appendChild(grp);
   }
   if (!rendered) {
-    listEl.innerHTML = `<div class="sess-empty">${filter ? '无匹配会话' : '还没有会话，点上方「新建任务」开始'}</div>`;
+    if (!filter && !state.booted && !state.sessions.length) {
+      // 启动加载中：鱼骨行（对齐 sess-item 两行结构），完成后由 boot render 替换
+      listEl.innerHTML = '<div class="sb-skel">' +
+        Array.from({ length: 7 }, (_, i) =>
+          '<div class="sb-skel-row"><div class="sb-skel-bar" style="width:' + [52, 68, 44, 61, 38, 57, 47][i] + '%"></div><div class="sb-skel-meta"></div></div>'
+        ).join('') + '</div>';
+    } else {
+      listEl.innerHTML = `<div class="sess-empty">${filter ? '无匹配会话' : '还没有会话，点上方「新建任务」开始'}</div>`;
+    }
   }
 
   return _bindCommon(sb, state, events);

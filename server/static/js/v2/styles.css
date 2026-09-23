@@ -1519,3 +1519,13 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .tb-mdot.off { background: none; border: 1.5px solid var(--d1-ink-3); }
 .tb-mdot.ld { background: none; border: 2px solid var(--d1-n-line); border-top-color: var(--d1-accent-3);
   animation: mo-spin .9s linear infinite; }
+
+/* 侧栏会话列表启动鱼骨（对齐 sess-item 结构：标题条 + 元信息条，错拍呼吸） */
+.sb-skel { display: flex; flex-direction: column; gap: 4px; padding: 6px 2px; }
+.sb-skel-row { padding: 7px 8px; border-radius: var(--d1-r-sm); display: flex; flex-direction: column; gap: 6px; }
+.sb-skel-bar { height: 12px; border-radius: 6px; background: rgba(255,255,255,.14);
+  animation: skel-pulse 1.1s var(--d1-ease-out) infinite; }
+.sb-skel-meta { height: 8px; width: 34%; border-radius: 4px; background: rgba(255,255,255,.08);
+  animation: skel-pulse 1.1s var(--d1-ease-out) infinite; animation-delay: 180ms; }
+.sb-skel-row:nth-child(2n) .sb-skel-bar { animation-delay: 120ms; }
+.sb-skel-row:nth-child(3n) .sb-skel-bar { animation-delay: 240ms; }

@@ -21,6 +21,8 @@ const state = {
   mode: 'cloud',      // 后端值：local/cloud/parallel
   tab: 'chat',
   sessions: [],
+  booted: false,      // 启动加载完成前侧栏/主区走鱼骨骨架（防假空态闪烁）
+  switchingSess: false, // 切会话加载中：主区鱼骨（防旧会话内容残留闪烁）
   filter: '',
   collapsed: false,
   userToggledSidebar: false,  // 用户手动折叠过 → 断点不再自动接管
@@ -189,11 +191,14 @@ function render() {
       _handoffPrompted = false;  // 换会话重置 80% 交接提示
       state.scene = '';       // 场景 chip 是会话级状态，随会话切换清掉（防跨会话泄漏）
       state.actionMode = 'chat';
+      state.switchingSess = true;  // 主区鱼骨（旧会话内容不再残留）
+      renderChatArea();
       await api.switchChat(c.path);
       state.sessions = await loadSessions();
       state.tab = 'chat';
       await loadCurrentMessages();
       await loadWorkdir();
+      state.switchingSess = false;
       if (_viewer) _viewer.onSessionChange();
       render();
     },
@@ -342,11 +347,14 @@ function render() {
         _viewedProject = null;
         state.scene = '';
         state.actionMode = 'chat';
+        state.switchingSess = true;  // 主区鱼骨（旧会话内容不再残留）
+        renderChatArea();
         await api.switchChat(c.path);
         state.sessions = await loadSessions();
         state.tab = 'chat';
         await loadCurrentMessages();
         await loadWorkdir();
+        state.switchingSess = false;
         if (_viewer) _viewer.onSessionChange();
         render();
       },
@@ -405,6 +413,7 @@ async function _refreshLLMDot() {
   if (d) d.className = 'tb-mdot ' + _llmDotCls;
 }
 setInterval(_refreshLLMDot, 20000);
+window._v2RefreshLLMDot = _refreshLLMDot;  // 供设置页（使用/卸载后）即时刷新，20s 轮询只作兜底
 
 let _viewer = null;
 
@@ -418,8 +427,8 @@ function renderChatArea() {
   const scroll = document.getElementById('main-scroll');
   if (!scroll) return;
   document.getElementById('v2DocBar')?.remove();  // 先清旧确认栏，待确认分支会重建
-  if (state.switching) {
-    // 鱼骨加载（模式切换中）：消息区骨架条，输入区锁定
+  if (state.switching || state.switchingSess || !state.booted) {
+    // 鱼骨加载（模式切换 / 切会话 / 启动加载中）：消息区骨架条，输入区锁定
     scroll.innerHTML = '<div class="skel-wrap">' +
       '<div class="skel-line" style="width:38%"></div>' +
       '<div class="skel-line" style="width:72%"></div>' +
@@ -1365,11 +1374,14 @@ async function boot() {
   } catch (e) { /* 模式读取失败就用默认在线 */ }
   try {
     if (state.mode === 'local') state.localActions = await loadLocalActions();
-    state.sessions = await loadSessions();
-    await loadCurrentMessages();
-    await loadProjects();
-    await loadWorkdir();
+    // 并行化：sessions → (messages ∥ workdir) ∥ projects —— 原四段串行是启动慢的主因之一
+    const _sessChain = (async () => {
+      state.sessions = await loadSessions();
+      await Promise.all([loadCurrentMessages(), loadWorkdir()]);
+    })();
+    await Promise.all([_sessChain, loadProjects()]);
   } catch (e) { /* 会话列表失败不阻断空状态 */ }
+  state.booted = true;  // 骨架 → 真实内容（此后空态=真空态）
   render();
 }
 

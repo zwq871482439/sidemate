@@ -68,6 +68,7 @@ async function _switchWithLoading(btn, modelId, name) {
   }
   clearInterval(timer);
   try { window._v2LLMLoading = false; } catch (e) {}
+  try { window._v2RefreshLLMDot && window._v2RefreshLLMDot(); } catch (e) {}
 }
 
 export function createSettingsView(events) {
@@ -294,6 +295,7 @@ export function createSettingsView(events) {
       unloadBtn.disabled = true; unloadBtn.textContent = '卸载中…';
       const r = await fetch('/api/model/unload', { method: 'POST' }).then(x => x.json()).catch(() => null);
       if (r && r.ok === false) uiAlert('卸载失败：' + (r.error || '未知错误'));
+      try { window._v2RefreshLLMDot && window._v2RefreshLLMDot(); } catch (e) {}
       renderOffline(body);
     });
 
