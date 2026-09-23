@@ -54,17 +54,15 @@ export function renderComposer(state, events) {
     <div class="workdir-strip"></div>
     <div class="attach-tray" style="display:none"></div>
     <div class="composer-box">
-      <div class="cb-top">
-        <div class="cb-pills">
-          <button class="cb-pill" data-act="add" title="添加材料到对话">${iconSvg('plus')} 添加</button>
-          <button class="cb-pill cb-xmode" data-act="execmode" style="display:none" title="计划模式：AI 写项目文件前先给你确认清单；执行模式：确认后直接落盘">计划</button>
-          <button class="cb-pill cb-think" data-act="thinkmode" style="display:none" title="思考档位">思考</button>
-        </div>
-        <div class="quick-chips"></div>
-      </div>
       <div class="scene-tag-wrap" style="display:none"></div>
       <textarea placeholder="发消息给桌伴…（Enter 发送 / Shift+Enter 换行）" rows="3"></textarea>
       <div class="composer-bar">
+        <div class="cb-pills">
+          <button class="cb-pill" data-act="add" title="添加材料到对话">${iconSvg('plus')} 添加</button>
+          <button class="cb-pill cb-xmode" data-act="execmode" style="display:none" title="计划模式：AI 写项目文件前先给你确认清单；执行模式：确认后直接落盘">计划</button>
+          <button class="cb-pill cb-think-pill" data-act="thinkmode" style="display:none" title="思考档位">思考</button>
+        </div>
+        <div class="quick-chips"></div>
         <div class="cb-right">
           <button class="cb-send">发送</button>
           <button class="cb-send cb-stop" style="display:none">停止</button>
@@ -159,7 +157,7 @@ export function renderComposer(state, events) {
     } catch (e) { xmodeBtn.style.display = 'none'; }
   }
   // ---- 思考档位 pill（0.10 M1：高/低/关 三态循环，仅在线） ----
-  const thinkBtn = wrap.querySelector('.cb-think');
+  const thinkBtn = wrap.querySelector('.cb-think-pill');
   const THINK_LEVELS = [
     { v: 'high', icon: 'circleFull', label: '思考·高', tip: '思考·高：完整推理（默认）。点我降档' },
     { v: 'low', icon: 'circleHalf', label: '思考·低', tip: '思考·低：轻量推理，更快更省。点我关闭' },

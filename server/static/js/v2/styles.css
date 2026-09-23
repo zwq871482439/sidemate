@@ -405,7 +405,7 @@ body {
 .tb-tag-status.status-warn { background: var(--a-warn-12); color: var(--pal-amber-dark); }
 .tb-tag-status.status-over { background: rgba(185,28,28,.12); color: var(--pal-danger); }
 
-.quick-chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+.quick-chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-left: 12px; }
 
 /* ---- 工作目录（M1 只读版） ---- */
 .workdir-strip { max-width: 760px; margin: 0 auto 6px; display: flex; padding: 0 2px; }
@@ -756,8 +756,8 @@ sup.ref-n:hover { text-decoration: underline; }
   box-shadow: var(--d1-shadow-card); padding: 12px 14px 10px;
   position: relative;
 }
-/* 输入框顶部工具行（pills + quick chips 移入框内，用户定 0.10 M5 增补） */
-.cb-top { display: flex; align-items: center; gap: 8px; padding: 8px 12px 0; flex-wrap: wrap; }
+/* 底部工具行：pills 左 + 发送右（DeepSeek 同款，0.10 用户定稿） */
+.composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .composer-box textarea {
   /* 行高定死 22px → 行数可精确控制：默认 3 行（66px），最多 5 行（110px）。
      用户实测校准：line-height 1.6 + max 160px 实际呈 4/7 行 */
@@ -787,10 +787,9 @@ sup.ref-n:hover { text-decoration: underline; }
   /* 行高/高度统一由 .composer-box textarea 定死（避免双规则打架） */
 }
 .composer textarea::placeholder { color: var(--d1-ink-3); }
-.composer-bar { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-/* composer 浮条组（添加/计划·执行，OpenWebUI pill 范式） */
+.composer-bar .cb-right { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+/* composer 浮条组（添加/计划·思考，底栏左置——DeepSeek 范式） */
 .cb-pills { display: flex; gap: 6px; align-items: center; }
-.cb-right { display: flex; gap: 6px; align-items: center; margin-left: auto; }
 .cb-pill {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   border: 1px solid var(--d1-n-line); background: var(--d1-paper);
