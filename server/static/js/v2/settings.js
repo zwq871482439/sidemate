@@ -13,6 +13,7 @@ function esc(s) {
 const SUBPAGES = [
   { id: 'general', label: '常规' },
   { id: 'cloud', label: '在线 AI' },
+  { id: 'offline', label: '离线AI' },
   { id: 'kb', label: '知识库' },
   { id: 'privacy', label: '隐私安全' },
   { id: 'download', label: '模型下载' },
@@ -39,6 +40,7 @@ export function createSettingsView(events) {
     const body = el.querySelector('#setBody');
     if (cur === 'general') await renderGeneral(body);
     else if (cur === 'cloud') await renderCloud(body);
+    else if (cur === 'offline') await renderOffline(body);
     else if (cur === 'kb') await renderKbSettings(body);
     else if (cur === 'privacy') await renderPrivacy(body);
     else if (cur === 'download') await renderDownload(body);
@@ -58,44 +60,14 @@ export function createSettingsView(events) {
 
   // ============ 常规子页 ============
   async function renderGeneral(body) {
-    body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
-    const [mode, status, budget, devices, cfg, availModels] = await Promise.all([
-      fetch('/api/mode').then(r => r.json()).catch(() => ({})),
-      fetch('/api/status').then(r => r.json()).catch(() => ({})),
-      fetch('/api/token-budget').then(r => r.json()).catch(() => ({})),
-      fetch('/api/devices').then(r => r.json()).catch(() => ({})),
-      fetch('/api/config').then(r => r.json()).catch(() => ({})),
-      fetch('/api/models/available').then(r => r.json()).catch(() => ({models:[]})),
-    ]);
-    const preloadOn = !!(cfg.config && cfg.config.preload_model_at_start);
-    const idleMin = cfg.config ? cfg.config.idle_unload_minutes : undefined;
-    const loadedModel = Object.keys(status).find(k => status[k] && status[k].type === 'llm' && status[k].loaded);
-    const modelDesc = loadedModel ? `${status[loadedModel].description || loadedModel}（${loadedModel}）` : '未加载';
-    const devList = (devices.devices || []).map(d => typeof d === 'string'
-      ? { id: d, label: d === 'gpu' ? 'GPU（Vulkan）— 有独显时推荐，速度快' : 'CPU — 兼容性好，速度慢' }
-      : d);
-    const curDev = devices.current || '';
-
     body.innerHTML = `
       <div class="set-group">
         <h2>外观与状态</h2>
-        <div class="sub">界面版本、当前模型与推理设备</div>
+        <div class="sub">界面版本（离线模型与推理设备已拆到「离线AI」页）</div>
         <div class="set-row"><div class="stx"><b>界面版本</b><p>0.10 新版三栏界面（默认），经典版可在 /classic.html 访问（保留一个版本后移除）</p></div>
           <button class="kb-tool-btn" id="setGoClassic">回经典版</button></div>
         <div class="set-row"><div class="stx"><b>深色模式</b><p>新版深色主题在后续版本实装（DNA-01 深色档）；需要深色请用经典版</p></div>
           <span style="font-size:11.5px;color:var(--d1-ink-3)">暂不可用</span></div>
-        <div class="set-row"><div class="stx"><b>离线模式模型</b><p>当前使用（在线模式用上方「在线 AI」页配置的云端模型）。切换后自动加载（懒加载模式下首次使用时加载）</p></div>
-          <select class="set-input" id="setModelSel" style="width:auto">
-            <option value="">${esc(modelDesc)}</option>
-          </select></div>
-        <div class="set-row"><div class="stx"><b>上下文窗口</b><p>最大输入 ${(mode.context_window || 0) / 1000 | 0}K tokens · 最大输出 ${(budget.max_output_tokens || 0) / 1000 | 0}K tokens</p></div></div>
-        <div class="set-row"><div class="stx"><b>推理设备</b><p>切换后自动重启模型加载。知识库模型不受影响（固定 CPU 运行）</p></div>
-          <select class="set-input" id="setDevice" style="width:auto">
-            ${devList.map(d => `<option value="${esc(d.id)}" ${d.id === curDev ? 'selected' : ''}>${esc(d.label || d.id)}</option>`).join('')}
-          </select></div>
-        <div class="set-row"><div class="stx"><b>启动时预载上次模型</b>
-          <p>默认关闭：启动只起服务不加载模型（启动快、后台不占资源），首条离线消息自动加载；闲置 ${idleMin || 30} 分钟自动卸载。需要启动即载的老用户可打开</p></div>
-          <button class="switch ${preloadOn ? 'on' : ''}" id="setPreload" title="idle_unload_minutes 可在配置中调整（0=关闭闲置卸载）"></button></div>
       </div>
       <div class="set-group">
         <h2>数据维护</h2>
@@ -120,62 +92,6 @@ export function createSettingsView(events) {
       </div>`;
 
     body.querySelector('#setGoClassic').addEventListener('click', () => events.onGoClassic());
-
-    // 离线模型选择（0.10 补回：旧版有此功能，v2 遗漏）
-    const modelSel = body.querySelector('#setModelSel');
-    if (modelSel && availModels.models) {
-      const cur = (availModels.models || []).find(m => m.current);
-      modelSel.innerHTML = (availModels.models || []).map(m =>
-        `<option value="${esc(m.model_id)}" ${m.current ? 'selected' : ''}>${esc(m.display_name || m.model_id)}${m.current ? '（当前）' : ''} · ${m.estimated_ram_gb || '?'}GB</option>`
-      ).join('');
-      if (!(availModels.models || []).length) {
-        modelSel.innerHTML = '<option value="">未找到可用模型（请到模型下载页安装）</option>';
-        modelSel.disabled = true;
-      }
-      modelSel.addEventListener('change', async (e) => {
-        if (!e.target.value) return;
-        e.target.disabled = true;
-        const opt = e.target.selectedOptions[0];
-        if (opt) opt.textContent = '切换中…（首次加载约 10-30 秒）';
-        try {
-          const r = await fetch('/api/models/switch', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_id: e.target.value }),
-          });
-          const d = await r.json();
-          if (!r.ok) {
-            uiAlert('切换失败：' + (d.error || '未知错误'));
-          }
-          // 刷新页面数据
-          renderGeneral(body);
-        } catch (err) {
-          uiAlert('切换失败：' + (err.message || '网络错误'));
-        }
-        e.target.disabled = false;
-      });
-    }
-
-    // 推理设备切换
-    body.querySelector('#setDevice').addEventListener('change', async (e) => {
-      e.target.disabled = true;
-      await fetch('/api/device/switch', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device: e.target.value }),
-      }).catch(() => {});
-      e.target.disabled = false;
-    });
-
-    // 启动时预载上次模型（0.10.1 五条之③，默认关）
-    body.querySelector('#setPreload').addEventListener('click', async (e) => {
-      const on = !e.target.classList.contains('on');
-      e.target.classList.add('busy');
-      await fetch('/api/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preload_model_at_start: on }),
-      }).catch(() => {});
-      e.target.classList.remove('busy');
-      e.target.classList.toggle('on', on);
-    });
 
     // 缓存文件
     async function refreshCache() {
@@ -229,6 +145,98 @@ export function createSettingsView(events) {
       fd.append('file', fi.files[0]);
       const r = await fetch('/api/backup/import', { method: 'POST', body: fd }).then(r => r.json()).catch(() => null);
       uiAlert(r && r.ok !== false ? '恢复完成，建议重启应用' : ('恢复失败：' + ((r && r.error) || '未知错误')));
+    });
+  }
+
+  // ============ 离线AI 子页（0.10 从常规页拆出：模型/上下文/设备/预载） ============
+  async function renderOffline(body) {
+    body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
+    const [status, devices, cfg, availModels] = await Promise.all([
+      fetch('/api/status').then(r => r.json()).catch(() => ({})),
+      fetch('/api/devices').then(r => r.json()).catch(() => ({})),
+      fetch('/api/config').then(r => r.json()).catch(() => ({})),
+      fetch('/api/models/available').then(r => r.json()).catch(() => ({models:[]})),
+    ]);
+    const preloadOn = !!(cfg.config && cfg.config.preload_model_at_start);
+    const idleMin = cfg.config ? (cfg.config.idle_unload_minutes ?? 30) : 30;
+    // 上下文：离线引擎按模型自动适配（llamacpp_ctx_size），不是云端那种全局固定窗口
+    const ctx = (cfg.config && cfg.config.llamacpp_ctx_size) || 8192;
+    const loadedModel = Object.keys(status).find(k => status[k] && status[k].type === 'llm' && status[k].loaded);
+    const modelDesc = loadedModel ? `${status[loadedModel].description || loadedModel}（${loadedModel}）` : '未加载';
+    const devList = (devices.devices || []).map(d => typeof d === 'string'
+      ? { id: d, label: d === 'gpu' ? 'GPU（Vulkan）— 有独显时推荐，速度快' : 'CPU — 兼容性好，速度慢' }
+      : d);
+    const curDev = devices.current || '';
+
+    body.innerHTML = `
+      <div class="set-group">
+        <h2>离线模型</h2>
+        <div class="sub">对应「模型下载」页的本地模型；仅离线/并行模式使用（在线模式用「在线 AI」页配置）</div>
+        <div class="set-row"><div class="stx"><b>离线模式模型</b><p>切换后自动加载（懒加载模式下首次使用时加载）</p></div>
+          <select class="set-input" id="setModelSel" style="width:auto">
+            <option value="">${esc(modelDesc)}</option>
+          </select></div>
+        <div class="set-row"><div class="stx"><b>上下文窗口</b><p>按模型自动适配，无需手动配置（当前生效 ${Math.round(ctx / 1024)}K tokens）</p></div></div>
+        <div class="set-row"><div class="stx"><b>推理设备</b><p>切换后自动重启模型加载。知识库模型不受影响（固定 CPU 运行）</p></div>
+          <select class="set-input" id="setDevice" style="width:auto">
+            ${devList.map(d => `<option value="${esc(d.id)}" ${d.id === curDev ? 'selected' : ''}>${esc(d.label || d.id)}</option>`).join('')}
+          </select></div>
+        <div class="set-row"><div class="stx"><b>启动时预载上次模型</b>
+          <p>默认关闭：启动只起服务不加载模型（启动快、后台不占资源），首条离线消息自动加载；闲置 ${idleMin} 分钟自动卸载</p></div>
+          <button class="switch ${preloadOn ? 'on' : ''}" id="setPreload"></button></div>
+      </div>`;
+
+    // 离线模型选择
+    const modelSel = body.querySelector('#setModelSel');
+    if (modelSel && (availModels.models || []).length) {
+      modelSel.innerHTML = (availModels.models || []).map(m =>
+        `<option value="${esc(m.model_id)}" ${m.current ? 'selected' : ''}>${esc(m.display_name || m.model_id)}${m.current ? '（当前）' : ''} · ${m.estimated_ram_gb || '?'}GB</option>`
+      ).join('');
+      modelSel.addEventListener('change', async (e) => {
+        if (!e.target.value) return;
+        e.target.disabled = true;
+        const opt = e.target.selectedOptions[0];
+        if (opt) opt.textContent = '切换中…（首次加载约 10-30 秒）';
+        try {
+          const r = await fetch('/api/models/switch', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_id: e.target.value }),
+          });
+          const d = await r.json();
+          if (!r.ok) {
+            uiAlert('切换失败：' + (d.error || '未知错误'));
+          }
+          renderOffline(body);
+        } catch (err) {
+          uiAlert('切换失败：' + (err.message || '网络错误'));
+        }
+        e.target.disabled = false;
+      });
+    } else if (modelSel) {
+      modelSel.innerHTML = '<option value="">未找到可用模型（请到模型下载页安装）</option>';
+      modelSel.disabled = true;
+    }
+
+    // 推理设备切换
+    body.querySelector('#setDevice').addEventListener('change', async (e) => {
+      e.target.disabled = true;
+      await fetch('/api/device/switch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: e.target.value }),
+      }).catch(() => {});
+      e.target.disabled = false;
+    });
+
+    // 启动预载开关
+    body.querySelector('#setPreload').addEventListener('click', async (e) => {
+      const on = !e.target.classList.contains('on');
+      e.target.classList.add('busy');
+      await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preload_model_at_start: on }),
+      }).catch(() => {});
+      e.target.classList.remove('busy');
+      e.target.classList.toggle('on', on);
     });
   }
 
