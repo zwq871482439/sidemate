@@ -272,13 +272,28 @@ class ModelManager:
 
     def status(self) -> Dict:
         """获取所有模型状态"""
+        # 0.10 修复：llm 的 loaded 从写死 True（P7-4 遗留"装了=就绪"）改为
+        # 运行时真相——引擎健康且正服务该模型。否则停了引擎仍报已加载，
+        # 前端状态点/卡片/环境检查全被误导。非 llm 类型不受影响。
+        _llm_loaded = None  # None=探测失败（单测环境），维持旧语义；dict=探测成功（引擎未跑→全 False）
+        try:
+            from server import ollama_manager as _om
+            _llm_loaded = {}
+            if _om.impl.is_healthy():
+                _served = " ".join(_om.impl.served_model_ids()).lower()
+                for _m in (_om.registry.scan() or []):
+                    _fn = (_m.gguf_filename or "").lower()
+                    _stem = _fn[:-5] if _fn.endswith(".gguf") else _fn
+                    _llm_loaded[_m.model_id] = bool(_fn) and (_fn in _served or _stem in _served)
+        except Exception:
+            _llm_loaded = None
         result = {}
         for name, cfg in self.model_configs.items():
             result[name] = {
                 "description": cfg["description"],
                 "type": cfg["type"],
                 "device": cfg["device"],
-                "loaded": True,  # Ollama 模型始终"就绪"
+                "loaded": (_llm_loaded.get(name, False) if _llm_loaded is not None else True) if cfg["type"] == "llm" else True,
                 "load_time": self._load_times.get(name),
                 "model_type": "文字模型" if cfg["type"] == "llm" else cfg["type"],
             }

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>离线模型控制 · 设计稿 v1 — 桌伴 0.10</title>
+<style>
+  /* ============ 桌伴 DNA-01 设计 token（与线上 tokens.css 同源） ============ */
+  :root {
+    --d1-paper:    #F7F9FB;
+    --d1-paper-2:  #EEF3F8;
+    --d1-ink:      #22303C;
+    --d1-ink-2:    #5B6B7B;
+    --d1-ink-3:    #8899AA;
+    --d1-n-line:   #E2E9F0;
+    --d1-accent:   #0F2B46;
+    --d1-accent-3: #1B4F72;
+    --d1-gold:     #E8B54D;
+    --d1-gold-2:   #B07E1E;
+    --d1-gold-soft:#F5DFA8;
+    --d1-ok:       #2E8B57;
+    --pal-danger:  #B91C1C;
+    --d1-fs-h1: 22px; --d1-fs-h2: 16px; --d1-fs-body: 13.5px;
+    --d1-fs-small: 11.5px; --d1-fs-tiny: 10.5px;
+    --d1-r-lg: 14px; --d1-r-md: 10px; --d1-r-sm: 7px;
+    --d1-shadow-card: 0 1px 3px rgba(15,43,70,.07), 0 8px 24px rgba(15,43,70,.06);
+    --d1-shadow-pop:  0 4px 12px rgba(15,43,70,.12), 0 16px 48px rgba(15,43,70,.14);
+    --font: "Microsoft YaHei", "PingFang SC", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: var(--font); background: #EAEFF5; color: var(--d1-ink); font-size: var(--d1-fs-body); padding: 32px 24px 80px; }
+
+  /* ============ 设计稿页框架 ============ */
+  .sheet { max-width: 1060px; margin: 0 auto; }
+  .sheet > header { margin-bottom: 28px; }
+  .sheet h1 { font-size: 22px; font-weight: 700; }
+  .sheet > header .sub { color: var(--d1-ink-2); margin-top: 6px; font-size: var(--d1-fs-body); }
+  .spec-head { display: flex; align-items: baseline; gap: 10px; margin: 40px 0 6px; }
+  .spec-head .no { font-size: 18px; font-weight: 700; color: var(--d1-gold-2); }
+  .spec-head h2 { font-size: 16px; font-weight: 600; }
+  .spec-note { color: var(--d1-ink-2); font-size: var(--d1-fs-small); margin-bottom: 12px; line-height: 1.7; }
+  .spec-note b { color: var(--d1-ink); }
+
+  /* 画板：模拟应用主区 */
+  .board { background: var(--d1-paper); border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-lg);
+           box-shadow: var(--d1-shadow-card); padding: 24px 26px; }
+  .board.dim { position: relative; }
+
+  /* ============ 应用内组件（模拟离线AI设置页） ============ */
+  .set-group { margin-bottom: 18px; }
+  .set-group h3 { font-size: 15px; font-weight: 600; color: var(--d1-ink); margin-bottom: 2px; }
+  .set-group .sub { color: var(--d1-ink-3); font-size: var(--d1-fs-small); margin-bottom: 12px; }
+
+  /* 模型卡片行 */
+  .m-card { display: flex; align-items: center; gap: 14px; border: 1px solid var(--d1-n-line);
+            border-radius: var(--d1-r-md); padding: 13px 16px; background: #fff; margin-bottom: 8px; }
+  .m-card.current { border-color: var(--d1-accent-3); background: #FCFDFE; }
+  .m-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .m-dot.loaded { background: var(--d1-ok); box-shadow: 0 0 0 3px rgba(46,139,87,.14); }
+  .m-dot.idle { background: none; border: 1.6px solid var(--d1-ink-3); }
+  .m-dot.loading { background: none; border: 2px solid var(--d1-n-line); border-top-color: var(--d1-accent-3);
+                   animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .m-info { flex: 1; min-width: 0; }
+  .m-name { font-size: var(--d1-fs-body); font-weight: 600; color: var(--d1-ink); display: flex; align-items: center; gap: 8px; }
+  .m-badge { font-size: var(--d1-fs-tiny); padding: 1px 8px; border-radius: 999px; font-weight: 400; }
+  .m-badge.cur { background: var(--d1-accent); color: #fff; }
+  .m-badge.ok  { background: rgba(46,139,87,.1); color: var(--d1-ok); }
+  .m-badge.idle{ background: var(--d1-paper-2); color: var(--d1-ink-3); }
+  .m-badge.loading { background: var(--d1-gold-soft); color: var(--d1-gold-2); }
+  .m-meta { font-size: var(--d1-fs-small); color: var(--d1-ink-3); margin-top: 3px; }
+  .m-meta b.ram { color: var(--d1-ink-2); font-weight: 500; }
+  .m-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+  .btn { height: 30px; padding: 0 16px; border-radius: var(--d1-r-sm); cursor: pointer;
+         font-family: inherit; font-size: var(--d1-fs-small); border: 1px solid var(--d1-n-line);
+         background: #fff; color: var(--d1-ink-2); transition: all .12s; }
+  .btn:hover { background: var(--d1-paper-2); }
+  .btn-primary { background: var(--d1-accent); border-color: var(--d1-accent); color: #fff; font-weight: 500; }
+  .btn-primary:hover { background: #16405F; }
+  .btn-danger-ghost { color: var(--pal-danger); border-color: rgba(185,28,28,.35); background: #fff; }
+  .btn-danger-ghost:hover { background: rgba(185,28,28,.06); }
+  .btn[disabled] { opacity: .45; cursor: default; }
+
+  /* 开关 */
+  .switch { position: relative; width: 36px; height: 20px; background: var(--d1-n-line);
+            border-radius: 10px; cursor: pointer; transition: .2s; border: none; padding: 0; }
+  .switch.on { background: var(--d1-accent); }
+  .switch.on::after { left: 18px; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+                   background: #fff; border-radius: 50%; transition: .2s; }
+
+  .set-row { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-top: 1px solid var(--d1-n-line); }
+  .set-row:first-of-type { border-top: none; }
+  .stx { flex: 1; }
+  .stx b { font-weight: 600; font-size: var(--d1-fs-body); }
+  .stx p { color: var(--d1-ink-3); font-size: var(--d1-fs-small); margin-top: 2px; line-height: 1.6; }
+  .num-input { width: 84px; height: 30px; padding: 0 10px; border: 1px solid var(--d1-n-line);
+               border-radius: var(--d1-r-sm); font-family: inherit; font-size: var(--d1-fs-small); color: var(--d1-ink); outline: none; }
+  .num-input:focus { border-color: var(--d1-accent-3); }
+
+  /* ============ 对话框（应用内样式） ============ */
+  .dlg-overlay { position: absolute; inset: 0; background: rgba(15,43,70,.35); z-index: 20;
+                 display: flex; align-items: center; justify-content: center; border-radius: var(--d1-r-lg); }
+  .dlg { background: #fff; border-radius: var(--d1-r-lg); box-shadow: var(--d1-shadow-pop);
+         width: 420px; max-width: 90%; padding: 20px 22px 16px; border: 1px solid var(--d1-n-line); }
+  .dlg-title { font-size: var(--d1-fs-h2); font-weight: 600; margin-bottom: 8px; }
+  .dlg-body { font-size: var(--d1-fs-body); color: var(--d1-ink-2); line-height: 1.65; }
+  .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .mem-tip { margin-top: 10px; border-left: 3px solid var(--d1-gold); background: #FBF6E9;
+             padding: 8px 12px; border-radius: 0 var(--d1-r-sm) var(--d1-r-sm) 0;
+             font-size: var(--d1-fs-small); color: var(--d1-ink-2); line-height: 1.65; }
+  .mem-tip b { color: var(--d1-gold-2); }
+  .mem-tip.danger { border-left-color: var(--pal-danger); background: #FBF1F1; }
+  .mem-tip.danger b { color: var(--pal-danger); }
+
+  /* ============ 侧栏状态点 ============ */
+  .sb-demo { display: flex; gap: 0; border-radius: var(--d1-r-md); overflow: hidden; border: 1px solid var(--d1-n-line); }
+  .sb-mock { width: 236px; background: var(--d1-accent); padding: 14px 12px; color: #fff; }
+  .sb-mode { display: flex; align-items: center; gap: 7px; font-size: var(--d1-fs-small);
+             background: rgba(255,255,255,.08); border-radius: var(--d1-r-sm); padding: 6px 10px; }
+  .sb-state { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .sb-state.on { background: #7DD8A8; }
+  .sb-state.off { background: none; border: 1.5px solid rgba(255,255,255,.45); }
+  .sb-state.ld { background: none; border: 2px solid rgba(255,255,255,.25); border-top-color: #7DD8A8;
+                 animation: spin .9s linear infinite; }
+  .sb-explain { flex: 1; background: #fff; padding: 16px 18px; }
+  .sb-explain table { border-collapse: collapse; width: 100%; font-size: var(--d1-fs-small); }
+  .sb-explain td { padding: 7px 8px; border-bottom: 1px solid var(--d1-n-line); color: var(--d1-ink-2); }
+  .sb-explain td:first-child { width: 130px; color: var(--d1-ink); }
+
+  /* 下载页行 */
+  .dl-row { display: flex; align-items: center; gap: 14px; border: 1px solid var(--d1-n-line);
+            border-radius: var(--d1-r-md); padding: 12px 16px; background: #fff; margin-bottom: 8px; }
+  .dl-badge-ok { font-size: var(--d1-fs-tiny); padding: 1px 8px; border-radius: 999px;
+                 background: rgba(46,139,87,.1); color: var(--d1-ok); }
+
+  /* 标注 */
+  .anno { position: absolute; background: var(--d1-gold-soft); color: var(--d1-gold-2); font-size: var(--d1-fs-tiny);
+          padding: 2px 8px; border-radius: 999px; font-weight: 600; pointer-events: none; }
+  .footnote { margin-top: 40px; padding-top: 16px; border-top: 1px dashed var(--d1-n-line);
+              color: var(--d1-ink-3); font-size: var(--d1-fs-small); line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <h1>离线模型控制 · 设计稿 v1</h1>
+    <div class="sub">桌伴 0.10 · 已按你的四点拍板更新：切换带确认框+内存提示 / 统一「使用」/ 闲置默认 15 分钟、0=永不 / 附侧栏状态点解释</div>
+  </header>
+
+  <!-- ══════════ ① 离线AI 页 · 控制中心 ══════════ -->
+  <div class="spec-head"><span class="no">①</span><h2>离线AI 页 · 模型控制中心（主改造）</h2></div>
+  <div class="spec-note">
+    下拉改为<b>每模型一张卡片</b>。状态一目了然：绿点+「使用中」=已加载；空心圆+「未加载」；
+    点未加载模型的<b>「使用」</b>触发切换（带确认框，见②）；点「卸载」释放内存。
+    <b>占用 2.9GB</b> 为实际运行内存（启动后回填）。
+  </div>
+  <div class="board">
+    <div class="set-group">
+      <h3>离线模型</h3>
+      <div class="sub">对应「模型下载」页的本地模型；仅离线/并行模式使用</div>
+
+      <div class="m-card current">
+        <div class="m-dot loaded"></div>
+        <div class="m-info">
+          <div class="m-name">通义千问 3.5 (2B · Q4_K_M) <span class="m-badge cur">使用中</span></div>
+          <div class="m-meta">2.7GB 磁盘 · 运行占用 <b class="ram">2.9GB</b> · 上次实测 47字/s</div>
+        </div>
+        <div class="m-actions"><button class="btn btn-danger-ghost">卸载</button></div>
+      </div>
+
+      <div class="m-card">
+        <div class="m-dot idle"></div>
+        <div class="m-info">
+          <div class="m-name">通义千问 3.5 (0.8B · Q4_K_M) <span class="m-badge idle">未加载</span></div>
+          <div class="m-meta">1.5GB 磁盘 · 运行约占 1.9GB · 建议 4GB 内存</div>
+        </div>
+        <div class="m-actions"><button class="btn btn-primary">使用</button></div>
+      </div>
+
+      <div class="m-card">
+        <div class="m-dot idle"></div>
+        <div class="m-info">
+          <div class="m-name">通义千问 3.5 (4B · Q4_K_M) <span class="m-badge idle">未加载</span></div>
+          <div class="m-meta">5.2GB 磁盘 · 运行约占 5.6GB · 建议 8GB 内存</div>
+        </div>
+        <div class="m-actions"><button class="btn btn-primary">使用</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ ② 切换确认框（含内存提示） ══════════ -->
+  <div class="spec-head"><span class="no">②</span><h2>切换确认框 · 织入友好内存提示</h2></div>
+  <div class="spec-note">
+    你拍板要确认框。两种形态：<b>内存充足</b>时一行轻提示（默认记忆推荐档：≥32GB→4B、≥24GB→2B、以下→0.8B，
+    沿用经典版逻辑）；<b>内存吃紧</b>（目标模型建议值 > 剩余内存）时升级为红条警告，主按钮仍可点（用户自己负责）。
+  </div>
+  <div class="board dim" style="padding:0; overflow:hidden;">
+    <div style="padding:24px 26px; opacity:.5;">
+      <div class="set-group">
+        <h3 style="color:var(--d1-ink-2)">离线模型</h3>
+        <div class="m-card" style="margin:10px 0"><div class="m-dot idle"></div>
+          <div class="m-info"><div class="m-name">通义千问 3.5 (0.8B · Q4_K_M)</div></div>
+          <button class="btn btn-primary">使用</button></div>
+      </div>
+    </div>
+    <div class="dlg-overlay">
+      <div class="dlg">
+        <div class="dlg-title">切换到 通义千问 3.5 (0.8B · Q4_K_M)？</div>
+        <div class="dlg-body">
+          当前使用中的 2B 模型将自动卸载，新模型加载约需 10–30 秒。
+          <div class="mem-tip">
+            💡 你的电脑有 <b>32GB</b> 内存，推荐档位是 <b>4B</b>。切到 0.8B 速度最快，适合短问答。
+          </div>
+          <div class="mem-tip danger" style="margin-top:8px">
+            ⚠️ 若目标为 4B：运行约占 <b>5.6GB</b>，当前剩余 <b>3.1GB</b>，可能触发系统卡顿。
+          </div>
+        </div>
+        <div class="dlg-actions">
+          <button class="btn">取消</button>
+          <button class="btn btn-primary">切换</button>
+        </div>
+      </div>
+    </div>
+    <span class="anno" style="top:10px;right:12px">上方红条仅内存吃紧时出现 · 此处两条仅示意</span>
+  </div>
+
+  <!-- ══════════ ③ 加载中状态 ══════════ -->
+  <div class="spec-head"><span class="no">③</span><h2>加载中状态（切换后的等待态）</h2></div>
+  <div class="spec-note">
+    点「切换」后卡片立即进入加载态：金底徽章「加载中」+ 按钮禁用变文字进度。期间发消息不会双载（复用懒加载单飞），
+    完成后卡片自动刷新为绿点「使用中」。
+  </div>
+  <div class="board">
+    <div class="m-card current" style="border-color:var(--d1-gold)">
+      <div class="m-dot loading"></div>
+      <div class="m-info">
+        <div class="m-name">通义千问 3.5 (0.8B · Q4_K_M) <span class="m-badge loading">加载中</span></div>
+        <div class="m-meta">正在启动推理引擎，约需 10–30 秒…</div>
+      </div>
+      <div class="m-actions"><button class="btn" disabled>加载中… 8s</button></div>
+    </div>
+    <div class="m-card" style="opacity:.55">
+      <div class="m-dot idle"></div>
+      <div class="m-info">
+        <div class="m-name">通义千问 3.5 (2B · Q4_K_M) <span class="m-badge idle">已卸载</span></div>
+      </div>
+      <div class="m-actions"><button class="btn btn-primary">使用</button></div>
+    </div>
+  </div>
+
+  <!-- ══════════ ④ 模型下载页联动 ══════════ -->
+  <div class="spec-head"><span class="no">④</span><h2>模型下载页 · 已装模型加「使用」按钮</h2></div>
+  <div class="spec-note">
+    你困惑的来源就在这——下载页只管装/删，已装模型没有运行入口。补一个 ghost「使用」按钮：
+    已是当前模型的显示「使用中」徽章不可点；<b>不加卸载</b>（运行控制只在离线AI页，职责不混）。
+  </div>
+  <div class="board">
+    <div class="set-group">
+      <h3>文字模型（GGUF）</h3>
+      <div class="sub">下载后可在「离线AI」页使用与切换</div>
+      <div class="dl-row">
+        <div style="flex:1"><b style="font-size:13.5px">通义千问 3.5 (0.8B · Q4_K_M)</b>
+          <span style="font-size:11px;color:var(--d1-ink-3);display:block;margin-top:2px">1.50GB · 建议 4GB 内存</span></div>
+        <span class="dl-badge-ok">已安装</span>
+        <button class="btn btn-primary">使用</button>
+        <button class="btn">重新下载</button>
+        <button class="btn" style="color:var(--pal-danger)">删除</button>
+      </div>
+      <div class="dl-row" style="border-color:var(--d1-accent-3); background:#FCFDFE">
+        <div style="flex:1"><b style="font-size:13.5px">通义千问 3.5 (2B · Q4_K_M)</b>
+          <span style="font-size:11px;color:var(--d1-ink-3);display:block;margin-top:2px">2.70GB · 建议 6GB 内存</span></div>
+        <span class="dl-badge-ok">使用中</span>
+        <button class="btn">重新下载</button>
+        <button class="btn" style="color:var(--pal-danger)">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ ⑤ 侧栏状态点（解释） ══════════ -->
+  <div class="spec-head"><span class="no">⑤</span><h2>侧栏状态点 · 是什么（你问的这个）</h2></div>
+  <div class="spec-note">
+    左栏顶部模式标签「<b>离线 · qwen3.5-2b-q4</b>」前面加一颗小圆点，回答一个问题：<b>下一条离线消息会不会先卡 10–30 秒等模型加载</b>。
+    绿点=已就绪直接回；空心=未载（首条消息会懒加载）；转圈=正在加载。点击标签直达离线AI页。<b>可选项，做不做你定</b>。
+  </div>
+  <div class="board" style="padding:0; overflow:hidden;">
+    <div class="sb-demo">
+      <div class="sb-mock">
+        <div style="font-size:10.5px;color:rgba(255,255,255,.55);margin-bottom:8px">桌伴侧栏（左上角）</div>
+        <div class="sb-mode" style="margin-bottom:6px"><span class="sb-state on"></span>离线 · qwen3.5-2b-q4</div>
+        <div class="sb-mode" style="margin-bottom:6px;opacity:.85"><span class="sb-state ld"></span>离线 · qwen3.5-2b-q4</div>
+        <div class="sb-mode" style="opacity:.7"><span class="sb-state off"></span>离线 · qwen3.5-2b-q4</div>
+      </div>
+      <div class="sb-explain">
+        <table>
+          <tr><td>🟢 绿点（实心）</td><td>模型已加载，发消息立即响应</td></tr>
+          <tr><td>◯ 空心圆</td><td>未加载——下一条消息会自动懒加载（等 10–30 秒）或先去离线AI页手动「使用」</td></tr>
+          <tr><td>◌ 转圈</td><td>正在加载中（懒加载或手动触发）</td></tr>
+          <tr><td>点击行为</td><td>点整行跳转 设置 → 离线AI（控制中心）</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ ⑥ 自动化策略区 ══════════ -->
+  <div class="spec-head"><span class="no">⑥</span><h2>自动化策略区（按你拍板更新）</h2></div>
+  <div class="spec-note">
+    闲置自动卸载显式化：<b>默认 15 分钟</b>，数字可改（5–240），<b>0 = 永不卸载</b>（后端现有语义，0 本来就是关闭）。
+    开关关闭 = 恒不卸载，与填 0 等效。上下文窗口保持只读说明。
+  </div>
+  <div class="board">
+    <div class="set-group">
+      <h3>加载策略</h3>
+      <div class="sub">手动「使用/卸载」之外，这些自动化规则控制模型何时进出内存</div>
+      <div class="set-row">
+        <div class="stx"><b>闲置自动卸载</b><p>模型无调用闲置 N 分钟后自动卸载释放内存；下次使用自动加载。0 = 永不卸载</p></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--d1-ink-2)">
+          <input type="checkbox" checked style="accent-color:var(--d1-accent)"> 启用
+          <input class="num-input" value="15"> 分钟
+        </label>
+      </div>
+      <div class="set-row">
+        <div class="stx"><b>启动时预载上次模型</b><p>默认关闭：启动只起服务不加载模型（启动快），首条离线消息自动加载</p></div>
+        <button class="switch"></button>
+      </div>
+      <div class="set-row">
+        <div class="stx"><b>上下文窗口</b><p>按模型自动适配，无需手动配置（当前生效 8K tokens）</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    实现口径：①–④⑥ 为本次实现范围；⑤ 侧栏状态点待拍板（改动最小但动高频区域）。<br>
+    内存提示数据源：系统总内存 + 可用内存（后端已有 /api/devices 同源探测）；推荐档位沿用经典版规则（≥32GB→4B / ≥24GB→2B / 其余→0.8B）。<br>
+    速度（47字/s）与运行占用（2.9GB）取自上次生成实测与启动回填，无数据时显示建议值。
+  </div>
+</div>
+</body>
+</html>

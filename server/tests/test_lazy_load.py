@@ -13,7 +13,7 @@ import config as cfg
 class TestLazyLoadDefaults:
     def test_defaults(self):
         assert cfg.DEFAULTS.get("preload_model_at_start") is False
-        assert cfg.DEFAULTS.get("idle_unload_minutes") == 30
+        assert cfg.DEFAULTS.get("idle_unload_minutes") == 15
 
 
 class _FakeMgr:

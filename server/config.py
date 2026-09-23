@@ -112,7 +112,7 @@ DEFAULTS = {
     # 0.10.1 启动不预载（用户拍板五条）：默认启动只起服务不加载模型，
     # 首条离线/并行消息触发懒加载；想启动即载的用户在设置页打开此开关
     "preload_model_at_start": False,
-    "idle_unload_minutes": 30,           # 闲置自动卸载（分钟，0=关闭）：无本地推理调用即卸载引擎
+    "idle_unload_minutes": 15,           # 闲置自动卸载（分钟，0=永不卸载）：无本地推理调用即卸载引擎
     # ollama_health_interval / connect/read_timeout / max_concurrent 已废弃（P7-4 换 llama.cpp 后遗留，代码内未引用）
     # P7-4 新增 llama.cpp 专属配置
     "llamacpp_ctx_size": 8192,           # 上下文窗口大小（--ctx-size 启动参数）

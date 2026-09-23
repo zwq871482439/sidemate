@@ -1472,3 +1472,50 @@ body.narrow #viewer.open ~ .vw-backdrop {
   background: var(--pal-danger, #b91c1c); border-color: var(--pal-danger, #b91c1c); color: #fff; font-weight: 500;
 }
 .dlg-btn.dlg-danger-btn:hover { filter: brightness(1.08); }
+
+/* ===== 离线模型控制中心（0.10 设计稿 v1：mo-* 组件） ===== */
+.mo-card { display: flex; align-items: center; gap: 14px; border: 1px solid var(--d1-n-line);
+  border-radius: var(--d1-r-md); padding: 13px 16px; background: #fff; margin-bottom: 8px; }
+.mo-card.current { border-color: var(--d1-accent-3); background: #FCFDFE; }
+.mo-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.mo-dot.loaded { background: var(--d1-ok); box-shadow: 0 0 0 3px rgba(46,139,87,.14); }
+.mo-dot.idle { background: none; border: 1.6px solid var(--d1-ink-3); }
+.mo-dot.loading { background: none; border: 2px solid var(--d1-n-line); border-top-color: var(--d1-accent-3);
+  animation: mo-spin .9s linear infinite; }
+@keyframes mo-spin { to { transform: rotate(360deg); } }
+.mo-info { flex: 1; min-width: 0; }
+.mo-name { font-size: var(--d1-fs-body); font-weight: 600; color: var(--d1-ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mo-meta { font-size: var(--d1-fs-small); color: var(--d1-ink-3); margin-top: 3px; }
+.mo-meta .ram { color: var(--d1-ink-2); font-weight: 500; }
+.mo-badge { font-size: var(--d1-fs-tiny); padding: 1px 8px; border-radius: 999px; font-weight: 400; }
+.mo-badge.cur { background: var(--d1-accent); color: #fff; }
+.mo-badge.idle { background: var(--d1-paper-2); color: var(--d1-ink-3); }
+.mo-badge.loading { background: var(--d1-gold-soft); color: var(--d1-gold-2); }
+.mo-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.mo-btn { height: 30px; padding: 0 16px; border-radius: var(--d1-r-sm); cursor: pointer;
+  font-family: inherit; font-size: var(--d1-fs-small); border: 1px solid var(--d1-n-line);
+  background: #fff; color: var(--d1-ink-2); transition: all .12s; }
+.mo-btn:hover { background: var(--d1-paper-2); }
+.mo-btn-primary { background: var(--d1-accent); border-color: var(--d1-accent); color: #fff; font-weight: 500; }
+.mo-btn-primary:hover { background: var(--d1-accent-2, #16405F); }
+.mo-btn-danger { color: var(--pal-danger); border-color: rgba(185,28,28,.35); background: #fff; }
+.mo-btn-danger:hover { background: rgba(185,28,28,.06); }
+.mo-btn[disabled] { opacity: .55; cursor: default; }
+.mo-empty { border: 1px dashed var(--d1-n-line); border-radius: var(--d1-r-md); padding: 18px;
+  color: var(--d1-ink-3); font-size: var(--d1-fs-small); text-align: center; }
+
+/* 切换确认框的内存提示条（设计稿 ②：金条轻提示 / 红条警告） */
+.dlg-mem { margin-top: 10px; border-left: 3px solid var(--d1-gold); background: #FBF6E9;
+  padding: 8px 12px; border-radius: 0 var(--d1-r-sm) var(--d1-r-sm) 0;
+  font-size: var(--d1-fs-small); color: var(--d1-ink-2); line-height: 1.65; }
+.dlg-mem b { color: var(--d1-gold-2); }
+.dlg-mem.danger { border-left-color: var(--pal-danger); background: #FBF1F1; }
+.dlg-mem.danger b { color: var(--pal-danger); }
+
+/* 顶栏模型状态点（设计稿 ⑤） */
+.tb-model { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.tb-mdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.tb-mdot.on { background: var(--d1-ok); box-shadow: 0 0 0 2px rgba(46,139,87,.15); }
+.tb-mdot.off { background: none; border: 1.5px solid var(--d1-ink-3); }
+.tb-mdot.ld { background: none; border: 2px solid var(--d1-n-line); border-top-color: var(--d1-accent-3);
+  animation: mo-spin .9s linear infinite; }

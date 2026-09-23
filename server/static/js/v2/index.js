@@ -262,7 +262,7 @@ function render() {
   main.innerHTML = `
     <div class="topbar">
       <span class="tb-title">${state.tab === 'chat' ? '对话' : state.tab === 'kb' ? '知识库' : state.tab === 'skills' ? '技能' : '设置'}</span>
-      ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model">${esc(state.modelTag)}</span>` : ''}
+      ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model" id="tbModelTag" title="${state.mode === 'cloud' ? '' : '模型加载状态，点击管理（离线AI）'}">${state.mode !== 'cloud' ? _llmDotHtml() : ''}${esc(state.modelTag)}</span>` : ''}
       ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
       <button class="tb-viewer ${_viewer && _viewer.isOpen ? 'on' : ''}" id="tbViewerBtn" title="视窗（会话/预览/文件/轨迹）">◧ 视窗</button>
@@ -361,7 +361,34 @@ function render() {
   app.appendChild(_viewer.el);
   const vb = document.getElementById('tbViewerBtn');
   if (vb) vb.addEventListener('click', () => { _viewer.toggle(); });
+
+  // 顶栏模型标签：离线/并行模式点击直达 设置→离线AI（模型控制中心）
+  const mt = document.getElementById('tbModelTag');
+  if (mt) mt.addEventListener('click', () => {
+    if (state.mode === 'cloud') return;
+    state.tab = 'settings';
+    render();
+    if (_settingsView && _settingsView.showSub) _settingsView.showSub('offline');
+  });
+  _refreshLLMDot();
 }
+
+// ===== 顶栏模型状态点（0.10 离线模型控制）：绿=已载 / 空心=未载 / 转圈=加载中 =====
+let _llmLoaded = false;      // 有任一本地 LLM 在内存
+let _llmDotCls = 'off';      // on | off | ld
+function _llmDotHtml() {
+  return '<span class="tb-mdot ' + _llmDotCls + '"></span>';
+}
+async function _refreshLLMDot() {
+  try {
+    const st = await fetch('/api/status').then(r => r.json());
+    _llmLoaded = Object.keys(st).some(k => st[k] && st[k].type === 'llm' && st[k].loaded);
+  } catch (e) { return; }
+  _llmDotCls = window._v2LLMLoading ? 'ld' : (_llmLoaded ? 'on' : 'off');
+  const d = document.querySelector('#tbModelTag .tb-mdot');
+  if (d) d.className = 'tb-mdot ' + _llmDotCls;
+}
+setInterval(_refreshLLMDot, 20000);
 
 let _viewer = null;
 

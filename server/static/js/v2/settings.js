@@ -21,6 +21,55 @@ const SUBPAGES = [
   { id: 'about', label: '关于' },
 ];
 
+// ===== 离线模型共享助手（离线AI 页 + 模型下载页共用） =====
+
+// 内存概况：{ total, avail, recName }（推荐档位沿用经典版规则）
+async function _memInfo() {
+  const r = await fetch('/api/resource-info').then(x => x.json()).catch(() => null);
+  if (!r || !r.system) return { total: 0, avail: 0, recName: '' };
+  const total = Math.round(r.system.total_mb / 1024);
+  const avail = +(r.system.available_mb / 1024).toFixed(1);
+  const recName = total >= 32 ? '4B' : total >= 24 ? '2B' : '0.8B';
+  return { total, avail, recName };
+}
+
+// 切换确认框（含友好内存提示：充足=轻提示金条；吃紧=红条警告不阻断）
+async function _confirmUse(name, estGB, mem) {
+  let tip = '';
+  if (mem && mem.total) {
+    if (mem.avail && estGB && mem.avail < estGB + 1) {
+      tip = '<div class="dlg-mem danger">⚠️ 运行约占 <b>' + estGB + 'GB</b>，当前剩余 <b>' + mem.avail + 'GB</b>，可能触发系统卡顿。</div>';
+    } else {
+      tip = '<div class="dlg-mem">💡 你的电脑有 <b>' + mem.total + 'GB</b> 内存，推荐档位是 <b>' + mem.recName + '</b>。</div>';
+    }
+  }
+  return await uiConfirm('', {
+    title: '切换到 ' + name + '？',
+    html: '当前使用中的模型将自动卸载，新模型加载约需 10–30 秒。' + tip,
+    okLabel: '切换',
+  });
+}
+
+// 切换 + 加载态反馈（按钮变进度，POST 阻塞至服务端切换完成）
+async function _switchWithLoading(btn, modelId, name) {
+  btn.disabled = true;
+  try { window._v2LLMLoading = true; } catch (e) {}
+  const t0 = Date.now();
+  const timer = setInterval(() => { btn.textContent = '加载中… ' + Math.round((Date.now() - t0) / 1000) + 's'; }, 500);
+  try {
+    const r = await fetch('/api/models/switch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_id: modelId }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) uiAlert('切换失败：' + (d.error || '未知错误'));
+  } catch (e) {
+    uiAlert('切换失败：' + (e.message || '网络错误'));
+  }
+  clearInterval(timer);
+  try { window._v2LLMLoading = false; } catch (e) {}
+}
+
 export function createSettingsView(events) {
   // events: { onGoClassic() }
   const el = document.createElement('div');
@@ -148,76 +197,107 @@ export function createSettingsView(events) {
     });
   }
 
-  // ============ 离线AI 子页（0.10 从常规页拆出：模型/上下文/设备/预载） ============
+  // ============ 离线AI 子页（0.10 控制中心：模型卡片 + 使用/卸载 + 加载策略） ============
   async function renderOffline(body) {
     body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
-    const [status, devices, cfg, availModels] = await Promise.all([
+    const [status, resInfo, cfg, availModels, devices] = await Promise.all([
       fetch('/api/status').then(r => r.json()).catch(() => ({})),
-      fetch('/api/devices').then(r => r.json()).catch(() => ({})),
+      fetch('/api/resource-info').then(r => r.json()).catch(() => null),
       fetch('/api/config').then(r => r.json()).catch(() => ({})),
       fetch('/api/models/available').then(r => r.json()).catch(() => ({models:[]})),
+      fetch('/api/devices').then(r => r.json()).catch(() => ({})),
     ]);
     const preloadOn = !!(cfg.config && cfg.config.preload_model_at_start);
-    const idleMin = cfg.config ? (cfg.config.idle_unload_minutes ?? 30) : 30;
-    // 上下文：离线引擎按模型自动适配（llamacpp_ctx_size），不是云端那种全局固定窗口
+    const idleMin = cfg.config ? (cfg.config.idle_unload_minutes ?? 15) : 15;
+    const idleOn = idleMin > 0;
     const ctx = (cfg.config && cfg.config.llamacpp_ctx_size) || 8192;
-    const loadedModel = Object.keys(status).find(k => status[k] && status[k].type === 'llm' && status[k].loaded);
-    const modelDesc = loadedModel ? `${status[loadedModel].description || loadedModel}（${loadedModel}）` : '未加载';
+    const llmMB = (resInfo && resInfo.modules && resInfo.modules.llm && resInfo.modules.llm.mb) || 0;
+    // mem 从已取的 resInfo 推导（不再二次请求 resource-info）
+    const mem = (resInfo && resInfo.system) ? {
+      total: Math.round(resInfo.system.total_mb / 1024),
+      avail: +(resInfo.system.available_mb / 1024).toFixed(1),
+      recName: (resInfo.system.total_mb / 1024) >= 32 ? '4B' : (resInfo.system.total_mb / 1024) >= 24 ? '2B' : '0.8B',
+    } : { total: 0, avail: 0, recName: '' };
+    const loadedIds = new Set(Object.keys(status).filter(k => status[k] && status[k].type === 'llm' && status[k].loaded));
+    const models = availModels.models || [];
     const devList = (devices.devices || []).map(d => typeof d === 'string'
       ? { id: d, label: d === 'gpu' ? 'GPU（Vulkan）— 有独显时推荐，速度快' : 'CPU — 兼容性好，速度慢' }
       : d);
     const curDev = devices.current || '';
 
-    body.innerHTML = `
-      <div class="set-group">
-        <h2>离线模型</h2>
-        <div class="sub">对应「模型下载」页的本地模型；仅离线/并行模式使用（在线模式用「在线 AI」页配置）</div>
-        <div class="set-row"><div class="stx"><b>离线模式模型</b><p>切换后自动加载（懒加载模式下首次使用时加载）</p></div>
-          <select class="set-input" id="setModelSel" style="width:auto">
-            <option value="">${esc(modelDesc)}</option>
-          </select></div>
-        <div class="set-row"><div class="stx"><b>上下文窗口</b><p>按模型自动适配，无需手动配置（当前生效 ${Math.round(ctx / 1024)}K tokens）</p></div></div>
-        <div class="set-row"><div class="stx"><b>推理设备</b><p>切换后自动重启模型加载。知识库模型不受影响（固定 CPU 运行）</p></div>
-          <select class="set-input" id="setDevice" style="width:auto">
-            ${devList.map(d => `<option value="${esc(d.id)}" ${d.id === curDev ? 'selected' : ''}>${esc(d.label || d.id)}</option>`).join('')}
-          </select></div>
-        <div class="set-row"><div class="stx"><b>启动时预载上次模型</b>
-          <p>默认关闭：启动只起服务不加载模型（启动快、后台不占资源），首条离线消息自动加载；闲置 ${idleMin} 分钟自动卸载</p></div>
-          <button class="switch ${preloadOn ? 'on' : ''}" id="setPreload"></button></div>
-      </div>`;
-
-    // 离线模型选择
-    const modelSel = body.querySelector('#setModelSel');
-    if (modelSel && (availModels.models || []).length) {
-      modelSel.innerHTML = (availModels.models || []).map(m =>
-        `<option value="${esc(m.model_id)}" ${m.current ? 'selected' : ''}>${esc(m.display_name || m.model_id)}${m.current ? '（当前）' : ''} · ${m.estimated_ram_gb || '?'}GB</option>`
-      ).join('');
-      modelSel.addEventListener('change', async (e) => {
-        if (!e.target.value) return;
-        e.target.disabled = true;
-        const opt = e.target.selectedOptions[0];
-        if (opt) opt.textContent = '切换中…（首次加载约 10-30 秒）';
-        try {
-          const r = await fetch('/api/models/switch', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_id: e.target.value }),
-          });
-          const d = await r.json();
-          if (!r.ok) {
-            uiAlert('切换失败：' + (d.error || '未知错误'));
-          }
-          renderOffline(body);
-        } catch (err) {
-          uiAlert('切换失败：' + (err.message || '网络错误'));
-        }
-        e.target.disabled = false;
-      });
-    } else if (modelSel) {
-      modelSel.innerHTML = '<option value="">未找到可用模型（请到模型下载页安装）</option>';
-      modelSel.disabled = true;
+    function cardHtml(m) {
+      const isCur = !!m.current;
+      const isLoaded = loadedIds.has(m.model_id);
+      const sizeGB = (m.gguf_size_bytes / 1e9).toFixed(2);
+      const estGB = (m.estimated_ram_gb || 0).toFixed(1);
+      if (isCur && isLoaded) {
+        const mbTxt = llmMB ? '运行占用 <b class="ram">' + (llmMB / 1024).toFixed(1) + 'GB</b>' : '运行约占 ' + estGB + 'GB';
+        return '<div class="mo-card current"><div class="mo-dot loaded"></div>' +
+          '<div class="mo-info"><div class="mo-name">' + esc(m.display_name) + ' <span class="mo-badge cur">使用中</span></div>' +
+          '<div class="mo-meta">' + sizeGB + 'GB 磁盘 · ' + mbTxt + (m.min_ram_gb ? ' · 建议 ' + m.min_ram_gb + 'GB 内存' : '') + '</div></div>' +
+          '<div class="mo-actions"><button class="mo-btn mo-btn-danger" data-unload="1">卸载</button></div></div>';
+      }
+      return '<div class="mo-card"><div class="mo-dot idle"></div>' +
+        '<div class="mo-info"><div class="mo-name">' + esc(m.display_name) + ' <span class="mo-badge idle">未加载</span></div>' +
+        '<div class="mo-meta">' + sizeGB + 'GB 磁盘 · 运行约占 ' + estGB + 'GB' + (m.min_ram_gb ? ' · 建议 ' + m.min_ram_gb + 'GB 内存' : '') + '</div></div>' +
+        '<div class="mo-actions"><button class="mo-btn mo-btn-primary" data-use="' + esc(m.model_id) + '" data-name="' + esc(m.display_name) + '" data-est="' + estGB + '">使用</button></div></div>';
     }
 
-    // 推理设备切换
+    body.innerHTML =
+      '<div class="set-group">' +
+        '<h2>离线模型</h2>' +
+        '<div class="sub">对应「模型下载」页的本地模型；仅离线/并行模式使用（在线模式用「在线 AI」页配置）</div>' +
+        (models.length ? models.map(cardHtml).join('') : '<div class="mo-empty">未找到可用模型（请到「模型下载」页安装）</div>') +
+      '</div>' +
+      '<div class="set-group">' +
+        '<h2>推理设备</h2>' +
+        '<div class="sub">切换后自动重启模型加载。知识库模型不受影响（固定 CPU 运行）</div>' +
+        '<div class="set-row" style="border-top:none;padding-top:0">' +
+          '<select class="set-input" id="setDevice" style="width:auto">' +
+            devList.map(d => '<option value="' + esc(d.id) + '"' + (d.id === curDev ? ' selected' : '') + '>' + esc(d.label || d.id) + '</option>').join('') +
+          '</select></div>' +
+      '</div>' +
+      '<div class="set-group">' +
+        '<h2>加载策略</h2>' +
+        '<div class="sub">手动「使用/卸载」之外，这些自动化规则控制模型何时进出内存</div>' +
+        '<div class="set-row">' +
+          '<div class="stx"><b>闲置自动卸载</b><p>模型无调用闲置 N 分钟后自动卸载释放内存；下次使用自动加载。0 = 永不卸载</p></div>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<button class="switch ' + (idleOn ? 'on' : '') + '" id="setIdleSw" title="关闭 = 永不自动卸载"></button>' +
+            '<input class="set-input" id="setIdleMin" type="number" min="0" max="240" value="' + (idleOn ? idleMin : 15) + '"' +
+            ' style="width:70px"' + (idleOn ? '' : ' disabled') + '> <span style="font-size:11.5px;color:var(--d1-ink-3)">分钟</span>' +
+          '</div></div>' +
+        '<div class="set-row">' +
+          '<div class="stx"><b>启动时预载上次模型</b><p>默认关闭：启动只起服务不加载模型（启动快、后台不占资源），首条离线消息自动加载</p></div>' +
+          '<button class="switch ' + (preloadOn ? 'on' : '') + '" id="setPreload"></button></div>' +
+        '<div class="set-row">' +
+          '<div class="stx"><b>上下文窗口</b><p>按模型自动适配，无需手动配置（当前生效 ' + Math.round(ctx / 1024) + 'K tokens）</p></div></div>' +
+      '</div>';
+
+    // ── 使用（切换）：确认框 + 内存提示 → 切换 → 加载态 → 刷新 ──
+    body.querySelectorAll('[data-use]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const est = parseFloat(btn.dataset.est || '0');
+        const ok = await _confirmUse(btn.dataset.name, est, mem);
+        if (!ok) return;
+        await _switchWithLoading(btn, btn.dataset.use, btn.dataset.name);
+        renderOffline(body);
+      });
+    });
+
+    // ── 卸载 ──
+    const unloadBtn = body.querySelector('[data-unload]');
+    if (unloadBtn) unloadBtn.addEventListener('click', async () => {
+      const ok = await uiConfirm('卸载后模型退出内存（磁盘文件保留），下一条离线消息会自动重新加载（约 10–30 秒）。',
+        { title: '卸载当前模型？', danger: true, okLabel: '卸载' });
+      if (!ok) return;
+      unloadBtn.disabled = true; unloadBtn.textContent = '卸载中…';
+      const r = await fetch('/api/model/unload', { method: 'POST' }).then(x => x.json()).catch(() => null);
+      if (r && r.ok === false) uiAlert('卸载失败：' + (r.error || '未知错误'));
+      renderOffline(body);
+    });
+
+    // ── 推理设备 ──
     body.querySelector('#setDevice').addEventListener('change', async (e) => {
       e.target.disabled = true;
       await fetch('/api/device/switch', {
@@ -227,14 +307,35 @@ export function createSettingsView(events) {
       e.target.disabled = false;
     });
 
-    // 启动预载开关
+    // ── 闲置卸载（开关 + 分钟；关 = 写 0） ──
+    const idleSw = body.querySelector('#setIdleSw');
+    const idleInput = body.querySelector('#setIdleMin');
+    idleSw.addEventListener('click', async () => {
+      const on = !idleSw.classList.contains('on');
+      const v = on ? Math.max(5, parseInt(idleInput.value || '15', 10) || 15) : 0;
+      idleSw.classList.add('busy');
+      await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idle_unload_minutes: v }) }).catch(() => {});
+      idleSw.classList.remove('busy');
+      idleSw.classList.toggle('on', on);
+      idleInput.disabled = !on;
+      idleInput.value = v;
+    });
+    idleInput.addEventListener('change', async () => {
+      let v = parseInt(idleInput.value || '15', 10);
+      if (isNaN(v) || v < 0) v = 0;
+      if (v > 240) v = 240;
+      idleInput.value = v;
+      await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idle_unload_minutes: v }) }).catch(() => {});
+    });
+
+    // ── 启动预载 ──
     body.querySelector('#setPreload').addEventListener('click', async (e) => {
       const on = !e.target.classList.contains('on');
       e.target.classList.add('busy');
-      await fetch('/api/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preload_model_at_start: on }),
-      }).catch(() => {});
+      await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preload_model_at_start: on }) }).catch(() => {});
       e.target.classList.remove('busy');
       e.target.classList.toggle('on', on);
     });
@@ -707,11 +808,14 @@ export function createSettingsView(events) {
   // ============ 模型下载子页 ============
   async function renderDownload(body) {
     body.innerHTML = '<div class="kb-loading" style="padding:30px">加载模型目录…</div>';
-    const [catalog, all, running] = await Promise.all([
+    const [catalog, all, running, availR] = await Promise.all([
       fetch('/api/models/catalog').then(r => r.json()).catch(() => null),
       fetch('/api/config').then(r => r.json()).catch(() => ({})),
       fetch('/api/models/download/status').then(r => r.json()).catch(() => null),
+      fetch('/api/models/available').then(r => r.json()).catch(() => ({models:[]})),
     ]);
+    const currentModel = ((availR && availR.models) || []).find(m => m.current);
+    const estMap = {}; (((availR && availR.models) || []).forEach(m => estMap[m.model_id] = m.estimated_ram_gb || 0));
     const cfg = (all && all.config) || {};
     let _dlSrc = cfg.dl_source || 'modelscope';
     const dlSource = _dlSrc;
@@ -734,7 +838,10 @@ export function createSettingsView(events) {
         </div>
         <div style="display:flex;gap:6px">
           ${m.installed
-            ? `<button class="kb-tool-btn" data-dl="${esc(m.model_id)}">重新下载</button>
+            ? `${currentModel && currentModel.model_id === m.model_id
+                 ? '<span class="mo-badge cur">使用中</span>' 
+                 : `<button class="mo-btn mo-btn-primary" data-use-dl="${esc(m.model_id)}" data-name-dl="${esc(m.display_name)}" data-est-dl="${(estMap[m.model_id] || 0).toFixed(1)}">使用</button>`}
+               <button class="kb-tool-btn" data-dl="${esc(m.model_id)}">重新下载</button>
                <button class="kb-tool-btn" style="color:var(--pal-danger)" data-del="${esc(m.model_id)}" data-name="${esc(m.display_name)}">删除</button>`
             : `<button class="btn-primary-v2" data-dl="${esc(m.model_id)}">下载</button>`}
         </div>
@@ -853,6 +960,12 @@ export function createSettingsView(events) {
       await fetch('/api/models/download/cancel', { method: 'POST' }).catch(() => {});
       body.querySelector('#dlProgGroup').style.display = 'none';
     });
+    body.querySelectorAll('[data-use-dl]').forEach(b => b.addEventListener('click', async () => {
+      const ok = await _confirmUse(b.dataset.nameDl, parseFloat(b.dataset.estDl || '0'), await _memInfo());
+      if (!ok) return;
+      await _switchWithLoading(b, b.dataset.useDl, b.dataset.nameDl);
+      renderDownload(body);
+    }));
     body.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
       if (!(await uiConfirm(`删除模型「${b.dataset.name}」？删除后需重新下载才能使用。`))) return;
       await fetch('/api/model/delete', {
@@ -971,5 +1084,11 @@ export function createSettingsView(events) {
     });
   }
 
-  return { el, mount: render, destroy: () => {} };
+  // 供顶栏状态点等外部入口直达指定子页（如 'offline'）
+  function showSub(id) {
+    if (!SUBPAGES.find(p => p.id === id)) return;
+    cur = id;
+    render();
+  }
+  return { el, mount: render, destroy: () => {}, showSub };
 }
