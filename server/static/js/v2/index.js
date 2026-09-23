@@ -144,6 +144,9 @@ let _skillsView = null;  // 技能视图单例  // KB 视图单例（切走销�
 let _settingsView = null;  // 设置视图单例（无后台资源，常驻即可）
 
 function render() {
+  // 侧栏会话列表滚动位置保持：render 整体重建 DOM 会把 scrollTop 归零，
+  // 切会话/切模式后列表跳回顶部，选靠下的会话要反复滚动
+  const _prevSessScroll = (document.querySelector('.sb-sessions') || {}).scrollTop || 0;
   app.innerHTML = '';
   app.appendChild(renderSidebar(app, state, {
     onMode: async (m) => {
@@ -256,6 +259,19 @@ function render() {
     onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
     // onKbFilter 已随侧栏文档范围树移除（B2：筛选统一走主区 chips）
   }));
+
+  // 恢复会话列表滚动位置；选中项若在恢复后不在视口内（如从视窗跳转），就近滚入
+  const _sessList = app.querySelector('.sb-sessions');
+  if (_sessList && _prevSessScroll) {
+    _sessList.scrollTop = _prevSessScroll;
+    const _sel = _sessList.querySelector('.sess-item.on');
+    if (_sel) {
+      const _top = _sel.offsetTop, _bottom = _top + _sel.offsetHeight;
+      if (_bottom > _sessList.scrollTop + _sessList.clientHeight || _top < _sessList.scrollTop) {
+        _sel.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }
 
   const main = document.createElement('main');
   main.id = 'main';
