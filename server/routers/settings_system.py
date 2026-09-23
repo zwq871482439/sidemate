@@ -1468,7 +1468,7 @@ def api_skills_list():
         system.append({
             "id": "pipe_" + sk["name"],
             "name": sk["name"],
-            "description": (sk.get("prompt_fragment") or "")[:80],
+            "description": (sk.get("description") or sk.get("prompt_fragment") or "")[:100],
             "pipeline_types": sk.get("pipeline_types", []),
             "enabled": True,  # 管线 skill 当前不支持单独禁用（简化）
             "source": "pipeline",

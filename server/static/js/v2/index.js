@@ -1383,7 +1383,22 @@ async function boot() {
   } catch (e) { /* 会话列表失败不阻断空状态 */ }
   state.booted = true;  // 骨架 → 真实内容（此后空态=真空态）
   render();
+  // 刷新前的侧栏滚动位置还原（纯还原——用户可能只是在浏览列表，
+  // 选中项滚入会把位置拽回选中项处，与保持原位诉求相反）
+  try {
+    const _sv = parseInt(sessionStorage.getItem('v2SbScroll') || '0', 10);
+    if (_sv > 0) {
+      const _el = document.querySelector('.sb-sessions');
+      if (_el) _el.scrollTop = _sv;
+    }
+  } catch (e) { /* 隐私模式 sessionStorage 不可用 */ }
 }
+
+// 刷新后侧栏滚动位置恢复（0.10）：pagehide 时记住，boot 完成后还原
+window.addEventListener('pagehide', () => {
+  const el = document.querySelector('.sb-sessions');
+  if (el) { try { sessionStorage.setItem('v2SbScroll', String(el.scrollTop)); } catch (e) {} }
+});
 
 window.SidemateV2 = { version: '0.10.1-m1d3', mounted: true };
 boot();

@@ -30,8 +30,32 @@ _BING_RESULT_BLOCK = re.compile(
     r'<li\s+class="b_algo"[^>]*>(.*?)</li>',
     re.IGNORECASE | re.DOTALL,
 )
-# 提取 <a href="URL">
+# 标题锚点（0.10 修复）：新版 Bing 块首是 favicon 面包屑锚（a.tilk，内文是
+# 域名+URL 路径），真标题在 <h2><a>。旧 _HREF_PATTERN 抓首个锚点 → 标题
+# 全变成 "qq.comhttps://news.qq.com › rain" 这类面包屑垃圾。
+_BING_H2_PATTERN = re.compile(
+    r'<h2[^>]*>\s*<a\s+[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+    re.IGNORECASE | re.DOTALL,
+)
+# 兜底：块内任意锚点（h2 缺失时的旧版布局）
 _HREF_PATTERN = re.compile(r'<a\s+[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+
+# 日历/词典/导航类噪音域名（年份词查询时 Bing zh-CN 常塌缩到这些页）
+_NOISE_DOMAINS = (
+    "rili.", "calendar", "wannianli", "jiejiari", "fangjia.",
+    "1926", "911", "hao222", "2345", "123chaobai", "dict.", "cidian",
+    "dictionary", "hudong", "baike.baidu.com" if False else "zidian",
+)
+
+# 百度结果（h3 锚点；href 为百度跳转链，fetch_url 会跟随重定向）
+_BAIDU_H3_PATTERN = re.compile(
+    r'<h3[^>]*>\s*<a[^>]*href="(http[^"]+)"[^>]*>(.*?)</a>',
+    re.IGNORECASE | re.DOTALL,
+)
+_BAIDU_ABSTRACT = re.compile(
+    r'<div[^>]*class="[^"]*(?:c-abstract|c-span-last)[^"]*"[^>]*>(.*?)</div>',
+    re.IGNORECASE | re.DOTALL,
+)
 # 提取摘要（<p> 或 class 含 snippet/caption 的 div）
 _SNIPPET_PATTERN = re.compile(
     r'<(?:p|div)\s[^>]*class="[^"]*(?:b_caption|b_line)[^"]*"[^>]*>(.*?)</(?:p|div)>',
@@ -172,6 +196,63 @@ class SearchEngine:
         Returns:
             list[dict]: 搜索结果列表，每项包含 title, url, snippet
         """
+        # 0.10 三级检索：Bing → 年份改写重试 → 百度兜底。
+        # 实测：Bing zh-CN 对"裸年份+主题"型查询会塌缩到万年历/放假通知页
+        # （英文查询同样命中中文日历页——单 token"2026"主导匹配），改写降权
+        # 年份即可恢复；仍失真时百度实测同查询全切题。
+        try:
+            results = self._bing_search(query, count)
+            if results and not self._mostly_noise(results):
+                log.info("[SEARCH] Bing 命中 '%s' → %d 条", query[:40], len(results))
+                return results
+
+            # 第二级：年份词改写重试（"2026年AI技术突破" → "AI技术突破 2026"）
+            rewritten = self._demote_year(query)
+            if rewritten and rewritten != query:
+                results = self._bing_search(rewritten, count)
+                if results and not self._mostly_noise(results):
+                    log.info("[SEARCH] Bing 改写命中 '%s' → %d 条", rewritten[:40], len(results))
+                    return results
+
+            # 第三级：百度兜底（DDG 等实测网络不可达；百度 h3 可解析、相关性好）
+            results = self._baidu_search(query, count)
+            log.info("[SEARCH] 百度兜底 '%s' → %d 条", query[:40], len(results))
+            return results
+
+        except Exception as e:
+            log.error("[SEARCH] 搜索请求失败: %s", str(e)[:200])
+            return []
+
+    # ---- 内部：结果是否全为日历/词典噪音 ----
+    @staticmethod
+    def _is_noise(result: dict) -> bool:
+        u = (result.get("url") or "").lower()
+        t = (result.get("title") or "").lower()
+        if any(d in u for d in _NOISE_DOMAINS):
+            return True
+        # 标题强特征：万年历/节假日/放假安排（年份词塌缩的高频产物）
+        for kw in ("日历", "万年历", "节假日安排", "放假安排", "调休", "补班日历"):
+            if kw in t:
+                return True
+        return False
+
+    def _mostly_noise(self, results: list) -> bool:
+        # 过半即触发下一级（全噪音判定太严：混入一篇边缘页就漏放行）
+        if not results:
+            return False
+        n = sum(1 for r in results if self._is_noise(r))
+        return n * 2 >= len(results)
+
+    # ---- 内部：年份词降权改写 ----
+    @staticmethod
+    def _demote_year(query: str):
+        m = re.match(r'^\s*(20\d{2})\s*年?\s*[：:，,\s]*\s*(.+?)\s*$', query.strip())
+        if m and m.group(2).strip():
+            return (m.group(2).strip() + " " + m.group(1)).strip()
+        return None
+
+    # ---- 内部：Bing 检索 + 解析（h2 锚点版） ----
+    def _bing_search(self, query: str, count: int):
         url = "https://www.bing.com/search"
         params = {
             "q": query,
@@ -179,52 +260,74 @@ class SearchEngine:
             "setmkt": "zh-CN",
             "setlang": "zh-CN",
         }
-
-        try:
-            html = self._http_get(url, params=params)
-            if not html:
-                return []
-
-            results = []
-
-            blocks = _BING_RESULT_BLOCK.findall(html)
-            for block in blocks[:count]:
-                # 提取链接和标题
-                href_match = _HREF_PATTERN.search(block)
-                if not href_match:
-                    continue
-                link = href_match.group(1)
-                title = _strip_tags(href_match.group(2))
-                if not title:
-                    continue
-
-                # 提取摘要
-                snippet = ""
-                snippet_match = _SNIPPET_PATTERN.search(block)
-                if snippet_match:
-                    snippet = _strip_tags(snippet_match.group(1))
-                if not snippet:
-                    # 回退：找第一个 <p>
-                    p_match = _FALLBACK_SNIPPET.search(block)
-                    if p_match:
-                        snippet = _strip_tags(p_match.group(1))
-
-                # 过滤 Bing 内部链接
-                if "bing.com" in link or "microsoft.com" in link:
-                    continue
-
-                results.append({
-                    "title": title[:200],
-                    "url": link,
-                    "snippet": snippet[:500],
-                })
-
-            log.info("[SEARCH] 搜索 '%s' 返回 %d 条结果", query[:50], len(results))
-            return results
-
-        except Exception as e:
-            log.error("[SEARCH] 搜索请求失败: %s", str(e)[:200])
+        html = self._http_get(url, params=params)
+        if not html:
             return []
+
+        results = []
+        blocks = _BING_RESULT_BLOCK.findall(html)
+        for block in blocks[:count * 2]:  # 过滤后可能不足，多扫一页余量
+            # 标题：优先 h2 锚点（新版布局），回退首个锚点（旧版布局）
+            href_match = _BING_H2_PATTERN.search(block)
+            if not href_match:
+                href_match = _HREF_PATTERN.search(block)
+            if not href_match:
+                continue
+            link = href_match.group(1)
+            title = _strip_tags(href_match.group(2))
+            if not title:
+                continue
+
+            # 提取摘要
+            snippet = ""
+            snippet_match = _SNIPPET_PATTERN.search(block)
+            if snippet_match:
+                snippet = _strip_tags(snippet_match.group(1))
+            if not snippet:
+                p_match = _FALLBACK_SNIPPET.search(block)
+                if p_match:
+                    snippet = _strip_tags(p_match.group(1))
+
+            # 过滤 Bing 内部链接
+            if "bing.com" in link or "microsoft.com" in link:
+                continue
+
+            results.append({
+                "title": title[:200],
+                "url": link,
+                "snippet": snippet[:500],
+            })
+            if len(results) >= count:
+                break
+        return results
+
+    # ---- 内部：百度兜底（0.10：DDG 网络不可达后的国内可达备选） ----
+    def _baidu_search(self, query: str, count: int):
+        html = self._http_get("https://www.baidu.com/s", params={"wd": query})
+        if not html:
+            return []
+        results = []
+        # 带位置匹配：每条结果取自己 h3 之后最近的摘要（否则全页共用第一条摘要）
+        for m in _BAIDU_H3_PATTERN.finditer(html):
+            link, title_html = m.group(1), m.group(2)
+            title = _strip_tags(title_html)
+            if not title:
+                continue
+            # 百度结果链接是 baidu.com/link?url= 跳转链，fetch_url 跟随重定向到原文
+            if "baidu.com" in link and "/link?" not in link:
+                continue  # 百度自家非结果页（百科/知道等除外跳转链一律放行）
+            snippet = ""
+            ab = _BAIDU_ABSTRACT.search(html, m.end())
+            if ab:
+                snippet = _strip_tags(ab.group(1))
+            results.append({
+                "title": title[:200],
+                "url": link,
+                "snippet": snippet[:500],
+            })
+            if len(results) >= count:
+                break
+        return results
 
     def fetch(self, url: str):
         """抓取网页正文

@@ -565,6 +565,45 @@ def api_chats_list():
     return {"chats": chats, "current": current}
 
 
+def _is_disposable_empty(c: dict) -> bool:
+    """可自动清理的空会话：0 消息 + 从未命名 + 非旧版只读。
+
+    list_chats 的 title 永远回落到文件夹名 → "title==name" 即从未命名。
+    用户手动改过名 → title≠name → 永不自动清（改完名刷新页面也不丢）。
+    """
+    if c.get("legacy") or c.get("private"):
+        return False
+    if c.get("msg_count", 0) != 0:
+        return False
+    title = (c.get("title") or "").strip()
+    name = (c.get("name") or "").strip()
+    return (not title) or (title == name)
+
+
+def _sweep_empty_chats(keep_path: str = None) -> int:
+    """清扫可弃空会话，返回清理数（keep_path：用户正停留的会话不清）。"""
+    import shutil as _shutil
+    n = 0
+    try:
+        for c in list_chats():
+            if not _is_disposable_empty(c):
+                continue
+            if keep_path and os.path.normcase(os.path.realpath(c.get("path") or "")) == os.path.normcase(os.path.realpath(keep_path)):
+                continue
+            try:
+                fp = c.get("path") or ""
+                if fp and os.path.isdir(fp) and os.path.realpath(fp).startswith(os.path.realpath(CHAT_DIR)):
+                    _shutil.rmtree(fp, ignore_errors=True)
+                    n += 1
+            except Exception:
+                pass
+        if n:
+            log.info("[CHAT] 空会话清扫: %d 个（0 消息且未命名）" % n)
+    except Exception as e:
+        log.warning("[CHAT] 空会话清扫异常: %s" % str(e)[:80])
+    return n
+
+
 @router.post("/api/chats/new")
 async def api_chats_new(request: Request):
     """创建新对话；可选 body {"project_dir": "..."} 归入项目（0.10.1 项目即文件夹）"""
@@ -584,6 +623,17 @@ async def api_chats_new(request: Request):
                 break
         if not ok:
             return JSONResponse({"error": "项目目录不存在或未注册"}, status_code=400)
+    # 0.10 空会话复用：同项目下已有 0 消息未命名会话 → 直接切过去，不再新建
+    # （用户反复点「新建任务」不再堆积空壳；改过名的会话不会命中）
+    try:
+        from config import DEFAULT_PROJECT_DIR as _DPD
+        _want_pd = project_dir or _DPD
+        for c in list_chats():
+            if _is_disposable_empty(c) and (c.get("project_dir") or _DPD) == _want_pd:
+                log.info("[CHAT] 复用空会话: %s" % c.get("name"))
+                return {"path": c["path"], "name": c["name"], "reused": True}
+    except Exception:
+        pass
     filepath = _new_chat_file(project_dir)
     name = os.path.basename(filepath)
     # 兼容：如果路径是文件夹，name 就是文件夹名（无 .json 后缀）
@@ -607,6 +657,24 @@ async def api_chats_switch(request: Request):
         return JSONResponse({"error": "非法文件类型"}, status_code=400)
     if not os.path.exists(real_path):
         return JSONResponse({"error": "文件不存在: %s" % filepath}, status_code=404)
+    # 0.10 离开清理：被切走的会话若为 0 消息且未命名 → 自动删除
+    _prev = get_current_chat()
+    if _prev and os.path.normcase(os.path.realpath(_prev)) != os.path.normcase(real_path):
+        try:
+            _pn = os.path.basename(_prev.replace(chr(92), "/").rstrip("/"))
+            from session.chat_store import read_meta as _read_meta
+            _pm = _read_meta(_pn) if _pn else {}
+            _pc = {"path": _prev, "name": _pn,
+                   "title": (_pm.get("title") or _pn) if _pm else _pn,
+                   "msg_count": _pm.get("message_count", 0),
+                   "legacy": not (_pm.get("project_dir") if _pm else None)}
+            if _is_disposable_empty(_pc):
+                import shutil as _shutil
+                if os.path.isdir(_prev) and os.path.realpath(_prev).startswith(os.path.realpath(CHAT_DIR)):
+                    _shutil.rmtree(_prev, ignore_errors=True)
+                    log.info("[CHAT] 切走自动清理空会话: %s" % _pn)
+        except Exception:
+            pass
     set_current_chat(real_path)
     messages = load_chat(real_path)
     log.info("[CHAT] switched to: %s (%d messages)" % (os.path.basename(filepath), len(messages)))

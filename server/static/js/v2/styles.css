@@ -1529,3 +1529,13 @@ body.narrow #viewer.open ~ .vw-backdrop {
   animation: skel-pulse 1.1s var(--d1-ease-out) infinite; animation-delay: 180ms; }
 .sb-skel-row:nth-child(2n) .sb-skel-bar { animation-delay: 120ms; }
 .sb-skel-row:nth-child(3n) .sb-skel-bar { animation-delay: 240ms; }
+
+/* KB/技能/设置页加载态：纯文字 → 闪光面板（复用 DNA-01 呼吸节奏，CSS 一处改全覆盖） */
+.kb-loading {
+  color: transparent !important; user-select: none; min-height: 110px;
+  border-radius: var(--d1-r-md);
+  background: linear-gradient(100deg, var(--d1-paper-2) 40%, #FFFFFF 50%, var(--d1-paper-2) 60%);
+  background-size: 200% 100%;
+  animation: kb-skel 1.2s infinite linear;
+}
+@keyframes kb-skel { to { background-position: -200% 0; } }

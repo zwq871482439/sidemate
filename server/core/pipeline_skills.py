@@ -20,9 +20,10 @@ skill 格式（Python dict，M4 升级为 SKILL.md 文件解析）：
     prompts = get_skill_prompts("ppt", user_hint="用暖色做")
     # → 返回按 priority 排序的 prompt_fragment 列表
 
-预装 skill：
-    1. 设计-DNA选卡：从 design_dna 选卡并注入版式/色板/字号规则
+预装 skill（全部挂 ppt/docx/report/poster 四管线，除文体适配仅 docx/report）：
+    1. 设计-DNA选卡：从 design_dna 选卡并注入版式/色板/字号规则（prompt 动态生成）
     2. 写作-文体适配：按产物类型注入文体建议（不绑定具体文风——通用平台原则）
+    3. 内容-结构引导：通用内容组织提示
 """
 from __future__ import annotations
 
@@ -37,14 +38,17 @@ _SKILLS: List[dict] = []
 
 def register_skill(name: str, pipeline_types: List[str], prompt_fragment: str,
                    priority: int = 50,
-                   matcher: Optional[Callable[[str], bool]] = None):
-    """注册一个管线 skill。"""
+                   matcher: Optional[Callable[[str], bool]] = None,
+                   description: str = ""):
+    """注册一个管线 skill。description：技能卡说明（通用机制性描述，
+    不掺领域偏好——skill 内容通用化原则，防模型偏离）。"""
     _SKILLS.append({
         "name": name,
         "pipeline_types": pipeline_types,
         "priority": priority,
         "prompt_fragment": prompt_fragment,
         "matcher": matcher,
+        "description": description,
     })
 
 
@@ -80,6 +84,8 @@ def _install_default_skills():
         priority=10,
         prompt_fragment="",  # 动态生成——由 _dna_prompt 代理
         matcher=_dna_matcher,
+        description="按用户意图从设计 DNA 卡库选一张版式方案（色板/字号/网格），"
+                    "注入产物生成管线。机制性挂载：不预设风格偏好，选卡由意图匹配决定。",
     )
     # DNA 的 prompt 是动态的（按用户意图选卡），需要特殊处理
     # 改为注册一个动态 skill
@@ -90,6 +96,7 @@ def _install_default_skills():
         name="写作-文体适配",
         pipeline_types=["docx", "report"],
         priority=20,
+        description="按文档类型与受众提示合适的文体选择，不绑定具体文风模板。",
         prompt_fragment=(
             "写作风格建议：根据文档类型和受众选择恰当文体——技术文档用简洁说明文、"
             "商业方案用结构化论证、文化介绍用叙事性散文。不绑定特定文风模板；"
@@ -102,6 +109,7 @@ def _install_default_skills():
         name="内容-结构引导",
         pipeline_types=["ppt", "docx", "report", "poster"],
         priority=30,
+        description="通用的内容组织提示：逻辑清晰、每节聚焦一个观点、结论有依据。",
         prompt_fragment=(
             "内容结构：确保逻辑清晰（总分总/递进/并列）；每章/页聚焦一个核心观点；"
             "开篇点题+结尾收束；数据有来源、结论有依据。"

@@ -82,7 +82,7 @@ def auto_name_if_default(chat_name: str, user_text: str, ai_mode: str) -> None:
         if not text or text.startswith("["):  # doc_continue 等占位消息不命名
             return
         prompt = (
-            "为下面的用户消息生成一个简短的中文会话标题。要求：6-14 个字，概括主题，"
+            "为下面的用户消息生成一个简短的中文会话标题。要求：4-10 个字，宁短勿长，概括主题，"
             "不要标点收尾，不要引号书名号，只输出标题本身。\n\n用户消息：\n" + text[:300]
         )
         title = run_text_once(prompt, ai_mode)

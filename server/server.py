@@ -220,6 +220,14 @@ def _set_bg_ready(error: str = None):
     log.info("[STARTUP] 后台初始化完成 (ready=%s, error=%s, phase=%s)" % (
         snapshot.get("ready"), snapshot.get("load_error"), snapshot.get("bg_phase")))
 
+    # 0.10：空会话存量清扫（0 消息且从未命名；保留当前停留的）
+    try:
+        from routers.chat import _sweep_empty_chats
+        from session.chat_store import get_current_chat
+        _sweep_empty_chats(keep_path=get_current_chat())
+    except Exception as e:
+        log.warning("[STARTUP] 空会话清扫跳过: %s" % str(e)[:80])
+
 
 def _add_bg_error(error: str):
     """累积后台初始化错误（不结束流程，继续后续步骤）"""
