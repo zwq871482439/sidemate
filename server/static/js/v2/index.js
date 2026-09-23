@@ -1258,7 +1258,7 @@ function showSessionMenu(chat, anchorEl) {
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
     <button data-a="handoff">生成交接（写进项目 handoff.md）</button>
-    ${state.mode === 'local' ? `<button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>` : ''}
+    <button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
@@ -1312,6 +1312,11 @@ function showSessionMenu(chat, anchorEl) {
   if (_privBtn) _privBtn.addEventListener('click', async () => {
     menuEl.remove(); _menuEl = null;
     const on = !chat.private;
+    // R3 C1：入口常显可发现；在线态点出设计说明而非静默隐藏
+    if (on && state.mode !== 'local') {
+      uiAlert('标私密仅适用于离线模式的会话——在线会话的内容本就在云端服务方，标记无意义。请先切到离线模式再操作。');
+      return;
+    }
     if (on && !(await uiConfirm('把这条会话标为私密？\n\n私密会话的内容不会出现在：其他会话的「同项目会话」清单、「携」前情注入、AI 的 read_session 读取。适合放敏感内容。'))) return;
     try {
       const r = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/private', {
@@ -1402,5 +1407,5 @@ window.addEventListener('pagehide', () => {
   if (el) { try { sessionStorage.setItem('v2SbScroll', String(el.scrollTop)); } catch (e) {} }
 });
 
-window.SidemateV2 = { version: '0.10.1-m1d3', mounted: true };
+window.SidemateV2 = { version: '0.10.1', mounted: true };
 boot();

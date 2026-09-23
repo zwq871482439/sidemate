@@ -145,7 +145,10 @@ function _renderMermaidBoxes(boxes) {
         box.setAttribute('data-rendered', '1');
         // mermaid 测量期会把容器挪到 body 末尾，settle 后无条件放回原位（经典版同款坑）
         if (!box.parentElement) {
-          if (next && next.parentElement === parent) parent.insertBefore(box, next);
+          // R3 次要观察修复：流式重渲竞态下 parent/next 可能已脱离文档，
+          // 旧代码 null.parentElement===null 会走进 parent.insertBefore 抛
+          // 'Cannot read properties of null (reading appendChild)'
+          if (parent && next && next.parentElement === parent) parent.insertBefore(box, next);
           else if (parent) parent.appendChild(box);
         }
         box.innerHTML = result.svg;
@@ -154,7 +157,10 @@ function _renderMermaidBoxes(boxes) {
       .catch(err => {
         box.setAttribute('data-rendered', '1');
         if (!box.parentElement) {
-          if (next && next.parentElement === parent) parent.insertBefore(box, next);
+          // R3 次要观察修复：流式重渲竞态下 parent/next 可能已脱离文档，
+          // 旧代码 null.parentElement===null 会走进 parent.insertBefore 抛
+          // 'Cannot read properties of null (reading appendChild)'
+          if (parent && next && next.parentElement === parent) parent.insertBefore(box, next);
           else if (parent) parent.appendChild(box);
         }
         _cleanOrphans();

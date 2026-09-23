@@ -1683,8 +1683,14 @@ class AgentLoop:
                     r = _pptc.begin_deck(self.chat_id, args.get("title", ""), user_hint=_hint)
                 elif action == "page":
                     _svg = args.get("svg", "")
-                    # 0.10：svg_file —— 直接引用工作区 SVG（render_d2 产物）作整页图
-                    _sf = (args.get("svg_file") or "").strip()
+                    # 0.10：svg_file —— 直接引用工作区 SVG（render_d2 产物）作整页图。
+                    # R3 实测模型可能传 dict（{"file": ...}）/list——宽容归一为字符串
+                    _sf_raw = args.get("svg_file")
+                    if isinstance(_sf_raw, dict):
+                        _sf_raw = _sf_raw.get("file") or _sf_raw.get("name") or _sf_raw.get("path") or ""
+                    if isinstance(_sf_raw, (list, tuple)):
+                        _sf_raw = _sf_raw[0] if _sf_raw else ""
+                    _sf = _sf_raw.strip() if isinstance(_sf_raw, str) else ""
                     if _sf and not _svg:
                         try:
                             from core.doc_session import read_workspace_file
