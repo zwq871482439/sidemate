@@ -182,7 +182,18 @@ DEFAULTS = {
 
     # ----- 权限工具开关（Patch5 B3，3 预设可批量改）-----
     "tool_enabled_web_search": True,       # 互联网搜索（search_web/fetch_url）
-    "tool_enabled_file_rw": True,          # 文件读写（write_workspace 等）
+    "tool_enabled_file_rw": True,    # 0.10 协议 skill 化：各产物/编排工具独立开关（技能页管理；关闭=工具+协议 prompt 一并撤）
+    "tool_enabled_create_ppt": True,
+    "tool_enabled_create_docx": True,
+    "tool_enabled_code_exec": True,
+    "tool_enabled_render_d2": True,
+    "tool_enabled_run_plan": True,
+    "tool_enabled_spawn_reader": True,
+    "tool_enabled_read_session": True,
+    "tool_enabled_project_write": True,
+    "tool_enabled_deliver_package": True,
+    "skill_enabled_cards": True,
+          # 文件读写（write_workspace 等）
     "tool_enabled_code_exec": False,       # 代码执行（预留，默认关）
     "tool_enabled_kb_search": True,        # 知识库检索（search_kb/get_context）
 

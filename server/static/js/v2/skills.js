@@ -60,11 +60,13 @@ export function createSkillsView(opts) {
             <div class="sk-card ${s.enabled === false ? 'disabled' : ''}">
               <div class="sk-card-head">
                 <span class="sk-name">${esc(s.name)}</span>
-                <button class="switch ${s.enabled !== false ? 'on' : ''}" data-skill="${esc(s.id)}" data-type="system" title="${s.enabled !== false ? '点击禁用' : '点击启用'}"></button>
+                ${s.config_key
+                  ? `<button class="switch ${s.enabled !== false ? 'on' : ''}" data-skill="${esc(s.id)}" data-type="${s.source === 'protocol' ? 'protocol' : 'system'}" title="${s.enabled !== false ? '点击禁用' : '点击启用'}"></button>`
+                  : '<span style="font-size:10.5px;color:var(--d1-ink-3)">常开</span>'}
               </div>
               <div class="sk-desc">${esc(s.description || '')}</div>
               <div class="sk-meta">
-                <span class="sk-tag sys">内置</span>
+                <span class="sk-tag sys">${s.source === 'protocol' ? '协议' : '内置'}</span>
                 ${s.pipeline_types ? `<span>挂载: ${esc(s.pipeline_types.join(' · '))}</span>` : ''}
               </div>
             </div>

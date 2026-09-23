@@ -12,9 +12,19 @@
 import core.agent_tools as at
 
 
-def _prompt(monkeypatch, file_rw=True):
+def _prompt(monkeypatch, file_rw=True, ppt=True):
+    """ppt=False 时把 tool_enabled_create_ppt 关掉（0.10 协议 skill 化后
+    PPT 有独立开关，不再归文件读写档）。"""
     import config as _cfg
-    monkeypatch.setattr(_cfg, "get", lambda k, d=None: False if (k == "tool_enabled_file_rw" and not file_rw) else d)
+
+    def _fake_get(k, d=None):
+        if k == "tool_enabled_file_rw" and not file_rw:
+            return False
+        if k == "tool_enabled_create_ppt" and not ppt:
+            return False
+        return d
+
+    monkeypatch.setattr(_cfg, "get", _fake_get)
     tools, prompt = at.get_tools_and_prompt(mode="chat", kb=None, chat_id=None)
     return tools, prompt
 
@@ -31,7 +41,7 @@ class TestCapabilityAssembly:
         assert "真 PPT 制作" in prompt  # PPT_PROTOCOL_PROMPT 随启用进 prompt
 
     def test_ppt_fragment_exits_when_disabled(self, monkeypatch):
-        tools, prompt = _prompt(monkeypatch, file_rw=False)
+        tools, prompt = _prompt(monkeypatch, file_rw=True, ppt=False)
         names = [t["function"]["name"] for t in tools]
         assert "create_ppt" not in names  # 权限档关掉，工具本身也下线
         assert "真 PPT 制作" not in prompt  # fragment 同步退出（手工 append 时代做不到）

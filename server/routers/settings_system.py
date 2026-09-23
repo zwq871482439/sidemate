@@ -1488,6 +1488,20 @@ def api_skills_list():
             "source": "permission",
         })
 
+    # 协议 skill（0.10 skill 化收口：10 个协议工具可独立开关，关闭=工具+协议 prompt 一并撤）
+    from core.agent_tools import PROTOCOL_SKILLS as _PROTOS
+    for ps in _PROTOS:
+        cfg_val = _cfg(ps["config_key"], True)
+        system.append({
+            "id": "proto_" + ps["id"],
+            "name": ps["name"],
+            "description": ps["description"],
+            "pipeline_types": [],
+            "enabled": bool(cfg_val),
+            "config_key": ps["config_key"],
+            "source": "protocol",
+        })
+
     # 用户 skill
     user = []
     for sk in discover_skills():
@@ -1509,8 +1523,17 @@ async def api_skills_toggle(request: Request):
     body = await request.json()
     skill_id = body.get("id", "")
     enabled = bool(body.get("enabled", True))
+    if skill_id.startswith("proto_"):
+        # 0.10 协议 skill：直接写对应 config 开关
+        from core.agent_tools import PROTOCOL_SKILLS as _PROTOS
+        for ps in _PROTOS:
+            if "proto_" + ps["id"] == skill_id:
+                from config import set_value
+                set_value(ps["config_key"], enabled)
+                return {"ok": True, "id": skill_id, "enabled": enabled}
+        return JSONResponse({"error": "技能不存在"}, status_code=404)
     if not skill_id.startswith("perm_"):
-        return JSONResponse({"error": "仅权限类技能支持开关"}, status_code=400)
+        return JSONResponse({"error": "仅权限/协议类技能支持开关"}, status_code=400)
     tool_id = skill_id[5:]
     for t in _PERMISSION_TOOLS:
         if t["tool_id"] == tool_id:

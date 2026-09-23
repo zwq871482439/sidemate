@@ -1080,8 +1080,39 @@ _TOOL_PERM_MAP = {
     "delete_workspace": "tool_enabled_file_rw",
     "append_workspace": "tool_enabled_file_rw",
     "edit_workspace": "tool_enabled_file_rw",
-    "create_ppt": "tool_enabled_file_rw",   # M1-E：PPT 产物写 workspace，归文件读写权限档
+    "create_ppt": "tool_enabled_create_ppt",   # 0.10 协议 skill 化：独立开关（不再归文件档）
+    "create_docx": "tool_enabled_create_docx",
+    "code_exec": "tool_enabled_code_exec",
+    "render_d2": "tool_enabled_render_d2",
+    "run_plan": "tool_enabled_run_plan",
+    "spawn_reader": "tool_enabled_spawn_reader",
+    "read_session": "tool_enabled_read_session",
+    "project_write": "tool_enabled_project_write",
+    "deliver_package": "tool_enabled_deliver_package",
 }
+
+# 0.10 协议 skill 声明表（技能页展示 + 开关；描述=机制性说明，通用化原则）。
+# 工具绑定走 _TOOL_PERM_MAP；cards 协议无工具，仅开关 prompt 注入。
+PROTOCOL_SKILLS = [
+    {"id": "ppt", "name": "PPT 制作", "config_key": "tool_enabled_create_ppt",
+     "description": "逐页生成原生可编辑 PPTX（SVG→编译），含设计 DNA 选卡与质量门。"},
+    {"id": "docx", "name": "Word 精排版", "config_key": "tool_enabled_create_docx",
+     "description": "按章节生成正式排版 Word：封面/标题层级/页眉页脚。"},
+    {"id": "code_exec", "name": "代码执行", "config_key": "tool_enabled_code_exec",
+     "description": "在受限子进程中运行 Python 做精确计算与数据处理。"},
+    {"id": "d2", "name": "D2 图表", "config_key": "tool_enabled_render_d2",
+     "description": "D2 语言出图（流程/架构/ER/状态），服务端渲染 SVG 入工作区，PPT 可直接引用。"},
+    {"id": "plan", "name": "任务编排", "config_key": "tool_enabled_run_plan",
+     "description": "一次声明多步只读/编排操作（run_plan + spawn_reader 并行阅读）。"},
+    {"id": "read_session", "name": "历史会话读取", "config_key": "tool_enabled_read_session",
+     "description": "按项目索引读取历史会话内容（私密会话拒读）。"},
+    {"id": "pwrite", "name": "项目文件写入", "config_key": "tool_enabled_project_write",
+     "description": "向项目目录写文件（计划模式先出确认清单，执行模式直接落盘）。"},
+    {"id": "deliver", "name": "交付打包", "config_key": "tool_enabled_deliver_package",
+     "description": "把工作区多个产物整理为交付包（zip）供一次性下载。"},
+    {"id": "cards", "name": "卡片系统", "config_key": "skill_enabled_cards",
+     "description": "图表/表格/问答/引用卡片与 mermaid、d2 代码块的聊天内渲染规范。"},
+]
 
 
 def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="full", chat_id=None, history=None):
@@ -1177,7 +1208,8 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
     # 手工 append 时代结束（M1-D-24 两处注入漏一处、PPT 靠 if 特判的教训）。
     fragments = []
     _frag_seen = set()
-    for _key in ["cards"] + [TOOL_REGISTRY[n].get("prompt_fragment") for n in enabled_names]:
+    _cards_keys = ["cards"] if _cfg("skill_enabled_cards", True) else []
+    for _key in _cards_keys + [TOOL_REGISTRY[n].get("prompt_fragment") for n in enabled_names]:
         if not _key or _key in _frag_seen:
             continue
         _loader = _FRAGMENT_LOADERS.get(_key)
