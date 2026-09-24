@@ -1539,3 +1539,113 @@ body.narrow #viewer.open ~ .vw-backdrop {
   animation: kb-skel 1.2s infinite linear;
 }
 @keyframes kb-skel { to { background-position: -200% 0; } }
+
+/* ============================================================
+   0.10.2 B5 思考可视化三层（原型 think-sum/think-ledger/tr-phase/tr-step）
+   ============================================================ */
+.think-wrap .think-sum {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; color: var(--d1-ink-2);
+  background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
+  border-radius: 16px; padding: 4px 12px; cursor: pointer;
+  font-family: inherit; max-width: 100%;
+}
+.think-wrap .think-sum:hover { border-color: var(--d1-ink-3); }
+.think-sum .ts-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dot-ok); flex-shrink: 0; }
+.think-sum .ts-dot.run { background: var(--dot-run); animation: tsPulse 1.6s ease infinite; }
+@keyframes tsPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(127,119,221,.5); } 50% { box-shadow: 0 0 0 4px rgba(127,119,221,0); } }
+.think-sum .ts-tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.think-sum .ts-ms { font-family: var(--d1-outlier); color: var(--d1-ink-3); font-size: 10.5px; }
+.think-sum .ts-chev { color: var(--d1-ink-3); transition: transform .18s; font-size: 12px; }
+.think-sum.open .ts-chev { transform: rotate(180deg); }
+.think-ledger { border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md); background: var(--d1-paper); overflow: hidden; display: none; margin-top: 6px; }
+.think-ledger.open { display: block; }
+.tr-phase { display: flex; align-items: center; gap: 8px; padding: 8px 14px 2px; font-size: 11.5px; font-weight: 600; color: var(--d1-accent-3); }
+.tr-phase .chev { font-size: 10px; color: var(--d1-ink-3); }
+.tr-phase .tt { margin-left: auto; font-family: var(--d1-outlier); font-size: 10.5px; color: var(--d1-ink-3); font-weight: 400; }
+.tr-step { display: flex; align-items: center; gap: 9px; padding: 5px 14px 5px 30px; font-size: 12px; color: var(--d1-ink-2); }
+.tr-step .dt { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--dot-wait); }
+.tr-step .dt.ok { background: var(--dot-ok); }
+.tr-step .dt.run { background: var(--dot-run); animation: tsPulse 1.6s ease infinite; }
+.tr-step .dt.fail { background: var(--d1-warn-rust, #B07300); }
+.tr-step .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-step .nm .cnt { color: var(--d1-ink-3); }
+.tr-step .ms { font-family: var(--d1-outlier); font-size: 10.5px; color: var(--d1-ink-3); }
+/* 兼容旧 cb-step（思考轮内工具行仍用 tr-step 结构，上面已覆盖） */
+
+/* ============================================================
+   0.10.2 B3 产物预览卡片（原型 .art-card 全套）
+   ============================================================ */
+.m-arts { display: flex; flex-direction: column; gap: 8px; }
+.art-card { display: flex; align-items: center; gap: 12px; background: var(--d1-paper-2); border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-lg); padding: 12px 14px; cursor: pointer; transition: border-color .18s, box-shadow .18s; max-width: 520px; }
+.art-card:hover { border-color: var(--d1-accent-3); box-shadow: var(--d1-shadow-card); }
+.art-card.previewing { border-color: var(--d1-gold); }
+.art-ic { width: 40px; height: 40px; border-radius: var(--d1-r-md); background: var(--d1-paper); color: var(--d1-accent-3); display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0; }
+.art-ic.gold { color: var(--d1-gold-2); }
+.art-tx { flex: 1; min-width: 0; }
+.art-name { font-size: 13px; font-weight: 600; color: var(--d1-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.art-meta { font-size: 11px; color: var(--d1-ink-3); margin-top: 3px; }
+.art-acts { display: flex; gap: 8px; flex-shrink: 0; }
+.art-btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-family: inherit; cursor: pointer; border: 1px solid transparent; text-decoration: none; }
+.art-btn.primary { background: var(--d1-accent); color: var(--d1-on-accent); }
+.art-btn.primary:hover { background: var(--d1-accent-2); }
+.art-btn.ghost { background: transparent; border-color: var(--d1-n-line); color: var(--d1-ink-2); }
+.art-btn.ghost:hover { border-color: var(--d1-ink-3); color: var(--d1-ink); }
+
+/* ============================================================
+   0.10.2 B2 视窗：文件行 + 预览 drill-down（原型 fl-row/pv-*）
+   ============================================================ */
+.vw-cap { font-size: 11px; color: var(--d1-ink-3); margin: 2px 4px 10px; }
+.fl-row { display: flex; align-items: center; gap: 10px; background: var(--d1-paper); border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md); padding: 9px 12px; margin-bottom: 8px; cursor: pointer; position: relative; }
+.fl-row:hover { border-color: var(--d1-accent-3); }
+.fl-row.cur { border-color: var(--d1-gold); }
+.fl-row.cur::before { content: ''; position: absolute; left: -1px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--d1-gold); }
+.fl-ic { width: 32px; height: 32px; border-radius: 8px; background: var(--d1-paper-2); color: var(--d1-accent-3); display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+.fl-ic.gold { color: var(--d1-gold-2); }
+.fl-tx { flex: 1; min-width: 0; }
+.fl-nm { font-size: 12px; font-weight: 600; color: var(--d1-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-mt { font-size: 10.5px; color: var(--d1-ink-3); margin-top: 2px; }
+.fl-eye { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; opacity: 0; transition: opacity .15s; display: inline-flex; }
+.fl-row:hover .fl-eye { opacity: 1; }
+.fl-eye:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
+.pv-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.pv-crumb { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0; }
+.pv-crumb button { display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent; color: var(--d1-accent-3); font-size: 11.5px; font-family: inherit; cursor: pointer; border-radius: 6px; padding: 4px 8px; }
+.pv-crumb button:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
+.pv-crumb .sep { color: var(--d1-ink-3); font-size: 11px; }
+.pv-crumb .cur { font-size: 11.5px; color: var(--d1-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-top { min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 14px; border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0; }
+.pv-title { font-size: 12.5px; font-weight: 600; color: var(--d1-ink); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 7px; }
+.pv-title .ic { color: var(--d1-accent-3); font-size: 14px; }
+.vw-dl { display: inline-flex; align-items: center; gap: 6px; background: var(--d1-accent); color: var(--d1-on-accent); border: none; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-family: inherit; cursor: pointer; text-decoration: none; flex-shrink: 0; }
+.vw-dl:hover { background: var(--d1-accent-2); }
+.pv-open { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--d1-n-line); background: var(--d1-paper); border-radius: 7px; color: var(--d1-ink-2); padding: 5px 10px; font-size: 11.5px; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+.pv-open:hover { border-color: var(--d1-ink-3); }
+.pv-body { background: var(--d1-paper); }
+.pv-center { display: flex; align-items: center; justify-content: center; min-height: 200px; }
+.pv-center img { max-width: 100%; border-radius: 4px; }
+.pv-md { background: #fff; border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-sm); padding: 18px 22px; font-size: 13px; line-height: 1.8; }
+.pv-md pre { white-space: pre-wrap; font-family: var(--d1-outlier); font-size: 12px; }
+.pv-note { text-align: center; font-size: 10.5px; color: var(--d1-ink-3); padding: 8px 6px; }
+
+/* ============================================================
+   0.10.2 B5 视窗·轨迹 阶段台账（原型 tr-sum/tr-box/tr-round-h）
+   ============================================================ */
+.vw-trace2 { display: block; }
+.tr-sum { display: flex; gap: 8px; margin-bottom: 12px; }
+.tr-chip { flex: 1; background: var(--d1-paper); border: 1px solid var(--d1-n-line); border-radius: 8px; padding: 8px 10px; text-align: center; }
+.tr-chip b { display: block; font-family: var(--d1-outlier); font-size: 14px; color: var(--d1-accent); font-weight: 600; }
+.tr-chip span { font-size: 10px; color: var(--d1-ink-3); }
+.tr-box { background: var(--d1-paper); border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md); padding: 6px 0 10px; margin-bottom: 12px; }
+.tr-box .tr-step { padding-left: 26px; }
+.tr-box .tr-phase { padding: 8px 14px 2px; }
+.tr-round-h { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--d1-ink); margin: 10px 2px 8px; }
+.tr-round-h .ic { color: var(--d1-accent-3); font-size: 13px; }
+.tr-round-ts { font-weight: 400; font-size: 10.5px; color: var(--d1-ink-3); font-family: var(--d1-outlier); }
+.tr-hint { font-size: 10.5px; color: var(--d1-ink-3); text-align: center; margin-top: 10px; }
+
+/* ============================================================
+   0.10.2 B4 KB 视图切换图标（.ic 包装 1em，修裸 svg 不可见）
+   ============================================================ */
+.kb-view-toggle button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; }
+.kb-view-toggle .ic { font-size: 13px; }

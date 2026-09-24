@@ -49,7 +49,6 @@ export function renderSidebar(root, state, events) {
     </nav>
     <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建任务</span></button>
     <div class="sb-sess-title sb-label">会话</div><div class="sb-sessions"></div>
-    <button class="sb-back"><span>‹</span><span class="sb-label">回经典版界面</span></button>
   `;
 
   // 会话列表（搜索过滤）+ 项目树（项目即文件夹，PLAN 1.5 四次定稿：
@@ -159,7 +158,6 @@ function _bindCommon(sb, state, events) {
   sb.querySelectorAll('.sb-nav-item').forEach(b =>
     b.addEventListener('click', () => events.onTab(b.dataset.tab)));
   sb.querySelector('.sb-new').addEventListener('click', () => events.onNewTask());
-  sb.querySelector('.sb-back').addEventListener('click', () => { location.href = '/'; });
   const searchInput = sb.querySelector('.sb-search input');
   if (searchInput) searchInput.addEventListener('input', (e) => events.onFilter(e.target.value));
 

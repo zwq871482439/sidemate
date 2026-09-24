@@ -40,6 +40,7 @@ export function createViewer(opts) {
   let docxDocs = null;  // 0.10 M1-4：精排版 docx 回放 [{deck,title,sections,section_list}] | null=未加载
   let pptLive = {};    // 流式期间即时累积：deck -> { title, pages: {n: url} }
   let htmlLive = [];   // 流式期间 doc_complete 的 HTML 报告：[{url, name}]
+  let previewFile = null;  // 0.10.2 B2：预览 = 文件的 drill-down。{name, url, size, live}
   const htmlCache = {}; // url -> 文本（iframe srcdoc 用；换版重发生效靠 no-store 拉新）
   const pptCache = {}; // url -> svg 文本（避免每页到达时全量重拉）
 
@@ -124,14 +125,19 @@ export function createViewer(opts) {
     el.innerHTML = `
       <div class="vw-head">
         <button class="vw-tab ${tab === 'session' ? 'on' : ''}" data-t="session">会话</button>
-        <button class="vw-tab ${tab === 'preview' ? 'on' : ''}" data-t="preview">预览</button>
         <button class="vw-tab ${tab === 'files' ? 'on' : ''}" data-t="files">文件</button>
+        <button class="vw-tab ${tab === 'preview' ? 'on' : ''}" data-t="preview">预览</button>
         <button class="vw-tab ${tab === 'trace' ? 'on' : ''}" data-t="trace">轨迹</button>
-        <button class="vw-close" title="收起（Esc）">✕</button>
+        <button class="vw-close" title="收起（Esc）"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="vw-body"></div>`;
     el.querySelectorAll('.vw-tab').forEach(b =>
-      b.addEventListener('click', () => { tab = b.dataset.t; renderBody(); }));
+      b.addEventListener('click', () => {
+        tab = b.dataset.t;
+        // B1 修复：点击即同步刷新 head 高亮（此前只重渲染 body，高亮停在旧 tab）
+        el.querySelectorAll('.vw-tab').forEach(x => x.classList.toggle('on', x === b));
+        renderBody();
+      }));
     el.querySelector('.vw-close').addEventListener('click', () => setOpen(false));
     renderBody();
   }
@@ -508,13 +514,19 @@ export function createViewer(opts) {
         return;
       }
       body.innerHTML = `<div class="vw-files">
-        <div class="vw-sec">工作区文件 · ${esc(filesFor)}</div>
-        ${files.map(f => `
-          <a class="vw-file" href="/api/chat/${encodeURIComponent(filesFor)}/workspace/download?path=${encodeURIComponent(f.name)}" title="下载 ${esc(f.name)}">
-            <span class="fi">${_icon(f.name)}</span>
-            <span class="ftx"><span class="fn">${esc(f.name)}</span><span class="fm">${_fmtSize(f.size)}</span></span>
-          </a>`).join('')}
+        <div class="vw-cap">本会话产物 · ${files.length} 个</div>
+        ${files.map(f => {
+          const url = '/api/chat/' + encodeURIComponent(filesFor) + '/workspace/download?path=' + encodeURIComponent(f.name);
+          const cur = previewFile && previewFile.name === f.name;
+          return `<div class="fl-row${cur ? ' cur' : ''}" data-pv-name="${esc(f.name)}" data-pv-url="${esc(url)}" title="预览 ${esc(f.name)}">
+            <div class="fl-ic${/\.pptx$/i.test(f.name) ? ' gold' : ''}"><span class="ic">${_icon(f.name)}</span></div>
+            <div class="fl-tx"><div class="fl-nm">${esc(f.name)}</div><div class="fl-mt">${_fmtSize(f.size)}</div></div>
+            <button class="fl-eye" title="预览"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>`;
+        }).join('')}
       </div>`;
+      body.querySelectorAll('.fl-row').forEach(r =>
+        r.addEventListener('click', () => openPreview({ name: r.dataset.pvName, url: r.dataset.pvUrl })));
     } else if (tab === 'preview') {
       _renderPreview(body);
     } else {
@@ -527,6 +539,9 @@ export function createViewer(opts) {
   // 数据源零新增（卡片系统落盘的 timeline 即真相），完整 trace.jsonl
   // （请求/响应体级）记 0.10.2 候选池。
   let _traceFor = '';
+  const _TRACE_PHASE = {
+    retrieve: '检索与阅读', produce: '生成产物', other: '其他动作',
+  };
   async function _renderTrace(body) {
     const cur = opts.getCurrentChat();
     if (!cur) { body.innerHTML = '<div class="vw-empty">还没有会话</div>'; return; }
@@ -548,19 +563,56 @@ export function createViewer(opts) {
       body.innerHTML = '<div class="vw-empty">还没有调用轨迹<br><small>在线模式下 AI 调工具时，轨迹会记录在这里</small></div>';
       return;
     }
-    body.innerHTML = `<div class="vw-trace">
-      <div class="vw-trace-sum">${rounds.length} 轮 · 共 ${rounds.reduce((s, r) => s + r.items.length, 0)} 次工具调用</div>
-      ${rounds.map((r, ri) => `<div class="vw-trace-round">
-        <div class="vw-trace-rh">${icon('chat')} 第 ${ri + 1} 轮 <span class="vw-trace-ts">${esc(r.ts)}${r.engine ? ' · ' + esc(r.engine === 'cloud' ? '在线' : r.engine === 'local' ? '离线' : r.engine) : ''}</span></div>
-        <div class="vw-trace-steps">
-          ${r.items.map(it => `<div class="vw-trace-step">
-            <span class="vw-trace-dot"></span>
-            <span class="vw-trace-lbl">${esc(_traceLabel(it))}</span>
-            ${it.elapsed_ms ? `<span class="vw-trace-ms">${(it.elapsed_ms / 1000).toFixed(1)}s</span>` : ''}
-          </div>`).join('')}
-        </div>
-      </div>`).join('')}
-    </div>`;
+    // 总览 chips（与消息内 L1 胶囊同源：步骤/耗时/轮次）
+    let totalSteps = 0, totalMs = 0;
+    rounds.forEach(r2 => { totalSteps += r2.items.length; r2.items.forEach(it => { if (it.elapsed_ms) totalMs += it.elapsed_ms; }); });
+    const secs = totalMs ? (totalMs / 1000).toFixed(1).replace(/\.0$/, '') + 's' : '—';
+    // 每轮 → 阶段分组 + 连续同类折叠
+    const roundHtml = rounds.map((r2, ri) => {
+      const rows = [];
+      r2.items.forEach(it => {
+        const lbl = _traceLabel(it);
+        const fail = /失败|受限|异常|不安全|不存在/.test(lbl);
+        const prev = rows[rows.length - 1];
+        if (!fail && prev && prev.label === lbl && !prev.fail) {
+          prev.n += 1; prev.ms += it.elapsed_ms || 0; return;
+        }
+        rows.push({ label: lbl, fail, n: 1, ms: it.elapsed_ms || 0 });
+      });
+      let inner = '', curPhase = null;
+      const sums = { retrieve: 0, produce: 0, other: 0 };
+      rows.forEach(row => {
+        const ph = _phaseByLabel(row.label);
+        sums[ph] += row.ms;
+        if (ph !== curPhase) {
+          curPhase = ph;
+          inner += '<div class="tr-phase"><span class="chev">▾</span>' + _TRACE_PHASE[ph] + '<span class="tt"></span></div>';
+        }
+        inner += '<div class="tr-step"><span class="dt ' + (row.fail ? 'fail' : 'ok') + '"></span>' +
+          '<span class="nm">' + esc(row.label) + (row.n > 1 ? ' <span class="cnt">×' + row.n + '</span>' : '') + '</span>' +
+          '<span class="ms">' + (row.ms ? (row.ms / 1000).toFixed(1) + 's' : '') + '</span></div>';
+      });
+      // 阶段小计回写
+      inner = inner.replace(/(<div class="tr-phase"><span class="chev">▾<\/span>)(检索与阅读|生成产物|其他动作)/g, (all, head, title) => {
+        const key = { '检索与阅读': 'retrieve', '生成产物': 'produce', '其他动作': 'other' }[title];
+        return head + title + (sums[key] ? '<span class="tt">' + (sums[key] / 1000).toFixed(1) + 's</span>' : '');
+      });
+      const eng = r2.engine === 'cloud' ? '在线' : r2.engine === 'local' ? '离线' : r2.engine;
+      return '<div class="tr-round-h">' + icon('chat') + ' 第 ' + (ri + 1) + ' 轮 <span class="tr-round-ts">' + esc(r2.ts) + (eng ? ' · ' + esc(eng) : '') + '</span></div>' +
+        '<div class="tr-box">' + inner + '</div>';
+    }).join('');
+    body.innerHTML = '<div class="vw-trace2">' +
+      '<div class="tr-sum">' +
+      '<div class="tr-chip"><b>' + totalSteps + '</b><span>步骤</span></div>' +
+      '<div class="tr-chip"><b>' + secs + '</b><span>总耗时</span></div>' +
+      '<div class="tr-chip"><b>' + rounds.length + '</b><span>轮次</span></div>' +
+      '</div>' + roundHtml +
+      '<div class="tr-hint">与消息内摘要行同源 · 连续同类调用已折叠计数</div></div>';
+  }
+  function _phaseByLabel(label) {
+    if (/搜索|阅读|检索|深读|读取|列出/.test(label)) return 'retrieve';
+    if (/PPT|文档|写入|打包|计算|转换|表格|编排|生成|设计|编译/.test(label)) return 'produce';
+    return 'other';
   }
 
   function _traceLabel(it) {
@@ -641,55 +693,160 @@ export function createViewer(opts) {
     } catch (e) { docxDocs = []; }
   }
 
-  function _renderPreview(body) {
-    if (ppt === null || files === null || docxDocs === null) {
+  // ===== 预览 = 文件的 drill-down（0.10.2 B2，原型 pv-crumb/pv-top/pv-body）=====
+  // 进入口：聊天产物卡片 / 文件 tab 行 / 流式 ppt_page·doc_complete 自动亮相。
+  function openPreview(f) {
+    if (!f || !f.name) return;
+    previewFile = f;
+    if (!open) { setOpen(true, 'preview'); return; }
+    tab = 'preview';
+    el.querySelectorAll('.vw-tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'preview'));
+    renderBody();
+  }
+
+  async function _renderPreview(body) {
+    if (files === null) {
       body.innerHTML = '<div class="vw-empty">加载中…</div>';
-      Promise.all([ppt === null ? _loadPpt() : null, files === null ? loadFiles() : null,
-                   docxDocs === null ? _loadDocx() : null])
-        .then(() => { if (tab === 'preview') renderBody(); });
+      loadFiles().then(() => { if (tab === 'preview') renderBody(); });
       return;
     }
-    const decks = _pptMergedDecks();
-    const reports = _htmlArtifacts();
-    if (!decks.length && !reports.length && !(docxDocs || []).length) {
-      body.innerHTML = `<div class="vw-empty">还没有可预览的产物<br><small>AI 制作 PPT、Word 或生成报告时，会实时出现在这里</small></div>`;
+    if (!previewFile) {
+      const cur = opts.getCurrentChat();
+      const pv = (files || []).filter(f => !f.is_dir);
+      body.innerHTML = '<div class="vw-empty">从「文件」或聊天里的产物卡片选择要预览的内容' +
+        (pv.length ? '' : '<br><small>本会话还没有产物</small>') + '</div>' +
+        (pv.length ? '<div class="vw-files" style="margin-top:8px">' + pv.map(f => {
+          const url = cur ? '/api/chat/' + encodeURIComponent(cur.name) + '/workspace/download?path=' + encodeURIComponent(f.name) : '';
+          return '<div class="fl-row" data-pv-name="' + esc(f.name) + '" data-pv-url="' + esc(url) + '">' +
+            '<div class="fl-ic"><span class="ic">' + _icon(f.name) + '</span></div>' +
+            '<div class="fl-tx"><div class="fl-nm">' + esc(f.name) + '</div><div class="fl-mt">' + _fmtSize(f.size) + '</div></div>' +
+            '<button class="fl-eye" title="预览"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg></button></div>';
+        }).join('') + '</div>' : '');
+      body.querySelectorAll('.fl-row').forEach(r =>
+        r.addEventListener('click', () => openPreview({ name: r.dataset.pvName, url: r.dataset.pvUrl })));
       return;
     }
+    const f = previewFile;
+    const cur = opts.getCurrentChat();
+    const dlUrl = f.url || (cur ? '/api/chat/' + encodeURIComponent(cur.name) + '/workspace/download?path=' + encodeURIComponent(f.name) : '#');
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
     body.innerHTML =
-      decks.map(d => {
+      '<div class="pv-pane">' +
+      '<div class="pv-crumb">' +
+      '<button data-a="back-files" type="button"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>返回文件</button>' +
+      '<span class="sep">/</span><span class="cur">' + esc(f.name) + '</span>' +
+      '</div>' +
+      '<div class="pv-top">' +
+      '<div class="pv-title"><span class="ic">' + _icon(f.name) + '</span><span>' + esc(f.name) + '</span></div>' +
+      '<button class="pv-open" data-a="open-dir" type="button" title="在资源管理器中打开项目目录"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>打开位置</button>' +
+      '<a class="vw-dl" href="' + esc(dlUrl) + '" download="' + esc(f.name) + '"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>下载</a>' +
+      '</div>' +
+      '<div class="vw-body pv-body"></div>' +
+      '</div>';
+    body.querySelector('[data-a="back-files"]').addEventListener('click', () => {
+      previewFile = null;
+      tab = 'files';
+      el.querySelectorAll('.vw-tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'files'));
+      renderBody();
+    });
+    const dirBtn = body.querySelector('[data-a="open-dir"]');
+    if (dirBtn) dirBtn.addEventListener('click', async () => {
+      if (cur) { try { await api.openWorkdir(cur.name); } catch (e) { /* 失败无感 */ } }
+    });
+    const pvBody = body.querySelector('.pv-body');
+    _renderPreviewBody(pvBody, f, ext, dlUrl, cur);
+  }
+
+  // 预览体注册表（按扩展名分发；原型 #11「按类型渲染」）
+  async function _renderPreviewBody(pvBody, f, ext, dlUrl, cur) {
+    // pptx：SVG 逐页（回放 decks + 流式累积，按产物名匹配 deck）
+    if (ext === 'pptx') {
+      if (ppt === null) await _loadPpt();
+      const want = f.name.replace(/\.pptx$/i, '');
+      const all = _pptMergedDecks();
+      const decks = all.filter(d => {
+        const base = (d.pptx || d.title || '').replace(/\.pptx$/i, '');
+        return base && (want.includes(base) || base.includes(want));
+      });
+      const use = decks.length ? decks : all;
+      if (!use.length) { pvBody.innerHTML = _pvFallback(); return; }
+      pvBody.innerHTML = use.map(d => {
         const nums = Object.keys(d.pages).map(Number).sort((a, b) => a - b);
-        return `<div class="vw-ppt-deck">
-          <div class="vw-ppt-head">
-            <span class="vw-ppt-title">${icon('presentation')} ${esc(d.title)}</span>
-            <span class="vw-ppt-meta">${nums.length} 页${d.pptx_url ? ` · <a class="vw-ppt-dl" href="${d.pptx_url}" download>下载 PPTX</a>` : ''}</span>
-          </div>
-          ${nums.map(n => `<div class="vw-ppt-page">
-            <div class="vw-ppt-num">P${String(n).padStart(2, '0')}</div>
-            <div class="vw-ppt-svg" data-url="${esc(d.pages[n])}"><div class="vw-empty"><small>渲染中…</small></div></div>
-          </div>`).join('')}
-        </div>`;
-      }).join('') +
-      reports.map(h => `<div class="vw-ppt-deck vw-html-deck">
-        <div class="vw-ppt-head">
-          <span class="vw-ppt-title">${icon('globe')} ${esc(h.name)}</span>
-          <span class="vw-ppt-meta">${h.size ? _fmtSize(h.size) + ' · ' : ''}<a class="vw-ppt-dl" href="${esc(h.url)}" download>下载</a></span>
-        </div>
-        <div class="vw-html-frame" data-url="${esc(h.url)}"><div class="vw-empty"><small>渲染中…</small></div></div>
-      </div>`).join('');
-    // 0.10 M1-4：精排版 Word 文档（章节 markdown 预览）
-    const _docxHtml = (docxDocs || []).map(doc => `<div class="vw-ppt-deck vw-docx-deck">
-      <div class="vw-ppt-head">
-        <span class="vw-ppt-title">${icon('fileText')} ${esc(doc.title)} · Word</span>
-        <span class="vw-ppt-meta">${doc.sections || 0} 章</span>
-      </div>
-      ${(doc.section_list || []).map(sec2 => `<details class="vw-docx-sec">
-        <summary>${esc(sec2.section)}<span class="vw-docx-n">${sec2.chars || 0} 字</span></summary>
-        <div class="vw-docx-body">${esc(sec2.content || '')}</div>
-      </details>`).join('')}
-    </div>`).join('');
-    body.innerHTML = body.innerHTML + _docxHtml;
-    // 逐页拉 SVG 内联渲染（no-store：修复重发的同页要拿新内容）
-    body.querySelectorAll('.vw-ppt-svg[data-url]').forEach(box => {
+        return '<div class="vw-ppt-deck">' +
+          '<div class="vw-ppt-head"><span class="vw-ppt-title">' + icon('presentation') + ' ' + esc(d.title) + '</span>' +
+          '<span class="vw-ppt-meta">' + nums.length + ' 页</span></div>' +
+          nums.map(n => '<div class="vw-ppt-page">' +
+            '<div class="vw-ppt-num">P' + String(n).padStart(2, '0') + '</div>' +
+            '<div class="vw-ppt-svg" data-url="' + esc(d.pages[n]) + '"><div class="vw-empty"><small>渲染中…</small></div></div>' +
+            '</div>').join('') +
+          '</div>';
+      }).join('');
+      _hydratePptSvgs(pvBody);
+      return;
+    }
+    // html：sandbox iframe（JS 禁跑，经典版同款安全姿势）
+    if (ext === 'html' || ext === 'htm') {
+      pvBody.innerHTML = '<div class="vw-html-frame" data-url="' + esc(dlUrl) + '"><div class="vw-empty"><small>渲染中…</small></div></div>';
+      _hydrateHtmlFrames(pvBody);
+      return;
+    }
+    // docx：结构化章节回放（近似排版，注明以 Word 为准）
+    if (ext === 'docx') {
+      if (docxDocs === null) await _loadDocx();
+      const want = f.name.replace(/\.docx$/i, '');
+      const docs = (docxDocs || []).filter(d => {
+        const base = (d.title || d.deck || '').replace(/\.docx$/i, '');
+        return base && (want.includes(base) || base.includes(want));
+      });
+      const use = docs.length ? docs : (docxDocs || []);
+      if (!use.length) { pvBody.innerHTML = _pvFallback(); return; }
+      pvBody.innerHTML = use.map(doc => '<div class="vw-ppt-deck vw-docx-deck">' +
+        '<div class="vw-ppt-head"><span class="vw-ppt-title">' + icon('fileText') + ' ' + esc(doc.title) + '</span>' +
+        '<span class="vw-ppt-meta">' + (doc.sections || 0) + ' 章</span></div>' +
+        (doc.section_list || []).map(sec2 => '<details class="vw-docx-sec" open>' +
+          '<summary>' + esc(sec2.section) + '<span class="vw-docx-n">' + (sec2.chars || 0) + ' 字</span></summary>' +
+          '<div class="vw-docx-body">' + esc(sec2.content || '') + '</div>' +
+          '</details>').join('') +
+        '</div>').join('') + '<div class="pv-note">docx 预览为近似排版 · 下载后以 Word 打开为准</div>';
+      return;
+    }
+    // svg：内联矢量
+    if (ext === 'svg') {
+      try {
+        const t = await fetch(dlUrl, { cache: 'no-store' }).then(r => r.text());
+        pvBody.innerHTML = '<div class="pv-center">' + t + '</div>';
+        const svg = pvBody.querySelector('svg');
+        if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); svg.style.maxWidth = '100%'; svg.style.height = 'auto'; }
+      } catch (e) { pvBody.innerHTML = _pvFallback(); }
+      return;
+    }
+    // md/txt：marked 渲染 / 纯文本
+    if (ext === 'md' || ext === 'txt') {
+      try {
+        const t = await fetch(dlUrl, { cache: 'no-store' }).then(r => r.text());
+        if (ext === 'md' && typeof marked !== 'undefined') {
+          const html = marked.parse(t, { breaks: true });
+          pvBody.innerHTML = '<div class="pv-md">' + (typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html) + '</div>';
+        } else {
+          pvBody.innerHTML = '<div class="pv-md"><pre>' + esc(t) + '</pre></div>';
+        }
+      } catch (e) { pvBody.innerHTML = _pvFallback(); }
+      return;
+    }
+    // 图片
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) {
+      pvBody.innerHTML = '<div class="pv-center"><img src="' + esc(dlUrl) + '" alt="' + esc(f.name) + '"></div>';
+      return;
+    }
+    pvBody.innerHTML = _pvFallback();
+  }
+  function _pvFallback() {
+    return '<div class="vw-empty">该类型暂不支持预览<br><small>点右上「下载」用本地应用打开</small></div>';
+  }
+
+  // SVG 页与 HTML iframe 的水合（从旧 _renderPreview 抽出复用）
+  function _hydratePptSvgs(scope) {
+    scope.querySelectorAll('.vw-ppt-svg[data-url]').forEach(box => {
       const url = box.dataset.url;
       const draw = t => {
         box.innerHTML = t;
@@ -702,9 +859,9 @@ export function createViewer(opts) {
         if (box.isConnected) draw(t);
       }).catch(() => { box.innerHTML = '<div class="vw-empty"><small>加载失败</small></div>'; });
     });
-    // HTML 报告：拉文本进 sandbox iframe 渲染（allow-same-origin 不带 allow-scripts——
-    // 预览内 JS 禁跑，经典版同款安全姿势；下载端点带 attachment 头不影响 fetch）
-    body.querySelectorAll('.vw-html-frame[data-url]').forEach(box => {
+  }
+  function _hydrateHtmlFrames(scope) {
+    scope.querySelectorAll('.vw-html-frame[data-url]').forEach(box => {
       const url = box.dataset.url;
       const draw = t => {
         box.innerHTML = '';
@@ -739,9 +896,12 @@ export function createViewer(opts) {
     if (!pptLive[d.deck]) pptLive[d.deck] = { pages: {} };
     pptLive[d.deck].pages[d.page] = d.url;
     delete pptCache[d.url];  // 同页修复重发时强制重拉
-    if (!open) { setOpen(true, 'preview'); return; }  // 视窗关着：自动展开切预览（首页的「亮相」时刻）
-    if (tab === 'preview') renderBody();
-    // 视窗开着但在别的 tab：不抢，用户自己点「预览」
+    // 亮相时刻：首页到达即进入该 deck 的 drill-down 预览（0.10.2 B2）
+    if (d.page === 1 && !previewFile) {
+      openPreview({ name: (d.pptx || d.title || d.deck || '演示') + (/\.pptx$/i.test(d.pptx || '') ? '' : '.pptx'), url: d.pptx_url || '' });
+      return;
+    }
+    if (open && tab === 'preview') renderBody();
   }
 
   // 流式 doc_complete 事件入口（index.js 转发，限 .html/.ppt.html 产物）：
@@ -751,9 +911,8 @@ export function createViewer(opts) {
     if (htmlLive.some(h => h.url === d.url)) return;
     delete htmlCache[d.url];
     htmlLive.unshift({ url: d.url, name: d.name || '报告.html' });
-    if (!open) { setOpen(true, 'preview'); return; }  // 视窗关着：自动展开切预览
-    if (tab === 'preview') renderBody();
-    // 开着但在别的 tab：不抢，用户自己点「预览」
+    // HTML 报告亮相：直接进该产物的 drill-down 预览（0.10.2 B2）
+    openPreview({ name: d.name || '报告.html', url: d.url });
   }
 
   function _fmtSize(bytes) {    if (!bytes) return '0KB';
@@ -780,7 +939,7 @@ export function createViewer(opts) {
 
   // 会话切换/项目变化后刷新
   function onSessionChange() {
-    files = null; wd = null; handoff = null;
+    files = null; wd = null; handoff = null; previewFile = null;
     ppt = null; pptLive = {}; Object.keys(pptCache).forEach(k => delete pptCache[k]);
     htmlLive = []; Object.keys(htmlCache).forEach(k => delete htmlCache[k]);
     if (open) renderBody();
@@ -793,6 +952,7 @@ export function createViewer(opts) {
     onSessionChange,
     onPptPage,
     onDocComplete,
+    openPreview,
     get isOpen() { return open; },
   };
 }

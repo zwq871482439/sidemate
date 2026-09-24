@@ -607,12 +607,6 @@ def new_ui():
         return f.read()
 
 
-@app.get("/classic.html", response_class=HTMLResponse)
-def classic_ui():
-    """经典版 UI（0.10 转正后保留一个版本，下版本移除）"""
-    with open(os.path.join(WORKSPACE_DIR, "index.html"), "r", encoding="utf-8") as f:
-        return f.read()
-
 # 静态文件服务 — 加 no-cache 中间件
 _static_dir = os.path.join(WORKSPACE_DIR, "static")
 

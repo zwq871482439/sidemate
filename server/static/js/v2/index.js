@@ -114,6 +114,8 @@ const chatStream = createChatStream({
   onDone: async () => {
     state.generating = false;
     _streamState = null;
+    // A2（0.10.2）：先复位输入区运行态——后续任何 await 失败都不再留「停止」残影
+    try { if (_composer) _composer.setRunning(false); } catch (e) {}
     // card_data 视图态回写（唯一前端写通道，msg_id 定向；M1-B 边界）
     if (_cards && _doneData && _doneData.msg_id) {
       try {
@@ -131,10 +133,12 @@ const chatStream = createChatStream({
     }
     _cards = null;
     _doneData = null;
-    state.sessions = await loadSessions();   // 先刷新列表（msg_count 已变）
-    await loadCurrentMessages();             // 后端快照 = 真相
+    try {
+      state.sessions = await loadSessions();   // 先刷新列表（msg_count 已变）
+      await loadCurrentMessages();             // 后端快照 = 真相
+    } catch (e) { /* 快照拉取失败不阻断渲染（残影修复的另一半） */ }
     render();
-    maybePromptHandoff();  // 上下文 ≥80% 时弹交接建议（PLAN ②++）
+    try { maybePromptHandoff(); } catch (e) {}  // 上下文 ≥80% 时弹交接建议
   },
 });
 let _streamState = null;
@@ -287,7 +291,6 @@ function render() {
       ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
       <button class="tb-viewer ${_viewer && _viewer.isOpen ? 'on' : ''}" id="tbViewerBtn" title="视窗（会话/预览/文件/轨迹）">◧ 视窗</button>
-      <a class="tb-link" href="/" title="回经典版界面">经典版 ↗</a>
     </div>
     <div id="main-scroll"></div>
   `;
@@ -439,7 +442,8 @@ function renderChatArea() {
     renderChatFlow(scroll, state.messages, {
       getSession: () => state.sessions.find(c => c.current),
       onAskAnswer, getCardAnswer,
-      onPreviewDoc: (url) => _previewDoc(url),  // 消息下载栏「预览」→ 视窗预览 tab
+      onPreviewDoc: (url) => _previewDoc(url),  // 旧预览按钮兼容
+      onPreviewFile: (url, name) => _previewFile(url, name),  // 产物卡片「预览」→ 视窗 drill-down
       onKbDetail: (filename) => _openKbDetail(filename),  // ref 卡「详情」→ KB 页文档详情（挂账清账）
     });
     // 提纲待确认恢复（快照重建/刷新共用入口）
@@ -685,12 +689,15 @@ async function _openKbDetail(filename) {
 
 // 消息下载栏「预览」：打开视窗预览 tab 并滚到对应 HTML 报告（0.10.1 收尾）
 function _previewDoc(url) {
+  // 0.10.2 B2：预览改为文件 drill-down——从 URL 反解文件名
   if (!_viewer) return;
-  _viewer.setOpen(true, 'preview');
-  setTimeout(() => {
-    const frame = _viewer.el && _viewer.el.querySelector('.vw-html-frame[data-url="' + (url || '').replace(/"/g, '\\"') + '"]');
-    if (frame) frame.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 120);
+  let name = '报告.html';
+  try { const q = new URL(url, location.origin).searchParams.get('path'); if (q) name = q.split(/[\/]/).pop(); } catch (e) {}
+  _viewer.openPreview({ name, url });
+}
+function _previewFile(url, name) {
+  if (!_viewer) return;
+  _viewer.openPreview({ name: name || '产物', url: url || '' });
 }
 
 function renderStreamingBubble(st) {

@@ -101,7 +101,7 @@ export function createKBView(events) {
     el.innerHTML = `
       <div class="kb-hero" id="kbHero">
         <div class="kb-hero-ic">${iconSvg('upload')}</div>
-        <div class="kb-hero-tx"><b>上传文档到知识库</b>
+        <div class="kb-hero-tx"><b>添加文档到知识库</b>
         <span>PDF / Word / Excel / Markdown / TXT · 自动切分、向量化与打标<br>拖拽文件到此处，或点击选择（支持多选）</span></div>
       </div>
       <div class="kb-chips" id="kbChips"></div>
@@ -174,10 +174,10 @@ export function createKBView(events) {
       </div>
       ${state.pane === 'list' ? `
       <div class="kb-view-toggle" title="卡片/列表">
-        <button data-v="card" class="${state.view === 'card' ? 'on' : ''}" title="卡片视图">▦</button>
-        <button data-v="list" class="${state.view === 'list' ? 'on' : ''}" title="列表视图">${iconSvg('list')}</button>
+        <button data-v="card" class="${state.view === 'card' ? 'on' : ''}" title="卡片视图">${icon('grid')}</button>
+        <button data-v="list" class="${state.view === 'list' ? 'on' : ''}" title="列表视图">${icon('list')}</button>
       </div>` : ''}
-      <button class="kb-tool-btn" id="kbUploadBtn">${icon('upload')} 上传文档</button>
+      <button class="kb-tool-btn" id="kbUploadBtn">${icon('upload')} 添加文档</button>
       <input class="kb-search" placeholder="搜索文件名…" value="${esc(state.search)}" style="max-width:180px">
       <span class="kb-stat">${state.docs.length} 篇</span>
     `;
@@ -299,7 +299,7 @@ export function createKBView(events) {
     if (!grid) return;
     const docs = filteredDocs();
     if (!docs.length) {
-      grid.innerHTML = `<div class="kb-empty">${state.docs.length ? '没有匹配的文档' : '还没有文档，点「上传文档」或直接把文件拖进来'}</div>`;
+      grid.innerHTML = `<div class="kb-empty">${state.docs.length ? '没有匹配的文档' : '还没有文档，点「添加文档」或直接把文件拖进来'}</div>`;
       return;
     }
     grid.className = 'kb-grid ' + (state.view === 'list' ? 'as-list' : '');

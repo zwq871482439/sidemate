@@ -3,7 +3,7 @@
 // 流式发送/卡片回放（CardRenderer）随对话区迁入增量补上。
 
 import { api } from './api.js';
-import { icon } from './icons.js';
+import {icon, iconSvg} from './icons.js';
 import { renderCardHistory } from './cards.js';
 import { extractCards, hydrateCards, extractMermaid, hydrateMermaid, extractD2, hydrateD2 } from './cards_content.js';
 
@@ -84,6 +84,26 @@ function _linkRefSup(html, count) {
   });
 }
 
+
+// 产物卡片（原型 #1-5 元素）：.art-card/.art-ic/.art-name/.art-meta/.art-acts
+const _ART_TYPE = { docx: 'Word 文档', pptx: 'PPT 演示', html: '网页报告', md: 'Markdown', svg: '图表', txt: '文本', xlsx: '表格', pdf: 'PDF', zip: '压缩包' };
+const _ART_ICON = { docx: 'fileText', pptx: 'presentation', html: 'globe', md: 'fileText', svg: 'barChart', txt: 'file', xlsx: 'table', pdf: 'fileText', zip: 'archive' };
+function _fmtSizeB(b) { if (!b) return ''; if (b > 1048576) return (b / 1048576).toFixed(1) + 'MB'; return Math.round(b / 1024) + 'KB'; }
+function _artCard(a, opts) {
+  const url = a.url || a.doc_url || '';
+  const fn = a.filename || a.doc_filename || 'document.docx';
+  const ext = (fn.split('.').pop() || '').toLowerCase();
+  const meta = [_ART_TYPE[ext] || '文件', _fmtSizeB(a.size), '刚刚'].filter(Boolean).join(' · ');
+  const canPv = opts && opts.onPreviewFile && !!url;
+  return `<div class="art-card" data-pv-url="${esc(url)}" data-pv-name="${esc(fn)}">
+    <div class="art-ic${ext === 'pptx' ? ' gold' : ''}"><span class="ic">${iconSvg(_ART_ICON[ext] || 'file')}</span></div>
+    <div class="art-tx"><div class="art-name">${esc(fn)}</div><div class="art-meta">${esc(meta)}</div></div>
+    <div class="art-acts">
+      ${canPv ? `<button class="art-btn primary" data-pv><span class="ic">${iconSvg('search')}</span>预览</button>` : ''}
+      <a class="art-btn ghost" href="${esc(url)}" download="${esc(fn)}"><span class="ic">${iconSvg('file')}</span>下载</a>
+    </div></div>`;
+}
+
 function _renderMsg(m, opts) {
   const isUser = m.role === 'user';
   // 0.10.1 定稿：无头像框（用户评审：用处不大还影响视线）；气泡左右分布（我右/AI 左）
@@ -133,19 +153,12 @@ function _renderMsg(m, opts) {
   // 中断标记
   const abortedHtml = m._aborted
     ? `<div class="m-aborted">■ ${ABORT_LABEL[m._abort_reason] || '已终止'}</div>` : '';
-  // 下载栏（doc_url / artifacts）
+  // 产物预览卡片（0.10.2 B3，原型 artifact-card-0102：图标+名称+元信息+预览/下载）
   let docBar = '';
   const arts = (m.artifacts && m.artifacts.length) ? m.artifacts
     : (m.doc_url ? [{ url: m.doc_url, filename: m.doc_filename || 'document.docx' }] : []);
   if (arts.length) {
-    docBar = '<div class="m-doc-bar">' + arts.map(a => {
-      const url = a.url || a.doc_url || '';
-      const fn = a.filename || a.doc_filename || 'document.docx';
-      // HTML 报告/演示文稿带「预览」：点开右视窗预览 tab 就地渲染（0.10.1 收尾）
-      const pv = /\.html?$/i.test(fn) && opts && opts.onPreviewDoc
-        ? `<button class="m-doc-preview" data-url="${esc(url)}" title="在右侧视窗预览">${icon('globe')} 预览</button>` : '';
-      return `${pv}<a href="${esc(url)}" download="${esc(fn)}" target="_blank">下载 ${esc(fn)}</a>`;
-    }).join('') + '</div>';
+    docBar = '<div class="m-arts">' + arts.map(a => _artCard(a, opts)).join('') + '</div>';
   }
   const stats = _statsLine(m);
   const statsHtml = stats ? `<div class="m-stats">${esc(stats)}</div>` : '';
@@ -174,7 +187,15 @@ export function renderChatFlow(container, messages, opts) {
   hydrateCards(flow, opts || {});
   hydrateMermaid(flow);
   hydrateD2(flow);
-  // HTML 报告「预览」按钮 → opts.onPreviewDoc（index.js 转视窗预览 tab）
+  // 产物卡片 → 视窗预览（整卡可点；下载链接不冒泡）
+  if (opts && opts.onPreviewFile) {
+    flow.querySelectorAll('.art-card').forEach(card =>
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('a')) return;  // 下载链接走原生行为
+        opts.onPreviewFile(card.dataset.pvUrl || '', card.dataset.pvName || '');
+      }));
+  }
+  // 兼容旧「预览」按钮（m-doc-preview）
   if (opts && opts.onPreviewDoc) {
     flow.querySelectorAll('.m-doc-preview').forEach(b =>
       b.addEventListener('click', () => opts.onPreviewDoc(b.dataset.url)));
