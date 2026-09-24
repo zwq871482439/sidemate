@@ -850,50 +850,123 @@ async function _maybeReattachGen(cur) {
     // 有进行中生成 → 设置状态 + 重附 SSE
     console.info('[V2] 检测到进行中生成，重附:', cur.name);
     state.generating = true;
+    // 0.10.2：重附也建卡片区——gen-live 从 seq=0 全量回放，agent_timeline/
+    // agent_think/agent_status 逐条喂入，刷新后步骤台账/思考轮完整重建
+    if (!_cards) _cards = createCardArea();
     render();  // 触发流式气泡渲染
     // 用 EventSource 连 gen-live（GET SSE）
     const es = new EventSource('/api/chats/' + encodeURIComponent(cur.name) + '/gen-live');
     window._v2GenReattach = es;  // 全局引用防 GC
+    const _reattachDone = () => {
+      es.close();
+      window._v2GenReattach = null;
+      state.generating = false;
+      try { if (_composer) _composer.setRunning(false); } catch (e2) {}
+      (async () => {
+        // card_data 回写（与正常 onDone 同款；重放期间 _cards 已重建完整台账）
+        if (_cards && _doneData && _doneData.msg_id) {
+          try {
+            const cardData = _cards.finalize();
+            if (cardData.length) {
+              const c2 = state.sessions.find(x => x.current);
+              if (c2) {
+                await fetch('/api/chats/' + encodeURIComponent(c2.name) + '/enrich', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ msg_id: _doneData.msg_id, card_data: cardData }),
+                });
+              }
+            }
+          } catch (e2) { /* 回写失败不影响快照 */ }
+        }
+        _cards = null;
+        _doneData = null;
+        // 刷新消息（快照=真相）——任何一步失败也必须重渲染，否则留"生成中"幽灵气泡
+        try { state.sessions = await loadSessions(); } catch (e2) {}
+        try { await loadCurrentMessages(); } catch (e2) {}
+        render();
+      })();
+    };
     es.onmessage = (ev) => {
-      if (ev.data === '[DONE]') {
-        es.close();
-        window._v2GenReattach = null;
-        state.generating = false;
-        // 刷新消息（快照=真相）
-        loadSessions().then(() => loadCurrentMessages().then(() => render()));
-        return;
-      }
+      if (ev.data === '[DONE]') { _reattachDone(); return; }
       try {
         const d2 = JSON.parse(ev.data);
         _handleReattachEvent(d2);
       } catch (e) { /* 非 JSON 忽略 */ }
     };
     es.onerror = () => {
-      es.close();
-      window._v2GenReattach = null;
       // 可能生成已结束（服务端关流）
-      state.generating = false;
-      loadSessions().then(() => loadCurrentMessages().then(() => render()));
+      _reattachDone();
     };
   } catch (e) { /* gen-state 查询失败静默 */ }
 }
 
 // 重附事件处理：轻量版——只更新状态条+流式文本（卡片/复杂事件走快照）
 function _handleReattachEvent(d) {
-  if (d.type === 'token' || d.type === 'content') {
-    if (!_streamState) _streamState = { text: '', think: '', status: '' };
-    _streamState.text += d.content || '';
-    renderStreamingBubble(_streamState);
-  } else if (d.type === 'agent_think') {
-    if (!_streamState) _streamState = { text: '', think: '', status: '' };
-    _streamState.think += (d.content && d.content.content) || '';
-    renderStreamingBubble(_streamState);
-  } else if (d.type === 'agent_status') {
-    if (!_streamState) _streamState = { text: '', think: '', status: '' };
-    _streamState.status = _agentStatusLabel(d.status || '');
-    renderStreamingBubble(_streamState);
-  } else if (d.type === 'done') {
-    // done 由 [DONE] 统一处理
+  const _ensure = () => {
+    if (!_streamState) _streamState = { text: '', think: '', status: '', sources: null, channels: null };
+    return _streamState;
+  };
+  // 卡片区吃全部过程事件（时间线步骤/思考轮/摘要——刷新恢复"过程可视化"的关键）
+  if (_cards) {
+    try { _cards.handleEvent(d); } catch (e) { /* 单事件失败不阻断 */ }
+  }
+  switch (d.type) {
+    case 'token':
+    case 'content':
+      _ensure().text += d.content || '';
+      renderStreamingBubble(_streamState);
+      break;
+    case 'think_token':
+      _ensure().think += d.content || '';
+      renderStreamingBubble(_streamState);
+      break;
+    case 'agent_think':
+      _ensure().think += (d.content && d.content.content) || '';
+      renderStreamingBubble(_streamState);
+      break;
+    case 'agent_status':
+      _ensure().status = _agentStatusLabel(d.status || '');
+      renderStreamingBubble(_streamState);
+      break;
+    case 'stream':  // 并行模式双列
+      {
+        const st = _ensure();
+        if (d.channel === 'local' || d.channel === 'cloud') {
+          if (!st.channels) st.channels = { local: { text: '', phase: '' }, cloud: { text: '', phase: '' } };
+          st.channels[d.channel].text += d.content || '';
+        } else {
+          st.text += d.content || '';
+        }
+        renderStreamingBubble(_streamState);
+      }
+      break;
+    case 'phase':
+      {
+        const st = _ensure();
+        if (d.channel && st.channels && st.channels[d.channel]) st.channels[d.channel].phase = d.phase || '';
+        renderStreamingBubble(_streamState);
+      }
+      break;
+    case 'sources':
+    case 'kb_sources':
+      _ensure().sources = d.sources || null;
+      renderStreamingBubble(_streamState);
+      break;
+    case 'ppt_page':
+      if (_viewer) _viewer.onPptPage(d);
+      break;
+    case 'doc_complete':
+    case 'doc_ready':
+      if (_viewer && d.url) _viewer.onDocComplete(d);
+      break;
+    case 'error':
+      _ensure().error = d.content || '生成出错';
+      renderStreamingBubble(_streamState);
+      break;
+    case 'done':
+      // done 事件带 msg_id：留给 _reattachDone 做 card_data 回写
+      if (d && d.msg_id) _doneData = d;
+      break;
   }
 }
 
