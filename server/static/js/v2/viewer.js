@@ -400,6 +400,9 @@ export function createViewer(opts) {
   function renderBody() {
     const body = el.querySelector('.vw-body');
     if (!body) return;
+    // 预览 drill-down 态：外层滚动容器切换为撑满面板宿主（去 padding/滚动，
+    // 由 pv-pane 内的 pv-body 自行滚动）——原型 pv-pane 与 vw-head 平级
+    body.classList.toggle('pv-host', tab === 'preview' && !!previewFile);
     if (tab === 'session') {
       if (wd === null) {
         body.innerHTML = '<div class="vw-empty">加载中…</div>';
@@ -519,15 +522,19 @@ export function createViewer(opts) {
         ${files.map(f => {
           const url = '/api/chat/' + encodeURIComponent(filesFor) + '/workspace/download?path=' + encodeURIComponent(f.name);
           const cur = (previewFile ? previewFile.name : lastPreviewName) === f.name;
-          return `<div class="fl-row${cur ? ' cur' : ''}" data-pv-name="${esc(f.name)}" data-pv-url="${esc(url)}" title="预览 ${esc(f.name)}">
+          return `<div class="fl-row${cur ? ' cur' : ''}" data-pv-name="${esc(f.name)}" data-pv-url="${esc(url)}">
             <div class="fl-ic${/\.pptx$/i.test(f.name) ? ' gold' : ''}"><span class="ic">${_icon(f.name)}</span></div>
             <div class="fl-tx"><div class="fl-nm">${esc(f.name)}</div><div class="fl-mt">${_fmtSize(f.size)}</div></div>
             <button class="fl-eye" title="预览"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            <a class="fl-dl" href="${esc(url)}" download="${esc(f.name)}" title="下载"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg></a>
           </div>`;
         }).join('')}
       </div>`;
-      body.querySelectorAll('.fl-row').forEach(r =>
-        r.addEventListener('click', () => openPreview({ name: r.dataset.pvName, url: r.dataset.pvUrl })));
+      body.querySelectorAll('.fl-row .fl-eye').forEach(btn =>
+        btn.addEventListener('click', () => {
+          const r = btn.closest('.fl-row');
+          openPreview({ name: r.dataset.pvName, url: r.dataset.pvUrl });
+        }));
     } else if (tab === 'preview') {
       _renderPreview(body);
     } else {
@@ -724,8 +731,11 @@ export function createViewer(opts) {
             '<div class="fl-tx"><div class="fl-nm">' + esc(f.name) + '</div><div class="fl-mt">' + _fmtSize(f.size) + '</div></div>' +
             '<button class="fl-eye" title="预览"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg></button></div>';
         }).join('') + '</div>' : '');
-      body.querySelectorAll('.fl-row').forEach(r =>
-        r.addEventListener('click', () => openPreview({ name: r.dataset.pvName, url: r.dataset.pvUrl })));
+      body.querySelectorAll('.fl-row .fl-eye').forEach(btn =>
+        btn.addEventListener('click', () => {
+          const r = btn.closest('.fl-row');
+          openPreview({ name: r.dataset.pvName, url: r.dataset.pvUrl });
+        }));
       return;
     }
     const f = previewFile;
@@ -881,12 +891,13 @@ export function createViewer(opts) {
         iframe.className = 'vw-html-iframe';
         iframe.setAttribute('sandbox', 'allow-same-origin');
         box.appendChild(iframe);
-        iframe.onload = () => {
+        const _fit = () => {
           try {
             const h = iframe.contentWindow.document.body.scrollHeight;
-            iframe.style.height = Math.min(h + 24, 2000) + 'px';
+            iframe.style.height = Math.max(420, Math.min(h + 24, 2000)) + 'px';
           } catch (e) { iframe.style.height = '420px'; }
         };
+        iframe.onload = () => { _fit(); setTimeout(_fit, 400); setTimeout(_fit, 1500); };
         const doc = iframe.contentDocument || iframe.contentWindow.document;
         doc.open();
         doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">' +

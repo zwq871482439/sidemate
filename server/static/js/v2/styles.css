@@ -1620,7 +1620,14 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .fl-eye { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; opacity: 0; transition: opacity .15s; display: inline-flex; }
 .fl-row:hover .fl-eye { opacity: 1; }
 .fl-eye:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
+.fl-dl { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; opacity: 0; transition: opacity .15s; display: inline-flex; text-decoration: none; }
+.fl-row:hover .fl-dl { opacity: 1; }
+.fl-dl:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
+/* 用户定稿 0.10.2：文件行点图标才有反应（预览/下载），整行不再可点 */
+.fl-row { cursor: default; }
+.vw-body.pv-host { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .pv-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.vw-body.pv-body { flex: 1; min-height: 0; overflow-y: auto; }
 .pv-crumb { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0; }
 .pv-crumb button { display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent; color: var(--d1-accent-3); font-size: 11.5px; font-family: inherit; cursor: pointer; border-radius: 6px; padding: 4px 8px; }
 .pv-crumb button:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
