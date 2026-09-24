@@ -1200,7 +1200,7 @@ sup.ref-n:hover { text-decoration: underline; }
   color: var(--d1-ink-3); padding: 7px 12px; border-radius: 7px; cursor: pointer;
 }
 .vw-tab:hover { color: var(--d1-ink); background: var(--d1-paper); }
-.vw-tab.on { color: var(--d1-accent); background: rgba(15,43,70,.07); font-weight: 600; }
+.vw-tab.on { color: var(--d1-accent); background: var(--d1-paper-2); font-weight: 600; }
 .vw-close {
   margin-left: auto; border: none; background: none; color: var(--d1-ink-3);
   font-size: 15px; cursor: pointer; width: 30px; height: 30px; border-radius: 7px;
@@ -1638,7 +1638,7 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .pv-center img { max-width: 100%; border-radius: 4px; }
 .pv-md { background: #fff; border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-sm); padding: 18px 22px; font-size: 13px; line-height: 1.8; }
 .pv-md pre { white-space: pre-wrap; font-family: var(--d1-outlier); font-size: 12px; }
-.pv-note { text-align: center; font-size: 10.5px; color: var(--d1-ink-3); padding: 8px 6px; }
+.pv-note { text-align: center; font-size: 10.5px; color: var(--d1-ink-3); padding: 6px; }
 
 /* ============================================================
    0.10.2 B5 视窗·轨迹 阶段台账（原型 tr-sum/tr-box/tr-round-h）

@@ -41,6 +41,7 @@ export function createViewer(opts) {
   let pptLive = {};    // 流式期间即时累积：deck -> { title, pages: {n: url} }
   let htmlLive = [];   // 流式期间 doc_complete 的 HTML 报告：[{url, name}]
   let previewFile = null;  // 0.10.2 B2：预览 = 文件的 drill-down。{name, url, size, live}
+  let lastPreviewName = '';  // 最近预览过的文件名：返回文件 tab 后原行仍金条定位
   const htmlCache = {}; // url -> 文本（iframe srcdoc 用；换版重发生效靠 no-store 拉新）
   const pptCache = {}; // url -> svg 文本（避免每页到达时全量重拉）
 
@@ -517,7 +518,7 @@ export function createViewer(opts) {
         <div class="vw-cap">本会话产物 · ${files.length} 个</div>
         ${files.map(f => {
           const url = '/api/chat/' + encodeURIComponent(filesFor) + '/workspace/download?path=' + encodeURIComponent(f.name);
-          const cur = previewFile && previewFile.name === f.name;
+          const cur = (previewFile ? previewFile.name : lastPreviewName) === f.name;
           return `<div class="fl-row${cur ? ' cur' : ''}" data-pv-name="${esc(f.name)}" data-pv-url="${esc(url)}" title="预览 ${esc(f.name)}">
             <div class="fl-ic${/\.pptx$/i.test(f.name) ? ' gold' : ''}"><span class="ic">${_icon(f.name)}</span></div>
             <div class="fl-tx"><div class="fl-nm">${esc(f.name)}</div><div class="fl-mt">${_fmtSize(f.size)}</div></div>
@@ -698,6 +699,7 @@ export function createViewer(opts) {
   function openPreview(f) {
     if (!f || !f.name) return;
     previewFile = f;
+    lastPreviewName = f.name;
     if (!open) { setOpen(true, 'preview'); return; }
     tab = 'preview';
     el.querySelectorAll('.vw-tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'preview'));
@@ -744,15 +746,25 @@ export function createViewer(opts) {
       '<div class="vw-body pv-body"></div>' +
       '</div>';
     body.querySelector('[data-a="back-files"]').addEventListener('click', () => {
+      const backName = f.name;
       previewFile = null;
       tab = 'files';
       el.querySelectorAll('.vw-tab').forEach(x => x.classList.toggle('on', x.dataset.t === 'files'));
       renderBody();
+      // 规格#12：返回文件 tab 并定位原行（滚入视口中央）
+      setTimeout(() => {
+        const row = el.querySelector('.fl-row.cur') ||
+          [...el.querySelectorAll('.fl-row')].find(r => r.dataset.pvName === backName);
+        if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 60);
     });
     const dirBtn = body.querySelector('[data-a="open-dir"]');
     if (dirBtn) dirBtn.addEventListener('click', async () => {
       if (cur) { try { await api.openWorkdir(cur.name); } catch (e) { /* 失败无感 */ } }
     });
+    // 规格#1：正在预览的聊天产物卡片同步金边（.previewing）
+    document.querySelectorAll('.art-card').forEach(c =>
+      c.classList.toggle('previewing', c.dataset.pvName === f.name));
     const pvBody = body.querySelector('.pv-body');
     _renderPreviewBody(pvBody, f, ext, dlUrl, cur);
   }
@@ -939,7 +951,8 @@ export function createViewer(opts) {
 
   // 会话切换/项目变化后刷新
   function onSessionChange() {
-    files = null; wd = null; handoff = null; previewFile = null;
+    files = null; wd = null; handoff = null; previewFile = null; lastPreviewName = '';
+    document.querySelectorAll('.art-card.previewing').forEach(c => c.classList.remove('previewing'));
     ppt = null; pptLive = {}; Object.keys(pptCache).forEach(k => delete pptCache[k]);
     htmlLive = []; Object.keys(htmlCache).forEach(k => delete htmlCache[k]);
     if (open) renderBody();
