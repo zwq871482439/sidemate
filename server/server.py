@@ -183,6 +183,7 @@ else:
 # ===== 加载核心框架 =====
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -595,16 +596,15 @@ app.include_router(_r_workdir.router)
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    """0.10 转正：新版三栏界面为默认（M5）；经典版挪至 /classic.html"""
-    with open(os.path.join(WORKSPACE_DIR, "newUI.html"), "r", encoding="utf-8") as f:
+    """0.10.2：新版三栏界面即产品本体（index.html 正名，newUI.html 退役）"""
+    with open(os.path.join(WORKSPACE_DIR, "index.html"), "r", encoding="utf-8") as f:
         return f.read()
 
 
-@app.get("/newUI.html", response_class=HTMLResponse)
-def new_ui():
-    """新版 UI 别名（兼容旧链接）"""
-    with open(os.path.join(WORKSPACE_DIR, "newUI.html"), "r", encoding="utf-8") as f:
-        return f.read()
+@app.get("/newUI.html")
+def new_ui_alias():
+    """旧链接兼容：302 到 /（0.10.2 起入口只有 /）"""
+    return RedirectResponse(url="/", status_code=302)
 
 
 # 静态文件服务 — 加 no-cache 中间件

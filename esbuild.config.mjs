@@ -40,13 +40,13 @@ if (checkOnly) {
   syncFingerprints();
 }
 
-// 构建后把 newUI.html 里 bundle.js/bundle.css 的 ?v= 指纹同步为产物内容哈希。
+// 构建后把 index.html 里 bundle.js/bundle.css 的 ?v= 指纹同步为产物内容哈希。
 // 防旧缓存玄学：0.10.1 R2 验收实测——bundle 重建但指纹停在旧值，测试方浏览器
 // 沿用 09-09 的缓存跑 R2，已修的 chip 泄漏被误报"修复失效"。
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 function syncFingerprints() {
-  const htmlPath = join(root, 'server', 'newUI.html');
+  const htmlPath = join(root, 'server', 'index.html');
   let html = readFileSync(htmlPath, 'utf8');
   let changed = false;
   for (const name of ['bundle.js', 'bundle.css']) {

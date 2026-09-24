@@ -761,38 +761,35 @@ export function createSettingsView(events) {
   // ============ 关于子页 ============
   async function renderAbout(body) {
     body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
-    const [status, res] = await Promise.all([
-      fetch('/api/status').then(r => r.json()).catch(() => ({})),
-      fetch('/api/resource-info').then(r => r.json()).catch(() => ({})),
-    ]);
-    const mem = res.memory || res;
+    // 0.10.2 修复：此前抓 /api/resource-info（无 total_mem_gb/python/os 字段）导致全 '--'
+    const info = await fetch('/api/system/info').then(r => r.json()).catch(() => ({}));
     body.innerHTML = `
       <div class="set-group">
         <h2>程序版本</h2>
-        <div class="set-row"><div class="stx"><b>桌伴 Sidemate</b></div><span style="color:var(--d1-accent-3);font-weight:600">${esc(status.version || '--')}</span></div>
+        <div class="set-row"><div class="stx"><b>桌伴 Sidemate</b></div><span style="color:var(--d1-accent-3);font-weight:600">${esc(info.version_display || info.version || '--')}</span></div>
         <div class="set-row"><div class="stx"><b>新手指引</b><p>重新查看首次使用的引导</p></div>
           <button class="kb-tool-btn" id="abTour">重新查看新手指引</button></div>
       </div>
       <div class="set-group">
         <h2>运行状态</h2>
-        <div class="set-row"><div class="stx"><b>总内存</b></div><span>${mem.total_gb || mem.total_mem_gb || '--'} GB</span></div>
-        <div class="set-row"><div class="stx"><b>可用内存</b></div><span>${mem.available_mem_gb || '--'} GB</span></div>
-        <div class="set-row"><div class="stx"><b>Python</b></div><span>${esc(res.python || res.python_version || '--')}</span></div>
-        <div class="set-row"><div class="stx"><b>操作系统</b></div><span style="font-size:12px">${esc(res.os || '--')}</span></div>
+        <div class="set-row"><div class="stx"><b>总内存</b></div><span>${info.total_mem_gb != null ? info.total_mem_gb : '--'} GB</span></div>
+        <div class="set-row"><div class="stx"><b>可用内存</b></div><span>${info.available_mem_gb != null ? info.available_mem_gb : '--'} GB</span></div>
+        <div class="set-row"><div class="stx"><b>Python</b></div><span>${esc(info.python || '--')}</span></div>
+        <div class="set-row"><div class="stx"><b>操作系统</b></div><span style="font-size:12px">${esc(info.os_info || '--')}</span></div>
         <div class="set-row"><div class="stx"></div><button class="kb-tool-btn" id="abDiag">导出诊断报告</button></div>
       </div>
       <div class="set-group">
         <h2>产品描述</h2>
         <div class="sub" style="line-height:1.8">
-          桌伴 Sidemate 是一款本地优先的 AI 桌面应用：离线模型/在线 API 双模，
-          本地知识库，数据不出本机。
+          桌伴 Sidemate —— 不上传你的数据，也能用 AI。它跑在你自己的电脑上：
+          离线模型断网可用，在线大模型按需接入；把文档喂给它，检索和问答都在本机完成。
+          从聊天问答、知识库检索，到写 Word、做可编辑的 PPT，产物直接落进你的项目文件夹。
         </div>
       </div>`;
 
     body.querySelector('#abTour').addEventListener('click', () => {
-      // 新手引导在经典版呈现（welcome-tour.js），清标记后回经典版即可重看
-      localStorage.removeItem('sidemate_welcomed');
-      localStorage.removeItem('sidemate_toured');
+      // 0.10.2：v2 自带 3 步引导（tour.js），清标记刷新即重看（经典版已退役）
+      try { localStorage.removeItem('v2_tour_done'); } catch (e) {}
       location.href = '/';
     });
     body.querySelector('#abDiag').addEventListener('click', () => {
