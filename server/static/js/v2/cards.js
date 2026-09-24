@@ -110,6 +110,20 @@ export function createCardArea() {
   // L1/L2 骨架
   let pill, ledger, _curPhase = null, _phaseEl = null, _phaseSum = { retrieve: 0, produce: 0, other: 0 };
   let _t0 = null, _cnt = { searches: 0, fetches: 0, kb: 0, steps: 0, rounds: 0 };
+  let _tickTimer = null;  // 读秒定时器：SSE 静默期也持续更新
+
+  function _startTick() {
+    if (_tickTimer) return;
+    _tickTimer = setInterval(() => {
+      if (_t0 && pill && pill.querySelector('.ts-dot').classList.contains('run')) {
+        const secs = Math.round((Date.now() - _t0) / 100) / 10;
+        pill.querySelector('.ts-ms').textContent = secs ? secs + 's' : '';
+      }
+    }, 1000);
+  }
+  function _stopTick() {
+    if (_tickTimer) { clearInterval(_tickTimer); _tickTimer = null; }
+  }
 
   function _skeleton() {
     _curPhase = null; _phaseEl = null; _phaseSum = { retrieve: 0, produce: 0, other: 0 };
@@ -216,7 +230,7 @@ export function createCardArea() {
   }
 
   function handleEvent(d) {
-    if (!_t0) _t0 = Date.now();
+    if (!_t0) { _t0 = Date.now(); _startTick(); }
     if (d.type === 'agent_timeline') {
       // 扁平步骤（local/parallel 的 Step 协议：start/done）
       const id = d.step;
@@ -338,13 +352,14 @@ export function createCardArea() {
       _cnt.fetches = summaryData.fetches || _cnt.fetches;
       _cnt.kb = summaryData.kb_hits || _cnt.kb;
     }
+    _stopTick();
     _setPill(false);
     if (pill) pill.classList.remove('open');
     if (ledger) ledger.classList.remove('open');
     return cardData;
   }
 
-  function reset() { _skeleton(); steps = {}; units = []; curUnit = null; docLoaded = []; summaryData = null; hintText = ''; _t0 = null; _cnt = { searches: 0, fetches: 0, kb: 0, steps: 0, rounds: 0 }; }
+  function reset() { _stopTick(); _skeleton(); steps = {}; units = []; curUnit = null; docLoaded = []; summaryData = null; hintText = ''; _t0 = null; _cnt = { searches: 0, fetches: 0, kb: 0, steps: 0, rounds: 0 }; }
   function isEmpty() { return !Object.keys(steps).length && !units.length && !docLoaded.length && !summaryData && !hintText; }
 
   return { el, handleEvent, finalize, reset, isEmpty };

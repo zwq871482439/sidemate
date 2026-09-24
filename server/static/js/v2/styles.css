@@ -1570,7 +1570,7 @@ body.narrow #viewer.open ~ .vw-backdrop {
    色块——与原型不符（原型台账内部是纯行样式），一并去除 */
 .think-ledger .cb-reason { background: transparent; border: none; border-radius: 0; margin-bottom: 2px; overflow: visible; }
 .think-ledger .cb-reason-head { padding: 4px 0; }
-.think-ledger .cb-reason-body { padding: 0 0 4px 16px; border-left: 1px dashed var(--d1-n-line); margin-left: 5px; }
+.think-ledger .cb-reason-body { padding: 0 0 4px 16px; }
 .think-ledger.open { display: block; }
 .tr-phase { display: flex; align-items: center; gap: 8px; padding: 8px 14px 2px; font-size: 11.5px; font-weight: 600; color: var(--d1-accent-3); }
 .tr-phase .chev { font-size: 10px; color: var(--d1-ink-3); }
