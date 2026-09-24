@@ -623,6 +623,32 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             "ts": now_ts,
                         })
 
+                    # 0.10.2：create_docx(build) 直达路径也派生产物（此前仅 set_doc_status
+                    # 路径派生——模型不调 set_doc_status 时消息不落 artifacts，卡片缺失）
+                    if (status_val == "docx_done"
+                            and content.get("action") == "build"
+                            and content.get("filename")
+                            and content.get("url")):
+                        from urllib.parse import quote as _url_quote  # 函数内后段才局部导入，这里必须自带
+                        _dx_name = content["filename"]
+                        if not _dx_name.lower().endswith(".docx"):
+                            _dx_name += ".docx"
+                        _dx_url = "/api/chat/%s/workspace/download?path=%s" % (
+                            _chat_id, _url_quote(_dx_name, safe=''))
+                        if not _doc_complete_sent:
+                            _doc_complete_sent = True
+                            _doc_complete_url = _dx_url
+                            _doc_complete_filename = _dx_name
+                        if not any(a.get("filename") == _dx_name for a in _artifacts):
+                            _artifacts.append({"url": _dx_url, "filename": _dx_name})
+                        yield sse_event("doc_complete", {
+                            "filename": _dx_name,
+                            "doc_url": _dx_url,
+                            "md_filename": "",
+                            "total_time": max(0.0, time.time() - _pipeline_start_ts),
+                            "ts": now_ts,
+                        })
+
                     # P6: 统一产物下载——table_ops write / format_convert 成功后也派发产物事件
                     # 复用 doc_complete 事件类型（前端已有下载 tag 渲染），用 workspace 下载接口（支持 xlsx/txt/md 等）
                     # M2-4: deliver_pack_done（成果包 zip）同通道

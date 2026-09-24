@@ -2181,6 +2181,16 @@ class AgentLoop:
             _d2 = {"name": data.get("path", ""), "planned": bool(data.get("pending")),
                    "overwrite": bool(data.get("overwrite") or data.get("overwritten"))}
             return get_status_event(tool_name, "done", **_d2)
+        elif tool_name == "create_docx":
+            # 0.10.2：build 完成带 filename/url（pipeline 据此派生产物卡片——
+            # 此前只有 set_doc_status 路径派生，模型直接 create_docx(build) 收工时
+            # 消息不落 artifacts，聊天产物卡片/下载全部缺失）
+            return get_status_event(tool_name, "done",
+                                    action=args.get("action", "") or data.get("action", ""),
+                                    filename=data.get("filename", ""),
+                                    url=data.get("url", ""),
+                                    sections=data.get("sections", 0),
+                                    chars=data.get("chars", 0))
         elif tool_name == "set_exec_mode":
             return get_status_event(tool_name, "done", action=data.get("exec_mode", ""))
         elif tool_name == "set_goal":
