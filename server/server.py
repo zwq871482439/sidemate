@@ -607,6 +607,12 @@ def new_ui_alias():
     return RedirectResponse(url="/", status_code=302)
 
 
+@app.get("/index.html")
+def index_html_alias():
+    """旧版文件名兼容：302 到 /（0.10.2 起入口只有 /）"""
+    return RedirectResponse(url="/", status_code=302)
+
+
 # 静态文件服务 — 加 no-cache 中间件
 _static_dir = os.path.join(WORKSPACE_DIR, "static")
 

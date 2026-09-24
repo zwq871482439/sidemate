@@ -23,7 +23,7 @@ const ONLINE_SCENES = {
   sections: [
     { title: '创作交付', desc: 'AI 现场设计，右视窗实时预览', grid: 'five', cards: [
       { scene: 'ppt', icon: I.ppt, title: '写 PPT', desc: '丢材料进来，逐页设计预览，下载可编辑 PPTX' },
-      { scene: 'doc', icon: I.doc, title: '写文档', desc: '报告、方案、长文，导出 docx' },
+      { scene: 'doc', icon: I.doc, title: '写文档', desc: '报告、方案、长文；先出网页预览，可转 Word' },
       { scene: 'report', icon: I.report, title: '可视化报告', desc: '图表 + 网页报告，数据一眼看懂' },
       { scene: 'poster', icon: I.poster, title: '设计海报', desc: '封面、海报、配图，多平台尺寸', gold: true },
       { scene: 'gzh', icon: I.gzh, title: '公众号文章', desc: '一键排版粘贴，样式不丢', gold: true, soon: '候选' },

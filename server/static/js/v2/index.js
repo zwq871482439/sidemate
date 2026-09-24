@@ -269,17 +269,13 @@ function render() {
     // onKbFilter 已随侧栏文档范围树移除（B2：筛选统一走主区 chips）
   }));
 
-  // 恢复会话列表滚动位置；选中项若在恢复后不在视口内（如从视窗跳转），就近滚入
+  // 恢复会话列表滚动位置（R6-G2 修复：rAF 等布局完成再恢复 + 去掉 scrollIntoView
+  // ——此前同步恢复后紧跟的可见性检查在布局未稳时误判不可见，scrollIntoView 把滚动拽回选中项附近）
   const _sessList = app.querySelector('.sb-sessions');
   if (_sessList && _prevSessScroll) {
-    _sessList.scrollTop = _prevSessScroll;
-    const _sel = _sessList.querySelector('.sess-item.on');
-    if (_sel) {
-      const _top = _sel.offsetTop, _bottom = _top + _sel.offsetHeight;
-      if (_bottom > _sessList.scrollTop + _sessList.clientHeight || _top < _sessList.scrollTop) {
-        _sel.scrollIntoView({ block: 'nearest' });
-      }
-    }
+    requestAnimationFrame(() => {
+      _sessList.scrollTop = _prevSessScroll;
+    });
   }
 
   const main = document.createElement('main');
