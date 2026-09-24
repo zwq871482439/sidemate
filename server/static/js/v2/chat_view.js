@@ -187,6 +187,13 @@ export function renderChatFlow(container, messages, opts) {
   hydrateCards(flow, opts || {});
   hydrateMermaid(flow);
   hydrateD2(flow);
+  // 历史思考胶囊 → 展开/收起台账（流式版在 createCardArea 内自绑，历史版在这里补）
+  flow.querySelectorAll('.cb-area .think-sum').forEach(btn =>
+    btn.addEventListener('click', () => {
+      btn.classList.toggle('open');
+      const led = btn.parentElement && btn.parentElement.querySelector('.think-ledger');
+      if (led) led.classList.toggle('open');
+    }));
   // 产物卡片 → 视窗预览（整卡可点；下载链接不冒泡）
   if (opts && opts.onPreviewFile) {
     flow.querySelectorAll('.art-card').forEach(card =>

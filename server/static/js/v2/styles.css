@@ -1564,7 +1564,13 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .think-sum .ts-ms { font-family: var(--d1-outlier); color: var(--d1-ink-3); font-size: 10.5px; }
 .think-sum .ts-chev { color: var(--d1-ink-3); transition: transform .18s; font-size: 12px; }
 .think-sum.open .ts-chev { transform: rotate(180deg); }
-.think-ledger { border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md); background: var(--d1-paper); overflow: hidden; display: none; margin-top: 6px; }
+.think-ledger { display: none; margin-top: 6px; margin-left: 6px; border-left: 2px solid var(--d1-n-line); padding-left: 10px; }
+/* 0.10.2 用户定稿·方案A（无底色左轨式）：台账零色块融进消息流；
+   此前落地版给外壳加了 paper 底+边框、内部又嵌旧 .cb-reason 的 paper-2
+   色块——与原型不符（原型台账内部是纯行样式），一并去除 */
+.think-ledger .cb-reason { background: transparent; border: none; border-radius: 0; margin-bottom: 2px; overflow: visible; }
+.think-ledger .cb-reason-head { padding: 4px 0; }
+.think-ledger .cb-reason-body { padding: 0 0 4px 16px; border-left: 1px dashed var(--d1-n-line); margin-left: 5px; }
 .think-ledger.open { display: block; }
 .tr-phase { display: flex; align-items: center; gap: 8px; padding: 8px 14px 2px; font-size: 11.5px; font-weight: 600; color: var(--d1-accent-3); }
 .tr-phase .chev { font-size: 10px; color: var(--d1-ink-3); }
