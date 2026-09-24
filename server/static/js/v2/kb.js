@@ -169,8 +169,8 @@ export function createKBView(events) {
   function renderTopbar(slot) {
     slot.innerHTML = `
       <div class="kb-view-toggle" title="清单/星图">
-        <button data-p="list" class="${state.pane === 'list' ? 'on' : ''}">▤ 清单</button>
-        <button data-p="star" class="${state.pane === 'star' ? 'on' : ''}">✦ 星图</button>
+        <button data-p="list" class="${state.pane === 'list' ? 'on' : ''}">${icon('list')} 清单</button>
+        <button data-p="star" class="${state.pane === 'star' ? 'on' : ''}">${icon('target')} 星图</button>
       </div>
       ${state.pane === 'list' ? `
       <div class="kb-view-toggle" title="卡片/列表">

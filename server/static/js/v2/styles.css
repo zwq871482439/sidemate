@@ -212,7 +212,7 @@ body {
 #main-scroll { flex: 1; overflow-y: auto; }
 
 /* ---- 空状态（原型 v14：在线 8 卡 / 离线 3 卡） ---- */
-.empty-wrap { max-width: 860px; margin: 0 auto; padding: 20px 32px 150px; }
+.empty-wrap { max-width: 860px; margin: 0 auto; padding: 20px 32px 260px; }
 .empty-hero { text-align: center; margin-bottom: 14px; }
 /* 空状态主 logo：只保留主要 logo，不再嵌套深蓝块+金点（用户定稿） */
 .empty-hero .mark {
@@ -1670,7 +1670,7 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .kb-view-toggle .ic { font-size: 13px; }
 
 /* R5#1 防御：滚动容器底部锚点留白（场景卡滚到底不被输入区压住） */
-#main-scroll { scroll-padding-bottom: 150px; }
+#main-scroll { scroll-padding-bottom: 260px; }
 
 /* R5#8：默认关闭的技能卡给状态说明（不显得"坏了"） */
 .sk-card.disabled { position: relative; }
