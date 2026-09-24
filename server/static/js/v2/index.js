@@ -1385,6 +1385,11 @@ async function boot() {
       const all = await fetch('/api/config').then(r => r.json());
       state.parallelEnabled = !!(all && all.config && all.config.parallel_enabled);
     } catch (e) { /* 无配置则关 */ }
+    // R5#4：标题带版本号（从标签页即可判断运行版本）
+    try {
+      const si = await fetch('/api/system/info').then(r => r.json());
+      if (si && si.version_display) document.title = '桌伴 Sidemate · ' + si.version_display;
+    } catch (e) { /* 保持默认标题 */ }
   } catch (e) { /* 模式读取失败就用默认在线 */ }
   try {
     if (state.mode === 'local') state.localActions = await loadLocalActions();

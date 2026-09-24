@@ -57,7 +57,7 @@ export function createSkillsView(opts) {
         <div class="sk-note">内置能力，可禁用不可删除。禁用后 AI 将无法使用对应功能。</div>
         <div class="sk-grid">
           ${systemSkills.map(s => `
-            <div class="sk-card ${s.enabled === false ? 'disabled' : ''}">
+            <div class="sk-card ${s.enabled === false ? 'disabled' : ''}" title="${s.enabled === false ? '默认关闭：按需手动开启' : ''}">
               <div class="sk-card-head">
                 <span class="sk-name">${esc(s.name)}</span>
                 ${s.config_key

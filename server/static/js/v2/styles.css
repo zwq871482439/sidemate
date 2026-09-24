@@ -212,7 +212,7 @@ body {
 #main-scroll { flex: 1; overflow-y: auto; }
 
 /* ---- 空状态（原型 v14：在线 8 卡 / 离线 3 卡） ---- */
-.empty-wrap { max-width: 860px; margin: 0 auto; padding: 20px 32px 12px; }
+.empty-wrap { max-width: 860px; margin: 0 auto; padding: 20px 32px 150px; }
 .empty-hero { text-align: center; margin-bottom: 14px; }
 /* 空状态主 logo：只保留主要 logo，不再嵌套深蓝块+金点（用户定稿） */
 .empty-hero .mark {
@@ -619,7 +619,13 @@ sup.ref-n:hover { text-decoration: underline; }
   display: inline-block; width: 34px; color: var(--d1-ink-3); font-size: var(--d1-fs-tiny);
   margin-right: 8px;
 }
-.vw-card-r.vw-path { color: var(--d1-ink-3); font-size: var(--d1-fs-tiny); word-break: break-all; padding-left: 42px; }
+.vw-card-r.vw-path { color: var(--d1-ink-3); font-size: var(--d1-fs-tiny); padding-left: 42px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; width: 100%; }
+/* R5#2 防御：任何容器塌缩下路径都不允许按字符竖排（break-all 在窄容器会把
+   每个字符拆成一行；改单行省略 + title 悬浮看全路径） */
+.vw-card-r { max-width: 100%; }
+.vw-files { min-width: 0; }
+#viewer { min-width: 0; }
 .vw-card-r.vw-lock { color: var(--d1-gold-2); font-size: var(--d1-fs-tiny); padding-left: 42px; }
 .vw-peers { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
 .vw-peer {
@@ -1649,3 +1655,14 @@ body.narrow #viewer.open ~ .vw-backdrop {
    ============================================================ */
 .kb-view-toggle button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; }
 .kb-view-toggle .ic { font-size: 13px; }
+
+/* R5#1 防御：滚动容器底部锚点留白（场景卡滚到底不被输入区压住） */
+#main-scroll { scroll-padding-bottom: 150px; }
+
+/* R5#8：默认关闭的技能卡给状态说明（不显得"坏了"） */
+.sk-card.disabled { position: relative; }
+.sk-card.disabled .sk-head::after {
+  content: '默认关闭'; font-size: 10px; color: var(--d1-ink-3);
+  border: 1px solid var(--d1-n-line); border-radius: 9px; padding: 1px 7px; margin-left: 8px;
+  font-weight: 400; flex-shrink: 0;
+}
