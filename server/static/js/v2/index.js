@@ -800,6 +800,22 @@ async function onSend(payload) {
     .map(m => (m.role === 'assistant' && m.content && m.content.length > 1500)
       ? Object.assign({}, m, { content: m.content.slice(0, 1500) + '\n\n...（内容过长已截断）' })
       : m);
+  // 0.10.2 定稿：在线=纯 agentic + 意图提示（不走 actionMode 管线路由）
+  // 离线=保留 actionMode（chat/doc/kb 三条冻结管线）
+  // 场景卡 = 给模型的意图信号（描述性前缀），不是管线开关
+  const SCENE_INTENTS = {
+    ppt:    '[用户意图：制作一份 PPT 演示文稿]\n',
+    report: '[用户意图：生成一份带图表的可视化报告]\n',
+    search: '[用户意图：联网搜索最新信息]\n',
+    deep:   '[用户意图：深度分析一个课题]\n',
+    poster: '[用户意图：设计一张海报/封面，输出自包含 HTML]\n',
+    gzh:    '[用户意图：写一篇公众号文章，输出适合直接粘贴的 HTML]\n',
+    doc:    '[用户意图：生成一份正式文档]\n',
+  };
+  const _intent = state.scene ? (SCENE_INTENTS[state.scene] || '') : '';
+  if (_intent) payload.text = _intent + payload.text;
+  // 在线模式强制 agentic（不走 doc/kb 管线路由）
+  if (state.mode !== 'local') payload.actionMode = 'chat';
   state.scene = '';  // 发送后场景 tag 清空
   state.generating = true;
   renderChatArea();
@@ -1298,11 +1314,14 @@ async function renameProject(proj) {
 
 function onScene(scene) {
   // 场景卡 = 场景占位符 tag（输入框顶部金色 chip + 场景化 placeholder）+ 视线引导
-  // 用户定稿：不再把引导词打进去（可编辑文本会挡输入），tag 随发送清空
+  // 0.10.2 修复：在线模式也映射 actionMode（doc→doc, kb→kb_qa），其余场景
+  // 走 chat 但发送时注入场景指令引导模型用对应工具
+  // 0.10.2 定稿：离线走 actionMode 管线；在线纯 agentic（scene 只是意图标记）
   if (state.mode === 'local') {
     const sceneMode = { doc: 'doc', kb: 'kb_qa', chat: 'chat' }[scene];
     if (sceneMode) state.actionMode = sceneMode;
   }
+  // 在线模式不动 actionMode——发送时统一强制 'chat'（纯 agentic）
   state.scene = scene;
   // 保住用户已输入的文字（重建 composer 不清空）
   const taOld = document.querySelector('.composer textarea');
