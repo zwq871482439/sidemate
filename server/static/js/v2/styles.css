@@ -1623,6 +1623,7 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .fl-nm { font-size: 12px; font-weight: 600; color: var(--d1-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fl-mt { font-size: 10.5px; color: var(--d1-ink-3); margin-top: 2px; }
 .fl-eye { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; display: inline-flex; }
+.fl-eye svg, .fl-dl svg { width: 14px; height: 14px; flex-shrink: 0; }
 .fl-eye:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
 .fl-dl { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; display: inline-flex; text-decoration: none; }
 .fl-dl:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
