@@ -34,6 +34,7 @@ export function renderComposer(state, events) {
   const fmtKU = (n) => (n / 1000).toFixed(1) + 'K词元';
 
   wrap.innerHTML = `
+    <div class="attach-tray" style="display:none"></div>
     <div class="token-bar">
       <div class="tb-main">
         <div class="tb-track">
@@ -52,7 +53,6 @@ export function renderComposer(state, events) {
       </div>
     </div>
     <div class="workdir-strip"></div>
-    <div class="attach-tray" style="display:none"></div>
     <div class="composer-box">
       <div class="scene-tag-wrap" style="display:none"></div>
       <textarea placeholder="发消息给桌伴…（Enter 发送 / Shift+Enter 换行）" rows="3"></textarea>

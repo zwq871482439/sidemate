@@ -747,7 +747,12 @@ sup.ref-n:hover { text-decoration: underline; }
 .qc-btn:hover { border-color: var(--d1-accent-3); color: var(--d1-accent); }
 .qc-btn.on { background: var(--d1-accent); color: var(--d1-paper); border-color: var(--d1-accent); }
 
-.attach-tray { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 2px 8px; max-width: 760px; margin: 0 auto; }
+.attach-tray { position: absolute; bottom: 100%; left: 0; right: 0; z-index: 10;
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  padding: 6px 20px; max-width: none;
+  background: linear-gradient(to top, var(--d1-paper) 30%, transparent); }
+/* 引用/附件胶囊浮在聊天区底部（composer 之上），非 composer 内部 */
+.composer { position: relative; }
 .attach-chip {
   display: inline-flex; align-items: center; gap: 7px; font-size: var(--d1-fs-small);
   background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
@@ -1617,23 +1622,21 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .fl-tx { flex: 1; min-width: 0; }
 .fl-nm { font-size: 12px; font-weight: 600; color: var(--d1-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fl-mt { font-size: 10.5px; color: var(--d1-ink-3); margin-top: 2px; }
-.fl-eye { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; opacity: 0; transition: opacity .15s; display: inline-flex; }
-.fl-row:hover .fl-eye { opacity: 1; }
+.fl-eye { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; display: inline-flex; }
 .fl-eye:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
-.fl-dl { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; opacity: 0; transition: opacity .15s; display: inline-flex; text-decoration: none; }
-.fl-row:hover .fl-dl { opacity: 1; }
+.fl-dl { border: none; background: transparent; color: var(--d1-ink-3); font-size: 14px; cursor: pointer; padding: 5px; border-radius: 6px; display: inline-flex; text-decoration: none; }
 .fl-dl:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
 /* 用户定稿 0.10.2：文件行点图标才有反应（预览/下载），整行不再可点 */
 .fl-row { cursor: default; }
 .vw-body.pv-host { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .pv-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .vw-body.pv-body { flex: 1; min-height: 0; overflow-y: auto; }
-.pv-crumb { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0; }
+.pv-crumb { display: flex; align-items: center; gap: 6px; height: 34px; max-height: 34px; overflow: hidden; white-space: nowrap; padding: 0 10px 0 12px; border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0; }
 .pv-crumb button { display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent; color: var(--d1-accent-3); font-size: 11.5px; font-family: inherit; cursor: pointer; border-radius: 6px; padding: 4px 8px; }
 .pv-crumb button:hover { background: var(--d1-paper-2); color: var(--d1-accent); }
 .pv-crumb .sep { color: var(--d1-ink-3); font-size: 11px; }
 .pv-crumb .cur { font-size: 11.5px; color: var(--d1-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pv-top { min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 14px; border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0; }
+.pv-top { height: 44px; max-height: 44px; overflow: hidden; white-space: nowrap; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--d1-n-line); background: var(--d1-paper); flex-shrink: 0; }
 .pv-title { font-size: 12.5px; font-weight: 600; color: var(--d1-ink); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 7px; }
 .pv-title .ic { color: var(--d1-accent-3); font-size: 14px; }
 .vw-dl { display: inline-flex; align-items: center; gap: 6px; background: var(--d1-accent); color: var(--d1-on-accent); border: none; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-family: inherit; cursor: pointer; text-decoration: none; flex-shrink: 0; }

@@ -119,6 +119,29 @@ export function createViewer(opts) {
     if (btn) btn.disabled = false;
     renderBody();
   }
+  // 引用胶囊同步：把 carrySids 映射为 composer attach-tray 里的 chip
+  function _syncCarryChips() {
+    const tray = document.querySelector('.attach-tray');
+    if (!tray) return;
+    tray.querySelectorAll('.carry-chip').forEach(c => c.remove());
+    const sessions = opts.getSessions ? opts.getSessions() : [];
+    carrySids.forEach(sid => {
+      const sess = sessions.find(x => x.name === sid);
+      if (!sess) return;
+      const chip = document.createElement('span');
+      chip.className = 'attach-chip carry-chip';
+      chip.title = '引用会话前情（发送时注入摘要）';
+      chip.innerHTML = '<span class="ic"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span> 引用：' +
+        esc((sess.title || sid).slice(0, 18)) + '<span class="x" title="取消引用" data-carry-sid="' + esc(sid) + '">×</span>';
+      chip.querySelector('.x').addEventListener('click', () => {
+        const b2 = document.querySelector('.vw-carry[data-sid="' + sid + '"]');
+        _toggleCarry(sid, b2);
+      });
+      tray.appendChild(chip);
+    });
+    tray.style.display = tray.children.length ? '' : 'none';
+  }
+
 
   function render() {
     el.className = open ? 'open' : '';
@@ -353,12 +376,12 @@ export function createViewer(opts) {
     // 隐私铁律（D-1 真修）：私密会话不进同项目清单/携候选（当前会话自身除外）
     const peers = sessions.filter(s => s.project_dir === wd.dir && (!s.private || s.current));
     if (!peers.length) return '';
-    return `<div class="vw-sec">同项目会话 · ${peers.length}${carrySids.length ? `<span class="vw-carry-hint">（携带 ${carrySids.length} 条前情）</span>` : ''}</div>
+    return `<div class="vw-sec">同项目会话 · ${peers.length}${carrySids.length ? `<span class="vw-carry-hint">（引用 ${carrySids.length} 条前情）</span>` : ''}</div>
       <div class="vw-peers">
       ${peers.map(c => `
         <div class="vw-peer ${c.current ? 'on' : ''}" data-name="${esc(c.name)}" title="${esc(c.name)}">
           <span class="pn">${esc(c.title || c.name)}</span><span class="pm">${c.msg_count || 0} 条</span>
-          ${c.current ? '' : `<button class="vw-carry ${carrySids.includes(c.name) ? 'on' : ''}" data-sid="${esc(c.name)}" title="${carrySids.includes(c.name) ? '取消携带（不再注入此会话摘要）' : '携带前情（注入此会话摘要到本会话上下文，仅在线生效）'}">携</button>`}
+          ${c.current ? '' : `<button class="vw-carry ${carrySids.includes(c.name) ? 'on' : ''}" data-sid="${esc(c.name)}" title="${carrySids.includes(c.name) ? '取消携带（不再注入此会话摘要）' : '携带前情（注入此会话摘要到本会话上下文，仅在线生效）'}">引用</button>`}
         </div>`).join('')}
       </div>`;
   }
@@ -419,6 +442,8 @@ export function createViewer(opts) {
       </div>
       <input type="file" class="vw-up-input" style="display:none">`;
       _bindPkb(body);
+      _syncCarryChips();
+      _syncCarryChips();
       // harness 卡：计划/执行切换 + 撤销
       body.querySelectorAll('.vw-seg').forEach(b =>
         b.addEventListener('click', async () => {
@@ -821,7 +846,24 @@ export function createViewer(opts) {
         return base && (want.includes(base) || base.includes(want));
       });
       const use = docs.length ? docs : (docxDocs || []);
-      if (!use.length) { pvBody.innerHTML = _pvFallback(); return; }
+      if (!use.length) {
+        const mdName = f.name.replace(/\.docx$/i, '.md');
+        const mdFile = (files || []).find(x => x.name === mdName);
+        if (mdFile && cur) {
+          const mdUrl = '/api/chat/' + encodeURIComponent(cur.name) + '/workspace/download?path=' + encodeURIComponent(mdName);
+          try {
+            const mdText = await fetch(mdUrl, { cache: 'no-store' }).then(r => r.text());
+            if (typeof marked !== 'undefined') {
+              const html = marked.parse(mdText, { breaks: true });
+              pvBody.innerHTML = '<div class="pv-md">' + (typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html) + '</div><div class="pv-note">源码预览（.md）· 下载 .docx 以 Word 排版为准</div>';
+            } else {
+              pvBody.innerHTML = '<div class="pv-md"><pre>' + esc(mdText) + '</pre></div><div class="pv-note">源码预览（.md）· 下载 .docx 以 Word 排版为准</div>';
+            }
+            return;
+          } catch (e) { }
+        }
+        pvBody.innerHTML = _pvFallback(); return;
+      }
       pvBody.innerHTML = use.map(doc => '<div class="vw-ppt-deck vw-docx-deck">' +
         '<div class="vw-ppt-head"><span class="vw-ppt-title">' + icon('fileText') + ' ' + esc(doc.title) + '</span>' +
         '<span class="vw-ppt-meta">' + (doc.sections || 0) + ' 章</span></div>' +
