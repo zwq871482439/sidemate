@@ -521,7 +521,7 @@ async function generateHandoffFlow(btn, thenMove) {
   _handoffGenerating = false;
   if (btn) { btn.disabled = false; btn.textContent = '重新生成'; }
   if (!r || !r.ok) {
-    uiAlert((r && r.error) || '交接生成失败');
+    uiAlert((r && r.error) || '会话记忆生成失败');
     return null;
   }
   if (thenMove) {
@@ -554,12 +554,12 @@ function maybePromptHandoff() {
   ov.innerHTML = `<div class="kb-pk" style="width:420px">
     <div class="kb-pk-title">上下文将满（已用 ${Math.round(hist / maxTokens * 100)}%）</div>
     <div class="wd-tip">
-      <p>要把当前进度<strong>生成交接</strong>并开一个接续的新会话吗？交接会写入项目目录的
-      handoff.md，新会话开局自动载入，不用从头解释。</p>
+      <p>要把当前进度<strong>保存为会话记忆</strong>并开一个新会话吗？记忆会写入项目目录，
+      新会话自动载入，不用从头解释。</p>
     </div>
     <div class="kb-pk-acts">
       <button class="kb-pk-cancel" data-a="no">不了</button>
-      <button class="kb-pk-ok" data-a="yes">生成交接并开新会话</button>
+      <button class="kb-pk-ok" data-a="yes">保存记忆并开新会话</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -570,7 +570,7 @@ function maybePromptHandoff() {
     okBtn.textContent = '生成中…';
     const r = await generateHandoffFlow(null, true);
     if (r) ov.remove();
-    else { okBtn.disabled = false; okBtn.textContent = '生成交接并开新会话'; }
+    else { okBtn.disabled = false; okBtn.textContent = '保存记忆并开新会话'; }
   });
 }
 
@@ -1333,7 +1333,7 @@ function showSessionMenu(chat, anchorEl) {
   menuEl.innerHTML = `
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
-    <button data-a="handoff">生成交接（写进项目 handoff.md）</button>
+    <button data-a="handoff">生成会话记忆</button>
     <button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
@@ -1393,7 +1393,7 @@ function showSessionMenu(chat, anchorEl) {
       uiAlert('标私密仅适用于离线模式的会话——在线会话的内容本就在云端服务方，标记无意义。请先切到离线模式再操作。');
       return;
     }
-    if (on && !(await uiConfirm('把这条会话标为私密？\n\n私密会话的内容不会出现在：其他会话的「同项目会话」清单、「携」前情注入、AI 的 read_session 读取。适合放敏感内容。'))) return;
+    if (on && !(await uiConfirm('把这条会话标为私密？\n\n私密会话的内容不会出现在：其他会话的「同项目会话」清单、「引用」前情注入、AI 的 read_session 读取。适合放敏感内容。'))) return;
     try {
       const r = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/private', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

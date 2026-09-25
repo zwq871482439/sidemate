@@ -52,12 +52,12 @@ export function renderEmptyState(mode, events) {
         <button class="eo-change">更换 ▾</button>
       </div>` : '';
   const handoffRow = events.handoffMeta ? `
-      <div class="empty-handoff" title="项目交接已注入新会话">
-        ${icon('fileText')} 已载入项目交接${events.handoffMeta.source_chat ? '（来自会话 ' + events.handoffMeta.source_chat + '）' : ''}${events.handoffMeta.updated_at ? ' · 更新于 ' + events.handoffMeta.updated_at : ''}
+      <div class="empty-handoff" title="会话记忆已注入新会话">
+        ${icon('fileText')} 已载入会话记忆${events.handoffMeta.source_chat ? '（来自会话 ' + events.handoffMeta.source_chat + '）' : ''}${events.handoffMeta.updated_at ? ' · 更新于 ' + events.handoffMeta.updated_at : ''}
       </div>` : '';
   const peersRow = (events.peersMeta && mode !== 'local') ? `
       <div class="empty-handoff" title="跨会话发现性：延续前情的三种方式">
-        ${icon('clock')} 本项目有 ${events.peersMeta.count} 条近期会话——右侧视窗 · 会话 tab 可查看并用「携」把前情带入本会话
+        ${icon('clock')} 本项目有 ${events.peersMeta.count} 条近期会话——右侧视窗 · 会话 tab 可查看并用「引用」把前情带入
       </div>` : '';
 
   if (mode === 'local') {

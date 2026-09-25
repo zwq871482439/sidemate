@@ -34,6 +34,7 @@ export function renderComposer(state, events) {
   const fmtKU = (n) => (n / 1000).toFixed(1) + 'K词元';
 
   wrap.innerHTML = `
+    <div class="todo-float" style="display:none"></div>
     <div class="attach-tray" style="display:none"></div>
     <div class="token-bar">
       <div class="tb-main">
@@ -572,6 +573,46 @@ export function renderComposer(state, events) {
     sendBtn.style.opacity = p ? '.5' : '';
     sendBtn.title = p ? '附件读取中…' : '';
   }
+
+  // 任务步骤浮窗（0.10.2：从视窗·写入计划区迁出，浮在输入区顶部右上角）
+  // 数据来源：/api/chats/{name}/harness-state 的 todos 字段
+  const _tf = wrap.querySelector('.todo-float');
+  let _tfExpanded = false;
+  function updateTodoFloat(todos) {
+    if (!todos || !todos.length) { _tf.style.display = 'none'; return; }
+    const done = todos.filter(t => t.done).length;
+    const pct = Math.round(done / todos.length * 100);
+    _tf.style.display = '';
+    if (!_tfExpanded) {
+      // 收起态：圆点 + N/M
+      _tf.innerHTML = `<span class="tf-dot ${done === todos.length ? 'ok' : 'run'}"></span>` +
+        `<span class="tf-count">${done}/${todos.length}</span>` +
+        `<span class="tf-chev">▸</span>`;
+    } else {
+      // 展开态：步骤列表（完成划线）
+      _tf.innerHTML = `<div class="tf-head"><span class="tf-dot ${done === todos.length ? 'ok' : 'run'}"></span>` +
+        `<span class="tf-count">${done}/${todos.length}</span><span class="tf-chev open">▾</span></div>` +
+        `<div class="tf-list">` + todos.map(t =>
+          `<div class="tf-item ${t.done ? 'done' : ''}"><span class="tf-mark">${t.done ? '✓' : '○'}</span>${esc(t.text || '')}</div>`
+        ).join('') + `</div>`;
+    }
+    _tf.title = `任务步骤 · ${done}/${todos.length} 完成（点击${_tfExpanded ? '收起' : '展开'}）`;
+  }
+  _tf.addEventListener('click', () => { _tfExpanded = !_tfExpanded; _refreshTodoFloat(); });
+
+  async function _refreshTodoFloat() {
+    const cur = state.sessions && state.sessions.find(c => c.current);
+    if (!cur) return;
+    try {
+      const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/harness-state');
+      const d = await r.json();
+      if (d && d.todos) updateTodoFloat(d.todos);
+      else _tf.style.display = 'none';
+    } catch (e) { _tf.style.display = 'none'; }
+  }
+  // 定时刷新（生成中实时更新步骤）
+  setInterval(_refreshTodoFloat, 5000);
+  _refreshTodoFloat();
 
   return { el: wrap, setRunning, setAttach, setAttachPending, focus: () => textarea.focus() };
 }

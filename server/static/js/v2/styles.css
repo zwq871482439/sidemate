@@ -1682,3 +1682,35 @@ body.narrow #viewer.open ~ .vw-backdrop {
   border: 1px solid var(--d1-n-line); border-radius: 9px; padding: 1px 7px; margin-left: 8px;
   font-weight: 400; flex-shrink: 0;
 }
+
+/* ===== 任务步骤浮窗（0.10.2：从视窗迁出，浮在输入区顶部右上角） ===== */
+.todo-float {
+  position: absolute; top: -36px; right: 20px; z-index: 20;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--d1-paper); border: 1px solid var(--d1-n-line);
+  border-radius: 16px; padding: 3px 12px;
+  font-size: 11px; color: var(--d1-ink-2); cursor: pointer;
+  box-shadow: var(--d1-shadow-card); transition: all .18s;
+  flex-direction: column; align-items: flex-end; max-width: 320px;
+}
+.todo-float:hover { border-color: var(--d1-accent-3); }
+.tf-head { display: flex; align-items: center; gap: 6px; }
+.tf-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tf-dot.run { background: var(--dot-run); animation: tsPulse 1.6s ease infinite; }
+.tf-dot.ok { background: var(--dot-ok); }
+.tf-count { font-family: var(--d1-outlier); font-size: 10.5px; color: var(--d1-ink-2); }
+.tf-chev { font-size: 10px; color: var(--d1-ink-3); }
+.tf-chev.open { transform: rotate(0deg); }
+.tf-list {
+  display: none; flex-direction: column; gap: 2px; padding: 6px 0 2px;
+  max-height: 180px; overflow-y: auto;
+}
+.todo-float .tf-list { display: flex; }
+.tf-item {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 11px; color: var(--d1-ink-2); padding: 2px 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px;
+}
+.tf-item.done { text-decoration: line-through; color: var(--d1-ink-3); }
+.tf-item.done .tf-mark { color: var(--dot-ok); }
+.tf-mark { flex-shrink: 0; font-size: 10px; color: var(--d1-ink-3); }
