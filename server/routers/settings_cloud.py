@@ -14,6 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from routers.deps import get_mgr
+from common.security import check_local_origin, local_origin_error
 
 router = APIRouter()
 log = logging.getLogger("settings.cloud")
@@ -267,6 +268,13 @@ async def api_cloud_config_save(request: Request):
     if hasattr(mgr, '_cloud_engine') and mgr._cloud_engine:
         mgr._cloud_engine._reset_client()
 
+    # 0.11 B1：旧表单保存后同步回激活档案（双向一致）
+    try:
+        from core.cloud_profiles import sync_active_from_legacy
+        sync_active_from_legacy()
+    except Exception as _pe:
+        log.warning("[CLOUD] 档案回同步失败: %s", str(_pe)[:80])
+
     # 返回更新后的模型能力信息（优先用用户配置的上下文窗口）
     from config import get as _cfg_save
     cloud_model = updates.get("cloud_model", _cfg_save("cloud_model", "gpt-4o-mini"))
@@ -275,6 +283,55 @@ async def api_cloud_config_save(request: Request):
     user_ctx = _cfg_save("cloud_context_window", 0)
     effective_ctx = user_ctx if user_ctx and user_ctx > 0 else caps["context_window"]
     return {"ok": ok, "context_window": effective_ctx, "max_output_tokens": caps["max_output"]}
+
+
+# ============================================================
+#  0.11 B1：模型档案（profiles）
+# ============================================================
+
+@router.get("/api/cloud/profiles")
+def api_cloud_profiles():
+    """列出模型档案（key 脱敏）。"""
+    from core.cloud_profiles import list_profiles
+    return {"profiles": list_profiles()}
+
+
+@router.post("/api/cloud/profiles")
+async def api_cloud_profiles_save(request: Request):
+    """新建/更新一个档案（无 id=新建；api_key 留空=保留原值）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.cloud_profiles import save_profile
+    r = save_profile(body or {})
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.delete("/api/cloud/profiles/{pid}")
+async def api_cloud_profiles_delete(pid: str, request: Request):
+    """删除档案（不可删激活档案）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    from core.cloud_profiles import delete_profile
+    r = delete_profile(pid)
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.post("/api/cloud/profiles/switch")
+async def api_cloud_profiles_switch(request: Request):
+    """切换激活档案（物化到 cloud_* 配置，当前会话后续请求生效）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.cloud_profiles import switch_profile
+    r = switch_profile(str((body or {}).get("id", "")))
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
 
 
 @router.get("/api/cloud/model-capabilities")

@@ -1,5 +1,5 @@
-// 桌伴 0.10 新版 UI — 技能选项卡（M4 增补：skill 管理+MCP 服务器+权限替代）
-// 侧栏第三 tab：系统 skill（协议+权限）+ 管线 skill + 用户 SKILL.md + MCP
+// 桌伴 0.11 技能选项卡 — 场景与社区技能（行式 + 触发徽章 + 自动触发开关 + 挂载日志）
+// + 系统技能（协议+权限）+ MCP 服务器。样式照原型 docs/prototypes/ui-011.html ③。
 import { api } from './api.js';
 import { icon, iconSvg } from './icons.js';
 import { uiAlert, uiConfirm, uiPrompt } from './ui_dialog.js';
@@ -10,6 +10,18 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// 技能名 → 图标（icons.js 描边款；未命中用 puzzle）
+const SKILL_ICON = {
+  ppt: 'presentation', doc: 'fileText', report: 'barChart', search: 'search',
+  deep: 'target', poster: 'grid', gzh: 'chat',
+};
+// trigger → 徽章（原型 spec#31：场景=金字金边｜自动=accent-3 灰边｜场景+自动=绿）
+const TRIG_META = {
+  scene: { cls: 'scene', label: '场景' },
+  auto: { cls: 'auto', label: '自动' },
+  both: { cls: 'both', label: '场景+自动' },
+};
+
 // 技能选项卡视图（创建一次，切 tab 时复用）
 export function createSkillsView(opts) {
   const el = document.createElement('div');
@@ -19,18 +31,23 @@ export function createSkillsView(opts) {
   let userSkills = [];
   let mcpServers = [];
   let toolPerms = [];
+  let autoEnabled = true;
+  let mountLogs = [];
 
   async function load() {
     el.innerHTML = '<div class="kb-loading">加载中…</div>';
-    const [skillsR, mcpR, permsR] = await Promise.all([
+    const [skillsR, mcpR, permsR, logR] = await Promise.all([
       fetch('/api/skills/list').then(r => r.json()).catch(() => ({skills:[]})),
       fetch('/api/mcp/servers').then(r => r.json()).catch(() => ({servers:[]})),
       fetch('/api/permissions/tools').then(r => r.json()).catch(() => ({tools:[]})),
+      fetch('/api/skills/mountlog?limit=20').then(r => r.json()).catch(() => ({logs:[]})),
     ]);
     systemSkills = (skillsR.system_skills || []);
     userSkills = (skillsR.user_skills || []);
+    autoEnabled = skillsR.auto_trigger_enabled !== false;
     mcpServers = (mcpR.servers || []);
     toolPerms = (permsR.tools || []);
+    mountLogs = (logR.logs || []);
     render();
   }
 
@@ -49,6 +66,49 @@ export function createSkillsView(opts) {
           <div class="sk-stat"><div class="num">${usrCount}</div><div class="lbl">用户技能</div></div>
           <div class="sk-stat"><div class="num">${mcpConnected}</div><div class="lbl">MCP 连接</div></div>
           <div class="sk-stat"><div class="num">${mcpTools}</div><div class="lbl">外部工具</div></div>
+        </div>
+      </div>
+
+      <div class="sk-section">
+        <div class="sk-sec-title sk-auto-head">
+          ${iconSvg('puzzle')} 场景与社区技能 <span class="sk-cnt">${userSkills.length} 个 · 预装与 data/skills/ 社区格式</span>
+          <span class="sw-lb">自动触发</span>
+          <button class="switch gold ${autoEnabled ? 'on' : ''}" id="skAutoSw"
+                  title="${autoEnabled ? '聊天时按意图自动挂载匹配技能，点击关闭' : '自动触发已关闭，技能仅场景卡可用，点击开启'}"></button>
+        </div>
+        <div class="sk-note">场景卡点选即挂载；标「自动」的技能聊天命中意图时由 AI 自行挂载（简表可见，正文按需取）</div>
+        <div class="sk-rows">
+          ${userSkills.map(s => {
+            const trig = TRIG_META[s.trigger] || TRIG_META.both;
+            const ic = SKILL_ICON[s.name] || 'puzzle';
+            const lm = s.last_mounted ? '上次：' + s.last_mounted.slice(5) : '尚未挂载';
+            return `
+            <div class="sk-row" data-skill="${esc(s.id)}" title="点击查看技能正文">
+              <span class="sic">${iconSvg(ic)}</span>
+              <div class="stx">
+                <div class="n">${esc(s.name)}</div>
+                <div class="d">${esc(s.description || '')}</div>
+              </div>
+              <span class="trig ${trig.cls}">${trig.label}</span>
+              <span class="sk-mount">${esc(lm)}</span>
+              <button class="sk-del" data-skill="${esc(s.id)}" title="删除">✕</button>
+            </div>`;
+          }).join('') || '<div class="sk-empty">还没有技能——将 SKILL.md 放入 data/skills/ 目录，或让 AI 安装社区技能</div>'}
+        </div>
+        <div class="sk-add" onclick="uiAlert('将 SKILL.md 文件复制到 data/skills/ 目录即可。\\n\\n格式示例：\\n---\\nname: 我的技能\\ndescription: 描述（自动触发匹配用）\\ntrigger: both\\n---\\n\\n技能内容（注入 AI 的指导文本）')">
+          ${iconSvg('plus')} 添加技能（放入 SKILL.md 文件）
+        </div>
+      </div>
+
+      <div class="sk-section">
+        <div class="sk-sec-title">${icon('clock')} 挂载日志 <span class="sk-cnt">最近 ${mountLogs.length} 条 · 命中/跳过</span></div>
+        <div class="mount-log">
+          ${mountLogs.map(l => `
+            <div class="ml-row">
+              <span class="t">${esc((l.ts || '').slice(5, 16))}</span>
+              <span class="k">${esc(l.skill)}</span>${l.hit ? '命中' : '未命中'}${l.detail ? '「' + esc(l.detail) + '」' : ''}
+              <span class="${l.hit ? 'hit' : 'miss'}">${l.hit ? '已挂载' : '跳过'}</span>
+            </div>`).join('') || '<div class="ml-row"><span class="miss" style="margin:0">暂无挂载记录——发一条命中技能意图的消息试试</span></div>'}
         </div>
       </div>
 
@@ -75,43 +135,29 @@ export function createSkillsView(opts) {
       </div>
 
       <div class="sk-section">
-        <div class="sk-sec-title">${icon('fileText')} 用户技能 <span class="sk-cnt">${userSkills.length} 个</span></div>
-        <div class="sk-note">SKILL.md 文件放入 data/skills/ 目录即生效（兼容 Claude Code / 社区格式）</div>
-        <div class="sk-grid">
-          ${userSkills.map(s => `
-            <div class="sk-card">
-              <div class="sk-card-head">
-                <span class="sk-name">${esc(s.name)}</span>
-                <button class="sk-del" data-skill="${esc(s.id)}" title="删除">✕</button>
-              </div>
-              <div class="sk-desc">${esc(s.description || '')}</div>
-              <div class="sk-meta">
-                <span class="sk-tag user">SKILL.md</span>
-                ${s.pipeline_types && s.pipeline_types.length ? `<span>挂载: ${esc(s.pipeline_types.join(' · '))}</span>` : ''}
-              </div>
-            </div>
-          `).join('') || '<div class="sk-empty">还没有用户技能——将 SKILL.md 文件放入 data/skills/ 目录</div>'}
-        </div>
-        <div class="sk-add" onclick="uiAlert('将 SKILL.md 文件复制到 data/skills/ 目录即可。\\n\\n格式示例：\\n---\\nname: 我的技能\\ndescription: 描述\\npipeline_types: [docx]\\n---\\n\\n技能内容（注入 AI 的指导文本）')">
-          ${iconSvg('plus')} 添加技能（放入 SKILL.md 文件）
-        </div>
-      </div>
-
-      <div class="sk-section">
-        <div class="sk-sec-title">${icon('globe')} MCP 工具服务器 <span class="sk-cnt">${mcpServers.length} 个</span></div>
-        <div class="sk-note">连接外部工具生态（文件系统/GitHub/数据库等），仅在线模式</div>
-        ${mcpServers.map(s => `
-          <div class="sk-mcp-row">
-            <span class="sk-mcp-dot ${s.status}"></span>
-            <div class="sk-mcp-info">
-              <div class="sk-mcp-name">${esc(s.name)}</div>
-              <div class="sk-mcp-tools">${s.tools || 0} 个工具${s.tool_names && s.tool_names.length ? '：' + esc(s.tool_names.slice(0, 5).join(' · ')) : ''}</div>
-            </div>
+        <div class="sk-sec-title">${icon('globe')} MCP 外部工具 <span class="sk-cnt">${mcpServers.length} 个</span></div>
+        <div class="sk-note">连接外部工具生态（仅在线模式）；本地走 stdio，远程走 Streamable HTTP/SSE（Bearer/API-Key 认证）</div>
+        <div class="mcp-grp">${iconSvg('hardDrive')} 本地 <span class="mcp-n">stdio</span></div>
+        ${mcpServers.filter(s => !s.remote).map(s => `
+          <div class="mcp-row">
+            <span class="mcp-ic">${iconSvg('hardDrive')}</span>
+            <div class="mcp-tx"><div class="n">${esc(s.name)}</div>
+              <div class="u">${esc(((s.command || '') + ' ' + (s.args || []).join(' ')).trim())}</div></div>
+            <span class="mcp-cnt">${s.tools || 0} 个工具</span>
+            <span class="mcp-auth ${s.status === 'connected' ? 'ok' : 'off'}">${s.status === 'connected' ? '已连接' : (s.error ? '失败' : '未连接')}</span>
             <button class="sk-mcp-btn" data-mcp-action="disconnect" data-mcp="${esc(s.name)}">断开</button>
-          </div>
-        `).join('') || '<div class="sk-empty">还没有配置 MCP 服务器</div>'}
+          </div>`).join('') || '<div class="sk-empty">暂无本地 MCP 服务器</div>'}
+        <div class="mcp-grp">${iconSvg('globe')} 远程 <span class="mcp-n">streamable http / sse</span></div>
+        ${mcpServers.filter(s => s.remote).map(s => `
+          <div class="mcp-row remote">
+            <span class="mcp-ic">${iconSvg('globe')}</span>
+            <div class="mcp-tx"><div class="n">${esc(s.name)}</div><div class="u">${esc(s.url || '')}</div></div>
+            <span class="mcp-cnt">${s.tools || 0} 个工具</span>
+            <span class="mcp-auth ${s.status === 'connected' ? 'ok' : 'off'}">${s.status === 'connected' ? 'Bearer · 已连接' : (s.headers_set ? '认证失败' : '未配置密钥')}</span>
+            <button class="sk-mcp-btn" data-mcp-action="disconnect" data-mcp="${esc(s.name)}">断开</button>
+          </div>`).join('') || '<div class="sk-empty">暂无远程 MCP（示例 GitHub：https://api.githubcopilot.com/mcp/ + Bearer Token）</div>'}
         <div class="sk-add" id="skAddMcp">
-          ${iconSvg('plus')} 添加 MCP 服务器
+          ${iconSvg('plus')} 添加 MCP 服务器（本地 stdio / 远程 HTTP）
         </div>
       </div>
     `;
@@ -120,6 +166,22 @@ export function createSkillsView(opts) {
   }
 
   function _bind(root) {
+    // 自动触发总开关（0.11 A2：关=简表不注入+mount_skill 工具撤下）
+    const autoSw = root.querySelector('#skAutoSw');
+    if (autoSw) {
+      autoSw.addEventListener('click', async () => {
+        const on = !autoSw.classList.contains('on');
+        autoSw.disabled = true;
+        await fetch('/api/skills/toggle', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: 'auto', enabled: on }),
+        }).catch(() => {});
+        autoSw.disabled = false;
+        autoSw.classList.toggle('on', on);
+        autoSw.title = on ? '聊天时按意图自动挂载匹配技能，点击关闭' : '自动触发已关闭，技能仅场景卡可用，点击开启';
+      });
+    }
+
     // 系统 skill 开关
     root.querySelectorAll('.sk-card .switch[data-skill]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -156,18 +218,34 @@ export function createSkillsView(opts) {
       });
     });
 
-    // 添加 MCP
+    // 添加 MCP（0.11 B2：本地 stdio / 远程 HTTP 两路）
     const addMcp = root.querySelector('#skAddMcp');
     if (addMcp) {
       addMcp.addEventListener('click', async () => {
-        const name = await uiPrompt('MCP 服务器名称（如 filesystem）：');
+        const name = await uiPrompt('MCP 服务器名称（如 filesystem / github）：');
         if (!name) return;
-        const cmd = await uiPrompt('启动命令（如 npx -y @anthropic/mcp-server-filesystem /path）：');
-        if (!cmd) return;
-        const parts = cmd.split(' ');
+        const kind = await uiPrompt('类型：输入 1 = 本地（stdio 启动命令），输入 2 = 远程（HTTP URL + Bearer Token）：');
+        if (!kind) return;
+        let body;
+        if (String(kind).trim() === '2') {
+          const url = await uiPrompt('远程 URL（如 https://api.githubcopilot.com/mcp/）：');
+          if (!url) return;
+          const token = await uiPrompt('Bearer Token（留空则改用 X-Api-Key 时直接输入完整头，如 key=value）：');
+          const headers = {};
+          if (token) {
+            if (token.includes('=')) { const i = token.indexOf('='); headers[token.slice(0, i)] = token.slice(i + 1); }
+            else headers['Authorization'] = 'Bearer ' + token;
+          }
+          body = { name, type: 'http', url, headers };
+        } else {
+          const cmd = await uiPrompt('启动命令（如 npx -y @anthropic/mcp-server-filesystem /path）：');
+          if (!cmd) return;
+          const parts = cmd.split(' ');
+          body = { name, command: parts[0], args: parts.slice(1) };
+        }
         fetch('/api/mcp/servers', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, command: parts[0], args: parts.slice(1) }),
+          body: JSON.stringify(body),
         }).then(() => fetch('/api/mcp/connect', { method: 'POST' }))
           .then(() => load())
           .catch(() => uiAlert('添加或连接失败'));

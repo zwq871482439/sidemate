@@ -4,6 +4,118 @@
 
 ---
 
+## [0.11.0] - 2026-09-28 — 技能中枢 · 连接调度 · 观察与记忆（大版本）
+
+> 三批次全量发布。依据 R7 总验（30 项 0 失败、可发布）与可靠性基线
+> （8 场景 ×3 轮全 pass³，data/eval/）定稿。计划 docs/PLAN-011.md；
+> UI 原型 docs/prototypes/ui-011.html；双车道红线：全部新机制仅在线车道，离线冻结管线零改动。
+
+### 批次 A · 技能中枢（pre.1，2026-09-26）
+
+### 新增
+- **场景卡 → SKILL.md 显式路由**（替代 0.10.2 硬编码意图前缀）：前端场景卡发送
+  `[场景：x]` 标记，后端剥离解析 → 查 `data/skills/{x}/SKILL.md` → 正文注入
+  system prompt `[技能]` 区块；`index.js` 的 SCENE_INTENTS 硬编码表删除
+- **预装技能库**：`server/skills-default/` 7 个 SKILL.md（ppt/doc/report/search/
+  deep/poster/gzh），首启只补不覆盖拷入 `data/skills/`；**改文件即生效**（mtime 缓存）
+- **SKILL.md schema v2**：新增 `trigger`（scene/auto/both，默认 both）与 `model`（0.11-B 用）
+  字段，向后兼容 v1；`description` 参与自动触发匹配
+- **Skill 自动触发**（0.11-1）：`trigger∈{auto,both}` 的技能以简表（名称+一句话描述）
+  进 system prompt，模型调 `mount_skill(name)` 伪工具按需取正文（渐进披露）；
+  同任务挂载上限 3；挂载动作进思考台账（「准备」阶段，金点步骤行）；
+  技能页金色总开关（关闭=简表不注入+工具撤下）
+- **挂载日志**：命中/跳过（超上限、不存在、开关关闭）记录于 data/skill_mount_log.json，
+  技能页展示最近 20 条；技能行显示触发徽章（场景=金/自动=蓝灰/双通道=绿）与最近挂载时间
+- **create_poster 工具**（A3）：三套确定性模板（typo 文字排版 / image 图文 / data 数据），
+  参数 style/title/subtitle/items/size/tone/footer → 自包含 HTML；色板取设计 DNA
+  （deep=深蓝金 DNA-01 / light=素白 DNA-02）；同参数同输出（无随机无时间戳）
+- **海报场景卡拆分**：点「设计海报」展开 3 张风格子卡（文字排版/图文/数据，
+  纯 token 色 CSS 缩略图），点子卡落 `poster-{style}` 场景 tag；公众号卡「候选」标记移除（转正）
+- **format_gzh 工具 + 公众号写作技能**（A3）：HTML → 微信编辑器兼容（样式全内联、
+  标签白名单、15px/1.75 规范、金句引用块金边、代码围栏转 pre；javascript: 链接剥除）；
+  gzh SKILL.md 落地七阶段写作流 + Hook 3 风格（trigger: both 打样自动通道）
+- **协议技能**：海报设计、公众号排版入技能页系统技能区（独立开关）
+- 技能页改版：场景与社区技能置顶（行式布局）→ 挂载日志 → 系统技能 → MCP
+
+### 变更
+- 技能页「用户技能」区升级为「场景与社区技能」（原型 ui-011.html ③）
+- 台账阶段分组新增「准备」（挂载技能）
+
+### 验证
+- 后端：pytest 351 通过（仅 2 个 curl_cffi 环境依赖测试因本机未装跳过）；
+  poster/gzh/skill_loader 单元冒烟（确定性/XSS 转义/白名单/缓存失效）全过
+- 前端：esbuild 构建通过；浏览器实测技能页（徽章色值逐一核对原型规格）、
+  海报子卡展开/选风格落 tag 全流程
+
+
+### 批次 B + C · 连接调度与观察记忆（pre.2，2026-09-27）
+
+### 新增（B 批：连接与调度）
+- **模型多档案（profiles）+ 顶栏快切**：设置→在线 AI 新增「模型档案」管理
+  （快/强 tag、增删改、设为当前）；顶栏档案芯片下拉随时切换（当前会话后续请求生效）；
+  **物化方案**——激活档案写传统 cloud_* 配置键，云引擎零改动；首启自动把现有单份
+  配置迁移为「默认」档案（无 Key 则给快速/深度两个空白示例）
+- **agentRouting 提示层**：≥2 个可用档案时 system prompt 注入档案特点与任务建议
+  （模型可建议用户切换，不假装已切换——诚实设计）
+- **每技能绑模型**：SKILL.md `model` 字段，场景挂载时经 run_with_tools(model=) 按次覆盖
+- **MCP HTTP/SSE 传输**（0.11-2）：新增 HTTPConnection（Streamable HTTP，SSE 响应解析、
+  Mcp-Session-Id 会话续用、404 会话过期重试）；Bearer/API-Key headers 认证；无认证头拒绝连接；
+  技能页 MCP 区分「本地 stdio / 远程 streamable http」两组，远程带认证徽章（原型③）
+- **AI 自装 Skill**（0.11-3a）：install_skill 工具两步走（校验暂存→安装确认卡→确认安装）；
+  安全校验五项（frontmatter/体积 200KB/无 exe 等可执行/无外链脚本/zip slip 防护）；
+  确认卡为结构化技能信息+校验行+金色确认按钮（原型①）；用户点同意后注入直装指令
+### 新增（C 批：观察与记忆）
+- **会话状态机 + 侧栏五态指示器**：/api/chats/status 聚合（generating/tools_running/
+  waiting=末条含未答确认卡/errors）；侧栏每会话状态点五态（生成中金呼吸/工具运行紫呼吸/
+  待确认蓝呼吸/出错红/空闲灰）+ 状态文字；完成未读金点角标（点进清除，localStorage 持久）；
+  5s 轮询（生成中 2.5s 加速），侧栏 DOM 定向更新不整页重渲
+- **计划确认卡升级**：结构化三节——工具范围 chips（含 ×N 限额、未授权划线）/权限边界
+  （check+边界说明）/文件影响（新建金/覆盖红）；project_write 协议教模型带结构化数据；
+  旧文本计划卡兼容回退
+- **确认卡家族**（ask 卡 kind 扩展，全按原型①）：skill_install 安装确认 /
+  memory_save 记忆写入（位置+diff 预览）/ distill 经验沉淀建议（任务模式流+技能预览）/
+  plan_confirm 结构化计划——四卡统一金按钮主操作语义
+- **Agent 策展记忆**（0.11 C3）：memory.md 三节（偏好/项目上下文/常用操作），
+  项目级 .sidemate/memory.md 优先；save_memory 工具（写入必须先过确认卡）+
+  recall_memory 检索（关键词 2 字滑窗）+ system prompt 注入偏好条目与概览；
+  条目去重 + 单节 50 条上限；handoff.md 一次性迁移为「项目上下文」节
+- **经验沉淀**（会话菜单「存为技能」）：会话轨迹（目标+工具步骤+产物）→ 在线直连一次
+  生成 SKILL.md → 校验注册 → 技能页可见（来源=沉淀）
+### 修复
+- settings_cloud.py 缺 check_local_origin 导入（新档案端点 500）
+- cloud_profiles._reset_engine_client 在 server 未加载时 import 副作用（改 sys.modules 惰性检查）
+
+### 验证
+- pytest 351 通过（2 个 curl_cffi 环境依赖测试除外，与改动无关）
+- 单元冒烟：profiles（迁移/物化/切换/active 保护/路由提示）、curated_memory
+  （写/检索/注入/去重）、skill_installer（安装/exe 拒绝/zip slip 拒绝/外链脚本拒绝）、
+  mcp_client（SSE 解析/工厂/无认证拒绝）
+- 浏览器实测：顶栏芯片开合+切换档案、技能页 MCP 双组、设置页档案管理、
+  侧栏状态点渲染；pre.1 已验项不回归
+
+
+### 发布收尾 · 总验修复与可靠性评测（pre.3，2026-09-27）
+
+### 修复（R7-G1/G2/G5）
+- **G1 安装确认卡二次点击作废**：确认卡点「确认安装」后由**后端直装暂存**
+  （chat.py cardAnswer 拦截，成功注入「已安装」指令，不再依赖模型二次调
+  install_skill——模型参数不可靠导致「暂存失效」的体验根除）；工具路径保留
+  并加 name 兜底（暂存目录唯一时自动定位）
+- **G2 视窗文件 tab 不随会话刷新**：renderBody 增加 filesFor 与当前会话
+  一致性检查（此前只在 null 时加载，切会话后永远显示旧会话产物）
+- **G5 工具运行态（紫点）后端从不报**：/api/chats/status 的 tools_running
+  细分正则对齐 sse_event 实际格式（字段在顶层，非嵌套 data）
+- waiting 判定收紧到最近 3 天有活动的会话（防老会话残留确认卡刷蓝点）
+
+### 新增
+- **tools/reliability_eval.py 可靠性评测**：8 核心场景（7 场景卡链路 + 防误触 +
+  安全红线）× k 次重复，直连 SSE 纯后端链路；确定性断言（工具序列/产物文件/
+  内容关键串/禁串）；报告 pass@k 与 **pass^k**（Windows Agent Arena 口径）+
+  耗时/步骤统计；exit code 做发版门禁（核心口径全 pass^k 才 0）
+- 验收 prompt（Minimax总验prompt-011.md）加 data/skills 测试豁免条款
+  （A8/B3 下轮可执行）；G3（挂载上限演示）记为文档说明不改代码
+
+
 ## [0.10.2] - 2026-09-24 — 视窗统一设计：预览中心 + 思考可视化
 
 ### 新增

@@ -85,3 +85,6 @@ tests/test_v2_import.py
 .claude/
 tests/_selftest_out/
 .zcode/
+
+# 0.11 打包暂存目录（不入库）
+installer/stage/

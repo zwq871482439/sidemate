@@ -78,10 +78,16 @@ export function renderSidebar(root, state, events) {
   }
   const collapsedGroups = state.collapsedGroups || {};
 
+  // 0.11 C1 五态：gen=生成中(金呼吸) tool=工具运行(紫呼吸) wait=待确认(蓝呼吸) err=出错(红) idle=灰
+  // sessStatus 来自 /api/chats/status 轮询（index.js 合并进 c）；generating 字段为当前会话本地即时态
+  const _STT = { gen: '生成中', tool: '工具运行', wait: '待确认', err: '出错' };
   const renderSessItem = (c) => {
+    const st = c.sessStatus || (c.generating ? 'gen' : '');
+    const stt = _STT[st] || '';
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
-    item.innerHTML = `<div class="si-bar"><div class="st">${c.generating ? '<span class="si-gen-dot" title="生成中"></span>' : ''}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc((c.title && c.title !== c.name) ? c.title : '新会话')}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${c.generating ? ' · <span class="si-gen-t">生成中…</span>' : ''}</div>`;
+    item.dataset.chat = c.name || '';
+    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc((c.title && c.title !== c.name) ? c.title : '新会话')}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容">1</span>' : ''}</div>`;
     item.addEventListener('click', (e) => {
       if (e.target.closest('.sess-more')) return;
       events.onSelectSession(c);

@@ -355,10 +355,52 @@ export function createSettingsView(events) {
     const curMode = (gcfg.ai_mode || 'local');
     const rounds = gcfg.agent_max_rounds || '';
 
+    // 0.11 B1：模型档案（多档案 + 顶栏快切）
+    let profiles = [];
+    try {
+      profiles = (await fetch('/api/cloud/profiles').then(r => r.json()).catch(() => ({}))).profiles || [];
+    } catch (e) { /* 档案不可用不阻断 */ }
+    const _profRow = (p) => `
+      <div class="prof-mrow" data-pid="${esc(p.id)}">
+        <span class="pm-name">${esc(p.name)}${p.active ? '<span class="pm-cur">使用中</span>' : ''}</span>
+        <span class="pm-meta">${p.tag === 'strong' ? '强' : '快'} · ${esc(p.model || '未配置模型')} · ${p.api_key_set ? 'Key 已配' : '<b style="color:var(--d1-gold-2)">Key 未配</b>'}</span>
+        <span class="pm-acts">
+          ${p.active ? '' : `<button class="kb-tool-btn" data-act="use" data-pid="${esc(p.id)}">设为当前</button>`}
+          <button class="kb-tool-btn" data-act="edit" data-pid="${esc(p.id)}">编辑</button>
+          <button class="kb-tool-btn" data-act="del" data-pid="${esc(p.id)}" ${p.active ? 'disabled' : ''}>删除</button>
+        </span>
+      </div>`;
+    const _profForm = (p) => `
+      <div class="prof-mform" data-fpid="${esc(p.id || '')}">
+        <input class="set-input pm-f" data-f="name" style="width:100px" placeholder="档案名" value="${esc(p.name || '')}">
+        <select class="set-input pm-f" data-f="tag" style="width:70px">
+          <option value="fast" ${p.tag !== 'strong' ? 'selected' : ''}>快</option>
+          <option value="strong" ${p.tag === 'strong' ? 'selected' : ''}>强</option>
+        </select>
+        <input class="set-input pm-f" data-f="base_url" style="width:210px" placeholder="API 地址" value="${esc(p.base_url || '')}">
+        <input class="set-input pm-f" data-f="model" style="width:150px" placeholder="模型名" value="${esc(p.model || '')}">
+        <input class="set-input pm-f" data-f="api_key" type="password" style="width:150px" placeholder="${p.api_key_set ? 'Key（留空保留）' : 'API Key'}" autocomplete="new-password">
+        <select class="set-input pm-f" data-f="api_format" style="width:100px">
+          <option value="openai" ${p.api_format !== 'anthropic' ? 'selected' : ''}>OpenAI</option>
+          <option value="anthropic" ${p.api_format === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+        </select>
+        <button class="btn-primary-v2" data-act="save">保存</button>
+        <button class="kb-tool-btn" data-act="cancel">取消</button>
+      </div>`;
+
     body.innerHTML = `
+      <div class="set-group" id="profMgmt">
+        <h2>模型档案</h2>
+        <div class="sub">多套云端配置快速切换（顶栏芯片随时换）——当前档案的参数在下方「在线 AI 配置」里仍可微调</div>
+        <div id="profList">${profiles.map(_profRow).join('') || '<div class="set-note">还没有档案</div>'}</div>
+        <div id="profFormWrap"></div>
+        <div class="set-row" style="border:none;padding-left:0">
+          <button class="kb-tool-btn" id="profAdd">＋ 新增档案</button>
+        </div>
+      </div>
       <div class="set-group">
         <h2>在线 AI 配置</h2>
-        <div class="sub">云端 API 服务配置（支持 OpenAI / Anthropic 及兼容服务）</div>
+        <div class="sub">云端 API 服务配置（支持 OpenAI / Anthropic 及兼容服务）——编辑的是当前使用中的档案</div>
         <div class="set-row"><div class="stx"><b>API 地址</b><p>兼容 OpenAI 协议的接口地址</p></div>
           <input class="set-input" style="width:260px" id="cfBase" value="${esc(cfg.base_url || '')}" placeholder="https://api.openai.com/v1"></div>
         <div class="set-row"><div class="stx"><b>API Key</b><p>${cfg.api_key_set ? '已配置 ' + esc(cfg.api_key_preview || '') + '（留空保持不变）' : '未配置'}</p></div>
@@ -448,6 +490,50 @@ export function createSettingsView(events) {
       const r = await fetch('/api/cloud/test', { method: 'POST' }).then(r => r.json()).catch(() => null);
       note(r && r.ok ? '连接成功：' + (r.message || r.model || 'OK') : ('连接失败：' + ((r && (r.error || r.message)) || '未知错误')), !!(r && r.ok));
       e.target.disabled = false; e.target.textContent = '测试连接';
+    });
+
+    // ===== 0.11 B1 档案管理绑定 =====
+    const profFormWrap = body.querySelector('#profFormWrap');
+    body.querySelector('#profAdd').addEventListener('click', () => {
+      profFormWrap.innerHTML = _profForm({ tag: 'fast', api_format: 'openai' });
+    });
+    body.querySelector('#profList').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const pid = btn.dataset.pid;
+      const act = btn.dataset.act;
+      if (act === 'use') {
+        const r = await fetch('/api/cloud/profiles/switch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: pid }),
+        }).then(r => r.json()).catch(() => null);
+        note(r && r.ok ? '已切换档案（当前会话后续请求生效），下方配置已同步' : ('切换失败：' + ((r && r.error) || '未知')), !!(r && r.ok));
+        if (r && r.ok) { await renderCloud(body); return; }
+      } else if (act === 'edit') {
+        const p = profiles.find(x => x.id === pid) || {};
+        profFormWrap.innerHTML = _profForm(p);
+      } else if (act === 'del') {
+        if (!(await uiConfirm('删除此档案？（不影响其他档案）'))) return;
+        const r = await fetch('/api/cloud/profiles/' + encodeURIComponent(pid), { method: 'DELETE' }).then(r => r.json()).catch(() => null);
+        if (r && r.ok) { await renderCloud(body); } else { note('删除失败：' + ((r && r.error) || '未知'), false); }
+      }
+    });
+    profFormWrap.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      if (btn.dataset.act === 'cancel') { profFormWrap.innerHTML = ''; return; }
+      if (btn.dataset.act !== 'save') return;
+      const form = profFormWrap.querySelector('.prof-mform');
+      const payload = { id: form.dataset.fpid || '' };
+      form.querySelectorAll('.pm-f').forEach(f => {
+        if (f.dataset.f === 'api_key' && !f.value.trim()) return;  // 留空=保留
+        payload[f.dataset.f] = f.value.trim();
+      });
+      const r = await fetch('/api/cloud/profiles', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(r => r.json()).catch(() => null);
+      if (r && r.ok) { await renderCloud(body); } else { note('保存失败：' + ((r && r.error) || '未知'), false); }
     });
 
     // 并行实验开关（存量迁移 + 关闭回退，PLAN 五点七-3）

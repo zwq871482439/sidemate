@@ -273,7 +273,8 @@ def _keyword_excerpt(text, question, width=1200):
 class AgentLoop:
     """ReAct Agent 循环 — 在线模式专用"""
 
-    def __init__(self, cloud_engine, search_engine, kb=None, chat_id=None, history=None, skip_queue=False):
+    def __init__(self, cloud_engine, search_engine, kb=None, chat_id=None, history=None,
+                 skip_queue=False, model_override=None):
         """
         Args:
             cloud_engine: CloudEngine 实例
@@ -281,6 +282,7 @@ class AgentLoop:
             kb: KB 管理器实例（可选）
             chat_id: 会话 ID（文件夹名）— Patch4 v3：workspace 文件操作 + completed 标记
             history: 当前轮次的历史消息列表（Patch5 G：summarize_history 工具用）
+            model_override: 0.11 B1 每技能绑模型——SKILL.md 的 model 字段（本任务用该模型发请求）
         """
         self.cloud_engine = cloud_engine
         self.search_engine = search_engine
@@ -288,6 +290,10 @@ class AgentLoop:
         self.chat_id = chat_id or ""
         self._history_snapshot = history or []  # Patch5 G.一致性：用于 summarize_history
         self._skip_queue = skip_queue  # 0.10 M2-P3：纯云模式跳过 GPU 队列（多会话并行）
+        self.model_override = model_override or None  # 0.11 B1
+        # 0.11 A2：mount_skill 挂载跟踪（同任务上限 SKILL_MOUNT_LIMIT）
+        self._mounted_skills = []
+        self._mounted_overflow_logged = False
 
     def _workspace_error(self, tool_name, err):
         """workspace 工具的通用错误返回。"""
@@ -299,7 +305,8 @@ class AgentLoop:
             "message": "工作区操作失败: %s" % str(err)[:100],
         }
 
-    def run(self, message, mode="chat", history=None, context_cache=None, template=None):
+    def run(self, message, mode="chat", history=None, context_cache=None, template=None,
+            scene_skill=None, scene_name="", scene_hint=""):
         self._user_msg = message if isinstance(message, str) else ""
         """Agent 主循环 — yield (phase, content)
 
@@ -309,6 +316,9 @@ class AgentLoop:
             history: 对话历史（list[dict]）
             context_cache: 上下文缓存字符串
             template: 模板 dict（parse_template() 的返回值，可选，doc 模式用）
+            scene_skill: 0.11 场景卡显式路由——SKILL.md 正文（注入 system prompt [技能] 区块）
+            scene_name: 场景技能名（台账/日志标注用）
+            scene_hint: 场景附加提示（如 poster 子卡风格）
 
         Yields:
             (phase, content) 元组
@@ -327,9 +337,11 @@ class AgentLoop:
 
         # ===== 1. 动态组装工具 + system prompt =====
         # Patch4 修复 2：传入 chat_id 和 history 用于会话上下文注入
+        # 0.11：scene_skill 显式挂载 + 自动触发简表/mount_skill 在 get_tools_and_prompt 内处理
         tools, system_prompt = get_tools_and_prompt(
             mode=mode, kb=self.kb, template=template, kb_permission=kb_permission,
             chat_id=self.chat_id, history=history,
+            scene_skill=scene_skill, scene_name=scene_name, scene_hint=scene_hint,
         )
 
         # ===== 2. 构建 messages =====
@@ -443,6 +455,7 @@ class AgentLoop:
             try:
                 for phase, content in self.cloud_engine.run_with_tools(
                     messages, tools=tools, _skip_queue=self._skip_queue,
+                    model=self.model_override,
                 ):
                     if phase == "tool_calls":
                         # 模型调用了工具
@@ -835,6 +848,175 @@ class AgentLoop:
             dict: 工具执行结果（成功或失败）
         """
         try:
+            if tool_name == "install_skill":
+                # 0.11 B3：AI 自装 Skill（两步：校验暂存 → 用户确认卡 → 落地）
+                from core.skill_installer import validate_and_stage, install_staged, cancel_staged, _staging_root
+                source = (args.get("source") or "").strip()
+                name = (args.get("name") or "").strip()
+                if args.get("confirmed"):
+                    # G1 兜底：name 缺失时用暂存目录里唯一的技能（正常路径已由
+                    # chat.py 确认卡直装完成，这里是模型仍走工具调用时的保险）
+                    if not name:
+                        try:
+                            import os as _os
+                            _subs = [d for d in _os.listdir(_staging_root())
+                                     if _os.path.isdir(_os.path.join(_staging_root(), d))]
+                            if len(_subs) == 1:
+                                name = _subs[0]
+                        except Exception:
+                            pass
+                    if not name:
+                        return {"success": False, "tool": "install_skill",
+                                "error": "missing_name",
+                                "message": "缺少技能名（name 参数），无法定位暂存。"
+                                           "请向用户说明需重新发起安装流程。"}
+                    r = install_staged(name)
+                    if "error" in r:
+                        return {"success": False, "tool": "install_skill",
+                                "error": "install_failed", "message": r["error"]}
+                    return {"success": True, "tool": "install_skill",
+                            "data": {"name": r["name"], "message":
+                                     "技能已安装完成，立即生效（技能页可管理）。"
+                                     "请向用户确认并说明可用方式。"}}
+                r = validate_and_stage(source)
+                if not r.get("ok"):
+                    cancel_staged("")
+                    return {"success": False, "tool": "install_skill",
+                            "error": "validation_failed",
+                            "message": "安全校验未通过：%s。向用户说明原因，不要尝试绕过。" % r.get("reason", "")}
+                # 校验通过 → 指示模型发安装确认卡（skill_install kind 的 ask 卡）
+                _card_spec = {
+                    "kind": "skill_install", "skill": {
+                        "name": r["skill_name"], "description": r.get("description", ""),
+                        "source": r.get("source", ""), "files": r.get("files", []),
+                        "checks": r.get("checks", []),
+                    },
+                    "question": "安装技能「%s」？" % r["skill_name"],
+                    "options": ["确认安装", "拒绝"],
+                }
+                import json as _json
+                return {"success": True, "tool": "install_skill",
+                        "data": {"name": r["skill_name"], "staged": True,
+                                 "message": (
+                                     "校验通过已暂存。现在必须在回复正文里输出安装确认卡"
+                                     "（不可省略、不可直接安装）：\n```ask\n%s\n```"
+                                     "\n等用户在卡上点「确认安装」后，带 confirmed=true、"
+                                     "name=%s 重新调用完成安装；用户拒绝则不再调用。"
+                                     % (_json.dumps(_card_spec, ensure_ascii=False), r["skill_name"]))}}
+
+            elif tool_name == "save_memory":
+                # 0.11 C3：策展记忆写入（工具描述强制先过用户确认卡）
+                from core.curated_memory import save_entry
+                r = save_entry(self.chat_id, args.get("section", ""), args.get("text", ""))
+                if "error" in r:
+                    return {"success": False, "tool": "save_memory",
+                            "error": "save_failed", "message": r["error"]}
+                return {"success": True, "tool": "save_memory",
+                        "data": {"section": r.get("section"), "deduped": r.get("deduped", False),
+                                 "message": "已写入（重复内容自动跳过）" if r.get("deduped") else "已写入长期记忆"}}
+
+            elif tool_name == "recall_memory":
+                # 0.11 C3：策展记忆检索
+                from core.curated_memory import recall
+                r = recall(self.chat_id, args.get("query", ""))
+                return {"success": True, "tool": "recall_memory",
+                        "data": {"hits": r.get("hits", []), "total": r.get("total", 0),
+                                 "exists": r.get("exists", False),
+                                 "message": ("命中 %d 条记忆" % r.get("total", 0)) if r.get("exists")
+                                            else "尚无长期记忆"}}
+
+            if tool_name == "mount_skill":
+                # 0.11 A2：技能懒加载——工具返回值即 SKILL.md 正文（渐进披露）
+                from core.skill_loader import (get_skill_body, append_mount_log,
+                                               SKILL_MOUNT_LIMIT, auto_trigger_enabled)
+                name = (args.get("name") or "").strip()
+                if not auto_trigger_enabled():
+                    append_mount_log(name, False, "自动触发已关闭", self.chat_id)
+                    return {"success": False, "tool": "mount_skill",
+                            "error": "auto_trigger_disabled",
+                            "message": "技能自动触发已关闭（设置→技能→自动触发）。"}
+                if not name:
+                    return {"success": False, "tool": "mount_skill",
+                            "error": "missing_name", "message": "缺少技能名参数 name。"}
+                if name in self._mounted_skills:
+                    return {"success": True, "tool": "mount_skill",
+                            "data": {"name": name, "already_mounted": True,
+                                     "content": "该技能已在本任务挂载过，直接按其指导执行即可，无需重复挂载。"}}
+                if len(self._mounted_skills) >= SKILL_MOUNT_LIMIT:
+                    if not self._mounted_overflow_logged:
+                        append_mount_log(name, False,
+                                         "超挂载上限 %d" % SKILL_MOUNT_LIMIT, self.chat_id)
+                        self._mounted_overflow_logged = True
+                    return {"success": False, "tool": "mount_skill",
+                            "error": "mount_limit",
+                            "message": "本任务已挂载 %d 个技能（上限 %d），不再注入新技能正文；"
+                                       "请直接基于已挂载技能与自身知识完成任务。"
+                                       % (SKILL_MOUNT_LIMIT, SKILL_MOUNT_LIMIT)}
+                body = get_skill_body(name)
+                if not body:
+                    append_mount_log(name, False, "技能不存在", self.chat_id)
+                    return {"success": False, "tool": "mount_skill",
+                            "error": "skill_not_found",
+                            "message": "技能「%s」不存在。请只挂载简表中列出的技能。" % name}
+                self._mounted_skills.append(name)
+                append_mount_log(name, True, "自动触发命中", self.chat_id)
+                log.info("[AGENT] 技能已挂载: %s（%d 字，本任务第 %d 个）",
+                         name, len(body), len(self._mounted_skills))
+                return {"success": True, "tool": "mount_skill",
+                        "data": {"name": name, "content": body}}
+
+            elif tool_name == "create_poster":
+                # 0.11 A3：确定性海报渲染（三模板，token 色，模型只提供内容）
+                from core.poster_render import render_poster
+                from core.doc_session import write_workspace_file
+                try:
+                    html = render_poster(
+                        style=args.get("style", "typo"),
+                        title=args.get("title", ""),
+                        subtitle=args.get("subtitle", ""),
+                        items=args.get("items") or [],
+                        size=args.get("size", "1080x1440"),
+                        tone=args.get("tone", "deep"),
+                        footer=args.get("footer", ""),
+                    )
+                    fname = (args.get("filename") or "").strip() or \
+                            ((args.get("title") or "海报")[:20] + "-海报.html")
+                    f = write_workspace_file(self.chat_id, fname, html)
+                    return {"success": True, "tool": "create_poster",
+                            "data": {"name": fname, "size": len(html),
+                                     "preview": f.get("path", "")}}
+                except ValueError as ve:
+                    return {"success": False, "tool": "create_poster",
+                            "error": "invalid_params", "message": str(ve)[:200]}
+                except Exception as pe:
+                    return self._workspace_error("create_poster", pe)
+
+            elif tool_name == "format_gzh":
+                # 0.11 A3：公众号排版——HTML → 微信编辑器兼容（内联样式/白名单）
+                from core.gzh_format import format_gzh_html
+                from core.doc_session import read_workspace_file, write_workspace_file
+                content = args.get("content") or ""
+                source = (args.get("source") or "").strip()
+                if not content and source:
+                    try:
+                        content = read_workspace_file(self.chat_id, source)
+                    except Exception:
+                        content = ""
+                if not content:
+                    return {"success": False, "tool": "format_gzh",
+                            "error": "empty_content",
+                            "message": "缺少排版内容：传 content（HTML）或 source（工作区文件名）。"}
+                try:
+                    out = format_gzh_html(content)
+                    fname = (args.get("filename") or "").strip() or \
+                            ((source or "公众号文章").rsplit(".", 1)[0][:20] + "-公众号版.html")
+                    write_workspace_file(self.chat_id, fname, out)
+                    return {"success": True, "tool": "format_gzh",
+                            "data": {"name": fname, "chars": len(out),
+                                     "message": "已生成微信兼容版：全选复制产物内容，粘贴到公众号编辑器即可。"}}
+                except Exception as ge:
+                    return self._workspace_error("format_gzh", ge)
+
             if tool_name == "search_web":
                 query = args.get("query", "")
                 results = self.search_engine.search(query)
@@ -1988,7 +2170,16 @@ class AgentLoop:
     def _make_start_status(self, tool_name, args):
         """生成工具开始执行的状态事件"""
         from core.agent_tools import get_status_event
-        if tool_name == "search_web":
+        if tool_name == "mount_skill":
+            return get_status_event(tool_name, "start", skill=(args.get("name") or "")[:30])
+        elif tool_name == "create_poster":
+            return get_status_event(tool_name, "start",
+                                    style=args.get("style", ""),
+                                    title=(args.get("title") or "")[:40])
+        elif tool_name == "format_gzh":
+            return get_status_event(tool_name, "start",
+                                    source=(args.get("source") or "inline html")[:40])
+        elif tool_name == "search_web":
             return get_status_event(tool_name, "start", query=args.get("query", ""))
         elif tool_name == "fetch_url":
             url = args.get("url", "")
@@ -2069,7 +2260,19 @@ class AgentLoop:
             return {"status": "error", "tool": tool_name, "reason": _reason, "filename": args.get("filename") or args.get("path") or ""}
 
         data = result.get("data", {})
-        if tool_name == "search_web":
+        if tool_name == "mount_skill":
+            if data.get("already_mounted"):
+                return get_status_event(tool_name, "done", skill=data.get("name", ""),
+                                        detail="已挂载过，无需重复")
+            return get_status_event(tool_name, "done", skill=data.get("name", ""),
+                                    detail="技能指导已注入")
+        elif tool_name == "create_poster":
+            return get_status_event(tool_name, "done", name=data.get("name", ""),
+                                    size=data.get("size", 0))
+        elif tool_name == "format_gzh":
+            return get_status_event(tool_name, "done", name=data.get("name", ""),
+                                    chars=data.get("chars", 0))
+        elif tool_name == "search_web":
             # P6 #4-a: 补传完整搜索结果列表(标题+url+摘要截断),供前端展开查看
             _raw_results = data.get("results", [])
             _results_for_ui = [{"title": r.get("title", "")[:80],

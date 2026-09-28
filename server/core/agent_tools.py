@@ -154,6 +154,190 @@ _DOC_BASE_PROMPT = (
 # ===== 工具注册表 =====
 
 TOOL_REGISTRY = {
+    # 0.11 B3：AI 自装 Skill（本地 zip/目录 → 校验 → 确认卡 → 安装；全程不联网）
+    "install_skill": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "install_skill",
+                "description": "安装一个社区技能（本地 zip 文件或目录，全程不联网）。"
+                               "两步走：先 confirmed=false 只做安全校验（返回元信息），"
+                               "然后按返回的指引向用户展示确认卡，用户同意后再带 "
+                               "confirmed=true 完成安装。绝不跳过用户确认。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "本机路径：zip 文件（如 D:/skills/foo.zip）或已解包的技能目录"
+                        },
+                        "confirmed": {
+                            "type": "boolean",
+                            "description": "false=仅校验（默认）；true=用户已在确认卡点同意，执行安装"
+                        }
+                    },
+                    "required": ["source"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "skill_installing",
+            "done": "skill_installed",
+        },
+    },
+    # 0.11 C3：策展记忆（结构化知识跨会话复用，写入需用户确认）
+    "save_memory": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "save_memory",
+                "description": "把用户偏好/项目上下文/常用操作写入长期记忆（跨会话生效）。"
+                               "写入前必须先向用户展示确认卡（记忆卡：位置+内容 diff），"
+                               "用户同意后才调用本工具落盘。只记稳定事实（偏好、约定、"
+                               "项目背景），不记临时信息。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "section": {
+                            "type": "string",
+                            "enum": ["偏好", "项目上下文", "常用操作"],
+                            "description": "写入的记忆分节"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "一条记忆（一行，简洁具体，如「交付默认同时给 HTML 预览和 docx」）"
+                        }
+                    },
+                    "required": ["section", "text"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "memory_saving",
+            "done": "memory_saved",
+        },
+    },
+    "recall_memory": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "recall_memory",
+                "description": "检索长期记忆（用户偏好/项目上下文/常用操作）。"
+                               "任务开始时如需了解用户偏好或项目背景，先查这里；"
+                               "回答风格与操作方式应遵循已记住的偏好。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "检索关键词（如「交付格式」「这个项目是做什么的」）"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "memory_recalling",
+            "done": "memory_recalled",
+        },
+    },
+    # 0.11 A2：技能懒加载（自动触发通道；简表进 system prompt，正文经此工具按需取）
+    "mount_skill": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "mount_skill",
+                "description": "挂载一个技能，获取其完整工作指导。当用户任务与技能简表"
+                               "（system prompt 里的「可用技能」）中某项的描述匹配时调用——"
+                               "返回的技能正文是该场景的完整方法论，拿到后按其指导执行任务。"
+                               "每个技能只需挂载一次，同任务最多挂载 3 个。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "技能名（简表里列出的名称，精确匹配）"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "skill_mounting",
+            "done": "skill_mounted",
+        },
+        "condition": "skill_auto",
+    },
+    # 0.11 A3：确定性海报渲染（模型提供内容，模板保证排版）
+    "create_poster": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "create_poster",
+                "description": "生成一张海报（自包含 HTML，浏览器打开即看，可下载）。"
+                               "三套模板按内容选：typo=文字排版（金句/宣言/活动通知）、"
+                               "image=图文（产品/人物/课程）、data=数据（战报/榜单/成绩）。"
+                               "先把内容要素收齐（标题/副标题/要点/落款）再调用，一次成型。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "style": {"type": "string", "enum": ["typo", "image", "data"],
+                                  "description": "模板风格"},
+                        "title": {"type": "string", "description": "主标题（≤14 字最有冲击力）"},
+                        "subtitle": {"type": "string", "description": "副标题（可选）"},
+                        "items": {"type": "array", "items": {"type": "string"},
+                                  "description": "要点/数据条目（3-5 条，每条 ≤20 字）"},
+                        "size": {"type": "string",
+                                 "enum": ["900x383", "1080x1920", "1080x1080", "900x500", "1080x1440"],
+                                 "description": "尺寸：公众号封面 900x383 / 手机海报 1080x1920 / 方形 1080x1080 / 公众号配图 900x500 / 竖版通用 1080x1440"},
+                        "tone": {"type": "string", "enum": ["deep", "light"],
+                                 "description": "色调：deep=深蓝金（正式）/ light=素白（轻盈）"},
+                        "footer": {"type": "string", "description": "落款/日期/行动号召（可选）"},
+                        "filename": {"type": "string", "description": "输出文件名（可选，默认 标题-海报.html）"},
+                    },
+                    "required": ["style", "title"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "poster_rendering",
+            "done": "poster_done",
+        },
+    },
+    # 0.11 A3：公众号排版（微信编辑器兼容）
+    "format_gzh": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "format_gzh",
+                "description": "把文章 HTML 转成微信公众号编辑器兼容格式"
+                               "（样式全部内联、标签白名单、字号行距规范化）。"
+                               "产出可直接全选复制粘贴到公众号编辑器，样式不丢。"
+                               "写完公众号文章后必须调用此工具做最终排版。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string", "description": "文章 HTML 内容（与 source 二选一）"},
+                        "source": {"type": "string", "description": "工作区里的源文件名（与 content 二选一）"},
+                        "filename": {"type": "string", "description": "输出文件名（可选，默认 源名-公众号版.html）"},
+                    },
+                    "required": []
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "gzh_formatting",
+            "done": "gzh_done",
+        },
+    },
     "search_kb": {
         "schema": {
             "type": "function",
@@ -883,7 +1067,7 @@ TOOL_REGISTRY = {
             "type": "function",
             "function": {
                 "name": "project_write",
-                "description": "把文件写入当前项目目录（用户的项目文件夹，不是会话工作区）。安全规则（系统强制）：① 只接受项目内相对路径，拒绝绝对路径和 ../；② 不删文件；③ 覆盖已有文件前系统自动备份旧版（用户可撤销）；④ 默认【计划模式】——写入不会立即执行，只登记进待执行计划；你应先集齐本轮要写的全部文件，用 ask 卡向用户列出计划（覆盖已有文件的必须明确标注），用户确认后调 set_exec_mode(\"execute\") 再逐个重新执行写入；⑤ 执行完成后调 set_exec_mode(\"plan\") 回到计划模式。适用：用户明确要求把成果写进项目文件夹/修改项目里的文件时。",
+                "description": "把文件写入当前项目目录（用户的项目文件夹，不是会话工作区）。安全规则（系统强制）：① 只接受项目内相对路径，拒绝绝对路径和 ../；② 不删文件；③ 覆盖已有文件前系统自动备份旧版（用户可撤销）；④ 默认【计划模式】——写入不会立即执行，只登记进待执行计划；你应先集齐本轮要写的全部文件，再用 ```ask 卡向用户展示计划确认卡，用户确认后调 set_exec_mode(\"execute\") 再逐个重新执行写入；⑤ 执行完成后调 set_exec_mode(\"plan\") 回到计划模式。计划确认卡格式（结构化，系统渲染为可视化卡）：{\"kind\":\"plan_confirm\",\"question\":\"计划正文\",\"subtitle\":\"一句话说明\",\"tools\":[{\"name\":\"工具名\",\"limit\":次数}],\"perms\":[{\"label\":\"权限说明\",\"ok\":true,\"note\":\"边界\"}],\"files\":[{\"name\":\"文件名\",\"mod\":是否覆盖}],\"options\":[\"同意，执行写入\",\"调整\"]}。tools/perms/files 三节让用户一眼看到「会动哪些文件、用哪些工具、权限边界」，覆盖已有文件的 files 条目必须 mod=true。适用：用户明确要求把成果写进项目文件夹/修改项目里的文件时。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1071,6 +1255,8 @@ _TOOL_PERM_MAP = {
     "edit_workspace": "tool_enabled_file_rw",
     "create_ppt": "tool_enabled_create_ppt",   # 0.10 协议 skill 化：独立开关（不再归文件档）
     "create_docx": "tool_enabled_create_docx",
+    "create_poster": "tool_enabled_create_poster",  # 0.11 A3：海报渲染（协议 skill 化）
+    "format_gzh": "tool_enabled_format_gzh",        # 0.11 A3：公众号排版（协议 skill 化）
     "code_exec": "tool_enabled_code_exec",
     "render_d2": "tool_enabled_render_d2",
     "run_plan": "tool_enabled_run_plan",
@@ -1087,6 +1273,10 @@ PROTOCOL_SKILLS = [
      "description": "逐页生成原生可编辑 PPTX（SVG→编译），含设计 DNA 选卡与质量门。"},
     {"id": "docx", "name": "Word 精排版", "config_key": "tool_enabled_create_docx",
      "description": "按章节生成正式排版 Word：封面/标题层级/页眉页脚。"},
+    {"id": "poster", "name": "海报设计", "config_key": "tool_enabled_create_poster",
+     "description": "三套模板确定性渲染海报（文字排版/图文/数据），深蓝金 token 配色。"},
+    {"id": "gzh", "name": "公众号排版", "config_key": "tool_enabled_format_gzh",
+     "description": "HTML 转微信编辑器兼容格式（内联样式/标签白名单），粘贴样式不丢。"},
     {"id": "code_exec", "name": "代码执行", "config_key": "tool_enabled_code_exec",
      "description": "在受限子进程中运行 Python 做精确计算与数据处理。"},
     {"id": "d2", "name": "D2 图表", "config_key": "tool_enabled_render_d2",
@@ -1104,7 +1294,8 @@ PROTOCOL_SKILLS = [
 ]
 
 
-def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="full", chat_id=None, history=None):
+def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="full", chat_id=None, history=None,
+                         scene_skill=None, scene_name="", scene_hint=""):
     """根据当前环境动态组装工具列表 + system prompt
 
     Args:
@@ -1114,6 +1305,9 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         kb_permission: "full" | "search-only" | "disabled" — 知识库权限控制
         chat_id: 会话 ID（文件夹名）—— Patch4 修复 2：用于会话上下文注入
         history: 对话历史（list[dict]）—— Patch4 修复 2：用于提取工具调用历史
+        scene_skill: 0.11 显式通道——场景卡 SKILL.md 正文（注入 [技能] 区块）
+        scene_name: 场景技能名（标注用）
+        scene_hint: 场景附加提示（poster 子卡风格等）
 
     Returns:
         (tools, system_prompt):
@@ -1140,6 +1334,14 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
             continue
         if condition == "doc_mode" and not doc_mode:
             continue
+        # 0.11 A2：自动触发总开关开着且存在可自动匹配的技能，才注册 mount_skill
+        if condition == "skill_auto":
+            try:
+                from core.skill_loader import auto_trigger_enabled, get_auto_skills
+                if not (auto_trigger_enabled() and get_auto_skills()):
+                    continue
+            except Exception:
+                continue
         if condition == "project_kb":
             # M2-5：当前会话所属项目的知识库开关开且索引非空才注册
             _pkb_ok = False
@@ -1210,6 +1412,49 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         except Exception:
             pass
     base += "".join(fragments)
+
+    # ===== 0.11 显式通道：场景卡技能正文注入（PLAN-011 D1） =====
+    # 用户点了场景卡（或其子卡）——SKILL.md 正文全文注入，本轮任务按其方法论执行
+    if scene_skill:
+        _skill_block = "\n\n[技能｜%s]\n用户已选择该场景，以下是其完整工作方法论，严格按此执行：\n\n%s\n" % (
+            scene_name or "场景", scene_skill.strip())
+        if scene_hint:
+            _skill_block += "\n[%s 风格提示] %s\n" % (scene_name or "场景", scene_hint)
+        base += _skill_block
+
+    # ===== 0.11 自动通道：技能简表 + mount_skill 懒加载指引 =====
+    # 渐进披露：简表只给 name+description（≤2 行/条），正文经 mount_skill 按需取
+    try:
+        from core.skill_loader import auto_trigger_enabled, get_auto_skill_summary
+        if auto_trigger_enabled():
+            _summary = get_auto_skill_summary()
+            if _summary:
+                base += (
+                    "\n\n[可用技能]\n以下技能与某些任务类型强相关（名称：适用场景）：\n"
+                    + _summary
+                    + "\n判断当前任务命中其中一项时，先调 mount_skill(name) 取回该技能的完整指导再动手；"
+                      "不命中就不挂载，不要为了用而用。\n"
+                )
+    except Exception as _skill_e:
+        log.warning("[AGENT_TOOLS] 技能简表注入失败: %s", str(_skill_e)[:80])
+
+    # ===== 0.11 C3：策展记忆注入（偏好条目 + 概览，v1 关键词级） =====
+    try:
+        from core.curated_memory import inject_hint
+        _mh = inject_hint(chat_id)
+        if _mh:
+            base += "\n" + _mh
+    except Exception:
+        pass
+
+    # ===== 0.11 B1：agentRouting 提示表（纯提示层——模型只建议切换，不假装已切） =====
+    try:
+        from core.cloud_profiles import routing_hint
+        _rh = routing_hint()
+        if _rh:
+            base += "\n\n[模型档案]\n" + _rh + "\n"
+    except Exception:
+        pass
 
     # ===== Patch4 修复 2：会话上下文注入（token 预算 5000）=====
     base = _inject_session_context(

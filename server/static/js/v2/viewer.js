@@ -470,7 +470,10 @@ export function createViewer(opts) {
           if (opts.onReferenceFile) opts.onReferenceFile(b.dataset.name, b);
         }));
     } else if (tab === 'files') {
-      if (files === null) {
+      // G2 修复：列表归属会话（filesFor）与当前会话不一致 → 重载（此前只在 null 时加载，
+      // 切会话后一直显示旧会话产物）
+      const _curFiles = opts.getCurrentChat();
+      if (files === null || !_curFiles || filesFor !== _curFiles.name) {
         body.innerHTML = '<div class="vw-empty">加载中…</div>';
         loadFiles().then(renderBody);
         return;

@@ -39,6 +39,8 @@ const state = {
   handoff: null,           // 项目交接 {content, updated_at, source_chat, source_engine}
   pendingProjectDir: null, // 无会话时用户在空状态选的项目（首个发送时落在该项目）
   parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
+  cloudProfiles: [],       // 0.11 B1 模型档案 [{id,name,tag,model,active,api_key_set}]（在线模式顶栏快切）
+  sessUnread: {},          // 0.11 C1 完成未读 badge（chat_id → true，点进清除，localStorage 持久）
   generating: false,
   switching: false,   // 模式切换骨架屏态
 };
@@ -176,6 +178,7 @@ function render() {
           if (m2 && m2.context_window) state.contextWindow = m2.context_window;
         } catch (e) { /* 保底用 switch 返回值 */ if (r.context_window) state.contextWindow = r.context_window; }
         state.modelTag = await getModelTag(state.mode);
+        if (state.mode === 'cloud') await loadCloudProfiles();  // B1：顶栏档案快切
         if (state.mode === 'local' && !state.localActions.length) {
           state.localActions = await loadLocalActions();
         }
@@ -198,6 +201,7 @@ function render() {
       state.switchingSess = true;  // 主区鱼骨（旧会话内容不再残留）
       renderChatArea();
       await api.switchChat(c.path);
+      clearSessUnread(c.name);  // C1：点进会话清除未读 badge
       state.sessions = await loadSessions();
       state.tab = 'chat';
       await loadCurrentMessages();
@@ -286,11 +290,13 @@ function render() {
       ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model" id="tbModelTag" title="${state.mode === 'cloud' ? '' : '模型加载状态，点击管理（离线AI）'}">${state.mode !== 'cloud' ? _llmDotHtml() : ''}${esc(state.modelTag)}</span>` : ''}
       ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
+      ${_profChipHtml()}
       <button class="tb-viewer ${_viewer && _viewer.isOpen ? 'on' : ''}" id="tbViewerBtn" title="视窗（会话/预览/文件/轨迹）">◧ 视窗</button>
     </div>
     <div id="main-scroll"></div>
   `;
   app.appendChild(main);
+  _bindProfileChip(main);
 
   if (state.tab === 'chat') {
     renderChatArea();
@@ -349,6 +355,7 @@ function render() {
         state.switchingSess = true;  // 主区鱼骨（旧会话内容不再残留）
         renderChatArea();
         await api.switchChat(c.path);
+      clearSessUnread(c.name);  // C1：点进会话清除未读 badge
         state.sessions = await loadSessions();
         state.tab = 'chat';
         await loadCurrentMessages();
@@ -410,6 +417,146 @@ async function _refreshLLMDot() {
   _llmDotCls = window._v2LLMLoading ? 'ld' : (_llmLoaded ? 'on' : 'off');
   const d = document.querySelector('#tbModelTag .tb-mdot');
   if (d) d.className = 'tb-mdot ' + _llmDotCls;
+}
+
+// ===== 0.11 B1 顶栏模型档案快切（照原型 ui-011.html ① spec#1-3）=====
+const _ZAP = '<svg fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>';
+const _CK = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
+
+// ===== 0.11 C1 会话状态轮询（五态指示器 + 完成未读 badge，原型① spec#4-6）=====
+const _STT = { gen: '生成中', tool: '工具运行', wait: '待确认', err: '出错' };
+let _lastGenSet = new Set();
+let _sessStatusTimer = null;
+
+function _persistUnread() {
+  try { localStorage.setItem('v2SessUnread', JSON.stringify(state.sessUnread)); } catch (e) { /* 隐私模式 */ }
+}
+
+function clearSessUnread(cid) {
+  if (state.sessUnread[cid]) {
+    delete state.sessUnread[cid];
+    _persistUnread();
+  }
+}
+
+async function pollSessStatus() {
+  try {
+    const d = await fetch('/api/chats/status').then(r => r.json());
+    const genSet = new Set(d.generating || []);
+    const toolSet = new Set(d.tools_running || []);
+    const waitSet = new Set(d.waiting || []);
+    const errs = d.errors || {};
+    const curName = (state.sessions.find(c => c.current) || {}).name;
+    // 完成未读：上轮在生成 → 本轮不在且非当前会话 → 金点角标
+    _lastGenSet.forEach(cid => {
+      if (!genSet.has(cid) && !waitSet.has(cid) && !errs[cid] && cid !== curName) {
+        state.sessUnread[cid] = true;
+        _persistUnread();
+      }
+    });
+    _lastGenSet = genSet;
+    // 合并状态到 sessions + 侧栏 DOM 定向更新（不整页 render，不打断输入）
+    (state.sessions || []).forEach(c => {
+      const cid = c.name;
+      c.sessStatus = toolSet.has(cid) ? 'tool' : genSet.has(cid) ? 'gen'
+        : (waitSet.has(cid) ? 'wait' : (errs[cid] ? 'err' : ''));
+      c.unread = !!state.sessUnread[cid];
+    });
+    _updateSessDots();
+  } catch (e) { /* 后端暂不可达：静默，下轮再试 */ }
+  _sessStatusTimer = setTimeout(pollSessStatus,
+    (_lastGenSet.size || state.generating) ? 2500 : 5000);
+}
+
+function _updateSessDots() {
+  document.querySelectorAll('.sess-item[data-chat]').forEach(el => {
+    const c = (state.sessions || []).find(x => x.name === el.dataset.chat);
+    if (!c) return;
+    const st = c.sessStatus || '';
+    const dot = el.querySelector('.si-st');
+    if (dot) { dot.className = 'si-st ' + (st || 'idle'); dot.title = _STT[st] || ''; }
+    const t = el.querySelector('.si-st-t');
+    if (t) {
+      t.className = 'si-st-t ' + st;
+      t.textContent = st ? _STT[st] : '';
+      t.style.display = st ? '' : 'none';
+    }
+    let badge = el.querySelector('.si-badge');
+    if (c.unread && !badge) {
+      badge = document.createElement('span');
+      badge.className = 'si-badge';
+      badge.title = '有新完成内容';
+      badge.textContent = '1';
+      el.querySelector('.sm') && el.querySelector('.sm').appendChild(badge);
+    } else if (!c.unread && badge) {
+      badge.remove();
+    }
+  });
+}
+
+
+async function loadCloudProfiles() {
+  try {
+    const d = await fetch('/api/cloud/profiles').then(r => r.json());
+    state.cloudProfiles = (d && d.profiles) || [];
+  } catch (e) { state.cloudProfiles = []; }
+}
+
+function _profChipHtml() {
+  // 仅在线 + 聊天 tab + 有档案时显示（离线档案管理无意义）
+  if (state.mode !== 'cloud' || state.tab !== 'chat' || !state.cloudProfiles.length) return '';
+  const cur = state.cloudProfiles.find(p => p.active) || state.cloudProfiles[0];
+  if (!cur) return '';
+  const rows = state.cloudProfiles.map(p => `
+    <div class="pm-row ${p.active ? 'cur' : ''}" data-prof="${esc(p.id)}">
+      <span class="nm">${esc(p.name)}</span>
+      <span class="md">${esc(p.model || '未配置模型')}</span>
+      ${p.tag === 'strong' ? '<span class="pm-tag strong">强</span>' : '<span class="pm-tag fast">快</span>'}
+      <span class="ic ck">${_CK}</span>
+    </div>`).join('');
+  return `
+  <div class="prof-wrap" id="profWrap">
+    <button class="prof-chip" id="profChip" title="切换模型档案（当前会话后续请求生效）">
+      <span class="ic">${_ZAP}</span>
+      <span class="pv"><b>${esc(cur.name)}</b> · ${esc(cur.model || '未配置')}</span>
+      <span class="chev">▾</span>
+    </button>
+    <div class="prof-menu">
+      <div class="pm-cap">模型档案（当前会话后续请求生效）</div>
+      ${rows}
+      <div class="pm-note">智能路由开启时：产物类任务建议「强」档案，轻量问答走「快」档案</div>
+      <div class="pm-mgr" id="profMgr"><span class="ic"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>管理档案…</div>
+    </div>
+  </div>`;
+}
+
+function _bindProfileChip(root) {
+  const wrap = root.querySelector('#profWrap');
+  if (!wrap) return;
+  const chip = wrap.querySelector('#profChip');
+  chip.addEventListener('click', (e) => { e.stopPropagation(); wrap.classList.toggle('open'); });
+  document.addEventListener('click', () => wrap.classList.remove('open'), { once: true });
+  wrap.querySelectorAll('.pm-row').forEach(row => {
+    row.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = row.dataset.prof;
+      if (row.classList.contains('cur')) { wrap.classList.remove('open'); return; }
+      row.style.opacity = '.5';
+      await fetch('/api/cloud/profiles/switch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      }).catch(() => {});
+      await loadCloudProfiles();
+      state.modelTag = await getModelTag(state.mode);
+      render();
+    });
+  });
+  const mgr = wrap.querySelector('#profMgr');
+  if (mgr) mgr.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.tab = 'settings';
+    render();
+  });
 }
 setInterval(_refreshLLMDot, 20000);
 window._v2RefreshLLMDot = _refreshLLMDot;  // 供设置页（使用/卸载后）即时刷新，20s 轮询只作兜底
@@ -800,20 +947,15 @@ async function onSend(payload) {
     .map(m => (m.role === 'assistant' && m.content && m.content.length > 1500)
       ? Object.assign({}, m, { content: m.content.slice(0, 1500) + '\n\n...（内容过长已截断）' })
       : m);
-  // 0.10.2 定稿：在线=纯 agentic + 意图提示（不走 actionMode 管线路由）
-  // 离线=保留 actionMode（chat/doc/kb 三条冻结管线）
-  // 场景卡 = 给模型的意图信号（描述性前缀），不是管线开关
-  const SCENE_INTENTS = {
-    ppt:    '[用户意图：制作一份 PPT 演示文稿]\n',
-    report: '[用户意图：生成一份带图表的可视化报告]\n',
-    search: '[用户意图：联网搜索最新信息]\n',
-    deep:   '[用户意图：深度分析一个课题]\n',
-    poster: '[用户意图：设计一张海报/封面，输出自包含 HTML]\n',
-    gzh:    '[用户意图：写一篇公众号文章，输出适合直接粘贴的 HTML]\n',
-    doc:    '[用户意图：生成一份正式文档]\n',
-  };
-  const _intent = state.scene ? (SCENE_INTENTS[state.scene] || '') : '';
-  if (_intent) payload.text = _intent + payload.text;
+  // 0.11 A1 定稿：场景卡 = SKILL.md 显式路由（替代 0.10.2 硬编码意图前缀）
+  // 前端只发 [场景：x] 标记；后端 chat.py 剥离标记 → skill_loader 查
+  // data/skills/{x}/SKILL.md → 注入 system prompt [技能] 区块。
+  // 改 SKILL.md 文件即生效（后端 mtime 缓存），不用改前端。
+  // 离线=保留 actionMode 冻结管线，不发标记（纯 agentic 是在线专属）。
+  const _scene = state.scene || '';
+  if (_scene && state.mode !== 'local') {
+    payload.text = '[场景：' + _scene + ']\n' + payload.text;
+  }
   // 在线模式强制 agentic（不走 doc/kb 管线路由）
   if (state.mode !== 'local') payload.actionMode = 'chat';
   state.scene = '';  // 发送后场景 tag 清空
@@ -1353,6 +1495,7 @@ function showSessionMenu(chat, anchorEl) {
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
     <button data-a="handoff">生成会话记忆</button>
+    <button data-a="distill">存为技能（经验沉淀）</button>
     <button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
@@ -1426,6 +1569,19 @@ function showSessionMenu(chat, anchorEl) {
     } catch (e) { uiAlert('设置失败：' + (e && e.message ? e.message : '')); }
   });
 
+  // 0.11 C3 经验沉淀：会话轨迹 → SKILL.md（在线直连一次生成 → 注册）
+  menuEl.querySelector('[data-a="distill"]').addEventListener('click', async () => {
+    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
+    if (!(await uiConfirm('存为技能？将分析这个会话的任务轨迹，提炼一份可复用技能（需在线模式）')))
+      return;
+    const r = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/distill', { method: 'POST' })
+      .then(r => r.json()).catch(() => ({ error: '请求失败' }));
+    if (r && r.ok) {
+      uiAlert('技能已沉淀：「' + r.name + '」\n下次同类任务可让 AI 挂载使用（技能页可管理）。');
+    } else {
+      uiAlert('沉淀失败：' + ((r && r.error) || '未知错误'));
+    }
+  });
   menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
     const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
     if (!(await uiConfirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`))) return;
@@ -1468,6 +1624,12 @@ async function boot() {
     if (m && m.mode) state.mode = m.mode;
     if (m && m.context_window) state.contextWindow = m.context_window;
     state.modelTag = await getModelTag(state.mode);
+    if (state.mode === 'cloud') await loadCloudProfiles();  // B1：顶栏档案快切
+    // C1：恢复未读 badge + 启动会话状态轮询（五态指示器）
+    try {
+      state.sessUnread = JSON.parse(localStorage.getItem('v2SessUnread') || '{}') || {};
+    } catch (e) { state.sessUnread = {}; }
+    if (!_sessStatusTimer) pollSessStatus();
     // 并行实验开关（存量迁移：当前并行而开关未点亮 → 自动点亮由设置页负责，这里只读）
     try {
       const all = await fetch('/api/config').then(r => r.json());

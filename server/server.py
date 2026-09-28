@@ -426,6 +426,22 @@ async def _lifespan(app):
     except Exception as e:
         log.warning("[STARTUP] 线程池初始化失败: %s" % str(e)[:100])
 
+    # ===== 0.11 技能中枢：预装 SKILL.md 分发 + 管线挂载（轻量，文件级操作）=====
+    try:
+        from core.skill_loader import ensure_default_skills, register_user_skills
+        _copied = ensure_default_skills()
+        _registered = register_user_skills()
+        log.info("[STARTUP] 技能就绪：预装新拷 %d 个，管线挂载 %d 个", _copied, _registered)
+    except Exception as e:
+        log.warning("[STARTUP] 技能分发失败（不阻断启动）: %s" % str(e)[:100])
+
+    # ===== 0.11 B1：模型档案迁移（首启一次：包装现有单份配置为「默认」档案）=====
+    try:
+        from core.cloud_profiles import ensure_default_profiles
+        ensure_default_profiles()
+    except Exception as e:
+        log.warning("[STARTUP] 档案迁移失败（不阻断启动）: %s" % str(e)[:100])
+
     # ===== 启动后台初始化线程（所有重活）=====
     _set_bg_phase("pending")
     _bg_init_thread = _threading.Thread(target=_bg_init_worker, daemon=True)

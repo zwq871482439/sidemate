@@ -26,7 +26,7 @@ const ONLINE_SCENES = {
       { scene: 'doc', icon: I.doc, title: '写文档', desc: '报告、方案、长文；先出网页预览，可转 Word' },
       { scene: 'report', icon: I.report, title: '可视化报告', desc: '图表 + 网页报告，数据一眼看懂' },
       { scene: 'poster', icon: I.poster, title: '设计海报', desc: '封面、海报、配图，多平台尺寸', gold: true },
-      { scene: 'gzh', icon: I.gzh, title: '公众号文章', desc: '一键排版粘贴，样式不丢', gold: true, soon: '候选' },
+      { scene: 'gzh', icon: I.gzh, title: '公众号文章', desc: '一键排版粘贴，样式不丢', gold: true },
     ]},
     { title: '研究深挖', desc: '联网与多轮工具循环', grid: 'two', cards: [
       { scene: 'search', icon: I.search, title: '联网搜索', desc: '搜索 → 阅读原文 → 回答，附来源' },
@@ -39,6 +39,18 @@ const OFFLINE_CARDS = [
   { scene: 'chat', icon: I.chat, title: '聊天', desc: '本地模型日常问答，支持引用文档与知识库' },
   { scene: 'doc', icon: I.doc, title: '文档生成', desc: '基于内置模板生成规范文档（小模型模板级输出）' },
   { scene: 'kb', icon: I.kb, title: '知识库文档', desc: '上传资料本地检索问答，向量索引不出本机' },
+];
+
+// 海报风格子卡（0.11 A3，照原型 ui-011.html ②：点主卡展开三张子卡，点子卡落场景 tag）
+// 展开态是模块级状态——空状态重渲染（如项目切换）后保持
+let posterExpanded = false;
+const POSTER_SUBS = [
+  { scene: 'poster-typo',  title: '文字排版海报', desc: '金句/宣言/活动通知——大字层级 + 金色点睛',
+    thumb: '<span class="th-bar" style="width:64%"></span><span class="th-bar" style="width:42%"></span><span class="th-bar g" style="width:24%"></span>', cls: 'thumb-typo' },
+  { scene: 'poster-image', title: '图文海报', desc: '封面/宣传页——左图右文，适合产品与人物',
+    thumb: '<span class="th-ph"></span><span class="th-tx"><i style="width:88%"></i><i style="width:66%"></i><i class="g" style="width:42%"></i></span>', cls: 'thumb-img' },
+  { scene: 'poster-data',  title: '数据海报', desc: '战报/榜单——大数字 + 条形对比',
+    thumb: '<span class="th-ch" style="height:42%"></span><span class="th-ch" style="height:68%"></span><span class="th-ch g" style="height:100%"></span><span class="th-ch" style="height:52%"></span>', cls: 'thumb-chart' },
 ];
 
 // events: onScene(scene)；onPickProject(anchor) + projectLabel（项目选择器，PLAN 1.5 四次定稿）
@@ -98,16 +110,49 @@ export function renderEmptyState(mode, events) {
         <div class="sec-title"><span class="t">${sec.title}</span><span class="d">${sec.desc}</span></div>
         <div class="scene-grid ${sec.grid}">
           ${sec.cards.map(c => `
-            <div class="scene-card ${c.gold ? 'gold' : ''}" data-scene="${c.scene}">
+            <div class="scene-card ${c.gold ? 'gold' : ''} ${c.scene === 'poster' && posterExpanded ? 'on' : ''}" data-scene="${c.scene}">
               <div class="s-ic">${ICON(c.icon)}</div><h3>${c.title}</h3><p>${c.desc}</p>
+              ${c.scene === 'poster' && posterExpanded ? '<span class="picked">已选</span>' : ''}
               ${c.soon ? `<span class="soon">${c.soon}</span>` : ''}
             </div>`).join('')}
-        </div>`).join('')}
+        </div>
+        ${sec.cards.some(c => c.scene === 'poster') ? `
+        <div class="poster-subs ${posterExpanded ? 'show' : ''}">
+          ${POSTER_SUBS.map(s => `
+            <div class="poster-sub" data-scene="${s.scene}">
+              <div class="sub-thumb ${s.cls}">${s.thumb}</div>
+              <div class="sc-t">${s.title}</div>
+              <div class="sc-d">${s.desc}</div>
+            </div>`).join('')}
+          <div class="sub-note">选风格后落对应场景 tag，技能会按所选风格指导内容收集与渲染</div>
+        </div>` : ''}
+        `).join('')}
     `;
   }
 
-  wrap.querySelectorAll('[data-scene]').forEach(el =>
-    el.addEventListener('click', () => events.onScene(el.dataset.scene)));
+  // 场景卡点击：poster 主卡=展开/收起子卡；子卡与其余卡=onScene
+  wrap.querySelectorAll('[data-scene]').forEach(el => {
+    el.addEventListener('click', () => {
+      const sc = el.dataset.scene;
+      if (sc === 'poster') {
+        // 主卡点击切换展开态（局部 DOM 更新，不整页重渲染）
+        posterExpanded = !posterExpanded;
+        el.classList.toggle('on', posterExpanded);
+        const picked = el.querySelector('.picked');
+        if (posterExpanded && !picked) {
+          const sp = document.createElement('span');
+          sp.className = 'picked'; sp.textContent = '已选';
+          el.appendChild(sp);
+        } else if (!posterExpanded && picked) {
+          picked.remove();
+        }
+        const subs = wrap.querySelector('.poster-subs');
+        if (subs) subs.classList.toggle('show', posterExpanded);
+        return;
+      }
+      events.onScene(sc);
+    });
+  });
   const eo = wrap.querySelector('.empty-own');
   if (eo && events.onPickProject) {
     eo.addEventListener('click', () => events.onPickProject(eo));

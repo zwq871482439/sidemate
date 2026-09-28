@@ -61,6 +61,7 @@ class StreamContext:
     # 0.10.1 M1-B 后端单写：stream 入口开局落盘的 user 消息
     user_msg_id: str = ""        # 开局落盘的 user 消息 id（空=未落盘，走 legacy 重建）
     user_msg_saved: bool = False  # user 消息是否已在开局落盘
+    scene: str = ""  # 0.11 场景卡显式路由：[场景：x] 标记解析出的技能名（仅在线 agentic 通道消费）
 
 
 # ============================================================

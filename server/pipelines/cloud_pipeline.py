@@ -373,14 +373,39 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         yield 'data: [DONE]\n\n'
         return
 
-    # 创建并运行 AgentLoop
+    # 0.11 场景卡显式路由：scene → SKILL.md 正文注入 system prompt（PLAN-011 A1）
+    _scene_skill = ""
+    _scene_hint = ""
+    _scene_model = None
+    _scene = getattr(ctx, "scene", "") or ""
+    if _scene:
+        try:
+            from core.skill_loader import get_scene_skill
+            _sk = get_scene_skill(_scene)
+            if _sk:
+                _scene_skill = _sk["prompt_fragment"] or ""
+                _scene_hint = _sk.get("scene_hint", "")
+                # B1 每技能绑模型：SKILL.md 的 model 字段（仅当该模型已配置过能力档案才生效）
+                _m = (_sk.get("model") or "").strip()
+                if _m:
+                    _scene_model = _m
+                log.info("[CLOUD-AGENT] 场景技能已挂载: %s（%d 字%s）", _scene,
+                         len(_scene_skill), "，绑模型 " + _m if _m else "")
+            else:
+                log.info("[CLOUD-AGENT] 场景 %s 无对应 SKILL.md，按纯意图处理", _scene)
+        except Exception as _e:
+            log.warning("[CLOUD-AGENT] 场景技能解析失败: %s", str(_e)[:80])
+
+    # 创建并运行 AgentLoop（B1：技能绑模型走 model_override，引擎按次覆盖）
     from core.agent_loop import AgentLoop
     # Patch4 修复 1：从 chat_file 推导 chat_id（用于 workspace + 文档状态化）
     _chat_id = ""
     if chat_file:
         from core.doc_session import chat_id_from_path
         _chat_id = chat_id_from_path(chat_file)
-    agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id, history=model_history, skip_queue=True)  # M2-P3：纯云跳过 GPU 队列
+    agent = AgentLoop(cloud_engine, search_engine, kb=kb, chat_id=_chat_id,
+                      history=model_history, skip_queue=True,
+                      model_override=_scene_model)  # M2-P3：纯云跳过 GPU 队列
 
     # BUG-2 修复：timeline 缓冲必须在 preload 块之前初始化（下方 preload 分支会 append），
     # 否则在赋值前引用会触发 UnboundLocalError。
@@ -550,6 +575,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             history=model_history,
             context_cache=context_cache,
             template=template,
+            scene_skill=_scene_skill,
+            scene_name=(_scene if _scene_skill else ""),
+            scene_hint=_scene_hint,
         ):
             if phase == "text":
                 full_text += content

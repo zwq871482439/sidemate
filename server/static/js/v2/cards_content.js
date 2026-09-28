@@ -255,14 +255,101 @@ function _validate(type, spec) {
   } else if (type === 'ask') {
     if (!spec.question || typeof spec.question !== 'string') return 'question 缺失';
     if (spec.options && !Array.isArray(spec.options)) return 'options 必须是数组';
+    if (spec.kind === 'skill_install' && !spec.skill) return 'skill_install 卡缺 skill 字段';
   }
   return '';
 }
 
 // ===== 问答卡（ask）：模型提问 → 用户单选/手敲 → 回答开新轮（回合制） =====
-function _renderAsk(card, spec, opts) {
+// 0.11 确认卡家族（照原型 ui-011.html ①）：kind 扩展
+//   plan_confirm   计划确认（带 tools/perms/files 时渲染结构化三节，spec#9-13）
+//   skill_install  安装技能确认（spec#14-16）
+//   memory_save    记忆写入确认（spec#17-20）
+//   distill        经验沉淀建议（spec#21-23）
+const _CK = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
+const _CKC = '<span class="cf-ic y">' + _CK + '</span>';
+
+function _cfBtn(txt, cls) {
+  return `<button class="cf-btn ${cls || 'ghost'}">${esc(txt)}</button>`;
+}
+
+function _renderConfirmCard(card, spec, opts, kind) {
+  // 已答态
   const answered = opts && opts.getCardAnswer ? opts.getCardAnswer(spec.question) : null;
-  const isPlan = spec.kind === 'plan_confirm';  // M2-3：计划确认卡（点同意=系统直接切执行模式）
+  const acts = spec.options || [];
+  let head = '', secs = '';
+  if (kind === 'skill_install' && spec.skill) {
+    const s = spec.skill;
+    head = `<div class="cf-head"><span class="cf-cic gold">${iconSvg('puzzle')}</span>
+      <div><div class="cf-t">安装技能确认</div>
+      <div class="cf-s">来源：${esc(s.source || '本地')} · 全程不联网</div></div></div>`;
+    secs = `<div class="cf-sec"><div class="cf-lb">技能信息</div>
+      <div class="cf-line"><span class="cf-name">${esc(s.name)}</span></div>
+      <div class="cf-line dim">${esc(s.description || '')}</div>
+      <div class="cf-line dim">文件清单：${esc((s.files || []).join(' · ')) || '—'}</div></div>
+      <div class="cf-sec"><div class="cf-lb">安全校验</div>
+      ${(s.checks || []).map(c => `<div class="cf-vrow">${_CKC}<span>${esc(c)}</span></div>`).join('')}</div>`;
+  } else if (kind === 'memory_save') {
+    head = `<div class="cf-head"><span class="cf-cic">${iconSvg('tag')}</span>
+      <div><div class="cf-t">记忆写入确认</div>
+      <div class="cf-s">写入后跨会话生效</div></div></div>`;
+    secs = `<div class="cf-sec"><div class="mem-path">项目记忆 › <b>${esc(spec.section || '偏好')}</b></div>
+      <div class="mem-diff"><span class="add">+ ${esc(spec.text || spec.question || '')}</span></div></div>`;
+  } else if (kind === 'distill' && spec.skill) {
+    const s = spec.skill;
+    head = `<div class="cf-head"><span class="cf-cic gold">${iconSvg('bulb')}</span>
+      <div><div class="cf-t">存为技能？</div>
+      <div class="cf-s">任务完成得很顺，沉淀成技能下次直接复用（仅建议一次）</div></div></div>`;
+    secs = `<div class="cf-sec"><div class="cf-lb">本次任务模式</div>
+      <div class="cf-flow">${(spec.flow || []).map(f => `<span class="fs">${esc(f)}</span>`).join('<span class="fa">→</span>')}</div></div>
+      <div class="cf-sec"><div class="cf-lb">将生成的技能</div>
+      <div class="cf-preview"><span class="dn">${esc(s.name)}</span><span class="dt-tag">场景触发</span><br>${esc(s.description || '')}</div></div>`;
+  } else if (kind === 'plan_confirm') {
+    head = `<div class="cf-head"><span class="cf-cic">${iconSvg('clipboardCheck')}</span>
+      <div><div class="cf-t">执行计划确认</div>
+      <div class="cf-s">${esc(spec.subtitle || '模型已拟好计划')}</div></div></div>`;
+    if (spec.tools || spec.perms || spec.files) {
+      secs = (spec.tools && spec.tools.length ? `<div class="cf-sec"><div class="cf-lb">工具范围（本轮计划将使用）</div>
+        ${spec.tools.map(t => `<span class="tchip${t.denied ? ' over' : ''}">${esc(t.name)}${t.limit ? ` <span class="xn">×${esc(t.limit)}</span>` : ''}${t.denied ? ' <span class="xn">未授权</span>' : ''}</span>`).join('')}</div>` : '')
+      + (spec.perms && spec.perms.length ? `<div class="cf-sec"><div class="cf-lb">权限边界</div>
+        ${spec.perms.map(p => `<div class="cf-vrow">${p.ok ? _CKC : '<span class="cf-ic n">✕</span>'}<span>${esc(p.label)}</span><span class="cf-bd">${esc(p.note || '')}</span></div>`).join('')}</div>` : '')
+      + (spec.files && spec.files.length ? `<div class="cf-sec"><div class="cf-lb">文件影响</div>
+        ${spec.files.map(f => `<div class="cf-vrow"><span class="cf-ic">${iconSvg('file')}</span><span>${esc(f.name)}</span><span class="fb ${f.mod ? 'mod' : 'new'}">${f.mod ? '覆盖' : '新建'}</span></div>`).join('')}</div>` : '')
+      + `<div class="cf-sec"><div class="cf-lb">计划内容</div><div class="cf-line">${esc(spec.question).replace(/\n/g, '<br>')}</div></div>`;
+    } else {
+      secs = `<div class="cf-sec"><div class="cf-line">${esc(spec.question).replace(/\n/g, '<br>')}</div></div>`;
+    }
+  }
+  card.innerHTML = `${head}${secs}
+    <div class="cf-btns">
+      <button class="cf-btn ghost" data-ans="${esc(acts[1] || '取消')}">${esc(acts[1] || '取消')}</button>
+      <button class="cf-btn ${kind === 'plan_confirm' ? 'primary' : 'gold'}" data-ans="${esc(acts[0] || '确认')}">${esc(acts[0] || '确认')}</button>
+    </div>`;
+  if (answered) {
+    card.innerHTML += `<div class="cf-answered">✓ 已处理：${esc(answered)}</div>`;
+    card.querySelectorAll('.cf-btn').forEach(b => b.disabled = true);
+    return;
+  }
+  const action = kind === 'plan_confirm' ? 'plan_execute' : (kind === 'skill_install' ? 'skill_install' : null);
+  card.querySelectorAll('.cf-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      if (opts && opts.onAskAnswer) opts.onAskAnswer(spec.question, b.dataset.ans, action);
+      card.querySelectorAll('.cf-btn').forEach(x => x.disabled = true);
+      b.style.borderColor = 'var(--d1-gold)';
+    });
+  });
+}
+
+function _renderAsk(card, spec, opts) {
+  const kind = spec.kind || '';
+  // 0.11 确认卡家族：结构化渲染（照原型 ui-011.html ①）
+  if (kind === 'skill_install' || kind === 'memory_save' || kind === 'distill'
+      || (kind === 'plan_confirm' && (spec.tools || spec.perms || spec.files))) {
+    _renderConfirmCard(card, spec, opts, kind);
+    return;
+  }
+  const answered = opts && opts.getCardAnswer ? opts.getCardAnswer(spec.question) : null;
+  const isPlan = kind === 'plan_confirm';  // M2-3：计划确认卡（点同意=系统直接切执行模式）
   card.innerHTML = `<div class="cc-head">
     <span class="cc-badge">${iconSvg(isPlan ? 'clipboardCheck' : 'help')}</span>
     <span class="cc-title">${isPlan ? '计划确认' : '需要确认'}</span>

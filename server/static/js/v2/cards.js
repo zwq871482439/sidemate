@@ -16,6 +16,12 @@ function esc(s) {
 export function agentStatusLabel(status, d) {
   d = d || {};
   if (status === 'thinking') return '思考中';
+  if (status === 'skill_mounting') return '挂载技能：' + (d.skill || d.name || '');
+  if (status === 'skill_mounted') return '已挂载技能：' + (d.skill || d.name || '') + (d.detail ? '（' + d.detail + '）' : '');
+  if (status === 'poster_rendering') return '渲染海报：' + (d.title || d.style || '');
+  if (status === 'poster') return '海报已生成：' + (d.name || '');
+  if (status === 'gzh_formatting') return '公众号排版：' + (d.source || '');
+  if (status === 'gzh') return '公众号版已生成：' + (d.name || '');
   if (status === 'searching') return '搜索：' + (d.query || '');
   if (status === 'fetching') return '阅读：' + (d.url || '');
   if (status === 'kb_searching') return '检索知识库：' + (d.query || '');
@@ -75,10 +81,11 @@ export function agentStatusLabel(status, d) {
 }
 
 // ---- 阶段归类（L2 台账分组）----
-const _PHASE_TITLES = { retrieve: '检索与阅读', produce: '生成产物', other: '其他动作' };
+const _PHASE_TITLES = { prepare: '准备', retrieve: '检索与阅读', produce: '生成产物', other: '其他动作' };
 function _phaseOf(label) {
+  if (/挂载技能/.test(label)) return 'prepare';
   if (/搜索|阅读|检索|深读|读取|列出|时间/.test(label)) return 'retrieve';
-  if (/PPT|文档|写入|打包|计算|转换|表格|编排|项目|生成|设计|编译/.test(label)) return 'produce';
+  if (/PPT|文档|写入|打包|计算|转换|表格|编排|项目|生成|设计|编译|海报|排版/.test(label)) return 'produce';
   return 'other';
 }
 function _isFail(label) { return /失败|受限|异常|不安全|不存在/.test(label); }

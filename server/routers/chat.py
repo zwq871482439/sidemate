@@ -290,6 +290,19 @@ async def api_chat_stream(request: Request):
     file_path = body.get("file_path")
     override_task_type = body.get("override_task_type")
 
+    # ===== 0.11 场景卡显式路由：[场景：x] 标记解析（PLAN-011 A1） =====
+    # 前端场景卡发送时在消息头拼 [场景：ppt]；此处解析剥离（历史干净不落盘），
+    # 场景名经 StreamContext.scene 传给在线 agent 通道 → skill_loader 查 SKILL.md 注入。
+    # 离线车道不消费该标记（前端离线走 actionMode，不发标记；此处剥离属防御）。
+    _scene_name = ""
+    _scene_m = re.match(r"^\s*\[场景[:：]\s*([A-Za-z0-9_\-]+)\]\s*\n?", message or "")
+    if _scene_m:
+        _scene_name = _scene_m.group(1)
+        message = message[_scene_m.end():] if _scene_m.end() <= len(message or "") else (message or "")
+        if not _scene_name:
+            _scene_name = ""
+        log.info("[CHAT] 场景标记: %s（已剥离，余文 %d 字）", _scene_name, len(message or ""))
+
     # ===== 0.10.1 项目即文件夹：旧版会话（meta 无 project_dir）只读，拒绝发送 =====
     # 必须在 M1-B 落盘 user 消息之前——只读会话一个字节都不写
     if chat_file and not body.get("doc_continue"):
@@ -341,6 +354,32 @@ async def api_chat_stream(request: Request):
                         log.info("[CHAT] 计划确认卡：%s 已切执行模式", _chat_name)
                     except Exception as _e:
                         log.warning("[CHAT] 计划确认切执行模式失败: %s", str(_e)[:80])
+                # 0.11 B3 安装确认卡：点「确认安装」→ 后端直装暂存（不依赖模型再调工具，
+                # 修复 G1：模型二次调用参数不可靠导致「暂存失效」体验）
+                elif _ca.get("action") == "skill_install":
+                    _m = re.match(r"安装技能「(.+?)」", _ca["question"])
+                    if _m:
+                        _sk_name = _m.group(1)
+                        _install_note = ""
+                        try:
+                            from core.skill_installer import install_staged
+                            _r = install_staged(_sk_name)
+                            if _r.get("ok"):
+                                _install_note = ("[系统指令：技能「%s」已由系统完成安装并生效，"
+                                                 "直接向用户确认安装结果即可，不要再调用 install_skill]"
+                                                 % _sk_name)
+                                log.info("[CHAT] 安装确认卡：技能 %s 已直装完成", _sk_name)
+                            else:
+                                _install_note = ("[系统指令：技能「%s」暂存已失效（%s）。"
+                                                 "请向用户说明需要重新提供安装来源，"
+                                                 "拿到来源后重新走 install_skill 校验流程]"
+                                                 % (_sk_name, _r.get("error", "未知原因")[:60]))
+                        except Exception as _ie:
+                            log.warning("[CHAT] 安装直装异常: %s", str(_ie)[:80])
+                            _install_note = ("[系统指令：技能「%s」安装时出现系统异常，"
+                                             "建议用户重新发起安装]" % _sk_name)
+                        message = _install_note + \
+                                  ("\n用户补充：" + (message or "") if (message or "").strip() else "")
             _saved_user = append_message(chat_file, _um)
         except Exception as e:
             # 落盘失败不阻断对话——persist_turn 会回退 legacy 重建路径
@@ -521,6 +560,7 @@ async def api_chat_stream(request: Request):
         is_kb_compare=_is_kb_compare,
         memory_local=_memory_local,
         parallel_options=_parallel_options,
+        scene=_scene_name,
     )
     # 存储管道启动时间（供 Agent Loop 计算耗时）
     ctx._pipeline_t0 = time.time()
@@ -563,6 +603,79 @@ def api_chats_list():
     for c in chats:
         c["current"] = (c["path"] == current)
     return {"chats": chats, "current": current}
+
+
+@router.get("/api/chats/status")
+def api_chats_status():
+    """0.11 C1 会话状态聚合（侧栏五态指示器轮询 ≤5s）。
+
+    generating：gen_manager 在途任务
+    waiting   ：最新 assistant 消息含 ```ask 确认卡且其后无用户答复（等审批）
+    errors    ：最近一次生成失败（任务完成态 error，清理前可见，约 5 分钟）
+    """
+    from core.gen_manager import get_gen_manager
+    gm = get_gen_manager()
+    generating, waiting, errors, tools_running = [], [], {}, []
+    try:
+        with gm._lock:
+            tasks = dict(gm._tasks)
+        import json as _json2
+        for cid, t in tasks.items():
+            if t.status == "generating":
+                generating.append(cid)
+                # 细分：事件尾最近的 agent_status 为工具运行态（*ing 且非 thinking）→ tool
+                # （sse_event 把字段合并到顶层：data: {"type":"agent_status","status":...}）
+                try:
+                    with t._lock:
+                        tail = list(t.events)[-5:] if t.events else []
+                    for _seq, sse in reversed(tail):
+                        if '"agent_status"' not in sse:
+                            continue
+                        _mm = re.search(r"data:\s*(\{.*\})\s*$", sse.strip(), re.DOTALL)
+                        if not _mm:
+                            continue
+                        try:
+                            _payload = _json2.loads(_mm.group(1))
+                        except Exception:
+                            continue
+                        if _payload.get("type") != "agent_status":
+                            continue
+                        _st = str(_payload.get("status", ""))
+                        if _st and _st != "thinking" and _st.endswith("ing"):
+                            tools_running.append(cid)
+                        break
+                except Exception:
+                    pass
+            elif t.status == "error":
+                errors[cid] = (getattr(t, "error_msg", "") or "生成失败")[:80]
+    except Exception:
+        pass
+    # waiting 判定：非生成中、最近 3 天有活动、末条 assistant 带 ask 围栏且无后续 user 消息
+    # （收紧范围防老会话残留确认卡把侧栏刷成一片蓝点——G5 伴随优化）
+    try:
+        import json as _json
+        _cutoff = time.time() - 3 * 86400
+        for c in _list_chats()[:20]:
+            cid = c.get("name", "")
+            if not cid or cid in generating or cid in errors:
+                continue
+            mp = os.path.join(c.get("path", ""), "messages.json")
+            if not os.path.isfile(mp) or os.path.getmtime(mp) < _cutoff:
+                continue
+            try:
+                with open(mp, "r", encoding="utf-8") as f:
+                    msgs = _json.load(f).get("messages", [])
+            except Exception:
+                continue
+            if not msgs:
+                continue
+            last = msgs[-1] or {}
+            if last.get("role") == "assistant" and "```ask" in (last.get("content") or ""):
+                waiting.append(cid)
+    except Exception:
+        pass
+    return {"generating": generating, "tools_running": tools_running,
+            "waiting": waiting, "errors": errors}
 
 
 def _is_disposable_empty(c: dict) -> bool:
@@ -819,6 +932,90 @@ async def api_chats_set_group(chat_name: str, request: Request):
     body = await request.json()
     from session.chat_store import set_chat_group
     return set_chat_group(safe_name, body.get("group", ""))
+
+
+@router.post("/api/chats/{chat_name}/distill")
+async def api_chat_distill(chat_name: str):
+    """0.11 C3 经验沉淀：把一次成功任务的轨迹提炼为可复用 SKILL.md（在线直连一次生成）。"""
+    if not _is_safe_chat_id(chat_name):
+        return JSONResponse({"error": "非法会话 ID"}, status_code=400)
+    chat_dir = os.path.join(CHAT_DIR, chat_name.replace(".json", ""))
+    mp = os.path.join(chat_dir, "messages.json")
+    if not os.path.isfile(mp):
+        return JSONResponse({"error": "会话消息不存在"}, status_code=404)
+    import json as _json
+    try:
+        with open(mp, "r", encoding="utf-8") as f:
+            msgs = _json.load(f).get("messages", [])
+    except Exception as e:
+        return JSONResponse({"error": "消息读取失败: %s" % str(e)[:80]}, status_code=500)
+    if len(msgs) < 2:
+        return JSONResponse({"error": "会话内容太少，不足以沉淀技能"}, status_code=400)
+
+    # 轨迹摘要：首条 user（任务目标）+ 工具步骤序列 + 末条 assistant（产出）
+    goal = next((m.get("content", "") for m in msgs if m.get("role") == "user"), "")[:600]
+    steps = []
+    artifacts = []
+    for m in msgs:
+        tl = m.get("agent_timeline") or []
+        for ev in tl:
+            lbl = ev.get("label") or ev.get("status") or ""
+            if lbl:
+                steps.append(str(lbl)[:40])
+        for d in (m.get("docs") or []):
+            if isinstance(d, dict) and d.get("name"):
+                artifacts.append(str(d["name"])[:60])
+    final = ""
+    for m in reversed(msgs):
+        if m.get("role") == "assistant" and (m.get("content") or "").strip():
+            final = m["content"].strip()[:600]
+            break
+    prompt_parts = [
+        "你是技能提炼器。根据下面这次成功任务的轨迹，提炼一份可复用的 SKILL.md 技能文件。",
+        "要求：frontmatter 含 name（中文技能名，≤12字，概括任务类型）、description（一句话：什么场景下用这个技能）、",
+        "trigger: scene、priority: 30；正文是该类任务的完整方法论（工作流步骤 + 内容设计要点 + 纪律），",
+        "400-700 字，写「该怎么做」，不复述本次任务的细节。直接输出 SKILL.md 全文，不要其他解释。\n",
+        "任务目标：%s\n工具步骤序列：%s\n产出文件：%s\n产出摘要：%s" % (
+            goal, " → ".join(steps[:25]) or "（无工具调用）",
+            "、".join(artifacts[:8]) or "（无文件产物）", final),
+    ]
+
+    try:
+        from core.cloud_engine import CloudEngine
+        ce = CloudEngine(get_mgr())
+        chunks = []
+        for phase, content in ce.run("\n".join(prompt_parts), override_task_type="text", _skip_queue=True):
+            if phase == "text" and content:
+                chunks.append(content)
+        raw = "".join(chunks).strip()
+    except Exception as e:
+        return JSONResponse({"error": "生成失败（需在线模式且已配置云端 API）: %s" % str(e)[:100]}, status_code=500)
+    if not raw:
+        return JSONResponse({"error": "生成结果为空"}, status_code=500)
+
+    # 剥代码围栏（模型可能包 ```markdown）
+    _fm = re.search(r"```(?:markdown|yaml)?\s*\n(---.*?)```\s*$", raw, re.DOTALL)
+    if _fm:
+        raw = _fm.group(1).strip()
+    from core.skill_loader import parse_skill_md, _skills_dir
+    import tempfile as _tf, shutil as _sh, os as _os
+    _tfdir = _tf.mkdtemp(prefix="distill_")
+    try:
+        with open(_os.path.join(_tfdir, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write(raw)
+        sk = parse_skill_md(_os.path.join(_tfdir, "SKILL.md"))
+        if not sk or not sk.get("name") or not sk.get("prompt_fragment"):
+            return JSONResponse({"error": "生成的技能格式不合法，请重试"}, status_code=500)
+        name = sk["name"]
+        dest = _os.path.join(_skills_dir(), name)
+        if _os.path.isdir(dest):
+            return JSONResponse({"error": "已存在同名技能「%s」——如需更新请在技能页删除旧版后重试" % name}, status_code=400)
+        _os.makedirs(_skills_dir(), exist_ok=True)
+        _sh.copytree(_tfdir, dest)
+        log.info("[DISTILL] 技能已沉淀: %s ← 会话 %s", name, chat_name)
+        return {"ok": True, "name": name, "description": sk.get("description", "")}
+    finally:
+        _sh.rmtree(_tfdir, ignore_errors=True)
 
 
 @router.get("/api/chats/{chat_name}/gen-state")

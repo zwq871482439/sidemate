@@ -1331,17 +1331,25 @@ def api_cloud_usage(range_days: int = 7, granularity: str = "hour"):
 
 @router.get("/api/mcp/servers")
 def api_mcp_list():
-    """列出 MCP 服务器配置+连接状态。"""
+    """列出 MCP 服务器配置+连接状态（0.11 B2：带 transport/url/auth 供本地/远程分组）。"""
     from core.mcp_client import load_mcp_config, get_mcp_manager
     config = load_mcp_config()
     mgr = get_mcp_manager()
     servers = []
     for srv in config.get("servers", []):
-        conn = mgr.connections.get(srv.get("name", ""))
+        name = srv.get("name", "")
+        conn = mgr.connections.get(name)
+        is_remote = srv.get("type") in ("http", "sse") or (bool(srv.get("url")) and not srv.get("command"))
+        headers = srv.get("headers") or {}
+        has_auth = any(k.lower() in ("authorization", "x-api-key") for k in headers)
         servers.append({
-            "name": srv.get("name", ""),
+            "name": name,
             "command": srv.get("command", ""),
             "args": srv.get("args", []),
+            "type": srv.get("type") or ("http" if is_remote else "stdio"),
+            "url": srv.get("url", ""),
+            "headers_set": has_auth,
+            "remote": is_remote,
             "status": conn.status if conn else "disconnected",
             "tools": len(conn.tools) if conn else 0,
             "tool_names": [t["name"] for t in conn.tools] if conn else [],
@@ -1352,22 +1360,38 @@ def api_mcp_list():
 
 @router.post("/api/mcp/servers")
 async def api_mcp_add(request: Request):
-    """添加 MCP 服务器配置。"""
+    """添加 MCP 服务器配置（stdio：command+args；远程：type=http/sse + url + headers）。"""
     if not check_local_origin(request):
         return JSONResponse(local_origin_error(), status_code=403)
     body = await request.json()
     name = (body.get("name") or "").strip()
-    command = (body.get("command") or "").strip()
-    if not name or not command:
-        return JSONResponse({"error": "name 和 command 必填"}, status_code=400)
+    if not name:
+        return JSONResponse({"error": "name 必填"}, status_code=400)
     from core.mcp_client import load_mcp_config, save_mcp_config
     config = load_mcp_config()
     if any(s.get("name") == name for s in config["servers"]):
         return JSONResponse({"error": "同名服务器已存在"}, status_code=400)
-    config["servers"].append({
-        "name": name, "command": command,
-        "args": body.get("args", []),
-    })
+
+    stype = (body.get("type") or "").lower()
+    if stype in ("http", "sse"):
+        url = (body.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            return JSONResponse({"error": "远程服务器需要合法 URL（http/https）"}, status_code=400)
+        entry = {"name": name, "type": stype, "url": url}
+        headers = body.get("headers") or {}
+        if isinstance(headers, dict) and headers:
+            # 只收字符串值，防注入奇怪结构；key 数量限 5
+            entry["headers"] = {str(k)[:40]: str(v)[:500]
+                                for k, v in list(headers.items())[:5]}
+        config["servers"].append(entry)
+    else:
+        command = (body.get("command") or "").strip()
+        if not command:
+            return JSONResponse({"error": "本地服务器需要 command（或远程填 type=http+url）"}, status_code=400)
+        config["servers"].append({
+            "name": name, "command": command,
+            "args": body.get("args", []),
+        })
     save_mcp_config(config)
     return {"ok": True}
 
@@ -1502,17 +1526,39 @@ def api_skills_list():
             "source": "protocol",
         })
 
-    # 用户 skill
+    # 用户 skill（0.11 v2：含 trigger 触发方式 + 最近挂载信息）
+    from core.skill_loader import auto_trigger_enabled, read_mount_log
+    _mount_log = read_mount_log(50)
+    _last_mount = {}
+    for _le in reversed(_mount_log):          # 从旧到新扫，留下的即最近一次命中
+        if _le.get("hit"):
+            _last_mount[_le.get("skill", "")] = _le
     user = []
     for sk in discover_skills():
+        _lm = _last_mount.get(sk["name"])
         user.append({
             "id": "user_" + sk["name"],
             "name": sk["name"],
             "description": sk.get("description", ""),
+            "trigger": sk.get("trigger", "both"),
             "pipeline_types": sk.get("pipeline_types", []),
+            "last_mounted": (_lm.get("ts", "") if _lm else ""),
+            "last_mounted_chat": (_lm.get("chat", "") if _lm else ""),
         })
 
-    return {"system_skills": system, "user_skills": user}
+    return {"system_skills": system, "user_skills": user,
+            "auto_trigger_enabled": auto_trigger_enabled()}
+
+
+@router.get("/api/skills/mountlog")
+def api_skills_mountlog(limit: int = 20):
+    """技能挂载日志（最近命中/跳过记录，技能页展示）。"""
+    from core.skill_loader import read_mount_log
+    try:
+        limit = max(1, min(int(limit or 20), 50))
+    except (TypeError, ValueError):
+        limit = 20
+    return {"logs": read_mount_log(limit)}
 
 
 @router.post("/api/skills/toggle")
@@ -1523,6 +1569,12 @@ async def api_skills_toggle(request: Request):
     body = await request.json()
     skill_id = body.get("id", "")
     enabled = bool(body.get("enabled", True))
+    # 0.11 A2：自动触发总开关（技能页金色开关，id=auto）
+    if skill_id == "auto":
+        from config import set_value
+        from core.skill_loader import SKILL_AUTO_TRIGGER_CONFIG
+        set_value(SKILL_AUTO_TRIGGER_CONFIG, enabled)
+        return {"ok": True, "id": "auto", "enabled": enabled}
     if skill_id.startswith("proto_"):
         # 0.10 协议 skill：直接写对应 config 开关
         from core.agent_tools import PROTOCOL_SKILLS as _PROTOS
