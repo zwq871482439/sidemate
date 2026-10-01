@@ -116,6 +116,12 @@ export function createSettingsView(events) {
         <div class="sub">界面版本（离线模型与推理设备已拆到「离线AI」页）</div>
         <div class="set-row"><div class="stx"><b>界面版本</b><p>0.10 新版三栏界面（默认），经典版可在 /classic.html 访问（保留一个版本后移除）</p></div>
           <button class="kb-tool-btn" id="setGoClassic">回经典版</button></div>
+        <div class="set-row"><div class="stx"><b>界面缩放</b><p>整体放大界面（含文字），适合高分屏小字看不清的场景；立即生效</p></div>
+          <select class="set-input" id="setFontScale" style="width:auto">
+            <option value="1">100%（默认）</option>
+            <option value="1.1">110%</option>
+            <option value="1.25">125%（大字）</option>
+          </select></div>
         <div class="set-row"><div class="stx"><b>深色模式</b><p>新版深色主题在后续版本实装（DNA-01 深色档）；需要深色请用经典版</p></div>
           <span style="font-size:11.5px;color:var(--d1-ink-3)">暂不可用</span></div>
       </div>
@@ -142,6 +148,28 @@ export function createSettingsView(events) {
       </div>`;
 
     body.querySelector('#setGoClassic').addEventListener('click', () => events.onGoClassic());
+
+    // 0.11.1 M2-4：界面缩放（body zoom；localStorage 先行 + 服务端持久）
+    const fsSel = body.querySelector('#setFontScale');
+    let _curScale = 1;
+    try { _curScale = parseFloat(localStorage.getItem('v2FontScale')) || 1; } catch (e) {}
+    fsSel.value = String(_curScale);
+    fsSel.addEventListener('change', async () => {
+      const z = parseFloat(fsSel.value) || 1;
+      document.body.style.zoom = z;
+      try { localStorage.setItem('v2FontScale', String(z)); } catch (e) {}
+      await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ui_font_scale: z }) }).catch(() => {});
+    });
+    // 打开设置页时同步一次服务端值（多机/恢复场景）
+    fetch('/api/config').then(r => r.json()).then(d => {
+      const z = d && d.config && parseFloat(d.config.ui_font_scale);
+      if (z && Math.abs(z - _curScale) > 0.001) {
+        fsSel.value = String(z);
+        document.body.style.zoom = z;
+        try { localStorage.setItem('v2FontScale', String(z)); } catch (e) {}
+      }
+    }).catch(() => {});
 
     // 缓存文件
     async function refreshCache() {
@@ -974,7 +1002,7 @@ export function createSettingsView(events) {
             </div>
             <div style="font-size:11px;color:var(--d1-ink-3);margin-bottom:4px">${esc(compTxt)} · 共 ${totalGb}GB</div>
             <div style="font-size:11px;color:var(--d1-ink-3);line-height:1.5">包含向量化模型（bge-m3，语义+关键词检索）和重排序模型（bge-reranker-v2-m3，精排结果）</div>
-            ${kbMissing.length ? `<div style="font-size:11px;color:var(--pal-amber-dark);margin-top:4px">${iconSvg('alertTriangle')} ${kbMissing.join('、')} 缺失</div>` : ''}
+            ${kbMissing.length ? `<div style="font-size:11px;color:var(--pal-amber-dark);margin-top:4px;display:flex;align-items:center;gap:5px"><span class="ic" style="font-size:13px;flex-shrink:0">${iconSvg('alertTriangle')}</span><span>${kbMissing.join('、')} 缺失</span></div>` : ''}
           </div>
           <div style="display:flex;gap:6px">
             ${kb.installed
@@ -1030,6 +1058,8 @@ export function createSettingsView(events) {
       attachSSE(running.task_id);
     }
     body.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', async () => {
+      const orig = b.textContent;
+      b.disabled = true; b.textContent = '启动中…';   // 立即反馈，防"没反应"观感与双击
       const r = await fetch('/api/models/download', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: b.dataset.dl === 'kb' ? 'kb' : 'llm', model_id: b.dataset.dl === 'kb' ? undefined : b.dataset.dl, source: _dlSrc }),
@@ -1038,6 +1068,7 @@ export function createSettingsView(events) {
         showProg('开始下载…', 0);
         attachSSE(r.task_id);
       } else {
+        b.disabled = false; b.textContent = orig;
         uiAlert('启动下载失败：' + ((r && (r.error || r.message)) || '未知错误'));
       }
     }));

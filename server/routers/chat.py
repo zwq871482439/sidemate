@@ -1018,6 +1018,43 @@ async def api_chat_distill(chat_name: str):
         _sh.rmtree(_tfdir, ignore_errors=True)
 
 
+@router.post("/api/chats/{chat_name}/diagram/save")
+async def api_chat_diagram_save(chat_name: str, request: Request):
+    """0.11.1 A2：内联图「存入工作区」。
+
+    前端序列化【已渲染的同一张 SVG】直接落盘（不重渲染不换引擎——聊天图=
+    文件图，统一图片流核心动作）。body: {name, svg}。svg_lint 结果作为
+    warnings 返回（不阻断，PLAN-0111 A3）。
+    """
+    if not _is_safe_chat_id(chat_name):
+        return JSONResponse({"error": "非法会话 ID"}, status_code=400)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "请求体不是 JSON"}, status_code=400)
+    svg = body.get("svg") or ""
+    if "<svg" not in svg:
+        return JSONResponse({"error": "svg 字段不是有效 SVG"}, status_code=400)
+    if len(svg) > 2 * 1024 * 1024:
+        return JSONResponse({"error": "SVG 过大（>2MB）"}, status_code=400)
+    fname = _safe_filename((body.get("name") or "").strip() or "图")
+    if not fname.lower().endswith(".svg"):
+        fname += ".svg"
+    import re as _re2
+    fname = _re2.sub(r'[\\/:*?"<>|]+', "_", fname)
+    chat_id = chat_name.replace(".json", "")
+    from core.doc_session import write_workspace_file
+    from core.svg_lint import lint_svg
+    try:
+        w = write_workspace_file(chat_id, fname, svg)
+    except ValueError as e:
+        return JSONResponse({"error": "文件名不合法: %s" % str(e)[:80]}, status_code=400)
+    warnings = lint_svg(svg)
+    log.info("[DIAGRAM] 内联图存入工作区: %s → %s (%dB, %d 条 lint 提示)",
+             chat_id, w.get("name"), w.get("size", 0), len(warnings))
+    return {"ok": True, "file": w.get("name"), "size": w.get("size"), "warnings": warnings}
+
+
 @router.get("/api/chats/{chat_name}/gen-state")
 def api_chats_gen_state(chat_name: str):
     """0.10 M2-P2：查询会话的生成状态（前端刷新后判断是否需重附）。"""

@@ -259,6 +259,7 @@ body {
 .scene-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .scene-grid.two { grid-template-columns: repeat(2, 1fr); max-width: 67%; }
 .scene-grid.five { grid-template-columns: repeat(5, 1fr); }
+.scene-grid.six { grid-template-columns: repeat(6, 1fr); }
 .scene-card {
   background: var(--d1-paper-2); border: 1px solid var(--d1-n-line);
   border-radius: var(--d1-r-md); padding: 16px 15px 14px; cursor: pointer;
@@ -1283,6 +1284,36 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .mermaid-wait { font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); padding: 8px 0; }
 .mermaid-err { font-size: var(--d1-fs-small); color: var(--pal-danger); margin-bottom: 6px; }
 
+/* ---- 0.11.1 统一图片流：内联图容器工具条（d2/mermaid hover 显现；原型 ui-0111 ①②③） ---- */
+.mermaid-container, .d2-container { position: relative; }
+.diag-bar {
+  position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
+  opacity: 0; transform: translateY(-3px); pointer-events: none;
+  transition: opacity .18s ease-out, transform .18s ease-out;
+}
+.mermaid-container:hover .diag-bar, .d2-container:hover .diag-bar { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.diag-bar .db-copy, .diag-bar .db-save {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--d1-n-line);
+  background: var(--d1-paper); border-radius: 7px; padding: 4px 9px; font-size: 11.5px;
+  color: var(--d1-ink-2); cursor: pointer; font-family: inherit;
+}
+.diag-bar .db-copy { padding: 4px 7px; }
+.diag-bar .db-copy.ok { border-color: var(--d1-gold); color: var(--d1-gold-2); }
+.diag-bar .db-copy:hover, .diag-bar .db-save:hover { border-color: var(--d1-gold); color: var(--d1-gold-2); }
+.diag-bar .db-save:disabled { opacity: .7; cursor: default; }
+.diag-bar .db-save .ic { font-size: 13px; }
+/* 存入成功态：工具条撤下，金色确认条（原型 ③） */
+.diag-saved {
+  position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid rgba(232, 181, 77, .5); background: rgba(232, 181, 77, .1);
+  border-radius: 7px; padding: 4px 10px; font-size: 11.5px; color: var(--d1-gold-2); font-weight: 600;
+}
+.diag-saved .ic { font-size: 13px; }
+/* 动态插入的产物卡入场（仅 transform/opacity） */
+.art-card.just-in { animation: artCardIn .22s ease-out; }
+@keyframes artCardIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .art-card.just-in { animation: none; } }
+
 /* ---- 项目交接 ---- */
 .empty-handoff {
   font-size: var(--d1-fs-tiny); color: var(--d1-gold-2); text-align: center;
@@ -1985,9 +2016,34 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .si-st-t { font-size: 10px; color: rgba(217,229,240,.62); }
 .si-st-t.wait { color: #7FB8E3; }
 .si-st-t.err { color: #E08B82; }
+/* .si-badge 定义移至 0.11.1 修复批（右对齐金点） */
+
+/* ---- 0.11.1 修复批：顶栏模型选择合并 / 未读金点 / 技能行开关 ---- */
+/* ① 顶栏：tbModelTag 即档案下拉触发器（原右侧 prof-chip 并入后移除） */
+.tb-model.has-prof { cursor: pointer; }
+.tb-model.has-prof:hover, .prof-wrap.open .tb-model.has-prof { border-color: var(--d1-gold); color: var(--d1-accent); }
+.tb-prof .chev { font-size: 11px; color: var(--d1-ink-3); transition: transform .18s; display: inline-flex; }
+.prof-wrap.open .tb-prof .chev { transform: rotate(180deg); }
+/* ② 会话未读：boolean 语义改右对齐金点（原 15px 数字 pill 紧贴小字显得"尺寸不对"） */
+.sess-item .sm { display: flex; align-items: center; gap: 6px; min-height: 8px; }
 .si-badge {
-  min-width: 15px; height: 15px; border-radius: 8px; background: var(--d1-gold);
-  color: #131B24; font-size: 9.5px; font-weight: 700;
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0 4px; margin-left: 6px; vertical-align: middle;
+  width: 7px; height: 7px; min-width: 7px; border-radius: 50%;
+  background: var(--d1-gold); margin-left: auto; flex-shrink: 0;
 }
+/* ④ 技能行：行级启用开关 + 预装徽章 + 禁用态 */
+.sk-preset-tag {
+  font-size: 10px; color: var(--d1-gold-2); border: 1px solid rgba(232, 181, 77, .45);
+  border-radius: 5px; padding: 0 6px; margin-left: 7px; vertical-align: 1px; font-weight: 400;
+}
+.sk-row.off .stx, .sk-row.off .sic, .sk-row.off .trig { opacity: .45; }
+.sk-row .switch { flex-shrink: 0; }
+
+/* ②补 模式切换过渡态（M2-2：切换中禁用 + 呼吸提示，防重复点击） */
+.mode-mini button.switching { opacity: .6; cursor: wait; animation: modeSwitchPulse 1.2s ease infinite; }
+@keyframes modeSwitchPulse { 0%,100% { opacity: .6; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .mode-mini button.switching { animation: none; } }
+
+/* ②补 设置子页/加载占位呼吸（M3-3：纯文字"加载中"改脉动提示） */
+.kb-loading { animation: kbLoadingPulse 1.4s ease infinite; }
+@keyframes kbLoadingPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .kb-loading { animation: none; } }

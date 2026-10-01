@@ -54,6 +54,13 @@ MIT License 组件
   - content-research-writer（ComposioHQ/awesome-claude-skills, MIT License）：
     0.11 公众号写作技能（gzh SKILL.md）的写作方法论参考（七阶段写作流/Hook 风格），
     非代码引入
+  - diagram-design（Cathryn Lavery, MIT License, https://github.com/cathrynlavery/diagram-design）：
+    0.11.1 起以技能目录形式 vendor 至 server/skills-default/diagram-design/
+    （「画图」场景卡交付层，39 种交付级图型 + 编辑级连线规则 + 复杂度预算）。
+    vendor 时按 MIT 要求保留原许可（LICENSE.upstream 同目录）；
+    本地化改动：references/style-guide.md 预换肤为 DNA-01 深蓝金（profile sidemate-dna01）、
+    全目录字体栈本地化（剥离 Google Fonts 在线加载）、示例色板映射为 DNA-01、
+    assets/ 仅保留模板与 2 个示例（example-* 裁剪）。上游 v2.6。
 
 MIT License 原文：
 

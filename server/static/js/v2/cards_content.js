@@ -30,11 +30,11 @@ export function extractD2(text) {
   if (!text) return text;
   return text.replace(/```d2\s*\n([\s\S]*?)```/g, (m, body) => {
     return '\n\n<div class="d2-container" data-d2="'
-      + encodeURIComponent(body.trim()) + '"><div class="mermaid-wait">D2 图表渲染中…</div></div>\n\n';
+      + encodeURIComponent(body.trim()) + '"><div class="mermaid-wait">D2 图表渲染中…（首次需加载渲染引擎，稍候）</div></div>\n\n';
   });
 }
 
-let _d2Mod = null, _d2Loading = null;
+let _d2Mod = null, _d2Loading = null, _d2Inst = null;
 function _loadD2() {
   if (_d2Mod) return Promise.resolve(_d2Mod);
   if (!_d2Loading) {
@@ -43,19 +43,134 @@ function _loadD2() {
   return _d2Loading;
 }
 
-export function hydrateD2(container) {
+// ===== 0.11.1 A1：D2 → DNA-01 换装 pass =====
+// 映射表与 core/d2_render.py 共用同一份 static/dna/d2_theme.json（单一真源防漂移），
+// 聊天内联图（WASM 渲染）与 render_d2 落盘产物（exe 渲染）观感一致。
+let _dnaTheme;   // undefined=未加载 / null=加载失败（pass 静默跳过，不劣于现状）
+function _loadDnaTheme() {
+  if (_dnaTheme !== undefined) return Promise.resolve(_dnaTheme);
+  return fetch('/static/dna/d2_theme.json')
+    .then(r => (r.ok ? r.json() : null))
+    .then(t => { _dnaTheme = t || null; return _dnaTheme; })
+    .catch(() => { _dnaTheme = null; return null; });
+}
+const _D2_FONT_CSS = /font-family:\s*"(d2-[^"]+-font-([a-z]+))"/g;
+const _D2_FONT_ATTR = /font-family="(d2-[^"]+-font-([a-z]+))"/g;
+function _applyDnaTheme(svg, theme) {
+  if (!theme || typeof svg !== 'string' || !theme.colors) return svg;
+  let out = svg;
+  for (const src in theme.colors) {
+    const dst = theme.colors[src];
+    if (!dst || src === dst) continue;
+    out = out.split(src).join(dst);
+    out = out.split(src.toLowerCase()).join(dst);
+  }
+  const fonts = theme.fonts || {};
+  // 内嵌 d2-xxx-font-* → 雅黑/Consolas（mono 变体走等宽栈）；原字体承载的
+  // 粗斜体由 append_rules 补偿（与 d2_render.py 同一逻辑）
+  const sub = (whole, _name, variant) => {
+    const fam = (variant === 'mono' && fonts.mono) ? fonts.mono : fonts.sans;
+    if (!fam) return whole;
+    return whole.includes('=') && !whole.includes(':') ? 'font-family=' + fam : 'font-family:' + fam;
+  };
+  if (fonts.sans || fonts.mono) {
+    out = out.replace(_D2_FONT_CSS, sub).replace(_D2_FONT_ATTR, sub);
+  }
+  if (theme.append_rules && out.includes('</svg>')) {
+    out = out.replace('</svg>', '<style type="text/css">' + theme.append_rules + '</style></svg>');
+  }
+  return out;
+}
+
+// ===== 0.11.1 A2：内联图「存入工作区」工具条 =====
+// d2/mermaid 容器 hover 出现；存入=序列化【当前已渲染的同一张 SVG】落盘
+// （不重渲染不换引擎——聊天图=文件图，PLAN-0111 统一图片流核心动作）。
+function _attachDiagBar(box, source, opts) {
+  if (!box || box.querySelector('.diag-bar')) return;
+  const bar = document.createElement('div');
+  bar.className = 'diag-bar';
+  bar.innerHTML =
+    `<button class="db-copy" title="复制源码">${iconSvg('copy')}</button>` +
+    `<button class="db-save">${iconSvg('download')}<span>存入工作区</span></button>`;
+  box.appendChild(bar);
+  const cp = bar.querySelector('.db-copy');
+  cp.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(source || '');
+      cp.classList.add('ok');
+      setTimeout(() => cp.classList.remove('ok'), 900);
+    } catch (e) { /* 剪贴板不可用（权限/非安全上下文）静默 */ }
+  });
+  const btn = bar.querySelector('.db-save');
+  btn.addEventListener('click', async () => {
+    const svgEl = box.querySelector('svg');
+    const cur = opts && opts.getSession ? opts.getSession() : null;
+    if (!svgEl) return;
+    if (!cur) { btn.querySelector('span').textContent = '无会话'; return; }
+    btn.disabled = true;
+    btn.querySelector('span').textContent = '存入中…';
+    // 文件名：图内 <title> → 首个 text → 兜底 图-N
+    let base = '';
+    try {
+      const t = svgEl.querySelector('title');
+      if (t && t.textContent) base = t.textContent.trim();
+      if (!base) {
+        const tx = svgEl.querySelector('text');
+        if (tx && tx.textContent) base = tx.textContent.trim();
+      }
+    } catch (e) { /* 忽略 */ }
+    base = (base || '图-' + (Date.now() % 100000)).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40);
+    try {
+      const r = await api.saveDiagram(cur.name, base, svgEl.outerHTML);
+      const fname = (r && r.file) || (base + '.svg');
+      box.classList.add('saved');
+      bar.remove();
+      const chip = document.createElement('div');
+      chip.className = 'diag-saved';
+      chip.innerHTML = `${iconSvg('check')}<span>已存入 · ${esc(fname)}</span>`;
+      box.appendChild(chip);
+      // 产物卡（复用 0.10.2 .art-card 组件结构；点击→右视窗预览）
+      const url = '/api/chat/' + encodeURIComponent(cur.name)
+        + '/workspace/download?path=' + encodeURIComponent(fname);
+      const art = document.createElement('div');
+      art.className = 'art-card just-in';
+      const kb = r && r.size ? Math.max(1, Math.round(r.size / 1024)) + 'KB' : '';
+      art.innerHTML = `<div class="art-ic"><span class="ic">${iconSvg('barChart')}</span></div>
+        <div class="art-tx"><div class="art-name">${esc(fname)}</div>
+        <div class="art-meta">图表${kb ? ' · ' + kb : ''} · 刚刚</div></div>
+        <div class="art-acts"><a class="art-btn ghost" href="${esc(url)}" download="${esc(fname)}">
+        <span class="ic">${iconSvg('file')}</span>下载</a></div>`;
+      art.addEventListener('click', (e) => {
+        if (e.target.closest('a')) return;
+        window.dispatchEvent(new CustomEvent('sm:preview-file', { detail: { url, name: fname } }));
+      });
+      (box.parentElement || box).appendChild(art);
+      // 文件 tab 刷新（当前会话可见时立即更新）
+      window.dispatchEvent(new CustomEvent('sm:files-updated', { detail: { chat: cur.name } }));
+    } catch (e) {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = (e && e.message) ? String(e.message).slice(0, 20) : '失败，重试';
+    }
+  });
+}
+
+export function hydrateD2(container, opts) {
   const boxes = Array.from(container.querySelectorAll('.d2-container:not([data-rendered])'));
   if (!boxes.length) return;
   boxes.forEach(b => b.setAttribute('data-rendered', '1'));  // 防重复触发
   _loadD2().then(async mod => {
-    const inst = new mod.D2();
+    // 0.11.1 M1-2：D2 实例跨调用复用（WASM 初始化昂贵，逐次 new 是首图慢的主因之一）
+    if (!_d2Inst) _d2Inst = new mod.D2();
+    const inst = _d2Inst;
+    const theme = await _loadDnaTheme();
     for (const box of boxes) {
       const code = decodeURIComponent(box.getAttribute('data-d2') || '');
       if (!code) continue;
       try {
         const result = await inst.compile(code);
-        const svg = await inst.render(result.diagram, result.renderOptions);
+        const svg = _applyDnaTheme(await inst.render(result.diagram, result.renderOptions), theme);
         box.innerHTML = svg;
+        _attachDiagBar(box, code, opts);
       } catch (err) {
         box.innerHTML = `<div class="mermaid-err">${iconSvg('alertTriangle')} D2 图表语法有误，无法渲染（${esc(String(err && err.message || err).slice(0, 120))}）</div>
           <pre class="cc-raw">${esc(code)}</pre>`;
@@ -120,16 +235,16 @@ function _loadMermaid() {
   return _mermaidLoading;
 }
 
-export function hydrateMermaid(container) {
+export function hydrateMermaid(container, opts) {
   const boxes = Array.from(container.querySelectorAll('.mermaid-container:not([data-rendered])'));
   if (!boxes.length) return;
-  _loadMermaid().then(() => { _initMermaid(); _renderMermaidBoxes(boxes); })
+  _loadMermaid().then(() => { _initMermaid(); _renderMermaidBoxes(boxes, opts); })
     .catch(() => {
       boxes.forEach(b => b.setAttribute('data-rendered', '1'));
     });
 }
 
-function _renderMermaidBoxes(boxes) {
+function _renderMermaidBoxes(boxes, opts) {
   const _cleanOrphans = () => {
     // mermaid 渲染期的临时容器（id 前缀 dmm-）失败时会挂着原生报错图残留在 body 末尾
     document.querySelectorAll('body > div[id^="dmm-"]').forEach(el => el.remove());
@@ -152,6 +267,7 @@ function _renderMermaidBoxes(boxes) {
           else if (parent) parent.appendChild(box);
         }
         box.innerHTML = result.svg;
+        _attachDiagBar(box, code, opts);
         _cleanOrphans();
       })
       .catch(err => {

@@ -384,6 +384,9 @@ export function renderCardHistory(m) {
         status: it.status || '',
         elapsed_ms: it.elapsed_ms != null ? it.elapsed_ms : null,
         count: it.count != null ? it.count : null,
+        // 0.11.1 修复：保留检索来源字段（回放时引用卡据此渲染，此前派生即丢弃）
+        results: it.results || null,
+        sources: it.sources || null,
       })),
     });
     if (m.agent_summary) m.card_data.push({ id: '_summary', type: 'summary', data: m.agent_summary });

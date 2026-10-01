@@ -1,3 +1,77 @@
+## [0.11.1] - 2026-10-01 — 统一图片流 · 图表两层架构
+
+> 主题纯一：一套 token、两层质量、一个升级路径（计划 docs/PLAN-0111.md；
+> UI 原型 docs/prototypes/ui-0111.html）。全部改动仅在线车道，离线红线零触碰。
+
+### 新增
+- **D2 → DNA-01 换装 pass（统一图片流核心）**：`server/static/dna/d2_theme.json`
+  单一真源映射表（D2 Neutral Default 15 色 token 实测枚举 → 深蓝金 + 雅黑/Consolas
+  字体栈 + 粗斜体补偿规则），服务端 `d2_render.render_svg`（落盘前）与前端
+  `hydrateD2`（上屏前）共读同一份——聊天内联图、render_d2 产物、PPT 内嵌图三路
+  观感一致；未命中色值原样保留（不劣于现状）
+- **内联图「存入工作区」**（A2）：d2/mermaid 容器 hover 工具条（复制源码/存入工作区）；
+  存入=序列化【当前已渲染的同一张 SVG】→ `POST /api/chats/{name}/diagram/save`
+  落盘会话工作区（不重渲染不换引擎——聊天图=文件图逐像素一致）→ 金色确认条 +
+  产物卡（复用 0.10.2 组件，点击右视窗预览）+ 文件 tab 即时刷新（sm:files-updated）
+- **svg_lint 质量门**（A3，借 diagram-design verify-geometry 程序化思路）：
+  viewBox/title/desc 无障碍契约、最小字号、节点预算提示；接入存入与 render_d2
+  两路，warning 不阻断
+- **read_skill_ref 工具**（B3，渐进披露第二层）：读取技能目录内参考文件
+  （白名单子树 + .md/.html/.json/.txt + 64KB 上限），vendor 技能按需加载布局文法
+- **diagram-design 交付层技能**（B1/B2，MIT，上游 v2.6）：vendor 至
+  skills-default/diagram-design（assets 裁至模板+2 示例，1.2MB）；预换肤 DNA-01
+  （style-guide token 表/series 调色板/模板色板值级映射 + profile sidemate-dna01 头 +
+  本地字体栈剥离 Google Fonts）；frontmatter 适配 schema v2（name=diagram，
+  trigger=scene，priority=15）；空状态新增「画图」场景卡（创作交付区 6 列）
+- **read_skill_ref/read capability**：挂载后模型按 SKILL.md 选型表指引读取
+  references/type-*.md 具体图型布局文法
+
+### 变更
+- **Prompt 收口（A4）**：D2_PROTOCOL 重写——结构图一律 D2（快图内联 ```d2 /
+  正式图 render_d2 / 交付级挂 diagram 技能三层互斥路由）+ 类型选型表（按语义选图型）
+  + 复杂度预算 ≤9 节点 + 焦点节点金色样式提示；mermaid 从并列引擎降为
+  「D2 两次自修失败」兜底；CARD_PROTOCOL 措辞同步
+- **线程池默认 2→4**（C1，可靠性评测实锤的并发饥饿；低配可在 settings.json 调回）
+
+### 修复（2026-10-01 第二轮模拟用户——发版门禁）
+- **知识库上传在线模式被拒（P1）**：上传端点历史遗留检查要求本地对话 LLM 已加载，
+  纯在线用户全员被 400 拒（文档列表假性出现、向量库无新增、检索查不到）；
+  门槛改为 embedder 就绪检查（未装 KB 模型才提示去模型下载）
+- **引用来源链三处断点（溯源从未工作）**：① agent 管线补发顶层 sources SSE 事件
+  （流式期间来源 chip 恢复）；② 时间线持久化附带检索来源（截断 6 条）；
+  ③ 前端引用卡收集改为 card_data 与 agent_timeline 并集（此前二选一短路）。
+  修复后：流式 chip + 刷新回放引用卡 + 正文 [n] 上标互跳全部恢复
+- deploy_dev 同步清单补 routers/kb.py
+
+### 修复（2026-10-01 模拟用户测试 + 总验前批）
+- **d2 流式渲染性能**：流式期间不再逐 token 重建 WASM 实例（首图曾 >100s）——
+  改为流结束统一 hydrate + D2 实例跨调用复用 + 占位文案注明首载；实测 149s → 21s
+- **新手引导重做**：跳过按钮（原先只能走完/点背景）；版本号动态读取（原硬编码 0.10）；
+  emoji 换描边图标；DNA-01 配色
+- **模式切换过渡**：切换中按钮「切换中…」呼吸态 + 禁用（原点击后数秒无反馈易重复点）
+- **界面缩放**：设置→常规新增 100%/110%/125%（body zoom，服务端持久）——老年/高分屏可用性
+- **词元术语提示**：token 用量条 tooltip 解释词元与余量含义
+- **加载态**：设置子页「加载中…」改脉动动画
+- 勘误：模拟测试 M2-3（会话菜单无导出）为测试误报，菜单功能完好
+
+### 修复（2026-10-01 验收反馈四项）
+- **顶栏模型选择去重**：档案快切下拉并入左侧「在线 · model ▾」胶囊（tbModelTag 即触发器），
+  移除右侧独立档案芯片——此前两控件重复显示同一模型名
+- **会话未读角标**：持久化改 sessionStorage（刷新保留、应用重启清零——原 localStorage 会把
+  上次角标每次启动都摆出来）；角标由 15px 数字 pill 改为行末 7px 金点（boolean 语义不再显数字）
+- **模型下载页（新用户反馈）**：知识库缺失提示的裸 SVG 叹号补 .ic 包装（原渲染 300×150 巨块）；
+  LLM 目录新增内置兜底（registry 扫描为 0 时不再空列表，下载后自动补写 meta.json 自愈）；
+  下载按钮点击即"启动中…"态防误判无反应
+- **技能页**：系统区与用户区按名去重（register_user_skills 注册的用户技能不再双列）；
+  用户技能行级启用/禁用开关（禁用=退出自动触发通道，场景卡显式挂载不受影响，
+  落库 config.skill_disabled）；预装技能标「预装」徽章且前后端双保险禁止删除
+
+### 已知限制
+- 技能分发只补不覆盖：老用户升级不会自动更新已装 diagram 技能目录（后续版本议热更）
+- d2.js WASM 与 d2.exe 同源同主题，若上游版本分叉需重对齐映射表（v0.9.0 实测一致）
+
+---
+
 # 更新日志 — 桌伴 Sidemate
 
 > 所有版本改动记录。遵循 [keepachangelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。日期格式：YYYY-MM-DD

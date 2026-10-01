@@ -117,6 +117,15 @@ export const api = {
       body: JSON.stringify({ filename, content }),
     }));
   },
+  // 0.11.1 A2：内联图「存入工作区」——序列化前端已渲染 SVG 落盘会话工作区
+  // （不重渲染不换引擎；返回 {ok, file, warnings}）
+  async saveDiagram(chatName, name, svg) {
+    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/diagram/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, svg }),
+    }));
+  },
   // ---- 项目交接 handoff.md（PLAN ②++） ----
   async getHandoff(chatName) {
     return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/handoff'));

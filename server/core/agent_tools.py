@@ -274,6 +274,40 @@ TOOL_REGISTRY = {
         },
         "condition": "skill_auto",
     },
+    # 0.11.1 B3：技能参考文件按需加载（渐进披露第二层）
+    # diagram-design 等 vendor 技能的 SKILL.md 只载选型表与通用规则，
+    # 39 型各自的布局文法在 references/type-*.md——挂载后按需读取，不预注入。
+    "read_skill_ref": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_skill_ref",
+                "description": "读取已挂载技能目录内的参考文件（渐进披露：SKILL.md 正文里"
+                               "链接的 references/*.md、assets 模板等）。按正文指导在需要"
+                               "某类型的具体布局文法时调用，读完按规则作图。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill": {
+                            "type": "string",
+                            "description": "技能名（精确匹配，如 diagram）"
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "技能目录内相对路径，如 references/type-flowchart.md"
+                        }
+                    },
+                    "required": ["skill", "path"]
+                }
+            }
+        },
+        "handler": None,
+        "status_map": {
+            "start": "skill_ref_loading",
+            "done": "skill_ref_loaded",
+        },
+        "condition": "skill_auto",
+    },
     # 0.11 A3：确定性海报渲染（模型提供内容，模板保证排版）
     "create_poster": {
         "schema": {
@@ -897,6 +931,7 @@ TOOL_REGISTRY = {
             }
         },
         "handler": None,
+        "status_map": {"start": "d2_rendering", "done": "d2_done"},
         "status_map": {"start": "docx_working", "done": "docx_done"},
         "stat_key": "docx_actions",
         "condition": None,

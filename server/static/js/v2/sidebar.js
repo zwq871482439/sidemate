@@ -34,8 +34,8 @@ export function renderSidebar(root, state, events) {
       <div class="sb-logo"><img src="/static/img/logo.jpg" alt="桌伴"></div>
       <div class="mode-mini">
         ${modes.map(m => `
-          <button data-mode="${m}" class="${m === 'parallel' ? 'experimental ' : ''}${state.mode === m ? 'on' : ''}">
-            ${MODE_LABEL[m]}
+          <button data-mode="${m}" class="${m === 'parallel' ? 'experimental ' : ''}${state.mode === m ? 'on' : ''}${state.switching ? ' switching' : ''}" ${state.switching ? 'disabled title="模式切换中…"' : ''}>
+            ${state.switching && state.mode === m ? '切换中…' : MODE_LABEL[m]}
           </button>`).join('')}
       </div>
       <button class="sb-collapse" title="折叠/展开">${state.collapsed ? '⟩' : '⟨'}</button>
@@ -87,7 +87,7 @@ export function renderSidebar(root, state, events) {
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
     item.dataset.chat = c.name || '';
-    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc((c.title && c.title !== c.name) ? c.title : '新会话')}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容">1</span>' : ''}</div>`;
+    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc((c.title && c.title !== c.name) ? c.title : '新会话')}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
     item.addEventListener('click', (e) => {
       if (e.target.closest('.sess-more')) return;
       events.onSelectSession(c);

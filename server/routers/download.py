@@ -26,6 +26,50 @@ def _models_dir() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
 
 
+# 0.11.1：内置兜底目录——registry 扫描为 0 时使用（不再单纯依赖打包清单里的
+# meta.json 文件：新用户反馈过"模型列表看不到"，文件缺失时列表直接空）。
+# 数据与 models/*/meta.json 同源（下载页 LLM 三档）；installed 一律 False（兜底
+# 目录只在扫描为空时出现，此时必然没有任何已装模型）。
+_BUILTIN_LLM_CATALOG = [
+    {
+        "model_id": "qwen3.5-0.8b-q4",
+        "display_name": "通义千问 3.5 (0.8B · Q4_K_M)",
+        "size_b": 0.8, "quant": "Q4_K_M",
+        "gguf_size_bytes": 532517120, "installed": False,
+        "min_ram_gb": 16, "recommended_vram_gb": 0,
+        "requirements": {"min_ram_gb": 16, "min_vram_gb": 0, "recommended_vram_gb": 0},
+        "default_num_ctx": 4096, "supports_think": True,
+        "download": {"source": "modelscope", "repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
+                     "filename": "Qwen3.5-0.8B-Q4_K_M.gguf",
+                     "url": "https://www.modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF"},
+    },
+    {
+        "model_id": "qwen3.5-2b-q4",
+        "display_name": "通义千问 3.5 (2B · Q4_K_M)",
+        "size_b": 2.0, "quant": "Q4_K_M",
+        "gguf_size_bytes": 1280835840, "installed": False,
+        "min_ram_gb": 24, "recommended_vram_gb": 0,
+        "requirements": {"min_ram_gb": 24, "min_vram_gb": 0, "recommended_vram_gb": 0},
+        "default_num_ctx": 4096, "supports_think": True,
+        "download": {"source": "modelscope", "repo_id": "unsloth/Qwen3.5-2B-GGUF",
+                     "filename": "Qwen3.5-2B-Q4_K_M.gguf",
+                     "url": "https://www.modelscope.cn/models/unsloth/Qwen3.5-2B-GGUF"},
+    },
+    {
+        "model_id": "qwen3.5-4b-q4",
+        "display_name": "通义千问 3.5 (4B · Q4_K_M)",
+        "size_b": 4.0, "quant": "Q4_K_M",
+        "gguf_size_bytes": 2740937888, "installed": False,
+        "min_ram_gb": 32, "recommended_vram_gb": 0,
+        "requirements": {"min_ram_gb": 32, "min_vram_gb": 0, "recommended_vram_gb": 0},
+        "default_num_ctx": 4096, "supports_think": True,
+        "download": {"source": "modelscope", "repo_id": "unsloth/Qwen3.5-4B-GGUF",
+                     "filename": "Qwen3.5-4B-Q4_K_M.gguf",
+                     "url": "https://www.modelscope.cn/models/unsloth/Qwen3.5-4B-GGUF"},
+    },
+]
+
+
 # --------------------------------------------------------------------
 # 目录：列出可下载的模型 + 安装状态
 # --------------------------------------------------------------------
@@ -59,6 +103,11 @@ def api_models_catalog():
             })
     except Exception as e:
         log.warning("[DL] 扫描 LLM 目录失败: %s", e)
+
+    # 0.11.1：扫描为空 → 内置兜底目录（保证任何环境下下载页都有列表可下）
+    if not llm_models:
+        log.info("[DL] registry 扫描为 0，使用内置兜底目录（3 档）")
+        llm_models = [dict(m) for m in _BUILTIN_LLM_CATALOG]
 
     # ---- KB：检测 embedding + reranker 关键文件是否存在 ----
     def _kb_ready(subdir: str) -> bool:
@@ -130,7 +179,7 @@ async def api_models_download(request: Request):
         if not model_id:
             return JSONResponse({"error": "LLM 下载需要 model_id"}, status_code=400)
 
-        # 从 registry 取 meta（含 download 字段）
+        # 从 registry 取 meta（含 download 字段）；registry 无此模型时兜底内置目录
         from core.llamacpp_backend.registry import ModelRegistry
         registry = ModelRegistry(models_dir)
         meta = None
@@ -138,6 +187,13 @@ async def api_models_download(request: Request):
             if m.model_id == model_id:
                 meta = m.to_dict()
                 break
+        if not meta:
+            for m in _BUILTIN_LLM_CATALOG:
+                if m["model_id"] == model_id:
+                    meta = dict(m)
+                    # 兜底目录的 gguf_filename 由 model_id 约定补齐（下载落盘用）
+                    meta.setdefault("gguf_filename", m["download"]["filename"])
+                    break
         if not meta:
             return JSONResponse({"error": "未找到模型 %s 的元数据" % model_id}, status_code=404)
         if not meta.get("download", {}).get("repo_id"):

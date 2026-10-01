@@ -287,10 +287,9 @@ function render() {
   main.innerHTML = `
     <div class="topbar">
       <span class="tb-title">${state.tab === 'chat' ? '对话' : state.tab === 'kb' ? '知识库' : state.tab === 'skills' ? '技能' : '设置'}</span>
-      ${state.tab === 'chat' && state.modelTag ? `<span class="tb-model" id="tbModelTag" title="${state.mode === 'cloud' ? '' : '模型加载状态，点击管理（离线AI）'}">${state.mode !== 'cloud' ? _llmDotHtml() : ''}${esc(state.modelTag)}</span>` : ''}
+      ${state.tab === 'chat' && state.modelTag ? _tbModelHtml() : ''}
       ${state.tab === 'kb' ? '<span id="kb-topbar-slot" class="tb-slot"></span>' : ''}
       <span class="tb-spacer"></span>
-      ${_profChipHtml()}
       <button class="tb-viewer ${_viewer && _viewer.isOpen ? 'on' : ''}" id="tbViewerBtn" title="视窗（会话/预览/文件/轨迹）">◧ 视窗</button>
     </div>
     <div id="main-scroll"></div>
@@ -429,7 +428,8 @@ let _lastGenSet = new Set();
 let _sessStatusTimer = null;
 
 function _persistUnread() {
-  try { localStorage.setItem('v2SessUnread', JSON.stringify(state.sessUnread)); } catch (e) { /* 隐私模式 */ }
+  // 0.11.1：sessionStorage——刷新(F5)保留，应用重启清零（localStorage 会让上次角标每次启动重现）
+  try { sessionStorage.setItem('v2SessUnread', JSON.stringify(state.sessUnread)); } catch (e) { /* 隐私模式 */ }
 }
 
 function clearSessUnread(cid) {
@@ -486,7 +486,6 @@ function _updateSessDots() {
       badge = document.createElement('span');
       badge.className = 'si-badge';
       badge.title = '有新完成内容';
-      badge.textContent = '1';
       el.querySelector('.sm') && el.querySelector('.sm').appendChild(badge);
     } else if (!c.unread && badge) {
       badge.remove();
@@ -502,11 +501,21 @@ async function loadCloudProfiles() {
   } catch (e) { state.cloudProfiles = []; }
 }
 
-function _profChipHtml() {
-  // 仅在线 + 聊天 tab + 有档案时显示（离线档案管理无意义）
+// 0.11.1：顶栏模型标签（合并档案快切——用户反馈双控件显示同一模型冗余）。
+// 云端模式：tbModelTag 即档案下拉触发器（点开菜单切档案）；离线/并行：点击去离线AI 管理。
+function _tbModelHtml() {
+  if (state.mode === 'cloud' && state.tab === 'chat' && state.cloudProfiles.length) {
+    return `<span class="prof-wrap tb-prof" id="profWrap">
+      <span class="tb-model has-prof" id="tbModelTag" title="切换模型档案（当前会话后续请求生效）">${esc(state.modelTag)} <span class="chev">▾</span></span>
+      ${_profMenuHtml()}
+    </span>`;
+  }
+  return `<span class="tb-model" id="tbModelTag" title="模型加载状态，点击管理（离线AI）">${state.mode !== 'cloud' ? _llmDotHtml() : ''}${esc(state.modelTag)}</span>`;
+}
+
+function _profMenuHtml() {
+  // 档案菜单（宿主由 _tbModelHtml 决定；仅在线模式有意义）
   if (state.mode !== 'cloud' || state.tab !== 'chat' || !state.cloudProfiles.length) return '';
-  const cur = state.cloudProfiles.find(p => p.active) || state.cloudProfiles[0];
-  if (!cur) return '';
   const rows = state.cloudProfiles.map(p => `
     <div class="pm-row ${p.active ? 'cur' : ''}" data-prof="${esc(p.id)}">
       <span class="nm">${esc(p.name)}</span>
@@ -515,25 +524,18 @@ function _profChipHtml() {
       <span class="ic ck">${_CK}</span>
     </div>`).join('');
   return `
-  <div class="prof-wrap" id="profWrap">
-    <button class="prof-chip" id="profChip" title="切换模型档案（当前会话后续请求生效）">
-      <span class="ic">${_ZAP}</span>
-      <span class="pv"><b>${esc(cur.name)}</b> · ${esc(cur.model || '未配置')}</span>
-      <span class="chev">▾</span>
-    </button>
     <div class="prof-menu">
       <div class="pm-cap">模型档案（当前会话后续请求生效）</div>
       ${rows}
       <div class="pm-note">智能路由开启时：产物类任务建议「强」档案，轻量问答走「快」档案</div>
       <div class="pm-mgr" id="profMgr"><span class="ic"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>管理档案…</div>
-    </div>
-  </div>`;
+    </div>`;
 }
 
 function _bindProfileChip(root) {
   const wrap = root.querySelector('#profWrap');
   if (!wrap) return;
-  const chip = wrap.querySelector('#profChip');
+  const chip = wrap.querySelector('#tbModelTag');
   chip.addEventListener('click', (e) => { e.stopPropagation(); wrap.classList.toggle('open'); });
   document.addEventListener('click', () => wrap.classList.remove('open'), { once: true });
   wrap.querySelectorAll('.pm-row').forEach(row => {
@@ -589,6 +591,13 @@ function renderChatArea() {
       onPreviewFile: (url, name) => _previewFile(url, name),  // 产物卡片「预览」→ 视窗 drill-down
       onKbDetail: (filename) => _openKbDetail(filename),  // ref 卡「详情」→ KB 页文档详情（挂账清账）
     });
+    // 0.11.1 A2：内联图存入后的产物卡预览（cards_content 动态插入，走事件解耦）
+    if (!window.__smPreviewFileBound) {
+      window.__smPreviewFileBound = true;
+      window.addEventListener('sm:preview-file', (e) => {
+        if (e.detail) _previewFile(e.detail.url || '', e.detail.name || '');
+      });
+    }
     // 提纲待确认恢复（快照重建/刷新共用入口）
     const pendingOutline = _lastOutlineMsg();
     if (pendingOutline) _showDocConfirmBar(pendingOutline.msg.content || '');
@@ -876,9 +885,15 @@ function renderStreamingBubble(st) {
   }
   renderParallelCols(el.querySelector('.v2-par-slot'), st);
   bubble.innerHTML = mdStream(st.text + (st.error ? '\n\n⚠️ ' + st.error : ''));
-  hydrateCards(bubble, { getSession: () => state.sessions.find(c => c.current), onAskAnswer, getCardAnswer });
-  hydrateMermaid(bubble);
-  hydrateD2(bubble);
+  const _ho = { getSession: () => state.sessions.find(c => c.current), onAskAnswer, getCardAnswer };
+  hydrateCards(bubble, _ho);
+  // 0.11.1 M1-2：流式期间不渲染 d2/mermaid——此前每个 token 重渲染都重建 WASM 实例，
+  // 首图等待可达分钟级（模拟用户实测 149s）。围栏占位保持"渲染中"文案；
+  // 流结束走 onDone→快照重建统一 hydrate（error 为终态，一并渲染）
+  if (st.error) {
+    hydrateMermaid(bubble, _ho);
+    hydrateD2(bubble, _ho);
+  }
   const scroll = document.getElementById('main-scroll');
   if (scroll) scroll.scrollTop = scroll.scrollHeight;
 }
@@ -1627,13 +1642,20 @@ async function boot() {
     if (state.mode === 'cloud') await loadCloudProfiles();  // B1：顶栏档案快切
     // C1：恢复未读 badge + 启动会话状态轮询（五态指示器）
     try {
-      state.sessUnread = JSON.parse(localStorage.getItem('v2SessUnread') || '{}') || {};
+      try { state.sessUnread = JSON.parse(sessionStorage.getItem('v2SessUnread') || '{}') || {}; } catch (e) { state.sessUnread = {}; }
     } catch (e) { state.sessUnread = {}; }
     if (!_sessStatusTimer) pollSessStatus();
     // 并行实验开关（存量迁移：当前并行而开关未点亮 → 自动点亮由设置页负责，这里只读）
     try {
       const all = await fetch('/api/config').then(r => r.json());
       state.parallelEnabled = !!(all && all.config && all.config.parallel_enabled);
+      // 0.11.1 M2-4：界面缩放（设置→常规；localStorage 同步镜像，跨启动生效）
+      const _z = all && all.config && parseFloat(all.config.ui_font_scale);
+      const z = _z || (parseFloat(localStorage.getItem('v2FontScale')) || 1);
+      if (z && z !== 1) {
+        document.body.style.zoom = z;
+        try { localStorage.setItem('v2FontScale', String(z)); } catch (e) {}
+      }
     } catch (e) { /* 无配置则关 */ }
     // R5#4：标题带版本号（从标签页即可判断运行版本）
     try {

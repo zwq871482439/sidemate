@@ -951,6 +951,14 @@ export function createViewer(opts) {
     if (open) renderBody();
   }
 
+  // 0.11.1 A2：内联图「存入工作区」后刷新文件列表（仅当前会话）
+  window.addEventListener('sm:files-updated', (e) => {
+    const cur = opts.getCurrentChat();
+    if (!cur || !e.detail || e.detail.chat !== cur.name) return;
+    files = null;
+    loadFiles().then(() => { if (open && tab === 'files') renderBody(); });
+  });
+
   return {
     el,
     setOpen,

@@ -928,7 +928,8 @@ class AgentLoop:
             if tool_name == "mount_skill":
                 # 0.11 A2：技能懒加载——工具返回值即 SKILL.md 正文（渐进披露）
                 from core.skill_loader import (get_skill_body, append_mount_log,
-                                               SKILL_MOUNT_LIMIT, auto_trigger_enabled)
+                                               SKILL_MOUNT_LIMIT, auto_trigger_enabled,
+                                               skill_disabled)
                 name = (args.get("name") or "").strip()
                 if not auto_trigger_enabled():
                     append_mount_log(name, False, "自动触发已关闭", self.chat_id)
@@ -938,6 +939,11 @@ class AgentLoop:
                 if not name:
                     return {"success": False, "tool": "mount_skill",
                             "error": "missing_name", "message": "缺少技能名参数 name。"}
+                if skill_disabled(name):
+                    append_mount_log(name, False, "技能已禁用", self.chat_id)
+                    return {"success": False, "tool": "mount_skill",
+                            "error": "skill_disabled",
+                            "message": "技能「%s」已被用户禁用（设置→技能）。如需使用请在技能页开启。" % name}
                 if name in self._mounted_skills:
                     return {"success": True, "tool": "mount_skill",
                             "data": {"name": name, "already_mounted": True,
@@ -964,6 +970,49 @@ class AgentLoop:
                          name, len(body), len(self._mounted_skills))
                 return {"success": True, "tool": "mount_skill",
                         "data": {"name": name, "content": body}}
+
+            elif tool_name == "read_skill_ref":
+                # 0.11.1 B3：技能参考文件按需加载（白名单子树 + 扩展名 + 64KB 上限）
+                import os as _os5
+                from core.skill_loader import get_skill_by_name
+                sname = (args.get("skill") or "").strip()
+                rpath = (args.get("path") or "").strip().replace("\\", "/")
+                if not sname or not rpath:
+                    return {"success": False, "tool": "read_skill_ref",
+                            "error": "missing_params",
+                            "message": "缺少参数：skill（技能名）与 path（技能目录内相对路径，"
+                                       "如 references/type-flowchart.md）。"}
+                sk = get_skill_by_name(sname)
+                if not sk:
+                    return {"success": False, "tool": "read_skill_ref",
+                            "error": "skill_not_found",
+                            "message": "技能「%s」不存在。" % sname}
+                skill_root = _os5.realpath(_os5.dirname(sk["source_file"]))
+                target = _os5.realpath(_os5.join(skill_root, rpath))
+                if not (target == skill_root or target.startswith(skill_root + _os5.sep)):
+                    return {"success": False, "tool": "read_skill_ref",
+                            "error": "path_escape",
+                            "message": "路径越界：只能读取技能目录内的文件。"}
+                if _os5.splitext(target)[1].lower() not in (".md", ".html", ".json", ".txt"):
+                    return {"success": False, "tool": "read_skill_ref",
+                            "error": "bad_ext",
+                            "message": "仅支持 .md/.html/.json/.txt 参考文件。"}
+                if not _os5.isfile(target):
+                    return {"success": False, "tool": "read_skill_ref",
+                            "error": "not_found",
+                            "message": "文件不存在：%s（可用文件见技能正文内的链接）" % rpath}
+                try:
+                    if _os5.getsize(target) > 64 * 1024:
+                        return {"success": False, "tool": "read_skill_ref",
+                                "error": "too_large",
+                                "message": "文件超过 64KB 上限，请换更小的参考文件。"}
+                    with open(target, "r", encoding="utf-8") as _f5:
+                        _ref = _f5.read()
+                except Exception as _e5:
+                    return {"success": False, "tool": "read_skill_ref",
+                            "error": "read_failed", "message": str(_e5)[:120]}
+                return {"success": True, "tool": "read_skill_ref",
+                        "data": {"skill": sname, "path": rpath, "content": _ref}}
 
             elif tool_name == "create_poster":
                 # 0.11 A3：确定性海报渲染（三模板，token 色，模型只提供内容）
@@ -2272,6 +2321,9 @@ class AgentLoop:
         elif tool_name == "format_gzh":
             return get_status_event(tool_name, "done", name=data.get("name", ""),
                                     chars=data.get("chars", 0))
+        elif tool_name == "render_d2":
+            return get_status_event(tool_name, "done", name=data.get("file") or data.get("name", ""),
+                                    svg_chars=data.get("svg_chars", 0))
         elif tool_name == "search_web":
             # P6 #4-a: 补传完整搜索结果列表(标题+url+摘要截断),供前端展开查看
             _raw_results = data.get("results", [])

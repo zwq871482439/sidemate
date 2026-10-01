@@ -228,9 +228,34 @@ def auto_trigger_enabled() -> bool:
         return True
 
 
+def skill_disabled(name: str) -> bool:
+    """0.11.1：技能是否被用户禁用（技能页行级开关，config.skill_disabled 名单）。
+
+    禁用语义 = 退出自动触发通道（简表不出现 + mount_skill 拒绝）；
+    场景卡显式挂载不受影响（显式动作是用户自己的选择）。
+    """
+    try:
+        from config import get as _cfg
+        disabled = _cfg("skill_disabled", [])
+        return isinstance(disabled, list) and name in disabled
+    except Exception:
+        return False
+
+
+def set_skill_disabled(name: str, disabled: bool) -> None:
+    """写入/移出禁用名单（技能页开关调用）。"""
+    from config import get as _cfg, set_value
+    cur = _cfg("skill_disabled", [])
+    cur = [x for x in cur if isinstance(x, str) and x != name]
+    if disabled:
+        cur.append(name)
+    set_value("skill_disabled", cur)
+
+
 def get_auto_skills() -> List[dict]:
-    """参与自动匹配的 skill（trigger ∈ {auto, both}）。"""
-    return [sk for sk in discover_skills() if sk["trigger"] in ("auto", "both")]
+    """参与自动匹配的 skill（trigger ∈ {auto, both}，且未被用户禁用）。"""
+    return [sk for sk in discover_skills()
+            if sk["trigger"] in ("auto", "both") and not skill_disabled(sk["name"])]
 
 
 def get_auto_skill_summary(max_entries: int = 8) -> str:

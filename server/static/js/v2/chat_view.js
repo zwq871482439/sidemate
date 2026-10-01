@@ -58,13 +58,19 @@ function _collectRefSources(m) {
   const out = [];
   (m.kb_sources || []).forEach(s =>
     out.push({ title: s.label || '?', excerpt: s.snippet || '', kind: 'kb' }));
-  (m.card_data || []).forEach(ev => {
-    const toolName = ev.tool || ev.name || ev.tool_name || '';
-    (ev.results || []).forEach(r =>
+  // 0.11.1 修复：来源并集——card_data（SSE 视图态回写，含 reason_unit 无 results）
+  // 与 agent_timeline（含 kb/search 的 results/sources）都扫；title 去重兜底。
+  // 此前二选一：有 card_data 时 timeline 的来源永远读不到。
+  const evs = [].concat(m.card_data || [], m.agent_timeline || []);
+  evs.forEach(ev => {
+    const toolName = ev.tool || ev.name || ev.tool_name || ev.status || '';
+    // 0.11.1 修复：KB 时间线条目的来源在 ev.sources（web 在 ev.results）——此前只读
+    // results，KB 检索回放永远无引用卡；kind 由 tool 名或 status 判（timeline 派生无 tool）
+    (ev.results || ev.sources || []).forEach(r =>
       out.push({
-        title: r.title || '?',
+        title: r.title || r.label || '?',
         excerpt: r.snippet || '',
-        kind: /web/i.test(toolName) ? 'web' : 'kb',
+        kind: /web|search(?!_kb)/i.test(toolName) && !/^kb/.test(toolName) ? 'web' : 'kb',
       }));
   });
   const seen = new Set();
@@ -185,8 +191,8 @@ export function renderChatFlow(container, messages, opts) {
   container.appendChild(flow);
   // 水合恒执行（ref 卡跨两界离线也要；围栏块槽只在 _cardMode 提取后存在）
   hydrateCards(flow, opts || {});
-  hydrateMermaid(flow);
-  hydrateD2(flow);
+  hydrateMermaid(flow, opts || {});
+  hydrateD2(flow, opts || {});
   // 历史思考胶囊 → 展开/收起台账（流式版在 createCardArea 内自绑，历史版在这里补）
   flow.querySelectorAll('.cb-area .think-sum').forEach(btn =>
     btn.addEventListener('click', () => {

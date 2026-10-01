@@ -680,7 +680,8 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                     # P6: 统一产物下载——table_ops write / format_convert 成功后也派发产物事件
                     # 复用 doc_complete 事件类型（前端已有下载 tag 渲染），用 workspace 下载接口（支持 xlsx/txt/md 等）
                     # M2-4: deliver_pack_done（成果包 zip）同通道
-                    if status_val in ("table_operating_done", "format_converting_done", "deliver_pack_done"):
+                    if status_val in ("table_operating_done", "format_converting_done", "deliver_pack_done",
+                            "poster_done", "gzh_done", "d2_done"):  # 0.11.1：海报/公众号/D2 产物也进卡
                         _artifact_name = content.get("name") or content.get("target") or ""
                         if _artifact_name:
                             from urllib.parse import quote as _url_quote
@@ -755,7 +756,23 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             for _k in ("action", "page", "title", "pptx_name"):
                                 if enriched.get(_k):
                                     _tl_entry[_k] = enriched[_k]
+                        # 0.11.1 修复：检索来源随时间线持久化（截断 6 条——回放时
+                        # 引用卡据此渲染，此前 _tl_entry 只存 query/count，来源全丢）
+                        if status_val in ("search_done", "kb_done"):
+                            _tl_srcs = enriched.get("results") or enriched.get("sources") or []
+                            if _tl_srcs:
+                                _tl_entry["results"] = [
+                                    {"title": (s.get("title") or s.get("label") or "?")[:80],
+                                     "snippet": (s.get("snippet") or "")[:120]}
+                                    for s in _tl_srcs[:6] if isinstance(s, dict)
+                                ]
                         _agent_timeline_buf.append(_tl_entry)
+                    # 0.11.1 修复：检索来源即时上屏——search_web/search_kb 完成时
+                    # 发顶层 sources 事件（此前 agent 路径从不发，流式期间无来源 chip）
+                    if status_val in ("search_done", "kb_done"):
+                        _srcs = enriched.get("results") or enriched.get("sources") or []
+                        if _srcs:
+                            yield sse_event("sources", {"sources": _srcs[:6]})
                     yield sse_event("agent_status", enriched)
                 else:
                     yield sse_event("agent_status", content)

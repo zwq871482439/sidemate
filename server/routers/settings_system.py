@@ -1478,17 +1478,55 @@ async def api_schedule_toggle(request: Request, task_id: str):
 #  技能管理 API（0.10 M4 增补：系统 skill + 用户 skill + MCP 入口）
 # ============================================================
 
+def _preset_skill_names() -> set:
+    """0.11.1：预装技能名集合（skills-default 下的目录名/.md 名/frontmatter name 都收）。"""
+    names = set()
+    try:
+        import os as _os
+        import re as _re
+        from core.skill_loader import _skills_default_dir
+        sd = _skills_default_dir()
+        if not _os.path.isdir(sd):
+            return names
+        for e in _os.listdir(sd):
+            if e.endswith(".md"):
+                names.add(e[:-3])
+            elif _os.path.isdir(_os.path.join(sd, e)):
+                names.add(e)
+                sm = _os.path.join(sd, e, "SKILL.md")
+                if _os.path.isfile(sm):
+                    try:
+                        with open(sm, "r", encoding="utf-8") as f:
+                            m = _re.search(r"^name:\s*(.+)$", f.read(2048), _re.M)
+                        if m:
+                            names.add(m.group(1).strip().strip("'\""))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return names
+
+
 @router.get("/api/skills/list")
 def api_skills_list():
     """列出全部技能：系统（协议+权限）+ 用户（SKILL.md）。"""
     from core.pipeline_skills import _SKILLS
-    from core.skill_loader import discover_skills
+    from core.skill_loader import discover_skills, skill_disabled, auto_trigger_enabled, read_mount_log
     from config import get as _cfg
+
+    # 用户技能先行构建（系统区需按名去重：register_user_skills 会把带
+    # pipeline_types 的用户技能注册进管线——同一技能不应在两区重复出现）
+    _user_skills = discover_skills()
+    _user_names = {sk["name"] for sk in _user_skills}
+
+    _preset_names = _preset_skill_names()
 
     # 系统 skill：pipeline_skills 注册的 + 工具权限组的
     system = []
-    # 协议 skill（pipeline_skills 注册的）
+    # 协议 skill（pipeline_skills 注册的；与用户技能同名的注册项跳过——用户区已展示）
     for sk in _SKILLS:
+        if sk["name"] in _user_names:
+            continue
         system.append({
             "id": "pipe_" + sk["name"],
             "name": sk["name"],
@@ -1526,15 +1564,15 @@ def api_skills_list():
             "source": "protocol",
         })
 
-    # 用户 skill（0.11 v2：含 trigger 触发方式 + 最近挂载信息）
-    from core.skill_loader import auto_trigger_enabled, read_mount_log
+    # 用户 skill（0.11 v2：含 trigger 触发方式 + 最近挂载信息；
+    # 0.11.1：preset=预装不可删，enabled=行级开关（禁用=退出自动触发通道））
     _mount_log = read_mount_log(50)
     _last_mount = {}
     for _le in reversed(_mount_log):          # 从旧到新扫，留下的即最近一次命中
         if _le.get("hit"):
             _last_mount[_le.get("skill", "")] = _le
     user = []
-    for sk in discover_skills():
+    for sk in _user_skills:
         _lm = _last_mount.get(sk["name"])
         user.append({
             "id": "user_" + sk["name"],
@@ -1542,6 +1580,8 @@ def api_skills_list():
             "description": sk.get("description", ""),
             "trigger": sk.get("trigger", "both"),
             "pipeline_types": sk.get("pipeline_types", []),
+            "preset": sk["name"] in _preset_names,
+            "enabled": not skill_disabled(sk["name"]),
             "last_mounted": (_lm.get("ts", "") if _lm else ""),
             "last_mounted_chat": (_lm.get("chat", "") if _lm else ""),
         })
@@ -1575,6 +1615,14 @@ async def api_skills_toggle(request: Request):
         from core.skill_loader import SKILL_AUTO_TRIGGER_CONFIG
         set_value(SKILL_AUTO_TRIGGER_CONFIG, enabled)
         return {"ok": True, "id": "auto", "enabled": enabled}
+    # 0.11.1：用户技能行级开关（禁用=退出自动触发通道；场景卡显式挂载不受影响）
+    if skill_id.startswith("user_"):
+        from core.skill_loader import set_skill_disabled, get_skill_by_name
+        name = skill_id[5:]
+        if not get_skill_by_name(name):
+            return JSONResponse({"error": "技能不存在"}, status_code=404)
+        set_skill_disabled(name, not enabled)
+        return {"ok": True, "id": skill_id, "enabled": enabled}
     if skill_id.startswith("proto_"):
         # 0.10 协议 skill：直接写对应 config 开关
         from core.agent_tools import PROTOCOL_SKILLS as _PROTOS
@@ -1607,6 +1655,9 @@ async def api_skills_delete(request: Request):
     if not skill_id.startswith("user_"):
         return JSONResponse({"error": "仅用户技能可删除"}, status_code=400)
     name = skill_id[5:]
+    # 0.11.1：预装技能不允许删除（删了场景卡/预装能力就废了；不想要请用禁用开关）
+    if name in _preset_skill_names():
+        return JSONResponse({"error": "预装技能不允许删除——不想要可用行内开关禁用（升级会补齐预装）"}, status_code=400)
     from core.skill_loader import _skills_dir
     import os
     root = _skills_dir()

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "comment": "D2 Neutral Default → DNA-01 深蓝金 换装映射（PLAN-0111 A1）。单一真源：服务端 core/d2_render.py（render_svg 落盘前）与前端 cards_content.js（hydrateD2 上屏前）共读本文件。未列出的色值原样保留（保底不劣于现状）。",
+  "colors": {
+    "#0D32B2": "#0F2B46",
+    "#0A0F25": "#22303C",
+    "#676C7E": "#5B6B7B",
+    "#F7F8FE": "#EEF3F8",
+    "#EDF0FD": "#EEF3F8",
+    "#E3E9FD": "#E2E9F0",
+    "#CFD2DD": "#C9D3DE",
+    "#DEE1EB": "#D7DEE8",
+    "#FFFFFF": "#F7F9FB"
+  },
+  "fonts": {
+    "sans": "\"Microsoft YaHei\",\"PingFang SC\",sans-serif",
+    "mono": "Consolas,\"JetBrains Mono\",monospace"
+  },
+  "append_rules": "text.text-bold{font-weight:600}text.text-italic{font-style:italic}"
+}

@@ -67,7 +67,7 @@ DEFAULTS = {
     # ----- 应用版本号（唯一权威来源 single source of truth）-----
     # 其他所有模块/前端/launcher 均从此处取版本号，禁止在其他地方硬编码版本字面量。
     # launcher/build.bat 通过 findstr 解析此行抽取版本号。
-    "version": "0.11.0",
+    "version": "0.11.1-pre.1",
 
     # ----- 通用 -----
     # 沙盒清理策略: "on_start" | "24h" | "7d" | "never"
@@ -210,7 +210,7 @@ DEFAULTS = {
 
     # ===== Patch5: 线程池 + 任务队列 + 令牌系统 =====
     # 线程池大小（同步阻塞操作如文件解析、embedding 计算在此执行，避免卡死 FastAPI 事件循环）
-    "thread_pool_max_workers": 2,
+    "thread_pool_max_workers": 4,  # 0.11.1 C1：2→4（评测实锤并发饥饿）；低配可在 settings.json 调回
     # BatchQueue SQLite 数据库路径（空=运行时解析为 DATA_DIR/batch_queue.db）
     "batch_queue_db_path": "",
     # BatchQueue worker 轮询间隔（秒）
@@ -221,6 +221,12 @@ DEFAULTS = {
     "kb_enable_sparse": True,
     # 令牌默认有效期（秒，0=永不过期）
     "access_token_default_ttl": 0,
+    # 0.11.1：每技能禁用名单（技能页行级开关；禁用=退出自动触发通道，
+    # 场景卡显式挂载不受影响——显式动作是用户自己的选择）
+    "skill_disabled": [],
+    # 0.11.1：界面缩放（模拟用户"老刘"反馈：无字号调节，小字看不清。
+    # 1.0=100%，作用于 body zoom，整体等比放大）
+    "ui_font_scale": 1.0,
 }
 
 # ===== 本地模型统一 Token 限制（所有本地 LLM 调用共用）=====
@@ -263,6 +269,8 @@ _CONFIG_VALIDATORS = {
     "kb_max_total_chunks": lambda v: isinstance(v, int) and 1 <= v <= 100000,
     "access_token_default_ttl": lambda v: isinstance(v, int) and 0 <= v <= 86400 * 30,
     "thread_pool_max_workers": lambda v: isinstance(v, int) and 1 <= v <= 16,
+    "skill_disabled": lambda v: isinstance(v, list),
+    "ui_font_scale": lambda v: isinstance(v, (int, float)) and 0.9 <= float(v) <= 1.5,
     "ai_mode": lambda v: v in ("local", "cloud", "parallel"),  # 0828 修复：校验器漏了 parallel，导致切换并行被拒绝、请求回落 cloud
     "kb_ai_mode": lambda v: v in ("local", "cloud"),
     "cloud_context_policy": lambda v: v in ("full", "current_only", "slim_history"),

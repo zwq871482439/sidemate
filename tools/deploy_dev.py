@@ -32,11 +32,12 @@ FILES = [
     "core/skill_loader.py", "core/cloud_profiles.py", "core/curated_memory.py",
     "core/skill_installer.py", "core/poster_render.py", "core/gzh_format.py",
     "core/agent_tools.py", "core/agent_loop.py", "core/mcp_client.py",
-    "routers/chat.py", "routers/settings_cloud.py", "routers/settings_system.py",
+    "routers/chat.py", "routers/kb.py", "routers/settings_cloud.py", "routers/settings_system.py",
     "pipelines/cloud_pipeline.py", "pipelines/_base.py",
-    "static/js/v2/dist/bundle.js", "static/js/v2/dist/bundle.css",
+    "prompts.py", "core/d2_render.py", "core/svg_lint.py", "routers/download.py",
+    "static/js/v2/dist/bundle.js", "static/js/v2/dist/bundle.css", "static/js/v2/tour.js",
 ]
-DIRS = ["skills-default"]
+DIRS = ["skills-default", "static/dna"]
 
 
 def deploy():

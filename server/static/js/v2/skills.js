@@ -82,16 +82,18 @@ export function createSkillsView(opts) {
             const trig = TRIG_META[s.trigger] || TRIG_META.both;
             const ic = SKILL_ICON[s.name] || 'puzzle';
             const lm = s.last_mounted ? '上次：' + s.last_mounted.slice(5) : '尚未挂载';
+            const off = s.enabled === false;
             return `
-            <div class="sk-row" data-skill="${esc(s.id)}" title="点击查看技能正文">
+            <div class="sk-row${off ? ' off' : ''}" data-skill="${esc(s.id)}" title="点击查看技能正文">
               <span class="sic">${iconSvg(ic)}</span>
               <div class="stx">
-                <div class="n">${esc(s.name)}</div>
+                <div class="n">${esc(s.name)}${s.preset ? '<span class="sk-preset-tag" title="预装技能：随安装包分发，升级自动补齐；不可删除">预装</span>' : ''}</div>
                 <div class="d">${esc(s.description || '')}</div>
               </div>
               <span class="trig ${trig.cls}">${trig.label}</span>
               <span class="sk-mount">${esc(lm)}</span>
-              <button class="sk-del" data-skill="${esc(s.id)}" title="删除">✕</button>
+              <button class="switch gold${off ? '' : ' on'}" data-sk-toggle="${esc(s.id)}" title="${off ? '已禁用：不参与自动触发（场景卡仍可显式挂载）' : '已启用：允许自动触发'}"></button>
+              ${s.preset ? '' : `<button class="sk-del" data-skill="${esc(s.id)}" title="删除">✕</button>`}
             </div>`;
           }).join('') || '<div class="sk-empty">还没有技能——将 SKILL.md 放入 data/skills/ 目录，或让 AI 安装社区技能</div>'}
         </div>
@@ -198,14 +200,30 @@ export function createSkillsView(opts) {
       });
     });
 
-    // 用户 skill 删除
+    // 0.11.1：用户技能行级开关（禁用=退出自动触发通道）
+    root.querySelectorAll('[data-sk-toggle]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        btn.style.pointerEvents = 'none';
+        const enabled = !btn.classList.contains('on');
+        await fetch('/api/skills/toggle', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: btn.dataset.skToggle, enabled }),
+        }).catch(() => {});
+        load(); // 重新加载
+      });
+    });
+
+    // 用户 skill 删除（预装技能无删除按钮 + 后端双保险）
     root.querySelectorAll('.sk-del[data-skill]').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         if (!(await uiConfirm('删除此技能？'))) return;
-        await fetch('/api/skills/delete', {
+        const r = await fetch('/api/skills/delete', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: btn.dataset.skill }),
-        }).catch(() => {});
+        }).then(x => x.json()).catch(() => null);
+        if (r && r.error) uiAlert(r.error);
         load(); // 重新加载
       });
     });

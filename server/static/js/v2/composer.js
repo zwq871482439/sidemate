@@ -42,7 +42,7 @@ export function renderComposer(state, events) {
           <div class="tb-fill tb-used" style="width:0%"></div>
           <div class="tb-fill tb-cur" style="width:0%"></div>
         </div>
-        <div class="tb-labels">
+        <div class="tb-labels" title="词元（token）：AI 的计量单位，1 个汉字约 1~2 词元。本条显示当前会话的上下文余量——快满时会自动压缩或精简更早的对话">
           <span class="tb-lbl-left">
             <span class="tb-tag tb-tag-status status-ok" id="v2TokenStatus">空间充足</span>
             <span class="tb-tag tb-tag-used" id="v2TokenUsedTag" title="">已用 <span id="v2TokenHist">0.0K</span></span>
@@ -95,6 +95,7 @@ export function renderComposer(state, events) {
     'poster-image': { label: '图文海报',     ph: '产品/人物/课程——描述主题、配图思路与要点…' },
     'poster-data':  { label: '数据海报',     ph: '战报/榜单——给出关键数字与对比项…' },
     gzh:   { label: '公众号文章', ph: '粘贴文章内容或描述主题…' },
+    diagram:{ label: '画图',      ph: '描述要的交付级图示：架构/流程/ER/漏斗…（快图直接聊即可，不用选场景）' },
     search:{ label: '联网搜索',   ph: '输入要联网搜索的主题…' },
     deep:  { label: '深度分析',   ph: '描述要深挖的课题…' },
   };

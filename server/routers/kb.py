@@ -789,9 +789,11 @@ async def api_kb_upload(file: UploadFile = File(...), request: Request = None):
     if not file.filename:
         return JSONResponse({"error": "未选择文件"}, status_code=400)
 
-    loaded = mgr.get_loaded_llms()
-    if not loaded:
-        return JSONResponse({"error": "请先在「设置」页面加载模型，文档处理需要模型支持"}, status_code=400)
+    # 0.11.1 修复：上传文档（解析+向量化）只依赖 embedder，不依赖对话 LLM——
+    # 旧门槛检查 get_loaded_llms() 把纯在线用户全部挡在门外（用户实测 400
+    # "请先加载模型"，而 KB 模型其实已就绪）。embedder 未就绪才拒绝（提示去下载）。
+    if not kb.get_stats().get("models_loaded"):
+        return JSONResponse({"error": "知识库模型未就绪——请到「设置→模型下载」安装知识库模型"}, status_code=400)
 
     # 流式写入临时文件，避免全量读入内存
     import tempfile
