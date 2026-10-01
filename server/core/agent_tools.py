@@ -906,6 +906,7 @@ TOOL_REGISTRY = {
         },
         "stat_key": "d2_renders",
         "condition": None,
+        "status_map": {"start": "d2_rendering", "done": "d2_done"},
         "prompt_fragment": "d2",
     },
     # ===== 0.10 M1-4：create_docx（精排版 Word：markdown 章节 → DNA 版式 docx）=====
@@ -931,7 +932,6 @@ TOOL_REGISTRY = {
             }
         },
         "handler": None,
-        "status_map": {"start": "d2_rendering", "done": "d2_done"},
         "status_map": {"start": "docx_working", "done": "docx_done"},
         "stat_key": "docx_actions",
         "condition": None,

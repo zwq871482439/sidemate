@@ -405,7 +405,7 @@ function _renderConfirmCard(card, spec, opts, kind) {
       <div class="cf-line dim">文件清单：${esc((s.files || []).join(' · ')) || '—'}</div></div>
       <div class="cf-sec"><div class="cf-lb">安全校验</div>
       ${(s.checks || []).map(c => `<div class="cf-vrow">${_CKC}<span>${esc(c)}</span></div>`).join('')}</div>`;
-  } else if (kind === 'memory_save') {
+  } else if (_kind2 === 'memory_save' || _kind2 === 'memory_confirm') {
     head = `<div class="cf-head"><span class="cf-cic">${iconSvg('tag')}</span>
       <div><div class="cf-t">记忆写入确认</div>
       <div class="cf-s">写入后跨会话生效</div></div></div>`;
@@ -459,8 +459,13 @@ function _renderConfirmCard(card, spec, opts, kind) {
 function _renderAsk(card, spec, opts) {
   const kind = spec.kind || '';
   // 0.11 确认卡家族：结构化渲染（照原型 ui-011.html ①）
-  if (kind === 'skill_install' || kind === 'memory_save' || kind === 'distill'
-      || (kind === 'plan_confirm' && (spec.tools || spec.perms || spec.files))) {
+  // 0.11.1 修复：①模型产出过 kind="memory_confirm"（协议值 memory_save 的漂移）；
+  // ②flash 档经常不带 kind——按 question 文案推断（含「长期记忆」→ 结构化记忆卡），
+  // 否则降级为普通问答卡（功能可用但缺位置条/diff 预览）
+  const _kind2 = kind || ((spec.question || '').includes('长期记忆') ? 'memory_save' : '')
+  if (_kind2 === 'skill_install' || _kind2 === 'memory_save' || _kind2 === 'memory_confirm'
+      || _kind2 === 'distill'
+      || (_kind2 === 'plan_confirm' && (spec.tools || spec.perms || spec.files))) {
     _renderConfirmCard(card, spec, opts, kind);
     return;
   }

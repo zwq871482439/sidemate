@@ -1039,7 +1039,11 @@ export function createSettingsView(events) {
       _dlEs.onmessage = (ev) => {
         try {
           const d = JSON.parse(ev.data);
-          showProg(d.label || d.phase || '下载中…', d.progress || 0);
+          // 0.11.1 修复：字段对齐——引擎 SSE 发 {pct(0-100), msg}，此前前端读
+          // label/phase/progress 全 miss → 进度条永远 0%、文案"下载中…"不动
+          // （用户观感"点了没反应"；后台其实下载成功）
+          const _pct = (d.pct != null) ? d.pct : Math.round((d.progress || 0) * 100);
+          showProg(d.msg || d.label || d.phase || '下载中…', _pct / 100);
           if (d.phase === 'done' || d.status === 'done') {
             _dlEs.close(); _dlEs = null;
             showProg('✅ 下载完成', 1);

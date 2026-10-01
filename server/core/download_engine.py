@@ -117,6 +117,9 @@ class DownloadTask:
         for url in url_list:
             if self._cancel.is_set():
                 raise RuntimeError("已取消")
+            # 换源重试时按 .part 实际大小重读续传点（上一源断连后 part 可能已增长）
+            if os.path.exists(part_path):
+                resume_pos = os.path.getsize(part_path)
             try:
                 headers = {"Range": "bytes=%d-" % resume_pos} if resume_pos else {}
                 with httpx.stream("GET", url, headers=headers, timeout=httpx.Timeout(60, connect=30, read=120),
@@ -155,9 +158,10 @@ class DownloadTask:
                                 self._push_progress(total)
                                 self._speed_ts = now
                                 self._speed_bytes = 0  # 重置速度窗口，否则速度=累计下载量/1s
-                    # 下载完成
+                    # 下载完成（os.replace：目标已存在时覆盖——"重新下载"场景
+                    # 此前用 rename 撞已有文件 WinError 183，全源失败，用户实测必现）
                     self._push_progress(total)
-                    os.rename(part_path, dest_path)
+                    os.replace(part_path, dest_path)
                     log.info("[DL] 完成 %s (%d bytes)", dest_path, os.path.getsize(dest_path))
                     return  # 成功，退出候选循环
             except RuntimeError:

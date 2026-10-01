@@ -1633,6 +1633,18 @@ class AgentLoop:
 
             elif tool_name == "set_exec_mode":
                 from core import project_write as _pw
+                # 0.11.1 护栏：计划模式是用户的审批闸门——模型不得自行切 execute
+                # 绕过确认卡（模拟用户实测 flash 档 3/3 次先写文件再切回 plan）。
+                # execute→plan 允许（更保守）；用户解锁走 plan_confirm 卡或输入框芯片。
+                try:
+                    _cur = (_pw.get_harness_state(self.chat_id) or {}).get("exec_mode")
+                except Exception:
+                    _cur = None
+                if _cur == "plan" and args.get("mode", "") == "execute":
+                    return {"success": False, "tool": "set_exec_mode",
+                            "error": "plan_guard",
+                            "message": "当前会话处于计划模式（用户开启）：写入项目文件必须先输出计划确认卡，"
+                                      "待用户点「同意执行」后由系统切换。你不能自行切到执行模式。"}
                 r = _pw.set_exec_mode(self.chat_id, args.get("mode", ""))
                 if r.get("ok"):
                     stats["exec_mode_switches"] = stats.get("exec_mode_switches", 0) + 1
