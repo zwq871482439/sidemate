@@ -443,3 +443,110 @@ async def api_cloud_test(request: Request):
             "latency_ms": 0,
             "error": str(e)[:200],
         }, status_code=500)
+
+
+# ============================================================
+#  0.11.1 v2：在线模型服务（服务商 → 多模型，行业模式）
+# ============================================================
+
+@router.get("/api/cloud/v2/providers")
+def api_v2_providers():
+    """服务商列表（含模型条目，Key 脱敏）。"""
+    from core.cloud_providers import list_providers
+    return {"providers": list_providers()}
+
+
+@router.post("/api/cloud/v2/providers")
+async def api_v2_providers_save(request: Request):
+    """新建/更新服务商（api_key 留空=保留原值）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.cloud_providers import save_provider
+    r = save_provider(body or {})
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.delete("/api/cloud/v2/providers/{pid}")
+async def api_v2_providers_delete(pid: str, request: Request):
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    from core.cloud_providers import delete_provider
+    r = delete_provider(pid)
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.post("/api/cloud/v2/providers/{pid}/models")
+async def api_v2_model_save(pid: str, request: Request):
+    """新建/更新模型条目（id 空=新建；同名 model 去重更新）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.cloud_providers import save_model
+    r = save_model(pid, body or {})
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.delete("/api/cloud/v2/providers/{pid}/models/{mid}")
+async def api_v2_model_delete(pid: str, mid: str, request: Request):
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    from core.cloud_providers import delete_model
+    r = delete_model(pid, mid)
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.post("/api/cloud/v2/providers/{pid}/models/bulk")
+async def api_v2_models_bulk(pid: str, request: Request):
+    """批量加入模型（从 API 拉取后勾选）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.cloud_providers import add_models_bulk
+    r = add_models_bulk(pid, (body or {}).get("models") or [])
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.post("/api/cloud/v2/select")
+async def api_v2_select(request: Request):
+    """选择模型（物化生效：地址/Key/模型/思考档/上下文一并切换）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.cloud_providers import select
+    r = select((body or {}).get("provider") or "", (body or {}).get("model") or "")
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r
+
+
+@router.post("/api/cloud/v2/fetch-models")
+async def api_v2_fetch_models(request: Request):
+    """从服务商 API 拉取可用模型 ID 列表（GET {base}/models）。"""
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    body = await request.json()
+    from core.cloud_providers import fetch_remote_models, _find_provider, _decode
+    base = (body or {}).get("base_url") or ""
+    key = (body or {}).get("api_key") or ""
+    pid = (body or {}).get("provider") or ""
+    fmt = (body or {}).get("api_format") or "openai"
+    if not key and pid:
+        p = _find_provider(pid)
+        key = _decode(p.get("api_key", "")) if p else ""
+        base = base or (p.get("base_url") if p else "")
+        fmt = (p.get("api_format") if p else None) or fmt
+    r = fetch_remote_models(base, key, fmt)
+    if "error" in r:
+        return JSONResponse(r, status_code=400)
+    return r

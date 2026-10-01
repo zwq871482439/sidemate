@@ -372,81 +372,111 @@ export function createSettingsView(events) {
   }
 
   // ============ 在线 AI 子页 ============
+// 新 renderCloud（v2 服务商→模型）——由 patch 脚本拼接
   async function renderCloud(body) {
     body.innerHTML = '<div class="kb-loading" style="padding:30px">加载中…</div>';
-    const [cfg, all] = await Promise.all([
+    const [cfg, all, pvR] = await Promise.all([
       fetch('/api/cloud/config').then(r => r.json()).catch(() => ({})),
       fetch('/api/config').then(r => r.json()).catch(() => ({})),
+      fetch('/api/cloud/v2/providers').then(r => r.json()).catch(() => ({})),
     ]);
     const gcfg = (all && all.config) || {};
     const parallelOn = !!gcfg.parallel_enabled;
     const curMode = (gcfg.ai_mode || 'local');
     const rounds = gcfg.agent_max_rounds || '';
+    const providers = (pvR && pvR.providers) || [];
+    let viewPv = providers.find(p => p.active) || providers[0] || null;
 
-    // 0.11 B1：模型档案（多档案 + 顶栏快切）
-    let profiles = [];
-    try {
-      profiles = (await fetch('/api/cloud/profiles').then(r => r.json()).catch(() => ({}))).profiles || [];
-    } catch (e) { /* 档案不可用不阻断 */ }
-    const _profRow = (p) => `
-      <div class="prof-mrow" data-pid="${esc(p.id)}">
-        <span class="pm-name">${esc(p.name)}${p.active ? '<span class="pm-cur">使用中</span>' : ''}</span>
-        <span class="pm-meta">${p.tag === 'strong' ? '强' : '快'} · ${esc(p.model || '未配置模型')} · ${p.api_key_set ? 'Key 已配' : '<b style="color:var(--d1-gold-2)">Key 未配</b>'}</span>
-        <span class="pm-acts">
-          ${p.active ? '' : `<button class="kb-tool-btn" data-act="use" data-pid="${esc(p.id)}">设为当前</button>`}
-          <button class="kb-tool-btn" data-act="edit" data-pid="${esc(p.id)}">编辑</button>
-          <button class="kb-tool-btn" data-act="del" data-pid="${esc(p.id)}" ${p.active ? 'disabled' : ''}>删除</button>
+    const _tagB = t => t === 'fast' ? '<span class="pv-badge fast">快</span>'
+      : t === 'strong' ? '<span class="pv-badge strong">强</span>' : '';
+    const _thinkB = t => t === 'high' ? '<span class="pv-badge th-hi">思考·高</span>'
+      : t === 'low' ? '<span class="pv-badge th-lo">思考·低</span>'
+      : t === 'off' ? '<span class="pv-badge th-off">思考·关</span>' : '';
+    const _ctxT = c => c > 0 ? Math.round(c / 1000) + 'K' : '自动';
+
+    const _modelRow = (m) => `
+      <div class="pv-mrow${m.active ? ' on' : ''}" data-mid="${esc(m.id)}">
+        <span class="pv-dot${m.active ? ' on' : ''}"></span>
+        <span class="pv-model mono">${esc(m.model)}</span>
+        ${m.label ? `<span class="pv-label">${esc(m.label)}</span>` : ''}
+        ${_tagB(m.tag)}${_thinkB(m.thinking)}
+        <span class="pv-ctx">上下文 ${_ctxT(m.ctx)}</span>
+        <span class="pv-acts">
+          ${m.active ? '<span class="pm-cur">使用中</span>' : `<button class="kb-tool-btn" data-mact="use" data-mid="${esc(m.id)}">使用</button>`}
+          <button class="kb-tool-btn" data-mact="param" data-mid="${esc(m.id)}">参数</button>
+          <button class="kb-tool-btn" data-mact="del" data-mid="${esc(m.id)}" ${m.active ? 'disabled' : ''}>删</button>
         </span>
       </div>`;
-    const _profForm = (p) => `
-      <div class="prof-mform" data-fpid="${esc(p.id || '')}">
-        <input class="set-input pm-f" data-f="name" style="width:100px" placeholder="档案名" value="${esc(p.name || '')}">
-        <select class="set-input pm-f" data-f="tag" style="width:70px">
-          <option value="fast" ${p.tag !== 'strong' ? 'selected' : ''}>快</option>
-          <option value="strong" ${p.tag === 'strong' ? 'selected' : ''}>强</option>
+
+    const _pvForm = (p) => p ? `
+      <div class="pv-form" data-pid="${esc(p.id || '')}">
+        <div class="pv-frow">
+          <label>名称</label><input class="set-input pv-f" data-f="name" style="width:120px" value="${esc(p.name || '')}">
+          <label>API 地址</label><input class="set-input pv-f" data-f="base_url" style="flex:1;min-width:200px" placeholder="https://api.deepseek.com" value="${esc(p.base_url || '')}">
+        </div>
+        <div class="pv-frow">
+          <label>API Key</label><input class="set-input pv-f" data-f="api_key" type="password" style="flex:1" placeholder="${p.api_key_set ? '已配置 ' + esc(p.api_key_preview || '') + '（留空保持）' : 'sk-...'}" autocomplete="new-password">
+          <label>协议</label><select class="set-input pv-f" data-f="api_format" style="width:100px">
+            <option value="openai" ${p.api_format !== 'anthropic' ? 'selected' : ''}>OpenAI</option>
+            <option value="anthropic" ${p.api_format === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+          </select>
+          <label>代理</label><select class="set-input pv-f" data-f="proxy_mode" style="width:96px">
+            <option value="system" ${p.proxy_mode !== 'direct' ? 'selected' : ''}>跟随系统</option>
+            <option value="direct" ${p.proxy_mode === 'direct' ? 'selected' : ''}>直连</option>
+          </select>
+        </div>
+      </div>` : '';
+
+    const _paramForm = (m) => `
+      <div class="pv-pform" data-mid="${esc(m.id)}">
+        <label>显示名</label><input class="set-input mp-f" data-f="label" style="width:96px" placeholder="可选" value="${esc(m.label || '')}">
+        <label>标签</label><select class="set-input mp-f" data-f="tag" style="width:70px">
+          <option value="" ${!m.tag ? 'selected' : ''}>无</option>
+          <option value="fast" ${m.tag === 'fast' ? 'selected' : ''}>快</option>
+          <option value="strong" ${m.tag === 'strong' ? 'selected' : ''}>强</option>
         </select>
-        <input class="set-input pm-f" data-f="base_url" style="width:210px" placeholder="API 地址" value="${esc(p.base_url || '')}">
-        <input class="set-input pm-f" data-f="model" style="width:150px" placeholder="模型名" value="${esc(p.model || '')}">
-        <input class="set-input pm-f" data-f="api_key" type="password" style="width:150px" placeholder="${p.api_key_set ? 'Key（留空保留）' : 'API Key'}" autocomplete="new-password">
-        <select class="set-input pm-f" data-f="api_format" style="width:100px">
-          <option value="openai" ${p.api_format !== 'anthropic' ? 'selected' : ''}>OpenAI</option>
-          <option value="anthropic" ${p.api_format === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+        <label>默认思考</label><select class="set-input mp-f" data-f="thinking" style="width:80px">
+          <option value="" ${!m.thinking ? 'selected' : ''}>不改</option>
+          <option value="high" ${m.thinking === 'high' ? 'selected' : ''}>高</option>
+          <option value="low" ${m.thinking === 'low' ? 'selected' : ''}>低</option>
+          <option value="off" ${m.thinking === 'off' ? 'selected' : ''}>关</option>
         </select>
-        <button class="btn-primary-v2" data-act="save">保存</button>
-        <button class="kb-tool-btn" data-act="cancel">取消</button>
+        <label>上下文</label><input class="set-input mp-f" data-f="ctx" type="number" min="0" placeholder="0=自动" style="width:90px" value="${m.ctx > 0 ? m.ctx : ''}">
+        <button class="btn-primary-v2" data-mact="save-param">保存</button>
+        <button class="kb-tool-btn" data-mact="cancel-param">取消</button>
       </div>`;
 
-    body.innerHTML = `
-      <div class="set-group" id="profMgmt">
-        <h2>模型档案</h2>
-        <div class="sub">多套云端配置快速切换（顶栏芯片随时换）——当前档案的参数在下方「在线 AI 配置」里仍可微调</div>
-        <div id="profList">${profiles.map(_profRow).join('') || '<div class="set-note">还没有档案</div>'}</div>
-        <div id="profFormWrap"></div>
-        <div class="set-row" style="border:none;padding-left:0">
-          <button class="kb-tool-btn" id="profAdd">＋ 新增档案</button>
+    const _paint = () => {
+      const p = viewPv;
+      body.innerHTML = `
+      <div class="set-group">
+        <h2>在线模型服务</h2>
+        <div class="sub">一个服务商（API 地址 + Key）可挂多个模型；点「使用」随时切换，顶栏也可快切</div>
+        <div class="pv-chips">
+          ${providers.map(x => `<button class="pv-chip${p && x.id === p.id ? ' on' : ''}" data-pvid="${esc(x.id)}">${esc(x.name)}<span class="cnt">${x.models.length}</span></button>`).join('')}
+          <button class="pv-chip add" id="pvAdd">＋ 服务商</button>
         </div>
+        <div id="pvFormWrap">${_pvForm(p)}</div>
+        <div class="pv-acts-row">
+          <button class="btn-primary-v2" id="pvSave">保存服务商</button>
+          <button class="kb-tool-btn" id="cfTest">测试连接</button>
+          ${p && !p.active ? '<button class="kb-tool-btn" id="pvDel" style="color:var(--pal-danger)">删除服务商</button>' : ''}
+        </div>
+        <div class="pv-sep"></div>
+        <div class="sub" style="margin-bottom:6px">模型（${esc(p ? p.name : '')}）</div>
+        <div id="mdlList">${p && p.models.length ? p.models.map(_modelRow).join('') : '<div class="set-note">还没有模型——手动添加或从 API 获取</div>'}</div>
+        <div id="mdlParamWrap"></div>
+        <div class="pv-addrow">
+          <input class="set-input" id="mdlNew" style="width:240px" placeholder="模型 ID，如 deepseek-v4-flash">
+          <button class="kb-tool-btn" id="mdlAdd">＋ 添加</button>
+          <button class="kb-tool-btn" id="pvFetch">⇣ 从 API 获取模型列表</button>
+        </div>
+        <div id="fetchWrap"></div>
+        <div class="set-note" id="cfNote" style="display:none"></div>
       </div>
       <div class="set-group">
-        <h2>在线 AI 配置</h2>
-        <div class="sub">云端 API 服务配置（支持 OpenAI / Anthropic 及兼容服务）——编辑的是当前使用中的档案</div>
-        <div class="set-row"><div class="stx"><b>API 地址</b><p>兼容 OpenAI 协议的接口地址</p></div>
-          <input class="set-input" style="width:260px" id="cfBase" value="${esc(cfg.base_url || '')}" placeholder="https://api.openai.com/v1"></div>
-        <div class="set-row"><div class="stx"><b>API Key</b><p>${cfg.api_key_set ? '已配置 ' + esc(cfg.api_key_preview || '') + '（留空保持不变）' : '未配置'}</p></div>
-          <input class="set-input" style="width:260px" id="cfKey" type="password" placeholder="sk-..." autocomplete="new-password"></div>
-        <div class="set-row"><div class="stx"><b>模型</b><p>当前：${esc(cfg.model || '')}${cfg.context_matched ? '' : '（非内置已知模型，能力用默认档）'}</p></div>
-          <input class="set-input" style="width:200px" id="cfModel" value="${esc(cfg.model || '')}"></div>
-        <div class="set-row"><div class="stx"><b>协议格式</b></div>
-          <select class="set-input" id="cfFmt" style="width:120px">
-            <option value="openai" ${cfg.api_format !== 'anthropic' ? 'selected' : ''}>OpenAI</option>
-            <option value="anthropic" ${cfg.api_format === 'anthropic' ? 'selected' : ''}>Anthropic</option>
-          </select></div>
-        <div class="set-row"><div class="stx"><b>代理模式</b><p>system=跟随系统代理，direct=直连</p></div>
-          <select class="set-input" id="cfProxy" style="width:120px">
-            <option value="system" ${cfg.proxy_mode !== 'direct' ? 'selected' : ''}>跟随系统</option>
-            <option value="direct" ${cfg.proxy_mode === 'direct' ? 'selected' : ''}>直连</option>
-          </select></div>
-        <div class="set-row"><div class="stx"><b>输入上限（tokens）</b><p>0 = 按模型自动匹配（当前生效 ${Math.round((cfg.context_window || 0) / 1000)}K）</p></div>
-          <input class="set-input" id="cfCtx" type="number" min="0" max="2097152" value="${cfg.context_window_user || 0}"></div>
+        <h2>对话行为</h2>
+        <div class="sub">会话级策略（与模型无关，全局生效）</div>
         <div class="set-row"><div class="stx"><b>上下文策略</b><p>full=完整历史 / current_only=仅当前轮 / slim_history=保留最近 N 轮</p></div>
           <select class="set-input" id="cfPolicy" style="width:150px">
             <option value="full" ${cfg.context_policy === 'full' ? 'selected' : ''}>完整历史</option>
@@ -461,19 +491,12 @@ export function createSettingsView(events) {
             <option value="search-only" ${cfg.kb_permission === 'search-only' ? 'selected' : ''}>仅检索命中</option>
             <option value="disabled" ${cfg.kb_permission === 'disabled' ? 'selected' : ''}>禁用</option>
           </select></div>
-        <div class="set-row" style="border-top:1px solid var(--d1-paper-2)">
-          <div class="stx"></div>
-          <span style="display:flex;gap:8px">
-            <button class="kb-tool-btn" id="cfTest">测试连接</button>
-            <button class="btn-primary-v2" id="cfSave">保存配置</button>
-          </span></div>
-        <div class="set-note" id="cfNote" style="display:none"></div>
       </div>
       <div class="set-group">
         <h2>能力配置</h2>
         <div class="sub">在线模式的能力开关与预算</div>
         <div class="set-row"><div class="stx"><b>并行模式 <span class="exp-tag" style="font-size:9.5px;color:var(--d1-gold-2);border:1px solid rgba(232,181,77,.4);border-radius:6px;padding:1px 6px">实验性</span></b>
-          <p>同时用本地+在线引擎对知识库开展问答（本地生成关键词/摘要，云端撰写正文）。开启后左栏出现第三档「并行」</p></div>
+          <p>同时用本地+在线引擎对知识库开展问答。开启后左栏出现第三档「并行」</p></div>
           <button class="switch ${parallelOn ? 'on' : ''}" id="cfParallel"></button></div>
         <div class="set-row"><div class="stx"><b>Agent 轮次预算</b><p>在线 Agent 单次任务的最大工具调用轮次（8~100，留空=默认 26；Claude 类强模型建议 40+）</p></div>
           <input class="set-input" id="cfRounds" type="number" min="8" max="100" placeholder="26" value="${rounds}"></div>
@@ -483,135 +506,182 @@ export function createSettingsView(events) {
         <div class="sub">云端调用的 token 消耗（本地引擎不计费）</div>
         <div class="set-usage" id="cfUsage"><span class="mut">加载中…</span></div>
       </div>`;
-
-    const note = (msg, ok) => {
-      const n = body.querySelector('#cfNote');
-      n.style.display = '';
-      n.style.color = ok ? 'var(--pal-green-2)' : 'var(--pal-danger)';
-      n.textContent = msg;
+      _bind();
     };
 
-    // 保存
-    body.querySelector('#cfSave').addEventListener('click', async () => {
-      const payload = {
-        base_url: body.querySelector('#cfBase').value.trim(),
-        model: body.querySelector('#cfModel').value.trim(),
-        api_format: body.querySelector('#cfFmt').value,
-        proxy_mode: body.querySelector('#cfProxy').value,
-        context_window: parseInt(body.querySelector('#cfCtx').value || '0', 10),
-        context_policy: body.querySelector('#cfPolicy').value,
-        slim_history_rounds: parseInt(body.querySelector('#cfSlim').value || '6', 10),
-        kb_permission: body.querySelector('#cfKbPerm').value,
+    const _reload = async () => {
+      const r = await fetch('/api/cloud/v2/providers').then(r => r.json()).catch(() => ({}));
+      const list = (r && r.providers) || [];
+      const keep = viewPv && list.find(x => x.id === viewPv.id);
+      viewPv = keep || list.find(p => p.active) || list[0] || null;
+      providers.length = 0; providers.push(...list);
+      _paint();
+    };
+
+    function _bind() {
+      const note = (msg, ok) => {
+        const n = body.querySelector('#cfNote');
+        if (!n) return;
+        n.style.display = ''; n.style.color = ok ? 'var(--pal-green-2)' : 'var(--pal-danger)'; n.textContent = msg;
       };
-      const key = body.querySelector('#cfKey').value.trim();
-      if (key) payload.api_key = key;
-      const r = await fetch('/api/cloud/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).then(r => r.json()).catch(() => null);
-      note(r && r.ok ? '已保存，云端引擎已用新配置重建' : ('保存失败：' + ((r && r.error) || '未知错误')), !!(r && r.ok));
-    });
-
-    // 测试连接
-    body.querySelector('#cfTest').addEventListener('click', async (e) => {
-      e.target.disabled = true; e.target.textContent = '测试中…';
-      const r = await fetch('/api/cloud/test', { method: 'POST' }).then(r => r.json()).catch(() => null);
-      note(r && r.ok ? '连接成功：' + (r.message || r.model || 'OK') : ('连接失败：' + ((r && (r.error || r.message)) || '未知错误')), !!(r && r.ok));
-      e.target.disabled = false; e.target.textContent = '测试连接';
-    });
-
-    // ===== 0.11 B1 档案管理绑定 =====
-    const profFormWrap = body.querySelector('#profFormWrap');
-    body.querySelector('#profAdd').addEventListener('click', () => {
-      profFormWrap.innerHTML = _profForm({ tag: 'fast', api_format: 'openai' });
-    });
-    body.querySelector('#profList').addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-act]');
-      if (!btn) return;
-      const pid = btn.dataset.pid;
-      const act = btn.dataset.act;
-      if (act === 'use') {
-        const r = await fetch('/api/cloud/profiles/switch', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: pid }),
+      // 服务商切换视图
+      body.querySelectorAll('.pv-chip[data-pvid]').forEach(b => b.addEventListener('click', () => {
+        viewPv = providers.find(x => x.id === b.dataset.pvid) || viewPv;
+        _paint();
+      }));
+      body.querySelector('#pvAdd').addEventListener('click', () => {
+        viewPv = { id: '', name: '', base_url: '', api_format: 'openai', proxy_mode: 'system', api_key_set: false, models: [], active: false };
+        _paint();
+      });
+      body.querySelector('#pvSave').addEventListener('click', async () => {
+        const form = body.querySelector('.pv-form');
+        const payload = { id: form.dataset.pid || '' };
+        form.querySelectorAll('.pv-f').forEach(f => {
+          if (f.dataset.f === 'api_key' && !f.value.trim()) return;
+          payload[f.dataset.f] = f.value.trim();
+        });
+        const r = await fetch('/api/cloud/v2/providers', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         }).then(r => r.json()).catch(() => null);
-        note(r && r.ok ? '已切换档案（当前会话后续请求生效），下方配置已同步' : ('切换失败：' + ((r && r.error) || '未知')), !!(r && r.ok));
-        if (r && r.ok) { await renderCloud(body); return; }
-      } else if (act === 'edit') {
-        const p = profiles.find(x => x.id === pid) || {};
-        profFormWrap.innerHTML = _profForm(p);
-      } else if (act === 'del') {
-        if (!(await uiConfirm('删除此档案？（不影响其他档案）'))) return;
-        const r = await fetch('/api/cloud/profiles/' + encodeURIComponent(pid), { method: 'DELETE' }).then(r => r.json()).catch(() => null);
-        if (r && r.ok) { await renderCloud(body); } else { note('删除失败：' + ((r && r.error) || '未知'), false); }
-      }
-    });
-    profFormWrap.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-act]');
-      if (!btn) return;
-      if (btn.dataset.act === 'cancel') { profFormWrap.innerHTML = ''; return; }
-      if (btn.dataset.act !== 'save') return;
-      const form = profFormWrap.querySelector('.prof-mform');
-      const payload = { id: form.dataset.fpid || '' };
-      form.querySelectorAll('.pm-f').forEach(f => {
-        if (f.dataset.f === 'api_key' && !f.value.trim()) return;  // 留空=保留
-        payload[f.dataset.f] = f.value.trim();
+        if (r && r.ok) { if (!payload.id) viewPv = null; await _reload(); note('服务商已保存' + (payload.api_key ? '，Key 已更新' : ''), true); }
+        else note('保存失败：' + ((r && r.error) || '未知'), false);
       });
-      const r = await fetch('/api/cloud/profiles', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).then(r => r.json()).catch(() => null);
-      if (r && r.ok) { await renderCloud(body); } else { note('保存失败：' + ((r && r.error) || '未知'), false); }
-    });
-
-    // 并行实验开关（存量迁移 + 关闭回退，PLAN 五点七-3）
-    body.querySelector('#cfParallel').addEventListener('click', async (e) => {
-      const on = !e.target.classList.contains('on');
-      await fetch('/api/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parallel_enabled: on }),
+      const pvDel = body.querySelector('#pvDel');
+      if (pvDel) pvDel.addEventListener('click', async () => {
+        if (!(await uiConfirm('删除该服务商及其模型列表？'))) return;
+        const r = await fetch('/api/cloud/v2/providers/' + encodeURIComponent(viewPv.id), { method: 'DELETE' }).then(r => r.json()).catch(() => null);
+        if (r && r.ok) { viewPv = null; await _reload(); } else note('删除失败：' + ((r && r.error) || '未知'), false);
       });
-      e.target.classList.toggle('on', on);
-      // 关闭回退：当前在并行 → 回落在线
-      if (!on && curMode === 'parallel') {
-        await fetch('/api/mode/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'cloud' }) });
+      body.querySelector('#cfTest').addEventListener('click', async (e) => {
+        e.target.disabled = true; e.target.textContent = '测试中…';
+        const r = await fetch('/api/cloud/test', { method: 'POST' }).then(r => r.json()).catch(() => null);
+        note(r && r.ok ? '连接成功：' + (r.message || r.model || 'OK') : ('连接失败：' + ((r && (r.error || r.message)) || '未知错误')), !!(r && r.ok));
+        e.target.disabled = false; e.target.textContent = '测试连接';
+      });
+      // 模型操作
+      body.querySelector('#mdlList').addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-mact]');
+        if (!btn) return;
+        const mid = btn.dataset.mid;
+        const m = (viewPv.models || []).find(x => x.id === mid);
+        if (!m) return;
+        if (btn.dataset.mact === 'use') {
+          const r = await fetch('/api/cloud/v2/select', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: viewPv.id, model: mid }),
+          }).then(r => r.json()).catch(() => null);
+          if (r && r.ok) { await _reload(); note('已切换到 ' + m.model + '（思考档/上下文随模型参数生效）', true); }
+          else note('切换失败：' + ((r && r.error) || '未知'), false);
+        } else if (btn.dataset.mact === 'param') {
+          body.querySelector('#mdlParamWrap').innerHTML = _paramForm(m);
+          body.querySelector('#mdlParamWrap').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else if (btn.dataset.mact === 'del') {
+          if (!(await uiConfirm('删除模型 ' + m.model + '？'))) return;
+          const r = await fetch(`/api/cloud/v2/providers/${encodeURIComponent(viewPv.id)}/models/${encodeURIComponent(mid)}`, { method: 'DELETE' }).then(r => r.json()).catch(() => null);
+          if (r && r.ok) await _reload(); else note('删除失败：' + ((r && r.error) || '未知'), false);
+        }
+      });
+      // 模型参数保存
+      body.querySelector('#mdlParamWrap').addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-mact]');
+        if (!btn) return;
+        if (btn.dataset.mact === 'cancel-param') { body.querySelector('#mdlParamWrap').innerHTML = ''; return; }
+        if (btn.dataset.mact !== 'save-param') return;
+        const form = body.querySelector('.pv-pform');
+        const payload = { id: form.dataset.mid };
+        form.querySelectorAll('.mp-f').forEach(f => { payload[f.dataset.f] = f.value.trim(); });
+        payload.ctx = parseInt(payload.ctx || '0', 10) || 0;
+        // model 字段不进表单（不可改）——从当前列表回填，save_model 必填
+        const _m = (viewPv.models || []).find(x => x.id === payload.id);
+        if (_m) payload.model = _m.model;
+        const r = await fetch(`/api/cloud/v2/providers/${encodeURIComponent(viewPv.id)}/models`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        }).then(r => r.json()).catch(() => null);
+        if (r && r.ok) { body.querySelector('#mdlParamWrap').innerHTML = ''; await _reload(); note('模型参数已保存', true); }
+        else note('保存失败：' + ((r && r.error) || '未知'), false);
+      });
+      // 手动添加
+      body.querySelector('#mdlAdd').addEventListener('click', async () => {
+        const inp = body.querySelector('#mdlNew');
+        const v = inp.value.trim();
+        if (!v) { inp.focus(); return; }
+        const r = await fetch(`/api/cloud/v2/providers/${encodeURIComponent(viewPv.id)}/models`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: v }),
+        }).then(r => r.json()).catch(() => null);
+        if (r && (r.ok || r.error === '服务商不存在')) { inp.value = ''; await _reload(); note('已添加 ' + v, true); }
+        else note('添加失败：' + ((r && r.error) || '未知'), false);
+      });
+      // 从 API 拉取
+      body.querySelector('#pvFetch').addEventListener('click', async (e) => {
+        const btn = e.target; btn.disabled = true; btn.textContent = '拉取中…';
+        const form = body.querySelector('.pv-form');
+        // 用表单当前编辑值优先（未保存也能拉）
+        const fBase = form.querySelector('[data-f=base_url]');
+        const r = await fetch('/api/cloud/v2/fetch-models', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: viewPv.id || '', base_url: fBase ? fBase.value.trim() : '', api_key: (form.querySelector('[data-f=api_key]') || {}).value || '' }),
+        }).then(r => r.json()).catch(() => null);
+        btn.disabled = false; btn.textContent = '⇣ 从 API 获取模型列表';
+        const wrap = body.querySelector('#fetchWrap');
+        if (!(r && r.ok)) { note('拉取失败：' + ((r && r.error) || '未知（先保存服务商并配好 Key）'), false); return; }
+        const have = new Set((viewPv.models || []).map(m => m.model));
+        wrap.innerHTML = `<div class="pv-fetchlist">${(r.models || []).map(id =>
+          `<button class="pv-fchip${have.has(id) ? ' have' : ''}" data-fid="${esc(id)}">${esc(id)}${have.has(id) ? ' ✓' : ''}</button>`).join('')}</div>
+          <div class="pv-fetchact"><button class="btn-primary-v2" id="fetchAdd">加入所选（0）</button></div>`;
+        const sel = new Set();
+        wrap.querySelectorAll('.pv-fchip').forEach(c => c.addEventListener('click', () => {
+          if (c.classList.contains('have')) return;
+          c.classList.toggle('on');
+          if (c.classList.contains('on')) sel.add(c.dataset.fid); else sel.delete(c.dataset.fid);
+          wrap.querySelector('#fetchAdd').textContent = `加入所选（${sel.size}）`;
+        }));
+        wrap.querySelector('#fetchAdd').addEventListener('click', async () => {
+          if (!sel.size) return;
+          const rr = await fetch(`/api/cloud/v2/providers/${encodeURIComponent(viewPv.id)}/models/bulk`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ models: [...sel] }),
+          }).then(r => r.json()).catch(() => null);
+          if (rr && rr.ok) { await _reload(); note(`已加入 ${rr.added} 个模型`, true); }
+        });
+      });
+      // 对话行为（策略/轮数/开关）
+      const _saveCfg = async (payload, msg) => {
+        await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (msg) note(msg, true);
+      };
+      body.querySelector('#cfPolicy').addEventListener('change', e => _saveCfg({ cloud_context_policy: e.target.value }, '上下文策略已保存'));
+      body.querySelector('#cfSlim').addEventListener('change', e => _saveCfg({ slim_history_rounds: parseInt(e.target.value || '6', 10) }, '轮数已保存'));
+      body.querySelector('#cfKbPerm').addEventListener('change', e => _saveCfg({ kb_permission: e.target.value }, '知识库权限已保存'));
+      body.querySelector('#cfParallel').addEventListener('click', async (e) => {
+        const on = !e.target.classList.contains('on');
+        await _saveCfg({ parallel_enabled: on }, null);
+        e.target.classList.toggle('on', on);
+        if (!on && curMode === 'parallel') {
+          await fetch('/api/mode/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'cloud' }) });
+        }
+        note(on ? '并行模式已开启' : '并行模式已关闭' + (curMode === 'parallel' ? '，已回落在线' : ''), true);
+      });
+      if (curMode === 'parallel' && !parallelOn) {
+        fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parallel_enabled: true }) })
+          .then(() => { const b = body.querySelector('#cfParallel'); if (b) b.classList.add('on'); });
       }
-      note(on ? '并行模式已开启，左栏出现第三档' : '并行模式已关闭' + (curMode === 'parallel' ? '，已回落在线模式' : ''), true);
-    });
-
-    // 存量迁移：当前模式=并行且开关未点亮 → 自动点亮（升级用户模式不消失）
-    if (curMode === 'parallel' && !parallelOn) {
-      fetch('/api/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parallel_enabled: true }),
-      }).then(() => { body.querySelector('#cfParallel').classList.add('on'); });
+      body.querySelector('#cfRounds').addEventListener('change', async (e) => {
+        const v = e.target.value.trim();
+        const payload = {};
+        if (v === '') payload.agent_max_rounds = 0;
+        else payload.agent_max_rounds = Math.min(100, Math.max(8, parseInt(v, 10) || 0));
+        await _saveCfg(payload, '轮次预算已保存');
+      });
+      body.querySelector('#cfCompare').addEventListener('click', async (e) => {
+        const on = !e.target.classList.contains('on');
+        await fetch('/api/cloud/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kb_compare_enabled: on }) });
+        e.target.classList.toggle('on', on);
+      });
+      loadCloudUsage();
     }
 
-    // 轮次预算（失焦保存；留空=删 key 回落默认）
-    body.querySelector('#cfRounds').addEventListener('change', async (e) => {
-      const v = e.target.value.trim();
-      const payload = {};
-      if (v === '') payload.agent_max_rounds = 0;  // 0/非法 → 后端回落默认 26
-      else payload.agent_max_rounds = Math.min(100, Math.max(8, parseInt(v, 10) || 0));
-      await fetch('/api/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      note('轮次预算已保存', true);
-    });
-
-    // 知识对比开关
-    body.querySelector('#cfCompare').addEventListener('click', async (e) => {
-      const on = !e.target.classList.contains('on');
-      await fetch('/api/cloud/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kb_compare_enabled: on }),
-      });
-      e.target.classList.toggle('on', on);
-    });
-
-    // 用量统计（0.10.1 收尾：经典版迁入；今日=按小时 / 本周=按天联动，不交叉）
-    loadCloudUsage();
+    _paint();
   }
 
   // ============ 云端用量统计 ============

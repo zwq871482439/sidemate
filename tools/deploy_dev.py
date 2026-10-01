@@ -31,7 +31,7 @@ FILES = [
     "config.py", "server.py", "index.html",
     "core/skill_loader.py", "core/cloud_profiles.py", "core/curated_memory.py",
     "core/skill_installer.py", "core/poster_render.py", "core/gzh_format.py",
-    "core/agent_tools.py", "core/agent_loop.py", "core/mcp_client.py",
+    "core/agent_tools.py", "core/agent_loop.py", "core/mcp_client.py", "core/cloud_providers.py",
     "routers/chat.py", "routers/kb.py", "routers/settings_cloud.py", "routers/settings_system.py",
     "pipelines/cloud_pipeline.py", "pipelines/_base.py",
     "prompts.py", "core/d2_render.py", "core/svg_lint.py", "routers/download.py",

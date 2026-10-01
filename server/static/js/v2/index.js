@@ -495,18 +495,21 @@ function _updateSessDots() {
 
 
 async function loadCloudProfiles() {
+  // 0.11.1 v2：服务商→多模型（行业模式）。cloudProfiles 字段保留为兼容占位，
+  // 顶栏/技能绑定读 state.cloudProviders
   try {
-    const d = await fetch('/api/cloud/profiles').then(r => r.json());
-    state.cloudProfiles = (d && d.profiles) || [];
-  } catch (e) { state.cloudProfiles = []; }
+    const d = await fetch('/api/cloud/v2/providers').then(r => r.json());
+    state.cloudProviders = (d && d.providers) || [];
+    state.cloudProfiles = state.cloudProviders;  // 兼容旧引用（length 判断）
+  } catch (e) { state.cloudProviders = []; state.cloudProfiles = []; }
 }
 
 // 0.11.1：顶栏模型标签（合并档案快切——用户反馈双控件显示同一模型冗余）。
 // 云端模式：tbModelTag 即档案下拉触发器（点开菜单切档案）；离线/并行：点击去离线AI 管理。
 function _tbModelHtml() {
-  if (state.mode === 'cloud' && state.tab === 'chat' && state.cloudProfiles.length) {
+  if (state.mode === 'cloud' && state.tab === 'chat' && (state.cloudProviders || []).length) {
     return `<span class="prof-wrap tb-prof" id="profWrap">
-      <span class="tb-model has-prof" id="tbModelTag" title="切换模型档案（当前会话后续请求生效）">${esc(state.modelTag)} <span class="chev">▾</span></span>
+      <span class="tb-model has-prof" id="tbModelTag" title="切换模型（地址/思考档/上下文随模型生效）">${esc(state.modelTag)} <span class="chev">▾</span></span>
       ${_profMenuHtml()}
     </span>`;
   }
@@ -514,21 +517,28 @@ function _tbModelHtml() {
 }
 
 function _profMenuHtml() {
-  // 档案菜单（宿主由 _tbModelHtml 决定；仅在线模式有意义）
-  if (state.mode !== 'cloud' || state.tab !== 'chat' || !state.cloudProfiles.length) return '';
-  const rows = state.cloudProfiles.map(p => `
-    <div class="pm-row ${p.active ? 'cur' : ''}" data-prof="${esc(p.id)}">
-      <span class="nm">${esc(p.name)}</span>
-      <span class="md">${esc(p.model || '未配置模型')}</span>
-      ${p.tag === 'strong' ? '<span class="pm-tag strong">强</span>' : '<span class="pm-tag fast">快</span>'}
-      <span class="ic ck">${_CK}</span>
-    </div>`).join('');
+  // 0.11.1 v2 模型选择器：按服务商分组列出模型（点选即切换：地址/Key/思考档/上下文随模型）
+  if (state.mode !== 'cloud' || state.tab !== 'chat') return '';
+  const providers = state.cloudProviders || [];
+  if (!providers.length) return '';
+  let rows = '';
+  for (const pv of providers) {
+    rows += `<div class="pm-provider-cap">${esc(pv.name)}</div>`;
+    for (const m of (pv.models || [])) {
+      rows += `<div class="pm-mrow ${m.active ? 'cur' : ''}" data-pvs="${esc(pv.id)}" data-mid="${esc(m.id)}">
+        <span class="mm">${esc(m.model)}</span>
+        ${m.tag === 'strong' ? '<span class="pm-tag strong">强</span>' : m.tag === 'fast' ? '<span class="pm-tag fast">快</span>' : ''}
+        ${m.thinking === 'high' ? '<span class="pv-badge th-hi">思·高</span>' : m.thinking === 'low' ? '<span class="pv-badge th-lo">思·低</span>' : m.thinking === 'off' ? '<span class="pv-badge th-off">思·关</span>' : ''}
+        <span class="ic ck">${m.active ? _CK : ''}</span>
+      </div>`;
+    }
+  }
   return `
     <div class="prof-menu">
-      <div class="pm-cap">模型档案（当前会话后续请求生效）</div>
+      <div class="pm-cap">切换模型（当前会话后续请求生效）</div>
       ${rows}
-      <div class="pm-note">智能路由开启时：产物类任务建议「强」档案，轻量问答走「快」档案</div>
-      <div class="pm-mgr" id="profMgr"><span class="ic"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>管理档案…</div>
+      <div class="pm-note">思考档/上下文随所选模型参数；输入框旁可随时临时调思考档</div>
+      <div class="pm-mgr" id="profMgr"><span class="ic"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>管理模型服务…</div>
     </div>`;
 }
 
@@ -538,19 +548,18 @@ function _bindProfileChip(root) {
   const chip = wrap.querySelector('#tbModelTag');
   chip.addEventListener('click', (e) => { e.stopPropagation(); wrap.classList.toggle('open'); });
   document.addEventListener('click', () => wrap.classList.remove('open'), { once: true });
-  wrap.querySelectorAll('.pm-row').forEach(row => {
+  wrap.querySelectorAll('.pm-mrow').forEach(row => {
     row.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const id = row.dataset.prof;
       if (row.classList.contains('cur')) { wrap.classList.remove('open'); return; }
       row.style.opacity = '.5';
-      await fetch('/api/cloud/profiles/switch', {
+      await fetch('/api/cloud/v2/select', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ provider: row.dataset.pvs, model: row.dataset.mid }),
       }).catch(() => {});
       await loadCloudProfiles();
       state.modelTag = await getModelTag(state.mode);
-      render();
+      render();  // renderChatArea 重建 composer → 思考 pill 读新模型的默认档
     });
   });
   const mgr = wrap.querySelector('#profMgr');

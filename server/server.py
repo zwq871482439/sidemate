@@ -565,15 +565,17 @@ def _today_str():
     return datetime.now().strftime("%Y-%m-%d")
 
 def _get_latest_chat():
-    """查找最近的会话（优先 v3 文件夹格式，兼容旧 .json 格式）"""
-    today = _today_str()
-    # 优先查文件夹格式
-    folders = sorted(_glob.glob(os.path.join(CHAT_DIR, "%s_*" % today)), reverse=True)
+    """查找最近的会话（优先 v3 文件夹格式，兼容旧 .json 格式）。
+
+    0.11.1 修复：此前只找"今天"的会话——过了午夜没有新建会话时 current=None，
+    前端 getSession() 恒空（思考档 pill 隐藏、状态联动失效）。改为任意日期取最新。
+    """
+    # v3 文件夹：按名称倒序（日期_序号字典序=时间序）取最新
+    folders = sorted((d for d in _glob.glob(os.path.join(CHAT_DIR, "20*_*/")) if os.path.isdir(d)), reverse=True)
     for f in folders:
-        if os.path.isdir(f):
-            return f
+        return f.rstrip("\/").replace("/", os.sep)
     # 兼容：旧 .json 文件格式
-    files = sorted(_glob.glob(os.path.join(CHAT_DIR, "%s_*.json" % today)), reverse=True)
+    files = sorted(_glob.glob(os.path.join(CHAT_DIR, "20*_*.json")), reverse=True)
     for f in files:
         if os.path.isfile(f):
             return f

@@ -170,8 +170,22 @@ export function renderComposer(state, events) {
   ];
   let _thinkLevel = null;
   async function renderThinkPill() {
+    // 0.11.1 修复：模式不再依赖创建时快照（此前 composer 建于 boot 早期，
+    // state.mode 尚是默认值 → 云端模式下思考档 pill 永远隐藏）。实测读 /api/mode。
+    let liveMode = '';
+    try {
+      const m = await fetch('/api/mode').then(r => r.json());
+      liveMode = m.mode || '';
+    } catch (e) { liveMode = state.mode || ''; }
     const session = events.getSession && events.getSession();
-    const show = !!(session && state.mode === 'cloud');
+    const show = !!(session && liveMode === 'cloud');
+    // 0.11.1 修复：composer 可能建于 sessions 加载完成前（boot 并行链）——
+    // 云端模式下会话未就绪时延迟重试而非永久隐藏
+    if (!session && liveMode === 'cloud' && (thinkBtn.dataset.retry || '0') < '5') {
+      thinkBtn.dataset.retry = String((+thinkBtn.dataset.retry || 0) + 1);
+      setTimeout(renderThinkPill, 700);
+      return;
+    }
     if (!show) { thinkBtn.style.display = 'none'; return; }
     if (_thinkLevel === null) {
       try {
