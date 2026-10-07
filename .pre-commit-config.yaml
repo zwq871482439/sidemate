@@ -1,0 +1,16 @@
+# 本地提交钩子。每个 clone 执行一次：pre-commit install
+# - no-commit-to-branch：禁止在本地 main 上直接提交（一律开分支走 PR）
+# - gitleaks：扫描本次暂存的改动，发现密钥即拒绝提交
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=5120]
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

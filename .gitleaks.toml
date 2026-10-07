@@ -1,0 +1,8 @@
+# gitleaks 配置：默认规则 + 已核实的误报白名单。
+# 新增白名单条目必须在 PR 里说明核实过程，由总调度评审。
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "已核实误报：ppt-master 动画预设名（emphasis/...），不是密钥"
+paths = ['''server/vendor/ppt_master/pptx_animation_presets\.json''']
