@@ -1,0 +1,36 @@
+# 密钥扫描：只扫本次 PR / 推送新增的提交（历史已在 2026-10-08 全量扫描并处理）
+name: gitleaks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks version
+
+      - name: 扫描新增提交
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="-1 $HEAD"
+          else
+            RANGE="$BASE..$HEAD"
+          fi
+          echo "scan range: $RANGE"
+          ./gitleaks git . --redact --verbose --no-banner --log-opts="$RANGE"
