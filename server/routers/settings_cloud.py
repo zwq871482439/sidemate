@@ -532,7 +532,7 @@ async def api_v2_select(request: Request):
 
 @router.post("/api/cloud/v2/fetch-models")
 async def api_v2_fetch_models(request: Request):
-    """从服务商 API 拉取可用模型 ID 列表（GET {base}/models）。"""
+    """从服务商 API 拉取可用模型 ID 列表（openai/anthropic 协议各自的端点与鉴权头）。"""
     if not check_local_origin(request):
         return JSONResponse(local_origin_error(), status_code=403)
     body = await request.json()
@@ -541,12 +541,19 @@ async def api_v2_fetch_models(request: Request):
     key = (body or {}).get("api_key") or ""
     pid = (body or {}).get("provider") or ""
     fmt = (body or {}).get("api_format") or "openai"
-    if not key and pid:
+    # proxy_mode 来源优先级：表单当前值 → 服务商配置 → system
+    # （此前只在「没带 key 且带了 provider」时才读服务商——用户在表单里
+    # 填了 key 直接拉取时，服务商配的 direct 会被忽略，#9-② 评审意见）
+    proxy_mode = (body or {}).get("proxy_mode") or "system"
+    if pid:
         p = _find_provider(pid)
-        key = _decode(p.get("api_key", "")) if p else ""
-        base = base or (p.get("base_url") if p else "")
-        fmt = (p.get("api_format") if p else None) or fmt
-    r = fetch_remote_models(base, key, fmt)
+        if not key and p:
+            key = _decode(p.get("api_key", ""))
+            base = base or p.get("base_url", "")
+            fmt = (p.get("api_format") or "") or fmt
+        if (not (body or {}).get("proxy_mode")) and p:
+            proxy_mode = (p.get("proxy_mode") or "") or proxy_mode
+    r = fetch_remote_models(base, key, fmt, proxy_mode=proxy_mode)
     if "error" in r:
         return JSONResponse(r, status_code=400)
     return r

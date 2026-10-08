@@ -32,53 +32,53 @@ class TestToolLimits(unittest.TestCase):
 
 
 class TestBudgetMessage(unittest.TestCase):
-    """2.2 预算注入：快照内容与替换逻辑（用与 agent_loop 相同的生成规则）"""
+    """2.2 预算注入（0.11.1 F1 方案 A + PR#6 评审修订后）：数字计算规则镜像。
 
-    def _make_budget(self, tool_counts, rounds):
+    双通道：system 只放【静态】初始额度说明（轮间不变，保前缀缓存）；
+    动态余量以一行追加到本轮最后一条工具结果末尾（旧消息不回写）。
+    通道行为与前缀恒等由 test_budget_in_system.py 用桩模型全链路验证；
+    本类只钉数字计算与两段生成式（与 agent_loop 相同的规则）。"""
+
+    def _make_budget_line(self, tool_counts, rounds):
         from core.agent_loop import TOOL_LIMITS, MAX_ROUNDS
-        return ("[剩余预算] 联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮"
-                "（请据此规划检索深度，预算不足时直接基于已有信息回答）" % (
+        return ("\n[剩余预算 · 仅供规划，勿在回复中提及]"
+                " 联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮" % (
                     max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
                     max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
                     max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
                     MAX_ROUNDS - rounds))
 
     def test_budget_content(self):
-        msg = self._make_budget({"search_web": 2, "fetch_url": 6}, 4)
+        msg = self._make_budget_line({"search_web": 2, "fetch_url": 6}, 4)
         self.assertIn("联网搜索 3 次", msg)
         self.assertIn("网页阅读 9 次", msg)
         self.assertIn("知识库搜索 5 次", msg)
         self.assertIn("总轮次 22 轮", msg)
+        self.assertIn("勿在回复中提及", msg)
 
     def test_budget_no_negative(self):
-        msg = self._make_budget({"search_web": 99}, 99)
+        msg = self._make_budget_line({"search_web": 99}, 99)
         self.assertIn("联网搜索 0 次", msg)
-        self.assertIn("总轮次 -73 轮" if False else "总轮次", msg)
+        self.assertIn("总轮次", msg)
 
-    def test_budget_replace_not_accumulate(self):
-        """快照按前缀识别替换，messages 中最多一条"""
-        messages = [{"role": "user", "content": "hi"},
-                    {"role": "user", "content": self._make_budget({}, 0)}]
-        # 模拟 agent_loop 的替换逻辑
-        messages[:] = [m for m in messages
-                       if not (m.get("role") == "user"
-                               and isinstance(m.get("content"), str)
-                               and m["content"].startswith("[剩余预算]"))]
-        messages.append({"role": "user", "content": self._make_budget({"search_web": 1}, 1)})
-        budgets = [m for m in messages if m["content"].startswith("[剩余预算]")]
-        self.assertEqual(len(budgets), 1)
-        self.assertIn("联网搜索 4 次", budgets[0]["content"])
+    def test_static_block_is_constant(self):
+        """静态块只含初始额度（模块常量），不含随轮次变化的数字"""
+        from core.agent_loop import TOOL_LIMITS, MAX_ROUNDS
+        static = ("## 检索预算（初始额度）\n"
+                  "联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮" % (
+                      TOOL_LIMITS["search_web"], TOOL_LIMITS["fetch_url"],
+                      TOOL_LIMITS["search_kb"], MAX_ROUNDS))
+        self.assertIn("联网搜索 %d 次" % TOOL_LIMITS["search_web"], static)
+        self.assertIn("总轮次 %d 轮" % MAX_ROUNDS, static)
 
-    def test_budget_not_strip_normal_user_msg(self):
-        """普通用户消息（即使以 [ 开头）不被误删"""
-        messages = [{"role": "user", "content": "[注意] 这是我自己的话"},
-                    {"role": "user", "content": self._make_budget({}, 0)}]
-        messages[:] = [m for m in messages
-                       if not (m.get("role") == "user"
-                               and isinstance(m.get("content"), str)
-                               and m["content"].startswith("[剩余预算]"))]
-        self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0]["content"], "[注意] 这是我自己的话")
+    def test_budget_never_in_user_role(self):
+        """生成物只进 system（静态块）与 tool 结果（动态行），role=user 不得携带"""
+        msgs = [{"role": "system", "content": "BASE\n\n## 检索预算（初始额度）…"},
+                {"role": "user", "content": "[注意] 这是我自己的话"},
+                {"role": "tool", "content": '{"result": 1}' + self._make_budget_line({}, 0)}]
+        for m in msgs:
+            if m["role"] == "user":
+                self.assertNotIn("剩余预算", m["content"])
 
 
 class TestKbEmptyGating(unittest.TestCase):
