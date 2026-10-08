@@ -924,9 +924,16 @@ class AgentLoop:
                                      % (_json.dumps(_card_spec, ensure_ascii=False), r["skill_name"]))}}
 
             elif tool_name == "save_memory":
-                # 0.11 C3：策展记忆写入（工具描述强制先过用户确认卡）
+                # 0.11 C3：策展记忆写入。#41 D3：提示词挡不住强模型，
+                # 没有本会话已确认的记忆卡记录就拒绝，且不写文件。
+                from session.chat_store import memory_text_confirmed
+                _mem_text = args.get("text", "")
+                if not memory_text_confirmed(self.chat_id, _mem_text):
+                    return {"success": False, "tool": "save_memory",
+                            "error": "needs_confirmation",
+                            "message": "需要先经用户在确认卡上同意"}
                 from core.curated_memory import save_entry
-                r = save_entry(self.chat_id, args.get("section", ""), args.get("text", ""))
+                r = save_entry(self.chat_id, args.get("section", ""), _mem_text)
                 if "error" in r:
                     return {"success": False, "tool": "save_memory",
                             "error": "save_failed", "message": r["error"]}

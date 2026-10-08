@@ -231,6 +231,15 @@ def _is_memory_card_decline(question: str, answer: str) -> bool:
     return any(k in a for k in ("不用记", "不记", "暂不", "不用", "不要", "取消", "算了"))
 
 
+def _is_memory_card_accept(question: str, answer: str) -> bool:
+    """记忆卡点了协议里的「同意写入」。其它卡或否定回答都不算。"""
+    if _is_memory_card_decline(question, answer):
+        return False
+    a = (answer or "").strip()
+    q = question or ""
+    return a == "同意写入" and "记忆" in q
+
+
 @router.post("/api/chat")
 async def api_chat(req: ChatRequest):
     """非流式对话"""
@@ -408,6 +417,14 @@ async def api_chat_stream(request: Request):
                                      os.path.basename(os.path.normpath(chat_file)))
                     except Exception as _e:
                         log.warning("[CHAT] 记忆拒绝标记落盘失败: %s", str(_e)[:80])
+                elif _is_memory_card_accept(_ca.get("question", ""), message or ""):
+                    try:
+                        from session.chat_store import append_memory_confirmation
+                        if append_memory_confirmation(chat_file, _ca.get("question", "")):
+                            log.info("[CHAT] 记忆卡已同意：%s",
+                                     os.path.basename(os.path.normpath(chat_file)))
+                    except Exception as _e:
+                        log.warning("[CHAT] 记忆确认记录落盘失败: %s", str(_e)[:80])
             _saved_user = append_message(chat_file, _um)
             # S2（#14-② 方案 C 前半）：首条真实 user 消息落盘即截取命名——
             # 确定性、不等回合完成、不调模型（堵「首轮失败/中断后永不命名」的洞，
