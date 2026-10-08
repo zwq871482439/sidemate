@@ -669,6 +669,62 @@ def set_chat_meta_flag(chat_path: str, key: str, value) -> bool:
     return True
 
 
+def _meta_in_folder(folder: str) -> dict:
+    meta_path = os.path.join(folder, "meta.json")
+    if not os.path.exists(meta_path):
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def append_memory_confirmation(chat_path: str, question: str) -> bool:
+    """记下用户在记忆卡上点了「同意写入」（#41 D3）。
+
+    只存问题原文。save_memory 必须能在其中找到将要写入的那一条，才允许落盘。
+    """
+    question = (question or "").strip()[:200]
+    if not question or not chat_path:
+        return False
+    folder = chat_path if os.path.isdir(chat_path) else os.path.dirname(chat_path)
+    if not folder or not os.path.isdir(folder):
+        return False
+    meta = _meta_in_folder(folder)
+    items = meta.get("memory_confirmed")
+    if not isinstance(items, list):
+        items = []
+    if question not in items:
+        items.append(question)
+    meta["memory_confirmed"] = items[-20:]
+    meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        atomic_write_json(os.path.join(folder, "meta.json"), meta)
+    except Exception:
+        return False
+    return True
+
+
+def memory_text_confirmed(chat_name: str, text: str) -> bool:
+    """待写入正文（空白折叠后）出现在某条已确认问题里。"""
+    import re
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    if len(text) < 2 or not chat_name:
+        return False
+    items = read_meta(chat_name).get("memory_confirmed") or []
+    if not isinstance(items, list):
+        return False
+    for question in items:
+        if not isinstance(question, str):
+            continue
+        q = re.sub(r"\s+", " ", question.strip())
+        if text in q:
+            return True
+    return False
+
+
 def read_meta(chat_name: str) -> dict:
     """读取会话 meta.json（folder 格式）；不存在/旧格式返回 {}。纯只读。"""
     meta_path = os.path.join(CHAT_DIR, chat_name, "meta.json")
