@@ -53,10 +53,21 @@ class OllamaManager:
         self._registry = ModelRegistry(_MODELS_DIR)
         # 0.10.1 修复：注入本产品模型文件名，EXTERNAL 复用判定用——
         # 用户自装 Ollama 常驻 11434 时模型名对不上，不能复用（见 LlamaCppManager.start）
+        self.refresh_our_models()
+
+    def refresh_our_models(self) -> list:
+        """重扫 registry 并回写 our_model_names（F6/sidemate-dev#7）。
+
+        构造时注入一次 + 下载完成 / rescan / 扩展变更后调用——否则服务
+        运行中新就位的 GGUF 过不了 serves_our_models() 懒加载门禁，
+        流式接口空等，必须重启才能用。
+        """
         try:
-            self._impl.our_model_names = [m.gguf_filename for m in self._registry.scan()]
+            names = [m.gguf_filename for m in self._registry.scan()]
         except Exception:
-            self._impl.our_model_names = []
+            names = []
+        self._impl.our_model_names = names
+        return names
 
     def serves_our_models(self) -> bool:
         """当前端口上的服务方是否提供本产品 registry 的模型（懒加载门禁用）"""
