@@ -207,7 +207,10 @@ TOOL_REGISTRY = {
                                "仅当信息属于跨会话有价值的长期事实（偏好、日程、身份、"
                                "项目基线）时才建议写入；一次会话内同类信息只问一次；"
                                "用户选择不记后本会话不再询问、不再展示记忆卡"
-                               "（用户主动要求记住时除外）。",
+                               "（用户主动要求记住时除外）。"
+                               "服务端会核对本会话里用户已点过的记忆确认卡："
+                               "没有与本次 text 对应的确认时，返回"
+                               "「需要先经用户在确认卡上同意」，不写文件。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1339,6 +1342,173 @@ PROTOCOL_SKILLS = [
     {"id": "cards", "name": "卡片系统", "config_key": "skill_enabled_cards",
      "description": "图表/表格/问答/引用卡片与 mermaid、d2 代码块的聊天内渲染规范。"},
 ]
+
+
+_MEMORY_KINDS = ("memory_save", "memory_confirm")
+_NON_MEMORY_KINDS = ("skill_install", "plan_confirm", "distill")
+_DECLINE_EXACT = ("不", "不用", "不记", "不用记", "不要", "暂不", "取消", "算了", "先不用")
+_DECLINE_PARTS = ("不用记", "不记", "暂不", "不用", "不要", "取消", "算了")
+MEMORY_CONFIRM_REQUIRED = "需要先经用户在确认卡上同意"
+
+
+def _norm_memory_text(value) -> str:
+    import re
+    return re.sub(r"\s+", " ", (value or "").strip())
+
+
+def _answer_declines_memory(answer: str) -> bool:
+    a = (answer or "").strip()
+    if not a or a in _DECLINE_EXACT:
+        return True
+    return any(k in a for k in _DECLINE_PARTS)
+
+
+def _ask_cards(content: str):
+    import json
+    import re
+    cards = []
+    for raw in re.findall(r"```ask\s*\n(.*?)```", content or "", flags=re.DOTALL):
+        try:
+            spec = json.loads(raw.strip())
+        except Exception:
+            continue
+        if isinstance(spec, dict) and isinstance(spec.get("question"), str):
+            cards.append(spec)
+    return cards
+
+
+def _is_memory_card_spec(spec: dict) -> bool:
+    kind = (spec.get("kind") or "").strip()
+    if kind in _NON_MEMORY_KINDS:
+        return False
+    if kind in _MEMORY_KINDS:
+        return True
+    return "记忆" in (spec.get("question") or "")
+
+
+def _chat_folder(chat_path: str) -> str:
+    import os
+    if not chat_path:
+        return ""
+    if os.path.isdir(chat_path):
+        return chat_path
+    return os.path.dirname(chat_path)
+
+
+def note_memory_confirmation(chat_path: str, question: str, answer: str) -> bool:
+    """用户点了记忆卡的同意后，把 question/text 记进会话 meta。
+
+    只认磁盘上已有的助手消息里、question 对得上的记忆卡。
+    否定回答、普通 ask 卡、对不上的问题都不记。
+    """
+    import json
+    import os
+    question_n = _norm_memory_text(question)
+    if not chat_path or not question_n or _answer_declines_memory(answer):
+        return False
+    folder = _chat_folder(chat_path)
+    msgs_path = os.path.join(folder, "messages.json")
+    if not os.path.isfile(msgs_path):
+        return False
+    try:
+        with open(msgs_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return False
+    messages = data.get("messages") if isinstance(data, dict) else data
+    if not isinstance(messages, list):
+        return False
+    matched = None
+    for msg in reversed(messages):
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        for spec in _ask_cards(msg.get("content") or ""):
+            if _norm_memory_text(spec.get("question")) != question_n:
+                continue
+            if _is_memory_card_spec(spec):
+                matched = spec
+                break
+        if matched:
+            break
+    if not matched:
+        return False
+    text = matched.get("text") if isinstance(matched.get("text"), str) else ""
+    section = matched.get("section") if isinstance(matched.get("section"), str) else ""
+    record = {
+        "question": question_n[:200],
+        "text": _norm_memory_text(text)[:200],
+        "section": section.strip()[:20],
+        "answer": (answer or "").strip()[:80],
+    }
+    from session.chat_store import set_chat_meta_flag
+    meta_path = os.path.join(folder, "meta.json")
+    meta = {}
+    if os.path.isfile(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                meta = loaded
+        except Exception:
+            meta = {}
+    rows = meta.get("memory_confirmed")
+    if not isinstance(rows, list):
+        rows = []
+    key = (record["question"], record["text"])
+    if not any(isinstance(row, dict) and (row.get("question"), row.get("text")) == key for row in rows):
+        rows.append(record)
+    return set_chat_meta_flag(chat_path, "memory_confirmed", rows[-20:])
+
+
+def memory_save_permitted(chat_id: str, text: str) -> bool:
+    """本会话有一条用户确认过的记忆卡，且 text 对得上该卡的 text 或 question。"""
+    import os
+    text_n = _norm_memory_text(text)
+    if not chat_id or len(text_n) < 2:
+        return False
+    name = os.path.basename(os.path.normpath(chat_id))
+    from session.chat_store import read_meta
+    meta = read_meta(name)
+    rows = meta.get("memory_confirmed")
+    if not isinstance(rows, list):
+        return False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        card_text = _norm_memory_text(row.get("text"))
+        question = _norm_memory_text(row.get("question"))
+        if card_text:
+            if card_text == text_n:
+                return True
+            continue
+        if len(text_n) >= 4 and question and text_n in question:
+            return True
+    return False
+
+
+def commit_save_memory(chat_id: str, section: str, text: str) -> dict:
+    """save_memory 的唯一落盘入口。未确认时不调用 save_entry。"""
+    if not memory_save_permitted(chat_id, text):
+        return {
+            "success": False,
+            "tool": "save_memory",
+            "error": "needs_confirmation",
+            "message": MEMORY_CONFIRM_REQUIRED,
+        }
+    from core.curated_memory import save_entry
+    result = save_entry(chat_id, section or "", text or "")
+    if "error" in result:
+        return {"success": False, "tool": "save_memory",
+                "error": "save_failed", "message": result["error"]}
+    return {
+        "success": True,
+        "tool": "save_memory",
+        "data": {
+            "section": result.get("section"),
+            "deduped": result.get("deduped", False),
+            "message": "已写入（重复内容自动跳过）" if result.get("deduped") else "已写入长期记忆",
+        },
+    }
 
 
 def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="full", chat_id=None, history=None,

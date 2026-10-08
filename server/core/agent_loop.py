@@ -924,15 +924,10 @@ class AgentLoop:
                                      % (_json.dumps(_card_spec, ensure_ascii=False), r["skill_name"]))}}
 
             elif tool_name == "save_memory":
-                # 0.11 C3：策展记忆写入（工具描述强制先过用户确认卡）
-                from core.curated_memory import save_entry
-                r = save_entry(self.chat_id, args.get("section", ""), args.get("text", ""))
-                if "error" in r:
-                    return {"success": False, "tool": "save_memory",
-                            "error": "save_failed", "message": r["error"]}
-                return {"success": True, "tool": "save_memory",
-                        "data": {"section": r.get("section"), "deduped": r.get("deduped", False),
-                                 "message": "已写入（重复内容自动跳过）" if r.get("deduped") else "已写入长期记忆"}}
+                # D3：未确认不得落盘。确认记录来自用户点过的记忆卡，不信任工具参数。
+                from core.agent_tools import commit_save_memory
+                return commit_save_memory(
+                    self.chat_id, args.get("section", ""), args.get("text", ""))
 
             elif tool_name == "recall_memory":
                 # 0.11 C3：策展记忆检索

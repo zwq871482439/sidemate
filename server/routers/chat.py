@@ -408,6 +408,16 @@ async def api_chat_stream(request: Request):
                                      os.path.basename(os.path.normpath(chat_file)))
                     except Exception as _e:
                         log.warning("[CHAT] 记忆拒绝标记落盘失败: %s", str(_e)[:80])
+                else:
+                    # D3：记忆卡点同意才记下 question/text。普通 ask 卡在这里直接返回 False。
+                    try:
+                        from core.agent_tools import note_memory_confirmation
+                        if note_memory_confirmation(
+                                chat_file, _ca.get("question", ""), message or ""):
+                            log.info("[CHAT] 记忆卡已确认：%s",
+                                     os.path.basename(os.path.normpath(chat_file or "")))
+                    except Exception as _e:
+                        log.warning("[CHAT] 记忆确认记录失败: %s", str(_e)[:80])
             _saved_user = append_message(chat_file, _um)
             # S2（#14-② 方案 C 前半）：首条真实 user 消息落盘即截取命名——
             # 确定性、不等回合完成、不调模型（堵「首轮失败/中断后永不命名」的洞，
