@@ -57,10 +57,10 @@ jobs:
         shell: pwsh
         run: |
           npm ci
-          # 漂移检查基线：关掉 eol 转换、以仓库字节原样检出 dist，
+          # 漂移检查基线：关掉 eol 转换、以仓库字节原样重检出 dist 与 index.html，
           # 消除 Windows autocrlf 的换行噪音（只留真实内容差异）
           git config core.autocrlf false
-          git checkout -- server/static/js/v2/dist
+          git checkout -- server/static/js/v2/dist server/index.html
           npm run build
           if (-not (Test-Path server/static/js/v2/dist/bundle.js)) { Write-Error "v2 bundle 产物缺失"; exit 1 }
           Write-Host "v2 build OK"
