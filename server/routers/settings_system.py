@@ -533,7 +533,9 @@ def api_env_diagnose():
     except Exception:
         result["models"]["kb_loaded"] = False
 
-    if not _current_model or has_missing or not _llama_exists:
+    # #35：F7 抽出 _diagnose_llama_server() 时删了局部变量 _llama_exists，
+    # 这里漏改——前两个条件短路时不可见，「模型已加载+依赖齐全」必 500。
+    if not _current_model or has_missing or not result["llama_server"]["ok"]:
         result["all_ok"] = False
 
     return result
