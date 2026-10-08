@@ -332,16 +332,20 @@ def materialize(pid: str, mid: Optional[str]) -> dict:
 
 
 def _reset_engine_client():
-    """同 cloud_profiles：仅真实运行态清引擎 client 缓存。"""
+    """配置变更后清引擎 client 缓存（与 cloud_profiles/settings_cloud 同款）。
+
+    引擎实例挂在 server 顶层全局 mgr._cloud_engine 上——旧实现却在
+    server 模块上找 cloud_engine/cloud/engine 属性、还要求引擎带根本
+    不存在的缓存字典，跨服务商切换后请求仍发往上一家服务商、带着上一家
+    的 Key（#30，P0）。只在 server 模块已加载（真实运行态）时重置；
+    测试/脚本环境直接跳过。
+    """
     import sys
     srv = sys.modules.get("server")
-    if srv:
+    mgr = getattr(srv, "mgr", None) if srv else None
+    if mgr is not None and hasattr(mgr, "_cloud_engine") and mgr._cloud_engine:
         try:
-            for attr in ("cloud_engine", "cloud", "engine"):
-                eng = getattr(srv, attr, None)
-                if eng and hasattr(eng, "_client_cache"):
-                    eng._client_cache = {}
-                    eng.__dict__.pop("_client", None)
+            mgr._cloud_engine._reset_client()
         except Exception:
             pass
 
