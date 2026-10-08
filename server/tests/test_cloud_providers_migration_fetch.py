@@ -76,6 +76,33 @@ class TestMigrationRobustness:
         assert {m["model"] for m in providers[0]["models"]} == {"deepseek-v4-flash", "deepseek-chat"}
         assert store.d[cp.ACTIVE_KEY] is not None
 
+    def test_cleanup_survives_restart(self, store):
+        """评审补例：迁移清空 cloud_profiles 后，启动期的
+        ensure_default_profiles()（模拟重启）不得把档案写回来。"""
+        from core.cloud_profiles import ensure_default_profiles
+        store.d["cloud_profiles"] = [
+            _raw_profile("p1", "DeepSeek", "deepseek-v4-flash", "https://api.deepseek.com", active=True),
+        ]
+        store.d["cloud_active_profile"] = "p1"
+        store.d["cloud_api_key"] = CloudEngine._encode_api_key("sk-live")
+        store.d["cloud_model"] = "deepseek-v4-flash"
+        store.d["cloud_base_url"] = "https://api.deepseek.com"
+        cp.migrate_from_profiles()
+        assert store.d["cloud_profiles"] == []
+        # 模拟重启：server.py 启动链会调 ensure_default_profiles()。
+        # v2 键已存在 → 必须零写入（不重建档案、不写 cloud_active_profile）
+        writes_before = len(store.writes)
+        ensure_default_profiles()
+        assert len(store.writes) == writes_before, "v2 已接管时 ensure_default_profiles 必须零写入"
+        assert store.d["cloud_profiles"] == [], "重启后旧档案被 ensure_default_profiles 重建"
+
+    def test_ensure_default_profiles_skips_when_v2_absent_but_profiles_key_exists(self, store):
+        """v2 未启用、cloud_profiles 键存在（含空列表）→ 也不重建（键存在 = 已初始化）。"""
+        from core.cloud_profiles import ensure_default_profiles
+        store.d["cloud_profiles"] = []  # 键存在但为空
+        ensure_default_profiles()
+        assert store.d["cloud_profiles"] == [], "空列表 = 已初始化态，不重建"
+
     def test_active_profile_maps_to_active_model(self, store):
         store.d["cloud_profiles"] = [
             _raw_profile("p1", "DeepSeek", "deepseek-v4-flash", "https://api.deepseek.com", active=True),
@@ -180,3 +207,58 @@ class TestFetchRemoteModels:
         _stub_httpx(monkeypatch, exc=ConnectionError("boom"))
         r = cp.fetch_remote_models("https://api.deepseek.com", "k", "openai")
         assert "error" in r and "连接失败" in r["error"]
+
+
+class _FakeRequest:
+    """api_v2_fetch_models 的最小请求桩（无 Origin 头 = 本地调用放行）。"""
+
+    def __init__(self, body):
+        self._body = body
+        self.headers = {}
+
+    async def json(self):
+        return self._body
+
+
+class TestFetchEndpointProxyModePriority:
+    """评审意见：proxy_mode 来源优先级 = 表单当前值 → 服务商配置 → system。
+
+    此前仅当「body 没带 key 且带了 provider」才读服务商的 proxy_mode——
+    用户在表单里填了 key 直接拉取时，服务商配的 direct 被忽略。
+    """
+
+    def _run(self, monkeypatch, store, body, provider=None):
+        import asyncio
+        from routers.settings_cloud import api_v2_fetch_models
+        _stub_httpx(monkeypatch)
+        monkeypatch.setattr(cp, "_find_provider", lambda pid: provider)
+        monkeypatch.setattr(cp, "fetch_remote_models",
+                            lambda b, k, f, proxy_mode="system": {"ok": True, "_proxy": proxy_mode})
+        # 路由函数内 from core.cloud_providers import fetch_remote_models 在调用时解析模块属性
+        return asyncio.run(api_v2_fetch_models(_FakeRequest(body)))
+
+    def test_form_value_wins(self, store, monkeypatch):
+        pv = _pv_prov("system")
+        r = self._run(monkeypatch, store,
+                      {"base_url": "https://x.example.com", "api_key": "sk-form",
+                       "provider": "pv-a", "proxy_mode": "direct"}, provider=pv)
+        assert r["_proxy"] == "direct", "表单当前值优先"
+
+    def test_provider_fallback_when_form_silent(self, store, monkeypatch):
+        pv = _pv_prov("direct")
+        r = self._run(monkeypatch, store,
+                      {"base_url": "https://x.example.com", "api_key": "sk-form",
+                       "provider": "pv-a"}, provider=pv)
+        assert r["_proxy"] == "direct", "表单未带时应回退服务商配置"
+
+    def test_system_default(self, store, monkeypatch):
+        r = self._run(monkeypatch, store,
+                      {"base_url": "https://x.example.com", "api_key": "sk-form"})
+        assert r["_proxy"] == "system"
+
+
+def _pv_prov(proxy_mode):
+    return {"id": "pv-a", "name": "A", "base_url": "https://x.example.com",
+            "api_format": "openai", "proxy_mode": proxy_mode,
+            "api_key": CloudEngine._encode_api_key("sk-prov"),
+            "models": [{"id": "m-a", "model": "model-a"}]}
