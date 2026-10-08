@@ -13,8 +13,9 @@ import platform
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import PlainTextResponse, JSONResponse
+from common.security import check_local_origin
 
 from config import get as _cfg_get, PROJECT_ROOT, __version__ as _VERSION
 from routers.deps import get_mgr
@@ -281,3 +282,28 @@ def api_diagnostics_export():
         media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=%s" % filename},
     )
+
+
+# ============================================================
+#  前端错误上报（sidemate-dev#22）：window.onerror / unhandledrejection
+# ============================================================
+
+@router.post("/api/diagnostics/frontend-error")
+async def api_frontend_error(request: Request):
+    """接收前端运行期错误（error_report.js），落到服务端日志。
+
+    纪律：只接收/记录 错误信息、文件、行号、bundle 指纹——不采集用户内容。
+    限流在前端做（同条错误 60s 一次）；这里对字段做长度截断兜底。
+    """
+    if not check_local_origin(request):
+        return JSONResponse({"error": "仅限本地前端调用"}, status_code=403)
+    body = await request.json()
+    body = body if isinstance(body, dict) else {}
+    kind = str(body.get("kind") or "unknown")[:20]
+    message = str(body.get("message") or "")[:300]
+    file = str(body.get("file") or "")[:200]
+    line = int(body.get("line") or 0)
+    bundle = str(body.get("bundle") or "")[:16]
+    log.warning("[FE-ERROR] kind=%s file=%s:%s bundle=%s msg=%s",
+                kind, file, line, bundle or "?", message)
+    return {"ok": True}
