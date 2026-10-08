@@ -146,11 +146,12 @@ else:
         _bg_init_state["deps_missing"] = _still_missing
 
 # ===== 依赖安全网（manifest + SHA256 抽检）=====
+from core import deps_check
 from core.deps_check import (
     generate_manifest, verify_manifest,
     load_manifest, save_manifest, generate_fingerprint,
 )
-SITE_PACKAGES_DIR = os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages")
+SITE_PACKAGES_DIR = deps_check.resolve_site_packages(os.path.dirname(sys.executable))
 _MANIFEST_PATH = os.path.join(DATA_DIR, "deps_manifest.json")
 _PYTHON_DIR = os.path.dirname(sys.executable)  # python/ 目录
 _FINGERPRINT_PATH = os.path.join(_PYTHON_DIR, ".fingerprint")
@@ -577,7 +578,7 @@ def _get_latest_chat():
     # v3 文件夹：按名称倒序（日期_序号字典序=时间序）取最新
     folders = sorted((d for d in _glob.glob(os.path.join(CHAT_DIR, "20*_*/")) if os.path.isdir(d)), reverse=True)
     for f in folders:
-        return f.rstrip("\/").replace("/", os.sep)
+        return f.rstrip("/\\").replace("/", os.sep)
     # 兼容：旧 .json 文件格式
     files = sorted(_glob.glob(os.path.join(CHAT_DIR, "20*_*.json")), reverse=True)
     for f in files:

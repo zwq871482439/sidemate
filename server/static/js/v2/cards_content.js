@@ -300,51 +300,38 @@ export function extractCards(text) {
 // ===== 卡片水合：渲染占位槽（解析失败优雅降级为源码+错误提示） =====
 // opts: { getSession(), onAskAnswer(question, answer), getCardAnswer(question) }
 export function hydrateCards(container, opts) {
+  // #22 卡片级异常隔离：单卡渲染失败降级为错误卡（附折叠错误信息），
+  // 其余卡片、消息流和输入区照常。此前 #21 那类渲染期 ReferenceError
+  // 会沿 renderChatArea 一路冒泡，把整个输入区炸掉。
   container.querySelectorAll('.cc-slot:not([data-cc-done])').forEach(slot => {
     slot.setAttribute('data-cc-done', '1');
-    const type = slot.dataset.ccType;
-    let spec = null;
-    let err = '';
-    try {
-      spec = JSON.parse(decodeURIComponent(slot.dataset.cc || ''));
-    } catch (e) {
-      err = '卡片数据解析失败（JSON 格式错误）';
-    }
-    if (!err) {
-      const vErr = _validate(type, spec);
-      if (vErr) err = vErr;
-    }
     const card = document.createElement('div');
-    card.className = 'cc-card cc-' + type;
-    if (err) {
-      card.innerHTML = `<div class="cc-err">${iconSvg('alertTriangle')} ${esc(err)}</div>
-        <pre class="cc-raw">${esc(decodeURIComponent(slot.dataset.cc || ''))}</pre>`;
-    } else if (type === 'ask') {
-      _renderAsk(card, spec, opts);
-    } else {
-      const title = spec.title || (type === 'chart' ? '图表' : '表格');
-      card.innerHTML = `<div class="cc-head">
-        <span class="cc-badge">${iconSvg(type === 'chart' ? 'barChart' : 'table')}</span>
-        <span class="cc-title">${esc(title)}</span>
-        <button class="cc-save" title="存入项目产物（.sidemate）">存产物</button>
-      </div>
-      <div class="cc-body"></div>`;
-      const body = card.querySelector('.cc-body');
-      if (type === 'chart') body.appendChild(_renderChart(spec));
-      else body.appendChild(_renderTable(spec));
-      card.querySelector('.cc-save').addEventListener('click', (e) => {
-        _saveArtifact(type, spec, card, e.target, opts);
-      });
+    try {
+      _hydrateOneCard(slot, card, opts);
+    } catch (e) {
+      card.className = 'cc-card cc-broken';
+      card.innerHTML = `<div class="cc-err">${iconSvg('alertTriangle')} 此卡片渲染失败，不影响其余内容</div>
+        <details class="cc-err-details"><summary>错误信息</summary>
+        <pre class="cc-raw">${esc(String((e && e.message) || e))}</pre></details>`;
+      try { console.error('[cards] 单卡渲染失败:', e); } catch (_) {}
+      try { if (window.__smReportError) window.__smReportError('card-hydrate: ' + String((e && e.message) || e)); } catch (_) {}
     }
     slot.replaceWith(card);
   });
-  // 引用卡槽（消息自带的来源数据，非围栏块）
+  // 引用卡槽（消息自带的来源数据，非围栏块）——同样按卡隔离
   container.querySelectorAll('.cc-ref-slot:not([data-cc-done])').forEach(slot => {
     slot.setAttribute('data-cc-done', '1');
     let sources = [];
     try { sources = JSON.parse(decodeURIComponent(slot.dataset.refs || '')); } catch (e) { /* 忽略 */ }
     if (!sources.length) { slot.remove(); return; }
-    slot.replaceWith(_renderRefCard(sources, opts));
+    try {
+      slot.replaceWith(_renderRefCard(sources, opts));
+    } catch (e) {
+      const card = document.createElement('div');
+      card.className = 'cc-card cc-broken';
+      card.innerHTML = `<div class="cc-err">${iconSvg('alertTriangle')} 来源卡渲染失败</div>`;
+      slot.replaceWith(card);
+    }
   });
   // 上标互链：点击 [n] 跳到 ref 卡对应条目
   container.querySelectorAll('sup.ref-n').forEach(sup => {
@@ -356,6 +343,42 @@ export function hydrateCards(container, opts) {
       setTimeout(() => item.classList.remove('flash'), 900);
     });
   });
+}
+
+function _hydrateOneCard(slot, card, opts) {
+  const type = slot.dataset.ccType;
+  let spec = null;
+  let err = '';
+  try {
+    spec = JSON.parse(decodeURIComponent(slot.dataset.cc || ''));
+  } catch (e) {
+    err = '卡片数据解析失败（JSON 格式错误）';
+  }
+  if (!err) {
+    const vErr = _validate(type, spec);
+    if (vErr) err = vErr;
+  }
+  card.className = 'cc-card cc-' + type;
+  if (err) {
+    card.innerHTML = `<div class="cc-err">${iconSvg('alertTriangle')} ${esc(err)}</div>
+      <pre class="cc-raw">${esc(decodeURIComponent(slot.dataset.cc || ''))}</pre>`;
+  } else if (type === 'ask') {
+    _renderAsk(card, spec, opts);
+  } else {
+    const title = spec.title || (type === 'chart' ? '图表' : '表格');
+    card.innerHTML = `<div class="cc-head">
+      <span class="cc-badge">${iconSvg(type === 'chart' ? 'barChart' : 'table')}</span>
+      <span class="cc-title">${esc(title)}</span>
+      <button class="cc-save" title="存入项目产物（.sidemate）">存产物</button>
+    </div>
+    <div class="cc-body"></div>`;
+    const body = card.querySelector('.cc-body');
+    if (type === 'chart') body.appendChild(_renderChart(spec));
+    else body.appendChild(_renderTable(spec));
+    card.querySelector('.cc-save').addEventListener('click', (e) => {
+      _saveArtifact(type, spec, card, e.target, opts);
+    });
+  }
 }
 
 function _validate(type, spec) {
