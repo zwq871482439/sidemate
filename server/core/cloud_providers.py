@@ -315,11 +315,14 @@ def materialize(pid: str, mid: Optional[str]) -> dict:
         "cloud_api_format": p.get("api_format") or "openai",
         "cloud_model": m["model"],
         "cloud_proxy_mode": p.get("proxy_mode") or "system",
+        # Key 总是用目标服务商的覆盖：目标没有 Key 就写空。
+        # 此前留旧值 → 切到无 Key 服务商（本地网关）时，上一家的 Key
+        # 会随 Authorization 头发到新服务商的 base_url（跨主机串用，#9-①）。
+        "cloud_api_key": p.get("api_key", ""),
+        # ctx=0 表示「按模型自动」——必须显式复位，否则残留上一个模型的
+        # 手动窗口值，预算/截断口径全错（#9-①）。
+        "cloud_context_window": int(m.get("ctx") or 0),
     }
-    if _decode(p.get("api_key", "")):
-        updates["cloud_api_key"] = p.get("api_key", "")
-    if int(m.get("ctx") or 0) > 0:
-        updates["cloud_context_window"] = int(m["ctx"])
     if m.get("thinking") in ("high", "low", "off"):
         updates["cloud_thinking_level"] = m["thinking"]
     save_config(updates)
