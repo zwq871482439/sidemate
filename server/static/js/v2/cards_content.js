@@ -551,25 +551,39 @@ function _renderAsk(card, spec, opts) {
 }
 
 // ===== 引用卡（ref）：唯一跨两界——同渲染组件，两数据来路（kb_sources/agent results） =====
+// 0.11.1 F4（S9 方案 B）：底部来源条——[n] 文件名 + 命中片段预览（dim 单行省略），
+// 点击整行跳原文（联动视窗）；正文行内 [n] 与条目编号互链。悬停浮卡本版不做。
 function _renderRefCard(sources, opts) {
   const card = document.createElement('div');
   card.className = 'cc-card cc-ref';
-  card.innerHTML = `<div class="cc-head"><span class="cc-badge">${iconSvg('search')}</span>
-    <span class="cc-title">引用来源 · ${sources.length}</span></div>
+  card.innerHTML = `<div class="cc-ref-head"><span class="cc-badge">${iconSvg('search')}</span>
+    <span class="cc-ref-title">来源 · ${sources.length} 份文档</span></div>
     <div class="cc-ref-list"></div>`;
   const list = card.querySelector('.cc-ref-list');
   sources.forEach((s, i) => {
     const item = document.createElement('div');
     item.className = 'cc-ref-item';
     item.dataset.n = String(i + 1);
-    const kbBtn = (s.kind !== 'web' && opts && opts.onKbDetail)
+    const isKb = s.kind !== 'web';
+    const jumpable = isKb && opts && (opts.onKbSource || opts.onKbDetail);
+    item.classList.toggle('jump', !!jumpable);
+    item.title = jumpable ? '点击在视窗中查看原文' : '';
+    const kbBtn = (isKb && opts && opts.onKbDetail && !opts.onKbSource)
       ? `<button class="cc-ref-detail" title="在知识库中查看文档详情">${iconSvg('info')} 详情</button>` : '';
+    const snip = (s.excerpt || '').replace(/\s+/g, ' ').trim();
     item.innerHTML = `<span class="cc-ref-n">[${i + 1}]</span>
       <span class="cc-ref-badge ${s.kind === 'web' ? 'web' : 'kb'}">${iconSvg(s.kind === 'web' ? 'globe' : 'book')}</span>
-      <span class="cc-ref-t">${esc(s.title)}</span>
-      ${kbBtn}
-      <div class="cc-ref-x">${esc(s.excerpt || '')}</div>`;
-    item.addEventListener('click', () => item.classList.toggle('open'));
+      <span class="cc-ref-t">${esc(s.title)}</span>${kbBtn}
+      <span class="cc-ref-spacer"></span>
+      <span class="cc-ref-snip">${esc(snip ? '「' + snip + '」' : '')}</span>`;
+    item.addEventListener('click', () => {
+      if (jumpable) {
+        if (opts.onKbSource) opts.onKbSource(s.title);
+        else opts.onKbDetail(s.title);
+        return;
+      }
+      item.classList.toggle('open');
+    });
     const dbtn = item.querySelector('.cc-ref-detail');
     if (dbtn) dbtn.addEventListener('click', (e) => {
       e.stopPropagation();

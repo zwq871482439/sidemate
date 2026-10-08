@@ -650,6 +650,7 @@ function _renderScrollContent(scroll) {
       onPreviewDoc: (url) => _previewDoc(url),  // 旧预览按钮兼容
       onPreviewFile: (url, name) => _previewFile(url, name),  // 产物卡片「预览」→ 视窗 drill-down
       onKbDetail: (filename) => _openKbDetail(filename),  // ref 卡「详情」→ KB 页文档详情（挂账清账）
+      onKbSource: (title) => _openKbSource(title),  // F4（S9-B）来源条点击 → 视窗看原文
     });
     // 0.11.1 A2：内联图存入后的产物卡预览（cards_content 动态插入，走事件解耦）
     if (!window.__smPreviewFileBound) {
@@ -864,6 +865,22 @@ async function _openKbDetail(filename) {
   if (!ok) uiAlert('知识库里没找到《' + filename + '》——它可能来自联网或已被删除');
 }
 
+// F4（S9-B）来源条「点击跳原文」：按来源标签取全文，blob 进视窗预览 tab
+async function _openKbSource(title) {
+  if (!title) return;
+  try {
+    const r = await fetch('/api/kb/source-text?name=' + encodeURIComponent(title));
+    const d = await r.json();
+    if (!d.ok) { uiAlert('原文获取失败：' + (d.error || '未知错误')); return; }
+    if (!_viewer) return;
+    const url = URL.createObjectURL(new Blob([d.text || '（空文档）'],
+      { type: 'text/plain;charset=utf-8' }));
+    _viewer.openPreview({ name: d.filename || title, url });
+  } catch (e) {
+    uiAlert('原文获取失败：' + (e && e.message ? e.message : e));
+  }
+}
+
 // 消息下载栏「预览」：打开视窗预览 tab 并滚到对应 HTML 报告（0.10.1 收尾）
 function _previewDoc(url) {
   // 0.10.2 B2：预览改为文件 drill-down——从 URL 反解文件名
@@ -904,9 +921,20 @@ function renderStreamingBubble(st) {
   statusEl.textContent = st.status || '';
   statusEl.style.display = st.status ? '' : 'none';
   if (st.sources && st.sources.length) {
-    srcEl.style.display = 'flex';
-    srcEl.innerHTML = st.sources.map(s =>
-      `<span class="m-src">${esc(s.label || s.source_label || '')}</span>`).join('');
+    // F4（S9-B）流式期即出底部来源条（与回放同构：[n] 文件名 + 片段预览）
+    srcEl.style.display = 'block';
+    srcEl.innerHTML = `<div class="cc-ref-head"><span class="cc-badge">${iconSvg('search')}</span>
+      <span class="cc-ref-title">来源 · ${st.sources.length} 份文档</span></div>
+      <div class="cc-ref-list">` + st.sources.map((s, i) => {
+        const snip = String(s.snippet || '').replace(/\s+/g, ' ').trim();
+        return `<div class="cc-ref-item"><span class="cc-ref-n">[${i + 1}]</span>
+          <span class="cc-ref-badge kb">${iconSvg('book')}</span>
+          <span class="cc-ref-t">${esc(s.label || s.source_label || '')}</span>
+          <span class="cc-ref-spacer"></span>
+          <span class="cc-ref-snip">${esc(snip ? '「' + snip + '」' : '')}</span></div>`;
+      }).join('') + '</div>';
+  } else {
+    srcEl.style.display = 'none';
   }
   renderParallelCols(el.querySelector('.v2-par-slot'), st);
   bubble.innerHTML = mdStream(st.text + (st.error ? '\n\n⚠️ ' + st.error : ''));
