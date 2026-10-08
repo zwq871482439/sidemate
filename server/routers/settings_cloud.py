@@ -532,7 +532,7 @@ async def api_v2_select(request: Request):
 
 @router.post("/api/cloud/v2/fetch-models")
 async def api_v2_fetch_models(request: Request):
-    """从服务商 API 拉取可用模型 ID 列表（GET {base}/models）。"""
+    """从服务商 API 拉取可用模型 ID 列表（openai/anthropic 协议各自的端点与鉴权头）。"""
     if not check_local_origin(request):
         return JSONResponse(local_origin_error(), status_code=403)
     body = await request.json()
@@ -541,12 +541,14 @@ async def api_v2_fetch_models(request: Request):
     key = (body or {}).get("api_key") or ""
     pid = (body or {}).get("provider") or ""
     fmt = (body or {}).get("api_format") or "openai"
+    proxy_mode = "system"
     if not key and pid:
         p = _find_provider(pid)
         key = _decode(p.get("api_key", "")) if p else ""
         base = base or (p.get("base_url") if p else "")
         fmt = (p.get("api_format") if p else None) or fmt
-    r = fetch_remote_models(base, key, fmt)
+        proxy_mode = (p.get("proxy_mode") if p else None) or proxy_mode
+    r = fetch_remote_models(base, key, fmt, proxy_mode=proxy_mode)
     if "error" in r:
         return JSONResponse(r, status_code=400)
     return r

@@ -347,20 +347,29 @@ def _reset_engine_client():
 #  从 API 拉取模型列表（GET {base}/models）
 # ============================================================
 
-def fetch_remote_models(base_url: str, api_key: str, fmt: str = "openai") -> dict:
-    """拉取服务商的可用模型 ID 列表（供「从 API 获取」按钮）。"""
+def fetch_remote_models(base_url: str, api_key: str, fmt: str = "openai",
+                        proxy_mode: str = "system") -> dict:
+    """拉取服务商的可用模型 ID 列表（供「从 API 获取」按钮）。
+
+    - openai 协议：GET {base}/v1/models + Authorization: Bearer
+    - anthropic 协议：GET {base}/v1/models + x-api-key + anthropic-version
+      （此前误用 Bearer 且端点缺 /v1，anthropic 服务商必报错，#9-②）
+    - proxy_mode=direct → trust_env=False，不走系统代理（与服务商直连语义一致）
+    """
     import httpx
     base = (base_url or "").strip().rstrip("/")
     if not base:
         return {"error": "缺少 API 地址"}
-    url = base + ("/v1/models" if not base.endswith("/v1") and fmt == "openai" else "/models")
-    if base.endswith("/v1"):
-        url = base + "/models"
-    headers = {}
-    if api_key:
-        headers["Authorization"] = "Bearer " + api_key
+    url = base + ("/models" if base.endswith("/v1") else "/v1/models")
+    if fmt == "anthropic":
+        headers = {"anthropic-version": "2023-06-01"}
+        if api_key:
+            headers["x-api-key"] = api_key
+    else:
+        headers = {"Authorization": "Bearer " + api_key} if api_key else {}
     try:
-        with httpx.Client(timeout=15, verify=True) as c:
+        with httpx.Client(timeout=15, verify=True,
+                          trust_env=(proxy_mode != "direct")) as c:
             r = c.get(url, headers=headers)
         if r.status_code != 200:
             return {"error": "HTTP %d：%s" % (r.status_code, r.text[:120])}
@@ -378,7 +387,10 @@ def fetch_remote_models(base_url: str, api_key: str, fmt: str = "openai") -> dic
 
 def migrate_from_profiles() -> None:
     from config import get as _cfg, save_config
-    if _cfg(PROVIDERS_KEY, None):
+    # 幂等按「键是否存在」判定，不能用真值：providers 为空列表（用户删光了
+    # 服务商）也是已迁移态，真值判断会重跑迁移、把旧 cloud_profiles 里的
+    # 档案复活（#9-②）
+    if _cfg(PROVIDERS_KEY, None) is not None:
         return
     from core.cloud_profiles import list_profiles as _lp
     profiles = _lp()
@@ -443,17 +455,20 @@ def migrate_from_profiles() -> None:
                     active = {"provider": g["id"], "model": m["id"]}
         g.setdefault("created", time.strftime("%Y-%m-%d"))
         providers.append(g)
-    save_config({PROVIDERS_KEY: providers})
     if active:
         cur_model = _cfg("cloud_model", "")
-        if not any(m["model"] == cur_model for g in providers for m in g["models"]):
+        if cur_model and not any(m["model"] == cur_model for g in providers for m in g["models"]):
             # 当前 cloud_model 不在档案里 → 补一条避免激活悬空
             if providers:
                 providers[0]["models"].append(
                     {"id": "m-" + uuid.uuid4().hex[:6], "model": cur_model,
                      "label": "当前", "tag": "", "thinking": "", "ctx": 0})
-                _save_providers(providers)
-        save_config({ACTIVE_KEY: active})
+    # 单次写入：providers + active + 清理旧档案。分多次写在中间崩溃会留下
+    # 半迁移态；旧 cloud_profiles 不清理则永远是复活源（#9-②）
+    updates = {PROVIDERS_KEY: providers, "cloud_profiles": []}
+    if active:
+        updates[ACTIVE_KEY] = active
+    save_config(updates)
     log.info("[PROVIDERS] 迁移：%d 个档案 → %d 个服务商", len(profiles), len(providers))
 
 
