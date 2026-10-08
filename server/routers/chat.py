@@ -213,6 +213,24 @@ _is_output_incomplete = is_output_incomplete
 #  非流式对话
 # ============================================================
 
+def _is_memory_card_decline(question: str, answer: str) -> bool:
+    """记忆确认卡的否定回答判定（F5/#12）。
+
+    记忆卡 = ask 围栏 kind=memory_save，但卡答案只回传 question 文本，
+    与前端 _renderAsk 同款按「记忆」关键词识别（协议值与文案漂移都覆盖）。
+    只在问题确属记忆卡且回答含否定词时判 True——普通 ask 卡的「取消」
+    不受影响。
+    """
+    if "记忆" not in (question or ""):
+        return False
+    a = (answer or "").strip()
+    if not a:
+        return False
+    if a in ("不", "不用", "不记", "不用记", "不要", "暂不", "取消", "算了", "先不用"):
+        return True
+    return any(k in a for k in ("不用记", "不记", "暂不", "不用", "不要", "取消", "算了"))
+
+
 @router.post("/api/chat")
 async def api_chat(req: ChatRequest):
     """非流式对话"""
@@ -380,6 +398,16 @@ async def api_chat_stream(request: Request):
                                              "建议用户重新发起安装]" % _sk_name)
                         message = _install_note + \
                                   ("\n用户补充：" + (message or "") if (message or "").strip() else "")
+                # F5（#12）：记忆卡点「不用记」→ 会话 meta 落 memory_declined，
+                # 下一轮起在线 prompt 注入「本会话不再询问记忆写入」强约束
+                elif _is_memory_card_decline(_ca.get("question", ""), message or ""):
+                    try:
+                        from session.chat_store import set_chat_meta_flag
+                        if set_chat_meta_flag(chat_file, "memory_declined", True):
+                            log.info("[CHAT] 记忆卡已拒绝：%s 本会话不再询问记忆写入",
+                                     os.path.basename(os.path.normpath(chat_file)))
+                    except Exception as _e:
+                        log.warning("[CHAT] 记忆拒绝标记落盘失败: %s", str(_e)[:80])
             _saved_user = append_message(chat_file, _um)
         except Exception as e:
             # 落盘失败不阻断对话——persist_turn 会回退 legacy 重建路径

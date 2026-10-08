@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 
 log = logging.getLogger(__name__)
@@ -33,6 +34,9 @@ MAX_FILE_BYTES = 5 * 1024 * 1024   # 单次写入上限 5MB
 MAX_SCAN_FILES = 2000              # 变更感知扫描文件数上限
 MAX_VERSIONS_PER_FILE = 10         # 单文件备份保留份数
 MAX_PENDING_PLAN = 20              # 待执行计划条目上限
+
+# #35：set_todos 的 meta 读写锁（原实现引用了不存在的 _lock）
+_meta_lock = threading.Lock()
 
 
 # ---------- 基础解析 ----------
@@ -292,19 +296,22 @@ def set_todos(chat_name, todos):
     Args:
         todos: [{"text": "步骤描述", "done": true/false}, ...]
     """
-    mp = _meta_path(chat_name)
+    # #35：原实现引用了不存在的 _meta_path/_lock/_read_json/_write_json——
+    # 模型一调用 set_todos 就 NameError，功能实际是坏的。改走本模块
+    # 既有 _read_meta/_write_meta + 模块级锁。
+    from session import chat_store as _cs
+    mp = os.path.join(_cs.CHAT_DIR, chat_name, "meta.json")
     if not os.path.isfile(mp):
         return {"error": "会话不存在"}
-    with _lock:
-        meta = _read_json(mp)
+    with _meta_lock:
+        meta = _read_meta(chat_name) or {}
         meta["todos"] = [
             {"text": str(t.get("text", ""))[:120],
              "done": bool(t.get("done", False)),
              "ts": time.strftime("%H:%M:%S")}
             for t in (todos or []) if t.get("text")
         ][:20]  # 最多 20 步
-        meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _write_json(mp, meta)
+        _write_meta(chat_name, meta)
     log.info("[PWRITE] %s todos 更新: %d 步（%d 完成）",
              chat_name, len(meta["todos"]),
              sum(1 for t in meta["todos"] if t["done"]))
