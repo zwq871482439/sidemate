@@ -5,6 +5,13 @@
 import { api, MODE_LABEL, MODE_ORDER } from './api.js';
 import { icon, iconSvg } from './icons.js';
 
+// S8（P1-8）：模式按钮 tooltip——折叠态只有两个文字钮，悬停说明尤其重要
+const MODE_TIP = {
+  local: '离线模式：本机运行，数据不出网。点击切换',
+  cloud: '在线模式：连接云端大模型。点击切换',
+  parallel: '并行模式：离线+在线同时作答对比。点击切换',
+};
+
 const ICONS = {
   search: '<svg fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607z"/></svg>',
   chat: '<svg fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/></svg>',
@@ -34,7 +41,7 @@ export function renderSidebar(root, state, events) {
       <div class="sb-logo"><img src="/static/img/logo.jpg" alt="桌伴"></div>
       <div class="mode-mini">
         ${modes.map(m => `
-          <button data-mode="${m}" class="${m === 'parallel' ? 'experimental ' : ''}${state.mode === m ? 'on' : ''}${state.switching ? ' switching' : ''}" ${state.switching ? 'disabled title="模式切换中…"' : ''}>
+          <button data-mode="${m}" class="${m === 'parallel' ? 'experimental ' : ''}${state.mode === m ? 'on' : ''}${state.switching ? ' switching' : ''}" ${state.switching ? 'disabled title="模式切换中…"' : `title="${MODE_TIP[m] || MODE_LABEL[m]}"`}>
             ${state.switching && state.mode === m ? '切换中…' : MODE_LABEL[m]}
           </button>`).join('')}
       </div>
