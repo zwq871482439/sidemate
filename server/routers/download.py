@@ -265,6 +265,12 @@ def _finalize_install(task):
         if task.type == "llm":
             mgr = get_mgr()
             mgr._scan_models()
+            # F6：新 GGUF 就位后同步刷新懒加载门禁（免重启可用）
+            try:
+                from server import ollama_manager as _om
+                _om.refresh_our_models()
+            except Exception:
+                pass
             log.info("[DL] LLM 安装完成，已刷新模型列表")
             # 注册 llm 扩展到 ExtensionRegistry（与 .sidemate 包安装路径一致），
             # 否则 is_installed("llm") 永远 False，换浏览器/清缓存后

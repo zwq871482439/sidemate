@@ -321,6 +321,12 @@ def _install_worker(task_id, sidemate_path, tmp_dir, _project_dir):
             progress(90, "扫描模型...")
             mgr = get_mgr()
             mgr._scan_models()
+            # F6：同步刷新懒加载门禁（sidemate-dev#7）
+            try:
+                from server import ollama_manager as _om
+                _om.refresh_our_models()
+            except Exception:
+                pass
 
             # 注册 LLM 到 ExtensionRegistry（修复重启后 is_installed("llm") 返回 False）
             from core.extension_manager import ExtensionRegistry
@@ -507,6 +513,12 @@ async def api_extensions_uninstall(ext_type: str, ext_name: str):
         except Exception as reg_err:
             log.warning("[EXT] LLM 注册注销失败: %s", str(reg_err)[:100])
         mgr._scan_models()
+        # F6：卸载后同步刷新懒加载门禁（sidemate-dev#7）
+        try:
+            from server import ollama_manager as _om
+            _om.refresh_our_models()
+        except Exception:
+            pass
         log.info("[EXT] LLM 模型已卸载: %s", ext_name)
         return {"ok": True, "msg": "LLM 模型已卸载"}
 

@@ -704,6 +704,13 @@ def api_rescan():
     old_configs = {k: v for k, v in mgr.model_configs.items() if v["type"] == "llm"}
     mgr.model_configs = {k: v for k, v in mgr.model_configs.items() if v["type"] != "llm"}
     mgr._scan_models()
+    # F6（sidemate-dev#7）：同步刷新懒加载门禁用的 our_model_names，
+    # 新就位的 GGUF 不重启即可用
+    try:
+        from server import ollama_manager as _om
+        _om.refresh_our_models()
+    except Exception:
+        pass
     new_llms = [name for name, cfg in mgr.model_configs.items() if cfg["type"] == "llm"]
     old_llms = list(old_configs.keys())
     added = [m for m in new_llms if m not in old_llms]
