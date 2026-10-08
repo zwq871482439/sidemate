@@ -544,22 +544,32 @@ body {
 .cc-ask-go:hover { opacity: .92; }
 .cc-ask-done { font-size: var(--d1-fs-small); color: var(--d1-ok); font-weight: 600; }
 .cc-ref-list { display: flex; flex-direction: column; gap: 2px; }
-.cc-ref-item {
-  display: flex; align-items: center; gap: 7px; padding: 5px 8px;
-  border-radius: var(--d1-r-sm); cursor: pointer; font-size: var(--d1-fs-small);
+/* F4（S9-B）底部来源条：头部「来源 · N 份文档」+ 行（[n] 文件名 + dim 片段） */
+.cc-ref-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; color: var(--d1-ink-3); margin: 2px 0 4px;
 }
-.cc-ref-item:hover { background: var(--d1-paper); }
+.cc-ref-head .cc-badge { width: 14px; height: 14px; opacity: .7; }
+.cc-ref-item {
+  display: flex; align-items: center; gap: 7px; padding: 4px 8px;
+  border-radius: var(--d1-r-sm); font-size: var(--d1-fs-small);
+}
+.cc-ref-item.jump { cursor: pointer; }
+.cc-ref-item.jump:hover { background: var(--d1-paper); }
 .cc-ref-item.flash { background: rgba(232,181,77,.18); }
 .cc-ref-n { color: var(--d1-gold-2); font-weight: 600; flex-shrink: 0; }
 .cc-ref-badge { flex-shrink: 0; font-size: 11px; }
-.cc-ref-t { color: var(--d1-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cc-ref-x {
-  display: none; width: 100%; margin-top: 4px; padding: 6px 8px;
-  font-size: var(--d1-fs-tiny); color: var(--d1-ink-3); line-height: 1.6;
-  background: var(--d1-paper); border-radius: var(--d1-r-sm);
+.cc-ref-t { color: var(--d1-ink-2); white-space: nowrap; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cc-ref-spacer { flex: 0 1 18px; }
+.cc-ref-snip {
+  flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--d1-ink-3); font-size: var(--d1-fs-tiny);
 }
-.cc-ref-item { flex-wrap: wrap; }
-.cc-ref-item.open .cc-ref-x { display: block; }
+/* 窄屏（<720px）：片段换行展示，文件名保完整 */
+@media (max-width: 720px) {
+  .cc-ref-item { flex-wrap: wrap; }
+  .cc-ref-snip { flex-basis: 100%; padding-left: 22px; }
+}
 sup.ref-n {
   color: var(--d1-gold-2); font-weight: 600; cursor: pointer; padding: 0 1px;
 }
@@ -888,7 +898,7 @@ sup.ref-n:hover { text-decoration: underline; }
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .stream-status { font-size: var(--d1-fs-small); color: var(--d1-gold-2); margin-bottom: 6px; }
-.m-sources { margin-bottom: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.m-sources { margin-bottom: 8px; }
 .m-src {
   font-size: var(--d1-fs-tiny); color: var(--d1-accent-3); background: var(--d1-paper-2);
   border: 1px solid var(--d1-n-line); border-radius: 6px; padding: 3px 8px;

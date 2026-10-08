@@ -773,6 +773,35 @@ def api_kb_documents():
     return kb.list_documents()
 
 
+@router.get("/api/kb/source-text")
+async def api_kb_source_text(request: Request, name: str = ""):
+    """按来源标签取文档全文（F4/#11 来源条「点击跳原文」）。
+
+    source_label 形如「报告.pdf §3」——先剥 § 后缀再按文件名精确/包含匹配；
+    正文按 chunk index 顺序拼接（KBDocument 不存全文，块序列即原文）。
+    仅本机来源可调（本地 UI 消费，与文档列表同权限级别）。
+    """
+    if not check_local_origin(request):
+        return JSONResponse(local_origin_error(), status_code=403)
+    import re as _re
+    label = (name or "").strip()
+    base = _re.sub(r"\s*§\d+(\.\d+)?\s*$", "", label).strip()
+    if not base:
+        return JSONResponse({"error": "缺少 name 参数"}, status_code=400)
+    kb = get_kb()
+    doc = next((d for d in kb.documents.values() if d.filename == base), None)
+    if doc is None:
+        doc = next((d for d in kb.documents.values()
+                    if d.filename.startswith(base) or base in d.filename), None)
+    if doc is None:
+        return JSONResponse({"error": "文档不存在（可能已删除）"}, status_code=404)
+    chunks = sorted((c for c in kb.chunks.values() if c.doc_id == doc.doc_id),
+                    key=lambda c: c.index)
+    text = "\n".join(c.text for c in chunks if c.text)
+    return {"ok": True, "doc_id": doc.doc_id, "filename": doc.filename,
+            "total_chars": len(text), "text": text}
+
+
 @router.post("/api/kb/upload")
 async def api_kb_upload(file: UploadFile = File(...), request: Request = None):
     """上传文件到文库（异步处理+进度）"""
