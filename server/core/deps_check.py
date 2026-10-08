@@ -58,6 +58,24 @@ OPTIONAL_DEPS: Dict[str, str] = {
 }
 
 
+def resolve_site_packages(python_dir: str) -> str:
+    """定位 site-packages（sidemate-dev#23）。
+
+    Windows 嵌入式布局优先：<python_dir>/Lib/site-packages（与旧版行为
+    逐字一致）。不存在时（Linux venv / 常规安装没有这个目录）回退
+    sysconfig 的 purelib。两者都没有时回传嵌入式路径，由调用处沿用
+    「site-packages 不存在」的警告行为。
+    """
+    embedded = os.path.join(python_dir, "Lib", "site-packages")
+    if os.path.isdir(embedded):
+        return embedded
+    import sysconfig
+    purelib = (sysconfig.get_paths() or {}).get("purelib", "")
+    if purelib and os.path.isdir(purelib):
+        return purelib
+    return embedded
+
+
 def _import_check(import_name: str) -> bool:
     """检查单个依赖是否可 import"""
     try:
@@ -303,7 +321,7 @@ def generate_fingerprint(python_dir: str) -> dict:
     Returns:
         指纹 dict
     """
-    site_packages = os.path.join(python_dir, "Lib", "site-packages")
+    site_packages = resolve_site_packages(python_dir)
     if not os.path.isdir(site_packages):
         log.warning("[FINGERPRINT] site-packages 不存在: %s", site_packages)
         return {}

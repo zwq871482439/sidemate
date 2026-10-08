@@ -5118,6 +5118,8 @@ def _relax_output_permissions(output_path: Path) -> list[str]:
             ['icacls', str(output_path), '/grant', '*S-1-5-32-545:R'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',  # #23：icacls 在中文 Windows 输出 GBK，严格解码在读线程抛 UnicodeDecodeError
             check=False,
         )
     except OSError as exc:
