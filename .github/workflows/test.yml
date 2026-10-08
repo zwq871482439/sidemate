@@ -90,3 +90,17 @@ jobs:
         run: |
           python tools/check_mode_branches.py
           if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # sidemate-dev#35：后端未定义名机器卡点（F7 的 _llama_exists 就是这么漏进
+      # main 的——单测只测了抽出的辅助函数，接口路径短路掩盖了 NameError）。
+      # 与前端 ESLint no-undef（#21）对称；版本锁定保证判定稳定。
+      - name: 后端 lint（ruff F821/F822/F823 未定义名）
+        shell: pwsh
+        run: |
+          pip install ruff==0.16.10
+          ruff check server --select F821,F822,F823 --exclude server/vendor
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "::error::后端存在未定义名字（F821/F822/F823）——参考 #35 的修复方式补导入或改引用"
+            exit 1
+          }
+          Write-Host "后端无未定义名"

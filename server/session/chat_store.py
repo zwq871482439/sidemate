@@ -637,6 +637,38 @@ def set_chat_group(chat_name: str, group: str) -> dict:
     return {"ok": True, "group": safe}
 
 
+def set_chat_meta_flag(chat_path: str, key: str, value) -> bool:
+    """在会话目录 meta.json 上合并写一个标记字段（F5/#12：记忆卡「已拒绝」落这里）。
+
+    chat_path 允许是会话文件夹，也允许是其中的文件路径（messages.json/
+    meta.json/旧 .json）——与 append_message 的路径语义一致，项目目录下的
+    会话也能写。旧 .json 单文件会话没有 meta，写在其旁的 meta.json 不生效
+    即返回 False（不报错，读侧 read_meta 本就不支持旧格式）。
+    """
+    if not chat_path:
+        return False
+    folder = chat_path if os.path.isdir(chat_path) else os.path.dirname(chat_path)
+    if not folder or not os.path.isdir(folder):
+        return False
+    meta_path = os.path.join(folder, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            if not isinstance(meta, dict):
+                meta = {}
+        except Exception:
+            meta = {}
+    meta[key] = value
+    meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        atomic_write_json(meta_path, meta)
+    except Exception:
+        return False
+    return True
+
+
 def read_meta(chat_name: str) -> dict:
     """读取会话 meta.json（folder 格式）；不存在/旧格式返回 {}。纯只读。"""
     meta_path = os.path.join(CHAT_DIR, chat_name, "meta.json")

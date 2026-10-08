@@ -203,7 +203,11 @@ TOOL_REGISTRY = {
                 "description": "把用户偏好/项目上下文/常用操作写入长期记忆（跨会话生效）。"
                                "写入前必须先向用户展示确认卡（记忆卡：位置+内容 diff），"
                                "用户同意后才调用本工具落盘。只记稳定事实（偏好、约定、"
-                               "项目背景），不记临时信息。",
+                               "项目背景），不记临时信息。"
+                               "仅当信息属于跨会话有价值的长期事实（偏好、日程、身份、"
+                               "项目基线）时才建议写入；一次会话内同类信息只问一次；"
+                               "用户选择不记后本会话不再询问、不再展示记忆卡"
+                               "（用户主动要求记住时除外）。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1487,6 +1491,20 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         _mh = inject_hint(chat_id)
         if _mh:
             base += "\n" + _mh
+    except Exception:
+        pass
+
+    # ===== F5（#12）：用户已拒绝记忆写入——确定性兜底（会话 meta 强约束） =====
+    # prompt 收窄（工具描述+ask 规则）管「少问」，这里管「拒绝后绝不再问」：
+    # flash 档对措辞纪律不稳定，靠 meta 标记硬保证。
+    try:
+        if chat_id:
+            from session.chat_store import read_meta
+            if read_meta(chat_id).get("memory_declined"):
+                base += ("\n\n[长期记忆]\n用户已在本会话明确拒绝过长期记忆写入："
+                         "本会话不再询问记忆写入、不再输出记忆确认卡"
+                         "（ask 块/记忆卡），也不再调用 save_memory；"
+                         "除非用户之后主动明确要求记住。\n")
     except Exception:
         pass
 

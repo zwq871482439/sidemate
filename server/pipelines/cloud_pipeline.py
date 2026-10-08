@@ -1008,8 +1008,12 @@ def _save_and_done(ctx, response_text, raw_text, think_content, think_folded,
         try:
             from pipelines.doc_action import generate_docx
             doc_filename = "doc_%s.docx" % time.strftime("%Y%m%d_%H%M%S")
-            # Patch4：优先跟 chat 走
-            _fb_chat_id = _chat_id or ""
+            # Patch4：优先跟 chat 走（#35：本函数无 _chat_id——旧名遗留，
+            # docx fallback 必失败被 except 吞；从 chat_file 参数现推）
+            _fb_chat_id = ""
+            if chat_file:
+                from core.doc_session import chat_id_from_path as _cid_fp
+                _fb_chat_id = _cid_fp(chat_file)
             if _fb_chat_id:
                 from core.doc_session import _docs_root
                 _fb_docs_dir = _docs_root(_fb_chat_id)
