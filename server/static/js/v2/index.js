@@ -584,6 +584,57 @@ function renderChatArea() {
   const scroll = document.getElementById('main-scroll');
   if (!scroll) return;
   document.getElementById('v2DocBar')?.remove();  // 先清旧确认栏，待确认分支会重建
+
+  // #22：输入区先挂（composer 只依赖 state，不依赖消息流渲染结果）。
+  // 此前 composer 在消息流之后挂载，渲染中途抛错会连输入区一起丢
+  // （#21 实锤：一张坏卡把整个会话变成不可输入）。
+  const main = document.getElementById('main');
+  const old = main.querySelector('.composer');
+  if (old) old.remove();
+  // 历史 token 估算（经典版口径：中文 1.5 字/token，英文 4 字/token）
+  const historyTokens = (state.messages || []).reduce((s, m) => s + estimateTokens(m.content || '') + estimateTokens(m.think || ''), 0);
+  _composer = renderComposer({
+    mode: state.mode,
+    actionMode: state.actionMode,
+    localActions: state.localActions,
+    contextWindow: state.contextWindow,
+    historyTokens,
+    hasMessages: !!(state.messages && state.messages.length),
+    scene: state.scene,
+    chipTip: '',
+    workdir: state.workdir,
+  }, {
+    onSend: onSend,
+    onStop: () => chatStream.stop(),
+    onSceneClear: () => { state.scene = ''; state.actionMode = 'chat'; renderChatArea(); },
+    onChipMode: (m) => { state.actionMode = m; },
+    onAttachChange: () => {},
+    onWorkdirClick: () => {
+      // chip（有消息的会话/旧版会话）→ 打开项目信息卡
+      _viewedProject = null;
+      if (_viewer) _viewer.setOpen(true, 'session');
+      render();
+    },
+    onProjectPick: (anchorEl) => showProjectPicker(anchorEl),  // 0 消息会话：选择项目
+    getSession: () => state.sessions.find(c => c.current),
+  });
+  _composer.setRunning(state.generating || state.switching);
+  main.appendChild(_composer.el);
+
+  // #22：消息流渲染整体隔离——失败降级为错误横幅（输入区已挂载，不受影响），
+  // 并上报服务端日志（window.__smReportError 由 error_report.js 提供）
+  try {
+    _renderScrollContent(scroll);
+    if (state.generating && _streamState) renderStreamingBubble(_streamState);
+  } catch (e) {
+    scroll.innerHTML = '<div class="render-err" style="padding:24px 16px;color:var(--d1-ink-2,#5B6B7B)">'
+      + '这条消息流渲染失败，其余功能不受影响；可尝试刷新页面。</div>';
+    console.error('[v2] 消息流渲染失败:', e);
+    try { if (window.__smReportError) window.__smReportError('render-chat-area: ' + String((e && e.message) || e)); } catch (_) {}
+  }
+}
+
+function _renderScrollContent(scroll) {
   if (state.switching || state.switchingSess || !state.booted) {
     // 鱼骨加载（模式切换 / 切会话 / 启动加载中）：消息区骨架条，输入区锁定
     scroll.innerHTML = '<div class="skel-wrap">' +
@@ -634,41 +685,6 @@ function renderChatArea() {
       peersMeta: _peers.length ? { count: Math.min(_peers.length, 8) } : null,
     }));
   }
-  if (state.generating && _streamState) renderStreamingBubble(_streamState);
-
-  // 输入区（对话 tab 常驻）
-  const main = document.getElementById('main');
-  const old = main.querySelector('.composer');
-  if (old) old.remove();
-  // 历史 token 估算（经典版口径：中文 1.5 字/token，英文 4 字/token）
-  const historyTokens = (state.messages || []).reduce((s, m) => s + estimateTokens(m.content || '') + estimateTokens(m.think || ''), 0);
-  _composer = renderComposer({
-    mode: state.mode,
-    actionMode: state.actionMode,
-    localActions: state.localActions,
-    contextWindow: state.contextWindow,
-    historyTokens,
-    hasMessages: !!(state.messages && state.messages.length),
-    scene: state.scene,
-    chipTip: '',
-    workdir: state.workdir,
-  }, {
-    onSend: onSend,
-    onStop: () => chatStream.stop(),
-    onSceneClear: () => { state.scene = ''; state.actionMode = 'chat'; renderChatArea(); },
-    onChipMode: (m) => { state.actionMode = m; },
-    onAttachChange: () => {},
-    onWorkdirClick: () => {
-      // chip（有消息的会话/旧版会话）→ 打开项目信息卡
-      _viewedProject = null;
-      if (_viewer) _viewer.setOpen(true, 'session');
-      render();
-    },
-    onProjectPick: (anchorEl) => showProjectPicker(anchorEl),  // 0 消息会话：选择项目
-    getSession: () => state.sessions.find(c => c.current),
-  });
-  _composer.setRunning(state.generating || state.switching);
-  main.appendChild(_composer.el);
 }
 
 // ===== 项目交接（PLAN ②++：生成/一键移动/80% 建议） =====

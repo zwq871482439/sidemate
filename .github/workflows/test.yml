@@ -57,9 +57,25 @@ jobs:
         shell: pwsh
         run: |
           npm ci
+          # 漂移检查基线：关掉 eol 转换、以仓库字节原样检出 dist，
+          # 消除 Windows autocrlf 的换行噪音（只留真实内容差异）
+          git config core.autocrlf false
+          git checkout -- server/static/js/v2/dist
           npm run build
           if (-not (Test-Path server/static/js/v2/dist/bundle.js)) { Write-Error "v2 bundle 产物缺失"; exit 1 }
           Write-Host "v2 build OK"
+
+      # sidemate-dev#22：bundle 与源码一致性卡点——改了源码忘构建/忘更新指纹，这里红。
+      # 用 git diff --exit-code（字节级对比），不要用 git status（它会漏掉 eol 形态差异）。
+      - name: bundle 漂移检查（git diff --exit-code）
+        shell: pwsh
+        run: |
+          git diff --exit-code server/static/js/v2/dist server/index.html
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "::error::bundle 与源码漂移（或指纹未更新）：请本地 npm run build 后把 dist 产物与 server/index.html 一起提交"
+            exit 1
+          }
+          Write-Host "bundle 与源码一致"
 
       # sidemate-dev#21：no-undef 机器卡点（node --check 只查语法，拦不住作用域错误——
       # 934a1c7 的 _kind2 就是这么漏进 main 的）。只查 v2 源码，不查 dist 产物。
