@@ -88,13 +88,20 @@ export function renderSidebar(root, state, events) {
   // 0.11 C1 五态：gen=生成中(金呼吸) tool=工具运行(紫呼吸) wait=待确认(蓝呼吸) err=出错(红) idle=灰
   // sessStatus 来自 /api/chats/status 轮询（index.js 合并进 c）；generating 字段为当前会话本地即时态
   const _STT = { gen: '生成中', tool: '工具运行', wait: '待确认', err: '出错' };
+  const _hlTitle = (text, kw) => {
+    // S5（P1-5 方案 C）：标题命中片段 <mark> 高亮（大小写不敏感，首处）
+    if (!kw) return esc(text);
+    const idx = text.toLowerCase().indexOf(kw.toLowerCase());
+    if (idx < 0) return esc(text);
+    return esc(text.slice(0, idx)) + '<mark class="sb-hl">' + esc(text.slice(idx, idx + kw.length)) + '</mark>' + esc(text.slice(idx + kw.length));
+  };
   const renderSessItem = (c) => {
     const st = c.sessStatus || (c.generating ? 'gen' : '');
     const stt = _STT[st] || '';
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
     item.dataset.chat = c.name || '';
-    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc((c.title && c.title !== c.name) ? c.title : '新会话')}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
+    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${_hlTitle((c.title && c.title !== c.name) ? c.title : '新会话', filter)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
     item.addEventListener('click', (e) => {
       if (e.target.closest('.sess-more')) return;
       events.onSelectSession(c);
@@ -149,6 +156,28 @@ export function renderSidebar(root, state, events) {
     for (const c of legacySess) box.appendChild(renderSessItem(c));
     listEl.appendChild(grp);
   }
+  // S5（P1-5 方案 C）：搜索激活时给「命中 N 个会话」计数行
+  const searchWrap = sb.querySelector('.sb-search');
+  const oldCnt = searchWrap && searchWrap.querySelector('.sb-hit');
+  if (oldCnt) oldCnt.remove();
+  if (filter) {
+    const hitRow = document.createElement('div');
+    hitRow.className = 'sb-hit';
+    hitRow.textContent = sessions.length ? `命中 ${sessions.length} 个会话` : `没有找到“${state.filter}”`;
+    (searchWrap || listEl).insertAdjacentElement('afterend', hitRow);
+    // ✕ 清空（出现在搜索框右侧）
+    if (searchWrap && !searchWrap.querySelector('.sb-clear')) {
+      const x = document.createElement('button');
+      x.className = 'sb-clear';
+      x.title = '清空搜索';
+      x.textContent = '✕';
+      x.addEventListener('click', () => events.onFilter(''));
+      searchWrap.appendChild(x);
+    }
+  } else {
+    const x2 = searchWrap && searchWrap.querySelector('.sb-clear');
+    if (x2) x2.remove();
+  }
   if (!rendered) {
     if (!filter && !state.booted && !state.sessions.length) {
       // 启动加载中：鱼骨行（对齐 sess-item 两行结构），完成后由 boot render 替换
@@ -157,7 +186,7 @@ export function renderSidebar(root, state, events) {
           '<div class="sb-skel-row"><div class="sb-skel-bar" style="width:' + [52, 68, 44, 61, 38, 57, 47][i] + '%"></div><div class="sb-skel-meta"></div></div>'
         ).join('') + '</div>';
     } else {
-      listEl.innerHTML = `<div class="sess-empty">${filter ? '无匹配会话' : '还没有会话，点上方「新建任务」开始'}</div>`;
+      listEl.innerHTML = `<div class="sess-empty">${filter ? `没有找到“${esc(state.filter)}”<br><small>换个关键词，或点右上 ✕ 清空搜索</small>` : '还没有会话，点上方「新建任务」开始'}</div>`;
     }
   }
 

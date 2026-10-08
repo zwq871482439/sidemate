@@ -17,6 +17,17 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+
+// S3（P1-3 方案 B）：文件名中段省略——保留开头与扩展名（如 跨设备同步…公.docx）
+function _midName(name, max) {
+  const n = String(name || '');
+  if (n.length <= max) return n;
+  const dot = n.lastIndexOf('.');
+  const ext = dot > 0 ? n.slice(dot) : '';
+  const keep = Math.max(2, max - 1 - ext.length);  // 首段保留量（含省略号 1 字符）
+  return n.slice(0, keep) + '…' + (dot > 0 ? n.slice(dot - Math.min(4, dot)) : n.slice(-4));
+}
+
 export function createViewer(opts) {
   // opts: { getCurrentChat() -> {name, path} | null,
   //         getSessions() -> [{name, msg_count, current, project_dir, legacy}],
@@ -489,7 +500,7 @@ export function createViewer(opts) {
           const cur = (previewFile ? previewFile.name : lastPreviewName) === f.name;
           return `<div class="fl-row${cur ? ' cur' : ''}" data-pv-name="${esc(f.name)}" data-pv-url="${esc(url)}">
             <div class="fl-ic${/\.pptx$/i.test(f.name) ? ' gold' : ''}"><span class="ic">${_icon(f.name)}</span></div>
-            <div class="fl-tx"><div class="fl-nm">${esc(f.name)}</div><div class="fl-mt">${_fmtSize(f.size)}</div></div>
+            <div class="fl-tx"><div class="fl-nm" title="${esc(f.name)}">${esc(_midName(f.name, 18))}</div><div class="fl-mt">${_fmtSize(f.size)}</div></div>
             <button class="fl-eye" title="预览"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
             <a class="fl-dl" href="${esc(url)}" download="${esc(f.name)}" title="下载"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg></a>
           </div>`;
@@ -693,7 +704,7 @@ export function createViewer(opts) {
           const url = cur ? '/api/chat/' + encodeURIComponent(cur.name) + '/workspace/download?path=' + encodeURIComponent(f.name) : '';
           return '<div class="fl-row" data-pv-name="' + esc(f.name) + '" data-pv-url="' + esc(url) + '">' +
             '<div class="fl-ic"><span class="ic">' + _icon(f.name) + '</span></div>' +
-            '<div class="fl-tx"><div class="fl-nm">' + esc(f.name) + '</div><div class="fl-mt">' + _fmtSize(f.size) + '</div></div>' +
+            '<div class="fl-tx"><div class="fl-nm" title="' + esc(f.name) + '">' + esc(_midName(f.name, 18)) + '</div><div class="fl-mt">' + _fmtSize(f.size) + '</div></div>' +
             '<button class="fl-eye" title="预览"><svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg></button></div>';
         }).join('') + '</div>' : '');
       body.querySelectorAll('.fl-row .fl-eye').forEach(btn =>

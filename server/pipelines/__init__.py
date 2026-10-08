@@ -76,8 +76,13 @@ def auto_name_if_default(chat_name: str, user_text: str, ai_mode: str) -> None:
     try:
         from session import chat_store
         meta = chat_store.read_meta(chat_name)
-        if not meta or (meta.get("title") or chat_name) != chat_name:
-            return  # 已命名过（自动或手动）
+        _src = (meta or {}).get("title_src") or ""
+        _has_title = bool((meta or {}).get("title"))
+        # S2（#14-② 方案 C 后半）：AI 命名是「升级」不是唯一来源——
+        # truncate 截取标题（首条消息即时落）在本轮回合完成时升级为 AI 标题；
+        # manual（手动重命名）与 ai（已优化）不再覆盖；无 title（存量旧会话）也补。
+        if _has_title and _src in ("manual", "ai"):
+            return  # 已命名且不应被自动覆盖
         text = (user_text or "").strip()
         if not text or text.startswith("["):  # doc_continue 等占位消息不命名
             return
@@ -93,6 +98,6 @@ def auto_name_if_default(chat_name: str, user_text: str, ai_mode: str) -> None:
         title = _re.sub(r"^[\"'《<「『]+|[\"'》>」』。！？!?.:：,，;；\s]+$", "", title).strip()
         if not title or len(title) < 2:
             return
-        chat_store.set_chat_title(chat_name, title[:20])
+        chat_store.set_chat_title(chat_name, title[:20], src="ai")
     except Exception:
         pass
