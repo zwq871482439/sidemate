@@ -58,7 +58,9 @@ SYSTEM_PROMPT_V2 = (
 
 # 根据模式动态生成能力描述
 _CAPABILITIES_LOCAL = "你的真实能力：对话问答、知识库检索问答、生成Word文档(.docx)。当前是离线模式，不支持联网搜索。"
-_CAPABILITIES_CLOUD = "你的真实能力：对话问答、知识库检索问答、联网搜索、生成Word文档(.docx)/HTML报告/PPT演示文稿。"
+# F2：在线版补模式声明（与离线版对称）。U6 第 1 轮问部署方式，模型答「不确定」。
+_CAPABILITIES_CLOUD = ("你的真实能力：对话问答、知识库检索问答、联网搜索、生成Word文档(.docx)/HTML报告/PPT演示文稿。"
+                       "当前是**在线模式**（连接云端大模型），支持联网搜索。")
 
 # 向后兼容别名（prompt_builder 引用）
 IDENTITY_PROMPT = SYSTEM_PROMPT_V2
@@ -86,7 +88,8 @@ CARD_PROTOCOL_PROMPT = (
     "\"allow_input\":true}\n"
     "   ```\n"
     "   ask 规则：options 2-4 个、互斥且覆盖主要可能；allow_input 表示允许用户手敲补充；"
-    "   输出 ask 块后本轮立刻结束，不得自问自答；用户回答后再继续。"
+    "输出 ask 块后本轮立刻结束，不得自问自答；用户回答后再继续。"
+    "用户已限定输出格式时（只回 X / 一行 / 不超过 N 字 / 不要解释），本轮不输出 ask 块。"
     "注意：ask 是输出围栏块，不是工具——任何时刻都不要把它当工具调用。"
 )
 
