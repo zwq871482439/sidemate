@@ -148,6 +148,7 @@ def probe_audio_duration(audio_path: Path) -> float | None:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",  # #23：本地化输出兜底，读线程不抛
         )
         data = json.loads(result.stdout or "{}")
         duration = float(data.get("format", {}).get("duration", 0))

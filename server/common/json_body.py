@@ -11,13 +11,24 @@ JSON 会抛 ``json.JSONDecodeError`` 直接 500。前端真有空 body 调用（
 仍会 AttributeError，属另一类问题，不在本兜底范围。
 """
 import json
+import logging
 
 from fastapi.responses import JSONResponse
 
+log = logging.getLogger(__name__)
+
 
 def register_json_error_handler(app) -> None:
-    """把 request.json() 的解码错误统一转成 400（而不是 500）。"""
+    """把 request.json() 的解码错误统一转成 400（而不是 500）。
+
+    注意：服务端自己读坏掉的磁盘 JSON（meta/settings）抛的也是
+    JSONDecodeError，会走到这里——所以必须落日志（路径+异常+traceback）
+    且文案中性（不能断言是「请求体」的问题），见 sidemate-dev#23。
+    """
 
     @app.exception_handler(json.JSONDecodeError)
     async def _json_decode_error(request, exc):
-        return JSONResponse({"error": "请求体不是合法 JSON（可能为空 body）"}, status_code=400)
+        log.warning("[JSON] 解码失败 path=%s err=%s",
+                    getattr(request, "url", None) and request.url.path,
+                    exc, exc_info=True)
+        return JSONResponse({"error": "JSON 解析失败"}, status_code=400)
