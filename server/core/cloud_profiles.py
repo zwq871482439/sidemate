@@ -212,9 +212,20 @@ def sync_active_from_legacy() -> None:
 # ============================================================
 
 def ensure_default_profiles() -> None:
-    """cloud_profiles 为空时初始化：包装现有单份配置 / 给两个示例档案。"""
+    """cloud_profiles 为空时初始化：包装现有单份配置 / 给两个示例档案。
+
+    0.11.1 v2 上线后（#9-②）：只要 v2 的 cloud_providers_v2 键已存在，
+    v2 就是唯一权威来源，本函数直接返回——否则迁移清空的 cloud_profiles
+    会在下次启动被这里的「重新包装」写回来，清理只在当次进程里成立。
+    """
     from config import get as _cfg, save_config
-    if _cfg("cloud_profiles", None):
+    try:
+        from core.cloud_providers import PROVIDERS_KEY as _V2_KEY
+        if _cfg(_V2_KEY, None) is not None:
+            return  # v2 已接管，v1 档案不再自动重建
+    except Exception:
+        pass
+    if _cfg("cloud_profiles", None) is not None:  # 键存在（含空列表）= 已初始化
         return
     from core.cloud_engine import CloudEngine
     key = CloudEngine._decode_api_key(_cfg("cloud_api_key", ""))

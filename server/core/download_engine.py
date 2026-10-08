@@ -232,6 +232,22 @@ def has_running_task() -> Optional[DownloadTask]:
     return None
 
 
+def cancel_all_running() -> List[str]:
+    """取消全部运行中的下载任务（F3：取消按钮不带 task_id 时 = 取消全部）。
+
+    Returns:
+        被取消的 task_id 列表。
+    """
+    cancelled = []
+    with _tasks_lock:
+        running = [t for t in _tasks.values() if t.status in ("pending", "running")]
+    for t in running:
+        t.cancel()
+        t.queue.put({"pct": 0, "msg": "已取消", "done": True, "cancelled": True})
+        cancelled.append(t.task_id)
+    return cancelled
+
+
 def _cleanup_old_tasks():
     """清理 1 小时前的已完成任务，避免内存泄漏。"""
     now = time.time()
