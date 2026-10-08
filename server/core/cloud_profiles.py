@@ -254,15 +254,34 @@ def ensure_default_profiles() -> None:
 
 
 def routing_hint() -> str:
-    """agentRouting 提示表（纯提示层，PLAN-011 D4）：档案特点+任务建议。"""
-    profiles = list_profiles()
-    usable = [p for p in profiles if p["api_key_set"] and p["model"]]
-    if len(usable) < 2:
+    """agentRouting 提示表（纯提示层，PLAN-011 D4；#26 改读在线模型服务 v2）。
+
+    v1 档案（cloud_profiles）已被 v2 服务商取代——旧实现读 v1，用户在 v2
+    服务商下配置的快/强模型进不了提示，0.11.0 的 agentRouting 功能被静默
+    关掉。此处遍历 v2 所有有 Key 服务商下的模型，按 tag（快/强）生成建议；
+    当前激活模型取 v2 的 cloud_active_v2。只改提示层，不改路由行为。
+    """
+    try:
+        from core.cloud_providers import list_providers
+        providers = list_providers()
+    except Exception:
         return ""
-    lines = []
-    for p in usable[:4]:
-        feat = "适合复杂产物（PPT/报告/深度分析）" if p["tag"] == "strong" else "适合日常问答与轻量任务"
-        lines.append("- %s（%s）：%s" % (p["name"], p["model"], feat))
-    return ("用户已配置多个模型档案，当前使用「%s」。你可以根据任务复杂度"
-            "建议用户切换档案（顶栏右侧），但不要假装自己已切换：\n%s"
-            % ((get_active_profile() or {}).get("name", "?"), "\n".join(lines)))
+    entries = []   # (provider_name, model, feat)
+    active_label = ""
+    for p in providers:
+        if not p.get("api_key_set"):
+            continue
+        for m in (p.get("models") or []):
+            if not m.get("model"):
+                continue
+            feat = ("适合复杂产物（PPT/报告/深度分析）" if m.get("tag") == "strong"
+                    else "适合日常问答与轻量任务")
+            entries.append((p["name"], m["model"], feat))
+            if m.get("active"):
+                active_label = "%s（%s）" % (p["name"], m["model"])
+    if len(entries) < 2:
+        return ""
+    lines = ["- %s（%s）：%s" % (pn, mm, feat) for pn, mm, feat in entries[:6]]
+    return ("用户已配置多个模型，当前使用「%s」。你可以根据任务复杂度"
+            "建议用户用顶栏模型选择器切换，但不要假装自己已切换：\n%s"
+            % (active_label or "?", "\n".join(lines)))
