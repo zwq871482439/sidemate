@@ -480,6 +480,10 @@ async def _lifespan(app):
         log.warning("[SHUTDOWN] 线程池关闭失败: %s" % str(e)[:80])
 
 app = FastAPI(title="sidemate", version=FULL_VERSION, lifespan=_lifespan)
+# F3 扩面（sidemate-dev#6）：request.json() 的空 body/坏 JSON 统一 400，
+# 不再 500（~60 处裸调用点一次兜底，见 common/json_body.py）
+from common.json_body import register_json_error_handler
+register_json_error_handler(app)
 # CORS 配置：
 #   严格模式（默认）= 仅允许 LOCAL_AI_CORS 配置的本地源，防止本机恶意页面静默调用 API
 #   调试模式 = 允许任意源（用户在设置中显式开启，用于第三方前端调试）

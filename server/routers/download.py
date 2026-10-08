@@ -322,12 +322,29 @@ def _finalize_install(task):
 
 @router.post("/api/models/download/cancel")
 async def api_download_cancel(request: Request):
-    body = await request.json()
-    task_id = body.get("task_id", "").strip()
+    """取消下载（F3：空 body / 缺 task_id = 取消全部运行中任务）。
+
+    前端取消按钮（v2 settings.js #dlCancel）就是不带 body 直接 POST 的——
+    此前 request.json() 直接 500，取消从未生效过。
+    """
+    raw = await request.body()
+    task_id = ""
+    if raw and raw.strip():
+        try:
+            body = json.loads(raw)
+            if isinstance(body, dict):
+                task_id = (body.get("task_id") or "").strip()
+        except Exception:
+            task_id = ""  # 坏 JSON 按未指定处理 → 取消全部（不卡住取消动作）
+    if not task_id:
+        cancelled = download_engine.cancel_all_running()
+        if cancelled:
+            log.info("[DL] 取消全部下载任务: %s", cancelled)
+        return {"ok": True, "cancelled": cancelled}
     task = download_engine.get_task(task_id)
     if not task:
         return JSONResponse({"error": "未知下载任务"}, status_code=404)
     task.cancel()
     task.queue.put({"pct": 0, "msg": "已取消", "done": True, "cancelled": True})
     log.info("[DL] 下载任务已取消: %s", task_id)
-    return {"ok": True}
+    return {"ok": True, "cancelled": [task_id]}
