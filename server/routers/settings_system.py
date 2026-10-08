@@ -34,6 +34,33 @@ router = APIRouter()
 log = logging.getLogger("settings.system")
 
 
+def _diagnose_llama_server() -> dict:
+    """环境诊断的 llama-server 检查（F7/sidemate-dev#8）。
+
+    与 OllamaManager._find_llama_server 同款查找序：lib 目录 →
+    shutil.which("llama-server")。此前只查 lib 下的固定路径——llama-server
+    装在 PATH（如 Linux/B 的自测环境）或非 Windows 布局时误报失败。
+    返回实际命中路径；都找不到时 ok=False 并给明确文案。
+    """
+    import shutil
+    from config import ROOT_DIR
+    candidates = [
+        os.path.join(ROOT_DIR, "..", "lib", "ollama", "llama-server.exe"),
+        os.path.join(ROOT_DIR, "lib", "ollama", "llama-server.exe"),
+    ]
+    path = next((p for p in candidates if os.path.isfile(p)), None)
+    note = ""
+    if not path:
+        which = shutil.which("llama-server")
+        if which:
+            path = which
+        else:
+            path = candidates[0]
+            note = "lib 与 PATH 中均未找到 llama-server"
+    return {"ok": os.path.isfile(path), "path": os.path.abspath(path),
+            **({"note": note} if note else {})}
+
+
 # ============================================================
 #  PermissionManager / AuditLogger 已在 Patch11 拆除
 # ============================================================
@@ -457,11 +484,8 @@ def api_env_diagnose():
         "path": sys.executable,
     }
 
-    # 2. llama-server
-    from config import ROOT_DIR
-    _llama_path = os.path.join(ROOT_DIR, "..", "lib", "ollama", "llama-server.exe")
-    _llama_exists = os.path.isfile(_llama_path)
-    result["llama_server"] = {"ok": _llama_exists, "path": _llama_path}
+    # 2. llama-server（F7/sidemate-dev#8）
+    result["llama_server"] = _diagnose_llama_server()
 
     # 3. 依赖检查（按分类）
     deps = {}
