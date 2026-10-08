@@ -427,22 +427,22 @@ class AgentLoop:
                     yield ("agent_status", {"status": "budget_exceeded"})
                     break
 
-            # P8-2 预算注入：每轮在 messages 末尾刷新一条预算快照
-            # （替换旧快照不累积；用内容前缀识别，不加自定义字段——
-            #  部分服务商对 message 里的未知字段会 400）
-            messages[:] = [m for m in messages
-                           if not (m.get("role") == "user"
-                                   and isinstance(m.get("content"), str)
-                                   and m["content"].startswith("[剩余预算]"))]
-            messages.append({
-                "role": "user",
-                "content": ("[剩余预算] 联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮"
-                            "（请据此规划检索深度，预算不足时直接基于已有信息回答）" % (
-                                max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
-                                max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
-                                max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
-                                get_max_rounds() - rounds)),
-            })
+            # P8-2 预算注入 → 0.11.1 F1（FIXLIST 方案 A）：预算快照改为 system
+            # prompt 尾部每轮刷新「## 剩余预算」块。此前以 role=user 追加，
+            # 模型会把预算清单当用户发言复述（10 用户测试 U6 第 4 轮实锤，
+            # 会话 2026-10-01_020 m0007/m0008）。system 通道对 openai /
+            # anthropic 两种 api_format 都原生生效（后者由 convert_messages
+            # 提为顶层 system 字段），messages 里不再出现任何预算字样。
+            _BUDGET_MARK = "\n\n## 剩余预算\n"
+            _base_system = messages[0]["content"].split(_BUDGET_MARK)[0]
+            messages[0]["content"] = _base_system + _BUDGET_MARK + (
+                "联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮"
+                "（请据此规划检索深度，预算不足时直接基于已有信息回答）\n"
+                "预算信息仅供规划，不得在任何回复中复述或提及。" % (
+                    max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
+                    max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
+                    max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
+                    get_max_rounds() - rounds))
 
             # 发送思考状态
             yield ("agent_status", {"status": "thinking"})

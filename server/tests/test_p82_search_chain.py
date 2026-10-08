@@ -32,16 +32,25 @@ class TestToolLimits(unittest.TestCase):
 
 
 class TestBudgetMessage(unittest.TestCase):
-    """2.2 预算注入：快照内容与替换逻辑（用与 agent_loop 相同的生成规则）"""
+    """2.2 预算注入（0.11.1 F1 方案 A 后）：数字计算规则 + system 尾部刷新语义。
+
+    注入通道与刷新/不累积/防复述行为由 test_budget_in_system.py 用桩模型
+    全链路验证；本类只钉数字计算与 system 块的生成规则（与 agent_loop
+    相同的生成式）。旧的 role=user 快照通道已删除（模型会把预算当用户
+    发言复述，FIXLIST F1）。"""
+
+    _MARK = "\n\n## 剩余预算\n"
 
     def _make_budget(self, tool_counts, rounds):
         from core.agent_loop import TOOL_LIMITS, MAX_ROUNDS
-        return ("[剩余预算] 联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮"
-                "（请据此规划检索深度，预算不足时直接基于已有信息回答）" % (
-                    max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
-                    max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
-                    max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
-                    MAX_ROUNDS - rounds))
+        return self._MARK + (
+            "联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮"
+            "（请据此规划检索深度，预算不足时直接基于已有信息回答）\n"
+            "预算信息仅供规划，不得在任何回复中复述或提及。" % (
+                max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
+                max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
+                max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
+                MAX_ROUNDS - rounds))
 
     def test_budget_content(self):
         msg = self._make_budget({"search_web": 2, "fetch_url": 6}, 4)
@@ -49,36 +58,29 @@ class TestBudgetMessage(unittest.TestCase):
         self.assertIn("网页阅读 9 次", msg)
         self.assertIn("知识库搜索 5 次", msg)
         self.assertIn("总轮次 22 轮", msg)
+        self.assertIn("不得在任何回复中复述", msg)
 
     def test_budget_no_negative(self):
         msg = self._make_budget({"search_web": 99}, 99)
         self.assertIn("联网搜索 0 次", msg)
-        self.assertIn("总轮次 -73 轮" if False else "总轮次", msg)
+        self.assertIn("总轮次", msg)
 
-    def test_budget_replace_not_accumulate(self):
-        """快照按前缀识别替换，messages 中最多一条"""
-        messages = [{"role": "user", "content": "hi"},
-                    {"role": "user", "content": self._make_budget({}, 0)}]
-        # 模拟 agent_loop 的替换逻辑
-        messages[:] = [m for m in messages
-                       if not (m.get("role") == "user"
-                               and isinstance(m.get("content"), str)
-                               and m["content"].startswith("[剩余预算]"))]
-        messages.append({"role": "user", "content": self._make_budget({"search_web": 1}, 1)})
-        budgets = [m for m in messages if m["content"].startswith("[剩余预算]")]
-        self.assertEqual(len(budgets), 1)
-        self.assertIn("联网搜索 4 次", budgets[0]["content"])
+    def test_budget_refresh_keeps_base_system(self):
+        """块按标记刷新：上一轮的块被剥掉、base system 与 KB 上下文保留"""
+        base = "BASE-SYSTEM.\n\n[用户选定的参考文档]\n文档内容"
+        system_with_old = base + self._make_budget({}, 0)
+        refreshed = system_with_old.split(self._MARK)[0] + self._make_budget({"search_web": 1}, 1)
+        self.assertEqual(refreshed.count("## 剩余预算"), 1)
+        self.assertTrue(refreshed.startswith(base))
+        self.assertIn("联网搜索 4 次", refreshed)
 
-    def test_budget_not_strip_normal_user_msg(self):
-        """普通用户消息（即使以 [ 开头）不被误删"""
-        messages = [{"role": "user", "content": "[注意] 这是我自己的话"},
-                    {"role": "user", "content": self._make_budget({}, 0)}]
-        messages[:] = [m for m in messages
-                       if not (m.get("role") == "user"
-                               and isinstance(m.get("content"), str)
-                               and m["content"].startswith("[剩余预算]"))]
-        self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0]["content"], "[注意] 这是我自己的话")
+    def test_budget_never_in_user_role(self):
+        """生成物只进 system，任何 role=user 消息不得携带预算字样"""
+        msgs = [{"role": "system", "content": "BASE" + self._make_budget({}, 0)},
+                {"role": "user", "content": "[注意] 这是我自己的话"}]
+        for m in msgs:
+            if m["role"] == "user":
+                self.assertNotIn("剩余预算", m["content"])
 
 
 class TestKbEmptyGating(unittest.TestCase):
