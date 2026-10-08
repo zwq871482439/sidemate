@@ -8,6 +8,8 @@ Tests cover:
 - F10 回归：可选依赖缺失不应让 all_ok 变 False
 """
 
+import pytest  # #35
+
 import sys
 import os
 

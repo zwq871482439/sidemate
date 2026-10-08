@@ -23,7 +23,8 @@ import threading as _threading
 import queue as _queue
 from datetime import datetime
 
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Request  # #35：Request 原漏导入——
+# Py3.14 惰性注解下不炸 import，但 FastAPI 把 request 退化成 query 参数，真实上传 422
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from routers.deps import (

@@ -20,6 +20,8 @@ Exit codes: 0 ok, 2 unreadable / unsupported input.
 
 from __future__ import annotations
 
+from typing import NoReturn  # #35：字符串注解引用（_fail 的 "NoReturn"）
+
 import argparse
 import base64
 import html
