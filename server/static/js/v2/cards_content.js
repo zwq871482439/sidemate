@@ -393,6 +393,9 @@ function _renderConfirmCard(card, spec, opts, kind) {
   // 已答态
   const answered = opts && opts.getCardAnswer ? opts.getCardAnswer(spec.question) : null;
   const acts = spec.options || [];
+  // kind 推断与 _renderAsk 同款（kind 缺失时按「长期记忆」文案识别记忆卡）。
+  // 此前这里直接引用 _renderAsk 作用域的 _kind2 → 运行期 ReferenceError（#21）。
+  const kind2 = kind || ((spec.question || '').includes('长期记忆') ? 'memory_save' : '');
   let head = '', secs = '';
   if (kind === 'skill_install' && spec.skill) {
     const s = spec.skill;
@@ -405,7 +408,7 @@ function _renderConfirmCard(card, spec, opts, kind) {
       <div class="cf-line dim">文件清单：${esc((s.files || []).join(' · ')) || '—'}</div></div>
       <div class="cf-sec"><div class="cf-lb">安全校验</div>
       ${(s.checks || []).map(c => `<div class="cf-vrow">${_CKC}<span>${esc(c)}</span></div>`).join('')}</div>`;
-  } else if (_kind2 === 'memory_save' || _kind2 === 'memory_confirm') {
+  } else if (kind2 === 'memory_save' || kind2 === 'memory_confirm') {
     head = `<div class="cf-head"><span class="cf-cic">${iconSvg('tag')}</span>
       <div><div class="cf-t">记忆写入确认</div>
       <div class="cf-s">写入后跨会话生效</div></div></div>`;

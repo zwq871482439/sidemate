@@ -144,7 +144,7 @@ export function createKBView(events) {
         .then(r => r.json())
         .then(d => {
           if (d && d.ok) state.overview = d;
-          if (_star && _star.el === ph) { _unmountStar(); _mountStar(); renderOverview(); }
+          if (_star && _star.el === ph) { _unmountStar(); _mountStar(); }
         })
         .catch(() => { ph.innerHTML = '<div class="kb-loading" style="padding-top:120px">星图生成失败，请稍后重试</div>'; });
       return;
