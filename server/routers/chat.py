@@ -409,6 +409,20 @@ async def api_chat_stream(request: Request):
                     except Exception as _e:
                         log.warning("[CHAT] 记忆拒绝标记落盘失败: %s", str(_e)[:80])
             _saved_user = append_message(chat_file, _um)
+            # S2（#14-② 方案 C 前半）：首条真实 user 消息落盘即截取命名——
+            # 确定性、不等回合完成、不调模型（堵「首轮失败/中断后永不命名」的洞，
+            # 根因分析见 issue #14 评论）。AI 命名在回合完成时升级（title_src 状态机）。
+            _mt = (message or "").strip()
+            if _mt and not _mt.startswith("["):
+                try:
+                    from session.chat_store import read_meta, set_chat_title, truncate_title
+                    _cid = os.path.basename(os.path.normpath(chat_file))
+                    if not read_meta(_cid).get("title"):
+                        _tt = truncate_title(_mt)
+                        if _tt:
+                            set_chat_title(_cid, _tt, src="truncate")
+                except Exception as _te:
+                    log.warning("[CHAT] 首条截取命名失败: %s", str(_te)[:80])
         except Exception as e:
             # 落盘失败不阻断对话——persist_turn 会回退 legacy 重建路径
             log.warning("[CHAT] user 消息开局落盘失败，将走 legacy 路径: %s", str(e)[:100])

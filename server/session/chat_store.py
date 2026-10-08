@@ -727,6 +727,7 @@ def rename_chat(old_name: str, new_name: str) -> dict:
                 with open(_meta_path, "r", encoding="utf-8") as f:
                     _meta = json.load(f)
                 _meta["title"] = safe_new
+                _meta["title_src"] = "manual"  # S2：手动命名永不被自动命名覆盖
                 _meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 atomic_write_json(_meta_path, _meta)
         except Exception:
@@ -738,8 +739,25 @@ def rename_chat(old_name: str, new_name: str) -> dict:
         return {"error": "重命名失败: %s" % str(e)[:100]}
 
 
-def set_chat_title(chat_name: str, title: str) -> bool:
+def truncate_title(text: str, limit: int = 16) -> str:
+    """首条消息截取标题（S2/#14-② 方案 C 前半，确定性、不调模型）。
+
+    取首行、压空白、去 markdown 强调符与引号，限 16 字（审计建议 12-16）。
+    空串返回 ""（调用方跳过）。
+    """
+    import re as _re
+    t = (text or "").strip().splitlines()[0].strip() if (text or "").strip() else ""
+    t = _re.sub(r"\s+", " ", t)
+    t = _re.sub(r"[*_`#~]+", "", t).strip()
+    t = t.strip("\"'《<「『").rstrip("\"'》>」』 \t")
+    return t[:limit].strip()
+
+
+def set_chat_title(chat_name: str, title: str, src: str = "") -> bool:
     """写 meta.title 显示名（M1-E 自动命名）。文件夹名/路径不动。
+
+    src（S2 状态机）：""=旧行为 / "truncate"=首条消息截取 / "ai"=AI 优化
+    （auto_name 升级）/ "manual"=手动重命名（永不被自动命名覆盖）。
 
     Returns:
         bool: 是否写入成功（meta 不存在/旧格式/写失败均 False）
@@ -754,6 +772,8 @@ def set_chat_title(chat_name: str, title: str) -> bool:
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
         meta["title"] = title
+        if src:
+            meta["title_src"] = src
         meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         atomic_write_json(meta_path, meta)
         return True

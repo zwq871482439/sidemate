@@ -196,14 +196,14 @@ export function renderComposer(state, events) {
     }
     const cfg = THINK_LEVELS.find(x => x.v === _thinkLevel) || THINK_LEVELS[0];
     thinkBtn.style.display = '';
-    thinkBtn.innerHTML = iconSvg(cfg.icon) + ' ' + cfg.label.split('·')[1];
+    thinkBtn.innerHTML = iconSvg(cfg.icon) + ' ' + cfg.label;
     thinkBtn.title = cfg.tip;
   }
   thinkBtn.addEventListener('click', async () => {
     const idx = THINK_LEVELS.findIndex(x => x.v === _thinkLevel);
     _thinkLevel = THINK_LEVELS[(idx + 1) % THINK_LEVELS.length].v;
     const cfg = THINK_LEVELS.find(x => x.v === _thinkLevel);
-    thinkBtn.innerHTML = iconSvg(cfg.icon) + ' ' + cfg.label.split('·')[1];
+    thinkBtn.innerHTML = iconSvg(cfg.icon) + ' ' + cfg.label;
     thinkBtn.title = cfg.tip;
     await fetch('/api/config', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

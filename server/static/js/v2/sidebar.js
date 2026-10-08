@@ -5,6 +5,13 @@
 import { api, MODE_LABEL, MODE_ORDER } from './api.js';
 import { icon, iconSvg } from './icons.js';
 
+// S8（P1-8）：模式按钮 tooltip——折叠态只有两个文字钮，悬停说明尤其重要
+const MODE_TIP = {
+  local: '离线模式：本机运行，数据不出网。点击切换',
+  cloud: '在线模式：连接云端大模型。点击切换',
+  parallel: '并行模式：离线+在线同时作答对比。点击切换',
+};
+
 const ICONS = {
   search: '<svg fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607z"/></svg>',
   chat: '<svg fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/></svg>',
@@ -34,7 +41,7 @@ export function renderSidebar(root, state, events) {
       <div class="sb-logo"><img src="/static/img/logo.jpg" alt="桌伴"></div>
       <div class="mode-mini">
         ${modes.map(m => `
-          <button data-mode="${m}" class="${m === 'parallel' ? 'experimental ' : ''}${state.mode === m ? 'on' : ''}${state.switching ? ' switching' : ''}" ${state.switching ? 'disabled title="模式切换中…"' : ''}>
+          <button data-mode="${m}" class="${m === 'parallel' ? 'experimental ' : ''}${state.mode === m ? 'on' : ''}${state.switching ? ' switching' : ''}" ${state.switching ? 'disabled title="模式切换中…"' : `title="${MODE_TIP[m] || MODE_LABEL[m]}"`}>
             ${state.switching && state.mode === m ? '切换中…' : MODE_LABEL[m]}
           </button>`).join('')}
       </div>
@@ -81,13 +88,20 @@ export function renderSidebar(root, state, events) {
   // 0.11 C1 五态：gen=生成中(金呼吸) tool=工具运行(紫呼吸) wait=待确认(蓝呼吸) err=出错(红) idle=灰
   // sessStatus 来自 /api/chats/status 轮询（index.js 合并进 c）；generating 字段为当前会话本地即时态
   const _STT = { gen: '生成中', tool: '工具运行', wait: '待确认', err: '出错' };
+  const _hlTitle = (text, kw) => {
+    // S5（P1-5 方案 C）：标题命中片段 <mark> 高亮（大小写不敏感，首处）
+    if (!kw) return esc(text);
+    const idx = text.toLowerCase().indexOf(kw.toLowerCase());
+    if (idx < 0) return esc(text);
+    return esc(text.slice(0, idx)) + '<mark class="sb-hl">' + esc(text.slice(idx, idx + kw.length)) + '</mark>' + esc(text.slice(idx + kw.length));
+  };
   const renderSessItem = (c) => {
     const st = c.sessStatus || (c.generating ? 'gen' : '');
     const stt = _STT[st] || '';
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
     item.dataset.chat = c.name || '';
-    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${esc((c.title && c.title !== c.name) ? c.title : '新会话')}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
+    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${_hlTitle((c.title && c.title !== c.name) ? c.title : '新会话', filter)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
     item.addEventListener('click', (e) => {
       if (e.target.closest('.sess-more')) return;
       events.onSelectSession(c);
@@ -142,6 +156,28 @@ export function renderSidebar(root, state, events) {
     for (const c of legacySess) box.appendChild(renderSessItem(c));
     listEl.appendChild(grp);
   }
+  // S5（P1-5 方案 C）：搜索激活时给「命中 N 个会话」计数行
+  const searchWrap = sb.querySelector('.sb-search');
+  const oldCnt = searchWrap && searchWrap.querySelector('.sb-hit');
+  if (oldCnt) oldCnt.remove();
+  if (filter) {
+    const hitRow = document.createElement('div');
+    hitRow.className = 'sb-hit';
+    hitRow.textContent = sessions.length ? `命中 ${sessions.length} 个会话` : `没有找到“${state.filter}”`;
+    (searchWrap || listEl).insertAdjacentElement('afterend', hitRow);
+    // ✕ 清空（出现在搜索框右侧）
+    if (searchWrap && !searchWrap.querySelector('.sb-clear')) {
+      const x = document.createElement('button');
+      x.className = 'sb-clear';
+      x.title = '清空搜索';
+      x.textContent = '✕';
+      x.addEventListener('click', () => events.onFilter(''));
+      searchWrap.appendChild(x);
+    }
+  } else {
+    const x2 = searchWrap && searchWrap.querySelector('.sb-clear');
+    if (x2) x2.remove();
+  }
   if (!rendered) {
     if (!filter && !state.booted && !state.sessions.length) {
       // 启动加载中：鱼骨行（对齐 sess-item 两行结构），完成后由 boot render 替换
@@ -150,7 +186,7 @@ export function renderSidebar(root, state, events) {
           '<div class="sb-skel-row"><div class="sb-skel-bar" style="width:' + [52, 68, 44, 61, 38, 57, 47][i] + '%"></div><div class="sb-skel-meta"></div></div>'
         ).join('') + '</div>';
     } else {
-      listEl.innerHTML = `<div class="sess-empty">${filter ? '无匹配会话' : '还没有会话，点上方「新建任务」开始'}</div>`;
+      listEl.innerHTML = `<div class="sess-empty">${filter ? `没有找到“${esc(state.filter)}”<br><small>换个关键词，或点右上 ✕ 清空搜索</small>` : '还没有会话，点上方「新建任务」开始'}</div>`;
     }
   }
 
