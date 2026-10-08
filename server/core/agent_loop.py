@@ -375,6 +375,19 @@ class AgentLoop:
             yield from self._pure_chat(messages)
             return
 
+        # F1：system 尾部一次性拼入【静态】预算说明（初始额度 + 规则 +
+        # 防复述纪律）。内容在任务内轮间不变、任务间也恒定（额度是模块
+        # 常量）→ 请求前缀稳定，服务商前缀缓存可命中。动态余量见下方
+        # 工具执行段（追加到本轮工具结果末尾，同样不破坏前缀）。
+        messages[0]["content"] += (
+            "\n\n## 检索预算（初始额度）\n"
+            "联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮\n"
+            "此后每轮的工具结果末尾会附带一行当前剩余预算（形如 [剩余预算 · …]），"
+            "请据此规划检索深度；预算不足时停止检索，直接基于已有信息回答。\n"
+            "预算信息仅供规划，不得在任何回复中复述或提及。" % (
+                TOOL_LIMITS["search_web"], TOOL_LIMITS["fetch_url"],
+                TOOL_LIMITS["search_kb"], MAX_ROUNDS))
+
         while rounds < get_max_rounds():
             # 0.10 M1 停止即时：轮次边界检查（工具执行返回后立即判断，
             # 不再发起下一轮 API 调用——此前要等下一轮流式首个 chunk 才断）
@@ -427,22 +440,12 @@ class AgentLoop:
                     yield ("agent_status", {"status": "budget_exceeded"})
                     break
 
-            # P8-2 预算注入 → 0.11.1 F1（FIXLIST 方案 A）：预算快照改为 system
-            # prompt 尾部每轮刷新「## 剩余预算」块。此前以 role=user 追加，
-            # 模型会把预算清单当用户发言复述（10 用户测试 U6 第 4 轮实锤，
-            # 会话 2026-10-01_020 m0007/m0008）。system 通道对 openai /
-            # anthropic 两种 api_format 都原生生效（后者由 convert_messages
-            # 提为顶层 system 字段），messages 里不再出现任何预算字样。
-            _BUDGET_MARK = "\n\n## 剩余预算\n"
-            _base_system = messages[0]["content"].split(_BUDGET_MARK)[0]
-            messages[0]["content"] = _base_system + _BUDGET_MARK + (
-                "联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮"
-                "（请据此规划检索深度，预算不足时直接基于已有信息回答）\n"
-                "预算信息仅供规划，不得在任何回复中复述或提及。" % (
-                    max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
-                    max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
-                    max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
-                    get_max_rounds() - rounds))
+            # P8-2 → 0.11.1 F1（FIXLIST 方案 A + PR#6 评审修订）：
+            # 预算不再以 role=user 注入（模型会把预算清单当用户发言复述，
+            # 10 用户测试 U6 第 4 轮实锤）；动态余量改为追加到本轮新产生
+            # 的工具结果末尾（见工具执行段）。system 里只有静态预算说明
+            # （本轮循环前一次性拼好，轮间不变）——保证请求前缀稳定，
+            # 服务商前缀缓存（DeepSeek 命中价约为未命中 1/10）可命中。
 
             # 发送思考状态
             yield ("agent_status", {"status": "thinking"})
@@ -643,6 +646,22 @@ class AgentLoop:
                     "tool_call_id": tc_id,
                     "content": result_str,
                 })
+
+            # F1：把当前剩余预算追加到【本轮最后一条】工具结果末尾。
+            # 工具结果本来就是本轮新增内容，旧消息（含旧预算行）不回头
+            # 改写 → 第 k+1 轮请求的前缀与第 k 轮完全一致，前缀缓存可
+            # 命中；模型也不会把工具结果当用户发言（anthropic 侧由
+            # convert_messages 映射为 tool_result 文本，同样成立）。
+            _last_tool_msg = next((m for m in reversed(messages)
+                                   if m.get("role") == "tool"), None)
+            if _last_tool_msg is not None:
+                _last_tool_msg["content"] = (_last_tool_msg.get("content") or "") + (
+                    "\n[剩余预算 · 仅供规划，勿在回复中提及]"
+                    " 联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮" % (
+                        max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
+                        max(0, TOOL_LIMITS["fetch_url"] - tool_counts.get("fetch_url", 0)),
+                        max(0, TOOL_LIMITS["search_kb"] - tool_counts.get("search_kb", 0)),
+                        get_max_rounds() - rounds))
 
             # Token 预算检查
             if self._should_compress(messages):
