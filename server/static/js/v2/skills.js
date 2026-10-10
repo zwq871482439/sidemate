@@ -232,8 +232,7 @@ export function createSkillsView(opts) {
     root.querySelectorAll('[data-mcp-action]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const name = btn.dataset.mcp;
-        const ok = await uiConfirm('移除 MCP 服务器「' + name + '」？
-这会删除它的配置（不是断开重连）。');
+        const ok = await uiConfirm('移除 MCP 服务器「' + name + '」？\n这会删除它的配置（不是断开重连）。');
         if (!ok) return;
         await fetch('/api/mcp/servers/' + encodeURIComponent(name), { method: 'DELETE' }).catch(() => {});
         load();

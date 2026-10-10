@@ -42,6 +42,7 @@ const (
 	splashTRANSPARENT   = 1
 	splashDT_CENTER     = 0x00000001
 	splashDT_VCENTER    = 0x00000004
+	splashDT_WORDBREAK  = 0x00000010
 	splashDT_SINGLELINE = 0x00000020
 
 	// 颜色 COLORREF (BGR)
@@ -163,15 +164,16 @@ type SplashState struct {
 	animTick       int32  // 动画 tick（驱动小节跳动）
 	segmentText    string // 当前阶段名
 
-	closeBtnRect   splashRect
-	openLogBtnRect splashRect
-	forceExitRect  splashRect
+	closeBtnRect    splashRect
+	openLogBtnRect  splashRect
+	forceExitRect   splashRect
 	downloadBtnRect splashRect
 
 	// #58：致命错误（环境损坏/后端反复起不来）时的标题与下载按钮
-	failTitle   string
-	downloadURL string
-	userClosed  bool
+	failTitle       string
+	downloadURL     string
+	downloadBtnText string
+	userClosed      bool
 }
 
 type splashRect struct {
@@ -681,14 +683,21 @@ func splashDrawSegmentProgress(hdc syscall.Handle, ss *SplashState) {
 
 func splashDrawErrorCard(hdc syscall.Handle, ss *SplashState) {
 	// 卡片背景
+	// 致命模式（带标题）卡片向上加高：标题 + 两行正文 + 三按钮
+	cardY := sErrCardY
+	cardH := sErrCardH
+	if ss.failTitle != "" {
+		cardY -= 46 * dpi / 96
+		cardH += 46 * dpi / 96
+	}
 	hBrush, _, _ := splashProcCreateBrush.Call(0x00f0f0f0) // 浅灰
 	hOldB, _, _ := splashProcSelectObj.Call(uintptr(hdc), hBrush)
 	hPen, _, _ := splashProcCreatePen.Call(0, 1, 0x00f0f0f0)
 	hOldP, _, _ := splashProcSelectObj.Call(uintptr(hdc), hPen)
 	splashProcRectangle.Call(
 		uintptr(hdc),
-		uintptr(sErrCardX), uintptr(sErrCardY),
-		uintptr(sErrCardX+sErrCardW), uintptr(sErrCardY+sErrCardH),
+		uintptr(sErrCardX), uintptr(cardY),
+		uintptr(sErrCardX+sErrCardW), uintptr(cardY+cardH),
 	)
 	splashProcSelectObj.Call(uintptr(hdc), hOldB)
 	splashProcSelectObj.Call(uintptr(hdc), hOldP)
@@ -698,24 +707,62 @@ func splashDrawErrorCard(hdc syscall.Handle, ss *SplashState) {
 	// 错误标题（#58：环境损坏指引）
 	titleFontSize := 15 * dpi / 96
 	if ss.failTitle != "" {
-		splashDrawTextEx(hdc, ss.failTitle, titleFontSize, sErrCardX, sErrCardY+6*dpi/96, sErrCardW, titleFontSize+6*dpi/96, splashColorFail, true)
+		splashDrawTextEx(hdc, ss.failTitle, titleFontSize, sErrCardX, cardY+6*dpi/96, sErrCardW, titleFontSize+6*dpi/96, splashColorFail, true)
 	}
-	// 错误正文
+	// 错误正文（致命模式两行折行显示）
 	errFontSize := 13 * dpi / 96
-	msgY := sErrCardY + 6*dpi/96
+	msgY := cardY + 6*dpi/96
 	if ss.failTitle != "" {
 		msgY += titleFontSize + 4*dpi/96
+		splashDrawTextWrap(hdc, ss.failMsg, errFontSize, sErrCardX+6*dpi/96, msgY, sErrCardW-12*dpi/96, (errFontSize+7*dpi/96)*2, splashColorFail)
+	} else {
+		splashDrawTextEx(hdc, ss.failMsg, errFontSize, sErrCardX, msgY, sErrCardW, errFontSize+6*dpi/96, splashColorFail, true)
 	}
-	splashDrawTextEx(hdc, ss.failMsg, errFontSize, sErrCardX, msgY, sErrCardW, errFontSize+6*dpi/96, splashColorFail, true)
 
-	// "打开下载页" 按钮（仅致命模式）
+	// "打开下载页" 按钮（仅致命模式，文案由 ShowSplashFatal 传入）
 	if ss.downloadURL != "" {
-		splashDrawButton(hdc, "打开下载页", ss.downloadBtnRect, splashColorRun, splashColorWhite)
+		btnText := ss.downloadBtnText
+		if btnText == "" {
+			btnText = "打开下载页"
+		}
+		splashDrawButton(hdc, btnText, ss.downloadBtnRect, splashColorRun, splashColorWhite)
 	}
 	// "打开日志" 按钮
 	splashDrawButton(hdc, "打开日志", ss.openLogBtnRect, splashColorRun, splashColorWhite)
 	// "强制退出" 按钮
 	splashDrawButton(hdc, "强制退出", ss.forceExitRect, splashColorFail, splashColorWhite)
+}
+
+// splashDrawTextWrap 多行折行文本（DT_WORDBREAK，居中）——致命卡片正文用
+func splashDrawTextWrap(hdc syscall.Handle, text string, fontSize, x, y, w, h int32, color uintptr) {
+	textPtr, _ := syscall.UTF16PtrFromString(text)
+	splashProcSetBkMode.Call(uintptr(hdc), splashTRANSPARENT)
+	splashProcSetTextColor.Call(uintptr(hdc), color)
+
+	hFont, _, _ := splashGdi32.NewProc("CreateFontW").Call(
+		uintptr(-fontSize), 0, 0, 0, 400, 0, 0, 0,
+		0x86, 0, 3, 0, 0x22, 0,
+	)
+	if hFont != 0 {
+		hOldFont, _, _ := splashProcSelectObj.Call(uintptr(hdc), hFont)
+		defer func() {
+			splashProcSelectObj.Call(uintptr(hdc), hOldFont)
+			splashProcDeleteObj.Call(hFont)
+		}()
+	}
+
+	var rc splashRect
+	rc.Left = x
+	rc.Top = y
+	rc.Right = x + w
+	rc.Bottom = y + h
+	splashProcDrawTextW.Call(
+		uintptr(hdc),
+		uintptr(unsafe.Pointer(textPtr)),
+		^uintptr(0), // cchText = -1（以 NUL 结尾计长）
+		uintptr(unsafe.Pointer(&rc)),
+		uintptr(splashDT_WORDBREAK|splashDT_CENTER),
+	)
 }
 
 func splashDrawButton(hdc syscall.Handle, text string, r splashRect, bgColor, textColor uintptr) {
@@ -958,46 +1005,53 @@ func SetSplashFailed(ss *SplashState, msg string) {
 }
 
 // ShowSplashFatal 致命错误（#58）：环境损坏/后端反复失败。
-// 显示 标题+正文+「打开下载页」按钮；version 显示已移除，版本只在设置→关于。
+// 显示 标题+正文（可折行）+「打开下载页/打开日志/强制退出」三按钮；版本只在设置→关于。
 func ShowSplashFatal(ss *SplashState, title, msg, btnText string) {
 	if ss == nil {
 		return
+	}
+	if btnText == "" {
+		btnText = "打开下载页"
 	}
 	ss.failed = true
 	ss.failTitle = title
 	ss.failMsg = msg
 	ss.downloadURL = "https://github.com/zwq871482439/sidemate/releases/latest"
-	// 下载按钮放左侧，日志居中，强退右侧（与卡片底部的 sBtnY 对齐）
+	ss.downloadBtnText = btnText
+	// 三按钮布局（卡宽 380：下载 140 / 日志 100 / 强退 96，互不重叠）
 	cx := sErrCardX
 	cy := sBtnY
 	btnH := int32(30 * dpi / 96)
 	ss.downloadBtnRect = splashRect{
-		Left:   cx + 12*dpi/96,
+		Left:   cx + 10*dpi/96,
 		Top:    cy,
-		Right:  cx + 12*dpi/96 + 150*dpi/96,
+		Right:  cx + 150*dpi/96,
 		Bottom: cy + btnH,
 	}
 	ss.openLogBtnRect = splashRect{
-		Left:   cx + 150*dpi/96 + 24*dpi/96,
+		Left:   cx + 158*dpi/96,
 		Top:    cy,
-		Right:  cx + 150*dpi/96 + 24*dpi/96 + 130*dpi/96,
+		Right:  cx + 258*dpi/96,
 		Bottom: cy + btnH,
 	}
 	ss.forceExitRect = splashRect{
-		Left:   sErrCardX + sErrCardW - 96*dpi/96 - 12*dpi/96,
+		Left:   cx + 266*dpi/96,
 		Top:    cy,
-		Right:  sErrCardX + sErrCardW - 12*dpi/96,
+		Right:  cx + 362*dpi/96,
 		Bottom: cy + btnH,
 	}
 	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
 }
 
 // splashOpenURL 用系统默认浏览器打开 URL
+// （#58 评审修复：ShellExecuteW 参数顺序 hwnd, verb, file, params, dir, show）
 func splashOpenURL(url string) {
-	shell32 := syscall.NewLazyDLL("shell32.dll")
-	open := shell32.NewProc("ShellExecuteW")
-	u, _ := syscall.UTF16PtrFromString(url)
-	open.Call(0, uintptr(unsafe.Pointer(nil)), uintptr(unsafe.Pointer(u16ptr("open"))), uintptr(unsafe.Pointer(u)), 0, 5)
+	u := u16ptr(url)
+	verb := u16ptr("open")
+	ret, _, _ := splashProcShellExecW.Call(0, uintptr(unsafe.Pointer(verb)), uintptr(unsafe.Pointer(u)), 0, 0, 5) // SW_SHOW
+	if ret <= 32 {
+		log.Printf("[Splash] 打开下载页失败 (ShellExecuteW ret=%d): %s", ret, url)
+	}
 }
 
 func u16ptr(s string) *uint16 { u, _ := syscall.UTF16PtrFromString(s); return u }

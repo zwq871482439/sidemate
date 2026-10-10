@@ -1100,8 +1100,27 @@ func main() {
 	watchdogCtx, watchdogCancel = context.WithCancel(context.Background())
 	// P7-4: ollamaProc/newOllamaCmd 传 nil（推理引擎由 Python 后端管理）
 	go startWatchdog(cfg, serverProc, nil, newPythonCmd, nil, watchdogCtx, func(reason string) {
-		// #58：后端反复失败 → 启动画面修复指引（不自动修复，避免用户干等）
-		ShowSplashFatal(splash, "后端服务启动失败", reason+"。请重新运行安装包修复，不会删除你的数据。", "打开下载页")
+		// #58：后端反复失败 → 修复指引（不自动修复，避免用户干等）。
+		// 运行期触发时启动画面早已 CloseSplash（splash=nil），直接 ShowSplashFatal 打在
+		// 已销毁窗口上不会显示——须在本线程重建启动画面自展示自泵（窗口消息队列按线程，LockOSThread）。
+		go func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			fs := CreateSplashWindow(appDir, launcherLogFile)
+			if fs == nil {
+				log.Println("[Launcher] ✖ 修复指引窗口创建失败，直接终止")
+				terminateJob()
+				os.Exit(1)
+			}
+			ShowSplashFatal(fs, "后端服务启动失败", reason+"。请重新运行安装包修复，不会删除你的数据。", "打开下载页")
+			log.Println("[Launcher] ✖ 后端反复失败，已展示修复指引，等待用户处理")
+			for !fs.userClosed {
+				SplashPumpMessages()
+				time.Sleep(100 * time.Millisecond)
+			}
+			terminateJob()
+			os.Exit(1)
+		}()
 	})
 	log.Println("[Launcher] 看门狗已启动（健康监测 + 自动重启）")
 
