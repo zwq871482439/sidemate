@@ -3,7 +3,6 @@
 package main
 
 import (
-	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -18,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -25,8 +25,8 @@ import (
 
 // ===== 配置 =====
 
-// 版本号（编译时通过 -ldflags 注入，默认值兜底）
-var AppVersion = "v0.11.1-rc.3"
+// #58：launcher 不再持有/显示版本号。版本号唯一来源是 server/config.py，
+// 界面上只在「设置 → 关于」显示；编译注入（-X main.AppVersion）同步移除。
 
 type Config struct {
 	AppDir       string // 应用根目录
@@ -38,7 +38,6 @@ type Config struct {
 	ServerScript string // FastAPI 入口脚本
 	ServerPort   int    // FastAPI 监听端口
 	BrowserURL   string // 浏览器打开的 URL
-	Version      string // 版本标识
 }
 
 func loadConfig() *Config {
@@ -55,7 +54,6 @@ func loadConfig() *Config {
 		PythonExe:    filepath.Join(appDir, "python", "python.exe"),
 		ServerScript: filepath.Join(appDir, "server", "server.py"),
 		ServerPort:   8976,
-		Version:      AppVersion,
 	}
 
 	configFile := filepath.Join(appDir, "launcher.json")
@@ -71,41 +69,10 @@ func loadConfig() *Config {
 			if v, ok := overrides["ollama_host"].(string); ok {
 				cfg.OllamaHost = v
 			}
-			// P6 统一版本号：launcher.json 的 version 字段已废弃
-			// 版本号唯一来源：server/config.py
-			// 如果 launcher.json 仍带 version，记日志但不采用（向后兼容）
 			if v, ok := overrides["version"].(string); ok {
-				log.Printf("[Launcher] launcher.json 含旧版 version=%s，已忽略（统一从 config.py 读取）", v)
+				log.Printf("[Launcher] launcher.json 含旧版 version=%s，已忽略（版本号只在设置→关于显示）", v)
 			}
 		}
-	}
-
-	// P6 统一版本号：从 server/config.py 读取 version 字段
-	configPyPath := filepath.Join(appDir, "server", "config.py")
-	if data, err := os.ReadFile(configPyPath); err == nil {
-		content := string(data)
-		// 匹配 "version": "x.y.z"
-		lines := strings.Split(content, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.Contains(line, "\"version\"") {
-				// 提取引号内的值
-				idx := strings.Index(line, ":")
-				if idx > 0 {
-					val := strings.TrimSpace(line[idx+1:])
-					// 去掉尾逗号、引号、空格
-					val = strings.TrimRight(val, ", \t\r")
-					val = strings.Trim(val, "\"'")
-					if val != "" {
-						cfg.Version = val
-						log.Printf("[Launcher] 版本号从 config.py 读取: %s", val)
-						break
-					}
-				}
-			}
-		}
-	} else {
-		log.Printf("[Launcher] 警告: 无法读取 server/config.py，使用编译时版本: %s", cfg.Version)
 	}
 
 	cfg.BrowserURL = fmt.Sprintf("http://127.0.0.1:%d", cfg.ServerPort)
@@ -779,7 +746,7 @@ func main() {
 		log.SetOutput(lf)
 	}
 
-	log.Println("[Launcher] 桌伴 Sidemate " + AppVersion + " — Launcher")
+	log.Println("[Launcher] 桌伴 Sidemate — Launcher")
 	log.Println("========================================")
 
 	cfg := loadConfig()
@@ -824,7 +791,7 @@ func main() {
 	// ---- Splash 启动画面 ----
 	var splash *SplashState
 	if runtime.GOOS == "windows" {
-		splash = CreateSplashWindow(appDir, cfg.Version, launcherLogFile)
+		splash = CreateSplashWindow(appDir, launcherLogFile)
 		if splash != nil {
 			defer CloseSplash(splash)
 		}
@@ -840,10 +807,10 @@ func main() {
 	}
 	openBrowserFn := func() { openBrowser(cfg.BrowserURL) }
 	showPanelFn := func() {
-		ShowStatusPanel(cfg.Version, cfg.BrowserURL, cfg.OllamaPort, cfg.ServerPort, trayHIcon, openBrowserFn)
+		ShowStatusPanel(cfg.BrowserURL, cfg.OllamaPort, cfg.ServerPort, trayHIcon, openBrowserFn)
 	}
 	if runtime.GOOS == "windows" && splash != nil {
-		_ = InitTray("SidemateTrayClass", "桌伴 Sidemate（启动中）", openBrowserFn, cancelStartup, showPanelFn, cfg.Version, cfg.BrowserURL)
+		_ = InitTray("SidemateTrayClass", "桌伴 Sidemate（启动中）", openBrowserFn, cancelStartup, showPanelFn, cfg.BrowserURL)
 		log.Println("[Launcher] 启动期托盘已创建（右键可取消启动）")
 	}
 
@@ -888,16 +855,12 @@ func main() {
 	// （原来的 waitForOllamaWithProgress 重试循环已删除）
 
 	// ---- 1.5 环境指纹校验（启动 FastAPI 之前）----
+	// #58 方案 A：删除首启硬链接备份（原 1.6，Patch5 T04）。环境损坏不再自动修复，
+	// 由 checkAndRepairEnv 在启动画面给出「重新运行安装包修复」提示后终止启动。
 	SplashPumpMessages()
-	checkAndRepairEnv(appDir, splash)
-
-	// ---- 1.6 硬链接备份初始化（Patch5 T04：首次启动创建依赖双副本）----
-	sitePackagesDir := filepath.Join(appDir, "python", "Lib", "site-packages")
-	if _, err := os.Stat(sitePackagesDir); err == nil {
-		log.Println("[Launcher] 初始化依赖硬链接备份...")
-		if err := setupHardlinkBackup(sitePackagesDir); err != nil {
-			log.Printf("[Launcher] ⚠ 硬链接备份初始化失败: %v（不影响运行）", err)
-		}
+	if !checkAndRepairEnv(appDir, splash) {
+		waitFatalSplash(splash)
+		return
 	}
 
 	// ---- 2. 启动 FastAPI ----
@@ -1137,7 +1100,37 @@ func main() {
 	// 实际启动看门狗
 	watchdogCtx, watchdogCancel = context.WithCancel(context.Background())
 	// P7-4: ollamaProc/newOllamaCmd 传 nil（推理引擎由 Python 后端管理）
-	go startWatchdog(cfg, serverProc, nil, newPythonCmd, nil, watchdogCtx)
+	// #58：后端反复失败 → 修复指引（不自动修复，避免用户干等）。
+	// 实测教训（give-up 演练）：① 计数器重置后 give-up 会再次触发——须 one-shot，
+	// 否则第二次 CreateSplashWindow 走到兜底退出；② 运行期启动画面早已 CloseSplash，
+	// 直接 ShowSplashFatal 打在已销毁窗口上不会显示——须在本线程重建启动画面自展示自泵
+	// （窗口消息队列按线程，LockOSThread）；③ 后台进程的新窗口会被前台全屏窗口（启动时
+	// 打开的浏览器）压住——重建后显式 BringToFront。
+	var backendGiveUpOnce sync.Once
+	go startWatchdog(cfg, serverProc, nil, newPythonCmd, nil, watchdogCtx, func(reason string) {
+		backendGiveUpOnce.Do(func() {
+			go func() {
+				runtime.LockOSThread()
+				defer runtime.UnlockOSThread()
+				fs := CreateSplashWindow(appDir, launcherLogFile)
+				if fs == nil {
+					// B 评审：指引窗口建不起来也不退出——托盘还在，用户可自行退出或修复；
+					// 后端已死此时强杀只会让用户丢失现场
+					log.Println("[Launcher] ✖ 修复指引窗口创建失败（保持托盘运行，用户可从托盘退出）")
+					return
+				}
+				splashBringToFront(fs.hWnd)
+				ShowSplashFatal(fs, "后端服务启动失败", reason+"。请重新运行安装包修复，不会删除你的数据。", "打开下载页")
+				log.Println("[Launcher] ✖ 后端反复失败，已展示修复指引，等待用户处理")
+				for !fs.userClosed {
+					SplashPumpMessages()
+					time.Sleep(100 * time.Millisecond)
+				}
+				terminateJob()
+				os.Exit(1)
+			}()
+		})
+	})
 	log.Println("[Launcher] 看门狗已启动（健康监测 + 自动重启）")
 
 	// 至少停留 3s
@@ -1200,7 +1193,7 @@ func main() {
 
 	// 托盘左键 → 状态面板
 	showPanel := func() {
-		ShowStatusPanel(cfg.Version, cfg.BrowserURL, cfg.OllamaPort, cfg.ServerPort, trayHIcon, openUrl)
+		ShowStatusPanel(cfg.BrowserURL, cfg.OllamaPort, cfg.ServerPort, trayHIcon, openUrl)
 	}
 
 	// Patch5：启动期已创建托盘（cancelStartup），现在切换退出回调为正式 shutdown
@@ -1237,33 +1230,27 @@ type fingerprintJSON struct {
 	GeneratedAt string            `json:"generated_at"`
 }
 
-// checkAndRepairEnv 检查 site-packages 环境指纹，不匹配则从 backup 恢复
-func checkAndRepairEnv(appDir string, splash *SplashState) {
+// checkAndRepairEnv 启动前只做核心包 SHA256 校验（毫秒级）。
+// #58 方案 A：不再自动修复（硬链接备份与 snapshot 恢复均已删除）。
+// 校验不过 → 启动画面显示修复指引（重新运行安装包，保留数据）+ 打开下载页按钮，返回 false 终止启动。
+func checkAndRepairEnv(appDir string, splash *SplashState) bool {
 	pythonDir := filepath.Join(appDir, "python")
 	sitePackagesDir := filepath.Join(pythonDir, "Lib", "site-packages")
 	fpPath := filepath.Join(pythonDir, ".fingerprint")
-	snapshotPath := filepath.Join(appDir, "backup", "site_packages.zip")
 
-	// 1. 检查 .fingerprint 文件是否存在
 	fpData, err := os.ReadFile(fpPath)
 	if err != nil {
-		// 首次启动（ISS 安装后首次运行会由 Python 侧生成指纹）
-		// 跳过校验，让 Python 侧生成
+		// 首次启动：指纹由 Python 侧在服务就绪后生成，跳过校验
 		log.Printf("[ENV-CHECK] .fingerprint 不存在，跳过校验（首次启动）")
-		return
+		return true
 	}
 
-	// 2. 解析指纹
 	var fp fingerprintJSON
 	if err := json.Unmarshal(fpData, &fp); err != nil {
 		log.Printf("[ENV-CHECK] .fingerprint 解析失败: %v，跳过", err)
-		return
+		return true
 	}
 
-	// 3. 快速校验：核心包 SHA256（P5 优化：跳过全量文件遍历，39043 文件太慢）
-	// 之前用 countSitePackages 遍历全部文件做数量/大小比对，启动卡 10+ 秒
-	// 现在直接走核心包 SHA256 校验（5 个包，前 1MB，毫秒级）
-	// 如果核心包校验通过，说明环境基本完整；失败才走恢复
 	log.Printf("[ENV-CHECK] 核心包 SHA256 校验（期望: %d 文件, %d 字节）...",
 		fp.TotalFiles, fp.TotalBytes)
 	brokenPkgs := []string{}
@@ -1280,99 +1267,27 @@ func checkAndRepairEnv(appDir string, splash *SplashState) {
 	}
 
 	if len(brokenPkgs) > 0 {
-		// 优先从硬链接备份恢复（零磁盘开销，快）
-		log.Printf("[ENV-CHECK] 尝试从硬链接备份恢复 %d 个损坏包: %v", len(brokenPkgs), brokenPkgs)
-		if err := verifyAndRepair(sitePackagesDir, brokenPkgs); err != nil {
-			log.Printf("[ENV-CHECK] 硬链接恢复失败: %v，尝试 snapshot 恢复", err)
-			// 降级到 snapshot 恢复
-			restoreFromSnapshot(appDir, splash, snapshotPath, sitePackagesDir, pythonDir)
-		} else {
-			log.Printf("[ENV-CHECK] ✅ 硬链接恢复完成")
-		}
-		return
+		log.Printf("[ENV-CHECK] ✖ 环境损坏（%d 个核心包）：%v —— 不自动修复，提示用户重新运行安装包", len(brokenPkgs), brokenPkgs)
+		ShowSplashFatal(splash,
+			"运行环境文件损坏",
+			"请重新运行安装包修复，不会删除你的会话、知识库与设置等数据。",
+			"打开下载页")
+		return false
 	}
 
 	log.Printf("[ENV-CHECK] ✅ 环境指纹校验通过")
+	return true
 }
 
-// restoreFromSnapshot 从 backup/site_packages.zip 恢复 site-packages
-func restoreFromSnapshot(appDir string, _ *SplashState, snapshotPath, sitePackagesDir, pythonDir string) {
-	if _, err := os.Stat(snapshotPath); err != nil {
-		log.Printf("[ENV-CHECK] ⚠ snapshot 不存在: %s，无法自动恢复", snapshotPath)
+// waitFatalSplash 致命错误提示后保持启动画面，等待用户点关闭/下载页（不继续启动）
+func waitFatalSplash(splash *SplashState) {
+	if splash == nil {
 		return
 	}
-
-	log.Printf("[ENV-CHECK] 从 snapshot 恢复: %s", snapshotPath)
-	SplashPumpMessages()
-
-	// 1. 删除当前 site-packages
-	os.RemoveAll(sitePackagesDir)
-	os.MkdirAll(sitePackagesDir, 0755)
-
-	// 2. 解压 snapshot
-	err := unzipToDir(snapshotPath, sitePackagesDir)
-	if err != nil {
-		log.Printf("[ENV-CHECK] ⚠ 解压 snapshot 失败: %v", err)
-		return
+	for !splash.userClosed {
+		SplashPumpMessages()
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	// 3. 重新生成 .fingerprint（调用 Python）
-	regenScript := `
-import json, hashlib, os, sys
-from datetime import datetime
-
-sp = os.path.join(sys.argv[1], "Lib", "site-packages")
-total_files, total_bytes = 0, 0
-for root, dirs, files in os.walk(sp):
-    for f in files:
-        try:
-            total_bytes += os.path.getsize(os.path.join(root, f))
-            total_files += 1
-        except: pass
-
-core_pkgs = ["torch", "transformers", "sentence_transformers", "numpy", "faiss"]
-core_hashes = {}
-for pkg in core_pkgs:
-    init = os.path.join(sp, pkg, "__init__.py")
-    if os.path.isfile(init):
-        h = hashlib.sha256(open(init,"rb").read()).hexdigest()
-        core_hashes[pkg] = h
-    else:
-        core_hashes[pkg] = ""
-
-fp = {"total_files": total_files, "total_bytes": total_bytes, "core_hashes": core_hashes, "generated_at": datetime.now().isoformat()}
-out = os.path.join(sys.argv[1], ".fingerprint")
-json.dump(fp, open(out, "w"), indent=2)
-print(f"OK: {total_files} files, {total_bytes} bytes")
-`
-	pythonExe := filepath.Join(appDir, "python", "python.exe")
-	cmd := exec.Command(pythonExe, "-c", regenScript, pythonDir)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("[ENV-CHECK] ⚠ 重新生成指纹失败: %v (%s)", err, string(out))
-	} else {
-		log.Printf("[ENV-CHECK] 指纹已重新生成: %s", strings.TrimSpace(string(out)))
-	}
-
-	log.Printf("[ENV-CHECK] ✅ 环境已从备份恢复")
-	SplashPumpMessages()
-}
-
-// countSitePackages 统计 site-packages 目录的文件数和总大小
-func countSitePackages(dir string) (int, int64) {
-	count := 0
-	var totalSize int64
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() {
-			count++
-			totalSize += info.Size()
-		}
-		return nil
-	})
-	return count, totalSize
 }
 
 // sha256FileGo 计算文件的 SHA256 哈希（前 1MB，加速启动）
@@ -1393,46 +1308,3 @@ func sha256FileGo(path string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-// unzipToDir 解压 zip 文件到指定目录
-func unzipToDir(zipPath, destDir string) error {
-	r, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return fmt.Errorf("打开 zip 失败: %w", err)
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		fpath := filepath.Join(destDir, f.Name)
-
-		// 安全检查：防止 zip slip
-		if !strings.HasPrefix(filepath.Clean(fpath), filepath.Clean(destDir)+string(os.PathSeparator)) {
-			continue
-		}
-
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, 0755)
-			continue
-		}
-
-		os.MkdirAll(filepath.Dir(fpath), 0755)
-
-		outFile, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
-		if err != nil {
-			continue // 跳过无法创建的文件
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			outFile.Close()
-			continue
-		}
-
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
-		if err != nil {
-			continue
-		}
-	}
-	return nil
-}

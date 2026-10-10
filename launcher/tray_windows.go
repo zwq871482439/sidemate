@@ -125,7 +125,6 @@ var (
 
 	// 托盘图标句柄（给面板复用）
 	trayHIcon   syscall.Handle
-	trayVersion string
 	trayBrowserURL string
 
 	// Patch5: 启动期标志 + 取消启动回调（直接调用，不等 TrayMessageLoop）
@@ -271,11 +270,10 @@ func UpdateTrayCallbacks(tip string, onOpen func(), onExit func(), onPanel func(
 }
 
 // InitTray — 创建隐藏窗口 + 托盘图标
-func InitTray(className string, tip string, onOpen func(), onExit func(), onPanel func(), version string, browserURL string) error {
+func InitTray(className string, tip string, onOpen func(), onExit func(), onPanel func(), browserURL string) error {
 	trayOnOpen = onOpen
 	trayOnExit = onExit
 	trayOnPanel = onPanel
-	trayVersion = version
 	trayBrowserURL = browserURL
 	trayStartupPhase = true          // 启动期
 	trayCancelStartup = onExit       // 启动期 onExit 即 cancelStartup

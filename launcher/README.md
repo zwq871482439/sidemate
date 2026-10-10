@@ -22,17 +22,20 @@ cmd.SysProcAttr = &syscall.SysProcAttr{
 
 ---
 
-## 2. 版本号注入 + GUI 子系统（ldflags）
+## 2. GUI 子系统（ldflags）
+
+> #58（rc.4）起：launcher 不再持有/显示版本号。没有 `AppVersion` 变量、
+> 没有 `-X` 注入、也不在启动时读 config.py 的版本。版本号唯一来源是
+> `server/config.py`，界面上只在「设置 → 关于」显示。
 
 **编译命令**必须用 ldflags 注入版本号 + windowsgui 子系统：
 
 ```bash
-go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.7" -o Sidemate.exe .
+go build -ldflags "-H windowsgui" -o Sidemate.exe .
 ```
 
 **两个 ldflags 都必须**：
 - `-H windowsgui`：**铁律！不加会弹 cmd 窗口**（Sidemate.exe 本身是 GUI 应用，不是 console 应用）
-- `-X main.AppVersion=v0.9.7`：版本号注入
 
 **不要硬编码版本号到 main.go**（虽然 `var AppVersion = "v0.9.7"` 是默认兜底）
 
@@ -72,7 +75,7 @@ go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.7" -o Sidemate.exe .
 
 ```bash
 cd C:\Sidemate\launcher
-go build -ldflags "-H windowsgui -X main.AppVersion=v0.9.7" -o Sidemate.exe .
+go build -ldflags "-H windowsgui" -o Sidemate.exe .
 ```
 
 验证编译成功 + Sidemate.exe 大小 ~9.6MB
