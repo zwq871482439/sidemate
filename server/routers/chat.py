@@ -240,6 +240,22 @@ def _is_memory_card_accept(question: str, answer: str) -> bool:
     return a == "同意写入" and "记忆" in q
 
 
+def _memory_accept_note(question: str) -> str:
+    """#41 D4：记忆卡同意后的本轮 user 指令（注入工具提醒）。
+
+    统计（#43 派活⑭，10 次×3 模型）：同意后真正写入仅 4–7/10，且出现无工具
+    调用却回复「已记住」的谎称。根因在提示层——同意回执只是一句「同意写入」，
+    模型没有必须落盘的强约束。本指令把记忆原文与「必须 save_memory、未成功
+    不得声称已记住」一并交给模型（与 plan_execute/skill_install 的系统指令
+    注入同款机制）。
+    """
+    return ("[系统指令：用户已在记忆确认卡上点「同意写入」。本轮必须调用 save_memory 工具"
+            "写入这条记忆（text 用下面这行原文，section 按内容选），不要再发确认卡：\n"
+            "%s\n"
+            "只有 save_memory 返回成功后才允许对用户说「已记住」；调用失败要如实说明，"
+            "不要在未写入时声称已记住。]" % ((question or "").strip()))
+
+
 @router.post("/api/chat")
 async def api_chat(req: ChatRequest):
     """非流式对话"""
@@ -425,6 +441,9 @@ async def api_chat_stream(request: Request):
                                      os.path.basename(os.path.normpath(chat_file)))
                     except Exception as _e:
                         log.warning("[CHAT] 记忆确认记录落盘失败: %s", str(_e)[:80])
+                    # D4：同意回执只回传固定文案「同意写入」，模型缺落盘约束——
+                    # 注入带记忆原文的工具指令（存档内容仍是原始回执，见 _um 构建）
+                    message = _memory_accept_note(_ca.get("question", ""))
             _saved_user = append_message(chat_file, _um)
             # S2（#14-② 方案 C 前半）：首条真实 user 消息落盘即截取命名——
             # 确定性、不等回合完成、不调模型（堵「首轮失败/中断后永不命名」的洞，
