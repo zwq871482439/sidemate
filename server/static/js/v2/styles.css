@@ -1899,10 +1899,13 @@ body.narrow #viewer.open ~ .vw-backdrop {
 .prof-wrap.open .prof-chip { border-color: var(--d1-gold); }
 .prof-wrap.open .chev { transform: rotate(180deg); }
 .prof-menu {
-  position: absolute; top: 36px; right: 0; width: 250px;
+  /* #58-7：0.11.1 把触发按钮并进顶栏左侧的模型标签后，right:0 会让菜单向左
+     伸进侧栏——改左对齐向主区展开；并加 max-height 防长列表溢出视口 */
+  position: absolute; top: 36px; left: 0; right: auto; width: 250px;
   background: #fff; border: 1px solid var(--d1-n-line); border-radius: 10px;
   box-shadow: 0 4px 12px rgba(15,43,70,.10), 0 16px 48px rgba(15,43,70,.12);
   padding: 5px; display: none; z-index: 30;
+  max-height: 70vh; overflow-y: auto;
 }
 .prof-wrap.open .prof-menu { display: block; }
 .pm-cap { font-size: 11.5px; color: var(--d1-ink-3); padding: 6px 9px 4px; letter-spacing: .5px; }
