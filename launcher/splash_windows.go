@@ -368,10 +368,16 @@ func CreateSplashWindow(appDir string, logPath string) *SplashState {
 		HCursor:       syscall.Handle(hCursor),
 		LpszClassName: className,
 	}
-	ret, _, _ := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	ret, _, regErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 	if ret == 0 {
-		log.Println("[Splash] RegisterClassExW 失败")
-		return nil
+		// 1410 = ERROR_CLASS_ALREADY_EXISTS：旧 splash 窗口还活着导致前面 Unregister 失败。
+		// 类已注册且 wndproc 相同，直接复用继续建窗（运行期重建修复指引窗口的场景）。
+		if ne, ok := regErr.(syscall.Errno); ok && ne == 1410 {
+			log.Println("[Splash] 窗口类已存在，复用")
+		} else {
+			log.Printf("[Splash] RegisterClassExW 失败 (err=%v)", regErr)
+			return nil
+		}
 	}
 
 	// 屏幕居中
@@ -1055,6 +1061,21 @@ func splashOpenURL(url string) {
 }
 
 func u16ptr(s string) *uint16 { u, _ := syscall.UTF16PtrFromString(s); return u }
+
+// splashBringToFront 把窗口提到前台并重申置顶。
+// 运行期重建的修复指引窗口虽带 WS_EX_TOPMOST，但后台进程的新窗口可能被
+// 前台全屏窗口（如启动时打开的浏览器）压住——显式重申一次。
+func splashBringToFront(hWnd syscall.Handle) {
+	if hWnd == 0 {
+		return
+	}
+	const swpNoSize, swpNoMove = 0x0001, 0x0002
+	const hwndTopmost = ^uintptr(0) // (uintptr)(-1)
+	user32.NewProc("SetForegroundWindow").Call(uintptr(hWnd))
+	user32.NewProc("BringWindowToTop").Call(uintptr(hWnd))
+	user32.NewProc("SetWindowPos").Call(
+		uintptr(hWnd), hwndTopmost, 0, 0, 0, 0, swpNoSize|swpNoMove)
+}
 
 // CloseSplash 关闭并销毁 splash 窗口
 func CloseSplash(ss *SplashState) {

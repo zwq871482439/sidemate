@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -1099,28 +1100,35 @@ func main() {
 	// 实际启动看门狗
 	watchdogCtx, watchdogCancel = context.WithCancel(context.Background())
 	// P7-4: ollamaProc/newOllamaCmd 传 nil（推理引擎由 Python 后端管理）
+	// #58：后端反复失败 → 修复指引（不自动修复，避免用户干等）。
+	// 实测教训（give-up 演练）：① 计数器重置后 give-up 会再次触发——须 one-shot，
+	// 否则第二次 CreateSplashWindow 走到兜底退出；② 运行期启动画面早已 CloseSplash，
+	// 直接 ShowSplashFatal 打在已销毁窗口上不会显示——须在本线程重建启动画面自展示自泵
+	// （窗口消息队列按线程，LockOSThread）；③ 后台进程的新窗口会被前台全屏窗口（启动时
+	// 打开的浏览器）压住——重建后显式 BringToFront。
+	var backendGiveUpOnce sync.Once
 	go startWatchdog(cfg, serverProc, nil, newPythonCmd, nil, watchdogCtx, func(reason string) {
-		// #58：后端反复失败 → 修复指引（不自动修复，避免用户干等）。
-		// 运行期触发时启动画面早已 CloseSplash（splash=nil），直接 ShowSplashFatal 打在
-		// 已销毁窗口上不会显示——须在本线程重建启动画面自展示自泵（窗口消息队列按线程，LockOSThread）。
-		go func() {
-			runtime.LockOSThread()
-			defer runtime.UnlockOSThread()
-			fs := CreateSplashWindow(appDir, launcherLogFile)
-			if fs == nil {
-				log.Println("[Launcher] ✖ 修复指引窗口创建失败，直接终止")
+		backendGiveUpOnce.Do(func() {
+			go func() {
+				runtime.LockOSThread()
+				defer runtime.UnlockOSThread()
+				fs := CreateSplashWindow(appDir, launcherLogFile)
+				if fs == nil {
+					log.Println("[Launcher] ✖ 修复指引窗口创建失败，直接终止")
+					terminateJob()
+					os.Exit(1)
+				}
+				splashBringToFront(fs.hWnd)
+				ShowSplashFatal(fs, "后端服务启动失败", reason+"。请重新运行安装包修复，不会删除你的数据。", "打开下载页")
+				log.Println("[Launcher] ✖ 后端反复失败，已展示修复指引，等待用户处理")
+				for !fs.userClosed {
+					SplashPumpMessages()
+					time.Sleep(100 * time.Millisecond)
+				}
 				terminateJob()
 				os.Exit(1)
-			}
-			ShowSplashFatal(fs, "后端服务启动失败", reason+"。请重新运行安装包修复，不会删除你的数据。", "打开下载页")
-			log.Println("[Launcher] ✖ 后端反复失败，已展示修复指引，等待用户处理")
-			for !fs.userClosed {
-				SplashPumpMessages()
-				time.Sleep(100 * time.Millisecond)
-			}
-			terminateJob()
-			os.Exit(1)
-		}()
+			}()
+		})
 	})
 	log.Println("[Launcher] 看门狗已启动（健康监测 + 自动重启）")
 
