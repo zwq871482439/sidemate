@@ -1114,9 +1114,10 @@ func main() {
 				defer runtime.UnlockOSThread()
 				fs := CreateSplashWindow(appDir, launcherLogFile)
 				if fs == nil {
-					log.Println("[Launcher] ✖ 修复指引窗口创建失败，直接终止")
-					terminateJob()
-					os.Exit(1)
+					// B 评审：指引窗口建不起来也不退出——托盘还在，用户可自行退出或修复；
+					// 后端已死此时强杀只会让用户丢失现场
+					log.Println("[Launcher] ✖ 修复指引窗口创建失败（保持托盘运行，用户可从托盘退出）")
+					return
 				}
 				splashBringToFront(fs.hWnd)
 				ShowSplashFatal(fs, "后端服务启动失败", reason+"。请重新运行安装包修复，不会删除你的数据。", "打开下载页")
