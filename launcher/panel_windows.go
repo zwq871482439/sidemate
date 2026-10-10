@@ -31,7 +31,6 @@ const (
 type PanelState struct {
 	hWnd          syscall.Handle
 	hIcon         syscall.Handle
-	version       string
 	browserURL    string
 	onOpenBrowser func()
 	ollamaPort    int
@@ -67,7 +66,7 @@ func panelInitDPI() int32 {
 }
 
 // ShowStatusPanel — 创建或刷新状态面板
-func ShowStatusPanel(version string, browserURL string, ollamaPort, serverPort int, hIcon syscall.Handle, onOpenBrowser func()) {
+func ShowStatusPanel(browserURL string, ollamaPort, serverPort int, hIcon syscall.Handle, onOpenBrowser func()) {
 	// 如果面板已存在，刷新状态
 	if panelState != nil && panelState.hWnd != 0 {
 		alive, _, _ := user32.NewProc("IsWindow").Call(uintptr(panelState.hWnd))
@@ -142,7 +141,6 @@ func ShowStatusPanel(version string, browserURL string, ollamaPort, serverPort i
 	panelState = &PanelState{
 		hWnd:          syscall.Handle(hWnd),
 		hIcon:         hIcon,
-		version:       version,
 		browserURL:    browserURL,
 		onOpenBrowser: onOpenBrowser,
 		ollamaPort:    ollamaPort,
@@ -277,12 +275,8 @@ func panelPaint(hWnd syscall.Handle) {
 	// 关闭 ✕
 	panelDrawTextEx(hdc, "✕", pw-sc(34), sc(4), sc(30), titleH-sc(8), int32(0x00aaaaaa), sc(13), true)
 
-	// === 版本号 ===
-	vy := titleH + sc(10)
-	panelDrawTextEx(hdc, panelState.version, 0, vy, pw, sc(18), int32(pnlColorSub), sc(11), true)
-
-	// === 分隔线 ===
-	sy := vy + sc(22)
+	// === 分隔线 ===（#58：面板不再显示版本号）
+	sy := titleH + sc(16)
 	panelDrawLine(hdc, sc(20), sy, pw-sc(20), sy, pnlColorSep)
 
 	// === 服务状态 ===

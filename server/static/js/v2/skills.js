@@ -147,7 +147,7 @@ export function createSkillsView(opts) {
               <div class="u">${esc(((s.command || '') + ' ' + (s.args || []).join(' ')).trim())}</div></div>
             <span class="mcp-cnt">${s.tools || 0} 个工具</span>
             <span class="mcp-auth ${s.status === 'connected' ? 'ok' : 'off'}">${s.status === 'connected' ? '已连接' : (s.error ? '失败' : '未连接')}</span>
-            <button class="sk-mcp-btn" data-mcp-action="disconnect" data-mcp="${esc(s.name)}">断开</button>
+            <button class="sk-mcp-btn" data-mcp-action="remove" data-mcp="${esc(s.name)}">移除</button>
           </div>`).join('') || '<div class="sk-empty">暂无本地 MCP 服务器</div>'}
         <div class="mcp-grp">${iconSvg('globe')} 远程 <span class="mcp-n">streamable http / sse</span></div>
         ${mcpServers.filter(s => s.remote).map(s => `
@@ -156,7 +156,7 @@ export function createSkillsView(opts) {
             <div class="mcp-tx"><div class="n">${esc(s.name)}</div><div class="u">${esc(s.url || '')}</div></div>
             <span class="mcp-cnt">${s.tools || 0} 个工具</span>
             <span class="mcp-auth ${s.status === 'connected' ? 'ok' : 'off'}">${s.status === 'connected' ? 'Bearer · 已连接' : (s.headers_set ? '认证失败' : '未配置密钥')}</span>
-            <button class="sk-mcp-btn" data-mcp-action="disconnect" data-mcp="${esc(s.name)}">断开</button>
+            <button class="sk-mcp-btn" data-mcp-action="remove" data-mcp="${esc(s.name)}">移除</button>
           </div>`).join('') || '<div class="sk-empty">暂无远程 MCP（示例 GitHub：https://api.githubcopilot.com/mcp/ + Bearer Token）</div>'}
         <div class="sk-add" id="skAddMcp">
           ${iconSvg('plus')} 添加 MCP 服务器（本地 stdio / 远程 HTTP）
@@ -228,10 +228,14 @@ export function createSkillsView(opts) {
       });
     });
 
-    // MCP 断开
+    // MCP 移除（#58-6：原「断开」实际是删除配置——改名为「移除」并加确认）
     root.querySelectorAll('[data-mcp-action]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        await fetch('/api/mcp/servers/' + encodeURIComponent(btn.dataset.mcp), { method: 'DELETE' }).catch(() => {});
+        const name = btn.dataset.mcp;
+        const ok = await uiConfirm('移除 MCP 服务器「' + name + '」？
+这会删除它的配置（不是断开重连）。');
+        if (!ok) return;
+        await fetch('/api/mcp/servers/' + encodeURIComponent(name), { method: 'DELETE' }).catch(() => {});
         load();
       });
     });

@@ -620,7 +620,7 @@ async def api_env_repair(request: Request):
 
     if not safe_packages:
         return JSONResponse({
-            "error": "没有可修复的包（大包请重启由启动器恢复，或包不在允许列表中）",
+            "error": "没有可修复的包（大包如 torch/transformers/faiss 请重新运行安装包修复（保留数据），或包不在允许列表中）",
             "skipped": skipped,
             "invalid": invalid,
         }, status_code=400)

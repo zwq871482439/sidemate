@@ -142,7 +142,6 @@ type SplashState struct {
 	hWnd    syscall.Handle
 	hIcon   syscall.Handle
 	steps   [3]SplashStep // 保留数组兼容旧 API（不再用于显示，但仍用于错误状态等）
-	version string
 	logPath string
 	failed  bool
 	failMsg string
@@ -167,6 +166,12 @@ type SplashState struct {
 	closeBtnRect   splashRect
 	openLogBtnRect splashRect
 	forceExitRect  splashRect
+	downloadBtnRect splashRect
+
+	// #58：致命错误（环境损坏/后端反复起不来）时的标题与下载按钮
+	failTitle   string
+	downloadURL string
+	userClosed  bool
 }
 
 type splashRect struct {
@@ -294,10 +299,19 @@ func splashWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uint
 			// Patch5：X 按钮改为"最小化到托盘"（不再杀进程）
 			// 原行为 os.Exit(0) 会让用户误以为"关掉窗口=正常"，实际杀掉所有子进程
 			log.Println("[Splash] 用户点击最小化，启动继续在后台进行")
+			if ss.failed {
+				// 致命错误模式下，用户关闭 = 放弃等待，终止启动流程
+				ss.userClosed = true
+			}
 			splashProcShowWindow.Call(uintptr(ss.hWnd), 0) // SW_HIDE = 0
 			return 0
 		}
 		if ss.failed {
+			if ss.downloadURL != "" && splashPtInRect(mx, my, ss.downloadBtnRect) {
+				log.Println("[Splash] 打开下载页")
+				splashOpenURL(ss.downloadURL)
+				return 0
+			}
 			if splashPtInRect(mx, my, ss.openLogBtnRect) {
 				log.Println("[Splash] 打开日志文件")
 				splashOpenLog(ss.logPath)
@@ -325,7 +339,7 @@ func splashWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uint
 
 // ===== CreateSplashWindow =====
 
-func CreateSplashWindow(appDir string, version string, logPath string) *SplashState {
+func CreateSplashWindow(appDir string, logPath string) *SplashState {
 	// DPI 感知初始化
 	splashInitDPI()
 
@@ -413,7 +427,6 @@ func CreateSplashWindow(appDir string, version string, logPath string) *SplashSt
 	ss := &SplashState{
 		hWnd:    syscall.Handle(hWnd),
 		hIcon:   hIcon,
-		version: version,
 		logPath: logPath,
 		steps: [3]SplashStep{
 			{Status: StepWaiting, Text: "等待中"},
@@ -494,18 +507,13 @@ func splashPaint(hdc syscall.Handle, ss *SplashState) {
 		)
 	}
 
-	// --- 版本行（拆两行：产品名 + 版本号）---
-	verY := logoY + sLogoBox + 14*dpi/96 // 与 Logo 拉开间距（两行更高，上间距略缩）
+	// --- 产品名行（#58：不再显示版本号，版本只在「设置 → 关于」）---
+	verY := logoY + sLogoBox + 14*dpi/96
 	verFontSize := 16 * dpi / 96
-	// 第一行：产品名（主标题色）
 	splashDrawTextEx(hdc, "桌伴 Sidemate", verFontSize, 0, verY, sW, verFontSize+8*dpi/96, splashColorTitleBG, true)
-	// 第二行：版本号（灰色副标题色，小一号）
-	verFontSize2 := 13 * dpi / 96
-	verY2 := verY + verFontSize + 2*dpi/96
-	splashDrawTextEx(hdc, ss.version, verFontSize2, 0, verY2, sW, verFontSize2+6*dpi/96, splashColorSubtitle, true)
 
 	// --- 分隔线 ---
-	sepY := verY2 + verFontSize2 + 14*dpi/96 // 适配两行版本行的新高度
+	sepY := verY + verFontSize + 14*dpi/96
 	sepPen, _, _ := splashProcCreatePen.Call(0, 1, splashColorWait)
 	hOldSepPen, _, _ := splashProcSelectObj.Call(uintptr(hdc), sepPen)
 	splashProcMoveToEx.Call(uintptr(hdc), uintptr(40*dpi/96), uintptr(sepY), 0)
@@ -687,10 +695,23 @@ func splashDrawErrorCard(hdc syscall.Handle, ss *SplashState) {
 	splashProcDeleteObj.Call(hBrush)
 	splashProcDeleteObj.Call(hPen)
 
-	// 错误文字
+	// 错误标题（#58：环境损坏指引）
+	titleFontSize := 15 * dpi / 96
+	if ss.failTitle != "" {
+		splashDrawTextEx(hdc, ss.failTitle, titleFontSize, sErrCardX, sErrCardY+6*dpi/96, sErrCardW, titleFontSize+6*dpi/96, splashColorFail, true)
+	}
+	// 错误正文
 	errFontSize := 13 * dpi / 96
-	splashDrawTextEx(hdc, ss.failMsg, errFontSize, sErrCardX, sErrCardY+6*dpi/96, sErrCardW, errFontSize+6*dpi/96, splashColorFail, true)
+	msgY := sErrCardY + 6*dpi/96
+	if ss.failTitle != "" {
+		msgY += titleFontSize + 4*dpi/96
+	}
+	splashDrawTextEx(hdc, ss.failMsg, errFontSize, sErrCardX, msgY, sErrCardW, errFontSize+6*dpi/96, splashColorFail, true)
 
+	// "打开下载页" 按钮（仅致命模式）
+	if ss.downloadURL != "" {
+		splashDrawButton(hdc, "打开下载页", ss.downloadBtnRect, splashColorRun, splashColorWhite)
+	}
 	// "打开日志" 按钮
 	splashDrawButton(hdc, "打开日志", ss.openLogBtnRect, splashColorRun, splashColorWhite)
 	// "强制退出" 按钮
@@ -935,6 +956,51 @@ func SetSplashFailed(ss *SplashState, msg string) {
 	ss.failMsg = msg
 	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
 }
+
+// ShowSplashFatal 致命错误（#58）：环境损坏/后端反复失败。
+// 显示 标题+正文+「打开下载页」按钮；version 显示已移除，版本只在设置→关于。
+func ShowSplashFatal(ss *SplashState, title, msg, btnText string) {
+	if ss == nil {
+		return
+	}
+	ss.failed = true
+	ss.failTitle = title
+	ss.failMsg = msg
+	ss.downloadURL = "https://github.com/zwq871482439/sidemate/releases/latest"
+	// 下载按钮放左侧，日志居中，强退右侧（与卡片底部的 sBtnY 对齐）
+	cx := sErrCardX
+	cy := sBtnY
+	btnH := int32(30 * dpi / 96)
+	ss.downloadBtnRect = splashRect{
+		Left:   cx + 12*dpi/96,
+		Top:    cy,
+		Right:  cx + 12*dpi/96 + 150*dpi/96,
+		Bottom: cy + btnH,
+	}
+	ss.openLogBtnRect = splashRect{
+		Left:   cx + 150*dpi/96 + 24*dpi/96,
+		Top:    cy,
+		Right:  cx + 150*dpi/96 + 24*dpi/96 + 130*dpi/96,
+		Bottom: cy + btnH,
+	}
+	ss.forceExitRect = splashRect{
+		Left:   sErrCardX + sErrCardW - 96*dpi/96 - 12*dpi/96,
+		Top:    cy,
+		Right:  sErrCardX + sErrCardW - 12*dpi/96,
+		Bottom: cy + btnH,
+	}
+	splashProcInvalidateRect.Call(uintptr(ss.hWnd), 0, 0)
+}
+
+// splashOpenURL 用系统默认浏览器打开 URL
+func splashOpenURL(url string) {
+	shell32 := syscall.NewLazyDLL("shell32.dll")
+	open := shell32.NewProc("ShellExecuteW")
+	u, _ := syscall.UTF16PtrFromString(url)
+	open.Call(0, uintptr(unsafe.Pointer(nil)), uintptr(unsafe.Pointer(u16ptr("open"))), uintptr(unsafe.Pointer(u)), 0, 5)
+}
+
+func u16ptr(s string) *uint16 { u, _ := syscall.UTF16PtrFromString(s); return u }
 
 // CloseSplash 关闭并销毁 splash 窗口
 func CloseSplash(ss *SplashState) {

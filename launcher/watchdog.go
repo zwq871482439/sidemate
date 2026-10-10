@@ -46,6 +46,9 @@ type Watchdog struct {
 	restartTimes  []time.Time     // 重启时间戳列表（滑动窗口计数）
 	newPythonCmd  cmdRebuilder    // 重建 Python 命令的闭包
 	newOllamaCmd  cmdRebuilder    // 重建 Ollama 命令的闭包
+
+	// #58：后端反复起不来（重启次数达上限）时的致命提示回调（主侧弹启动画面修复指引）
+	OnBackendGiveUp func(reason string)
 }
 
 // startWatchdog 启动看门狗 goroutine
@@ -63,7 +66,8 @@ func startWatchdog(
 	pythonRebuilder cmdRebuilder,
 	ollamaRebuilder cmdRebuilder,
 	ctx context.Context,
-) {
+	onGiveUp func(reason string),
+) *Watchdog {
 	exePath, _ := os.Executable()
 	appDir := filepath.Dir(exePath)
 	logPath := filepath.Join(appDir, "data", "logs", "launcher.log")
@@ -80,6 +84,9 @@ func startWatchdog(
 
 	wd.log("INFO", "WATCHDOG", fmt.Sprintf("看门狗已启动（间隔%v, 阈值%d次, 上限%d次/小时）", wdCheckInterval, wdFailThreshold, wdMaxRestarts))
 
+	// 让主侧能挂致命回调（#58）
+	wd.OnBackendGiveUp = onGiveUp
+
 	ticker := time.NewTicker(wdCheckInterval)
 	defer ticker.Stop()
 
@@ -87,11 +94,13 @@ func startWatchdog(
 		select {
 		case <-ctx.Done():
 			wd.log("INFO", "WATCHDOG", "收到退出信号，看门狗停止")
-			return
+			return nil
 		case <-ticker.C:
 			wd.runCheckCycle()
 		}
 	}
+	// unreachable（for-select 直到 ctx.Done）
+	return nil
 }
 
 // runCheckCycle 执行一轮健康检查
@@ -127,7 +136,10 @@ func (wd *Watchdog) runCheckCycle() {
 					wd.recordRestart()
 				}
 			} else {
-				wd.log("WARN", "WATCHDOG", fmt.Sprintf("Python 重启次数已达上限 %d 次/小时，跳过重启", wdMaxRestarts))
+				wd.log("ERROR", "WATCHDOG", fmt.Sprintf("Python 重启次数已达上限 %d 次/小时，放弃重启，提示用户修复", wdMaxRestarts))
+				if wd.OnBackendGiveUp != nil {
+					wd.OnBackendGiveUp(fmt.Sprintf("后端服务连续失败（已自动重启 %d 次）", wdMaxRestarts))
+				}
 			}
 			wd.pythonFailCnt = 0
 		}
