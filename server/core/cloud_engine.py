@@ -453,10 +453,11 @@ class CloudEngine:
             extras.append("当前任务类型: %s" % task_type)
         if strategy_enhancement:
             extras.append(strategy_enhancement)
-        # 可视化卡片协议（在线 LLM 用卡片，PLAN ②+）
+        # 可视化卡片协议（在线 LLM 用卡片，PLAN ②+）；
+        # rc.5 记忆下线增量：card_protocol_prompt() 按 feature_memory 决定记忆段
         try:
-            from prompts import CARD_PROTOCOL_PROMPT
-            extras.append(CARD_PROTOCOL_PROMPT.strip("\n"))
+            from prompts import card_protocol_prompt
+            extras.append(card_protocol_prompt().strip("\n"))
         except Exception:
             pass
         if extras:

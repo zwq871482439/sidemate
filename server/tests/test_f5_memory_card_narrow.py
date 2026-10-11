@@ -84,11 +84,19 @@ class TestPromptNarrowing:
         assert "只问一次" in desc, "save_memory 描述缺「同类只问一次」"
         assert "不再询问" in desc or "不再问" in desc, "save_memory 描述缺「拒绝后不再问」"
 
-    def test_card_protocol_ask_rule_narrowed(self):
-        """卡片协议 ask 规则含记忆卡专项约束。"""
-        from prompts import CARD_PROTOCOL_PROMPT
-        assert "memory_save" in CARD_PROTOCOL_PROMPT, "ask 规则缺记忆卡专项条款"
-        assert "只问一次" in CARD_PROTOCOL_PROMPT
+    def test_card_protocol_ask_rule_narrowed(self, monkeypatch):
+        """卡片协议 ask 规则含记忆卡专项约束。
+
+        rc.5 记忆下线增量：记忆段经 card_protocol_prompt() 按 feature_memory
+        拼接——验证开关打开时专项条款仍在场。"""
+        import config
+        cache = dict(config._config_cache)
+        cache["feature_memory"] = True
+        monkeypatch.setattr(config, "_config_cache", cache)
+        from prompts import card_protocol_prompt
+        p = card_protocol_prompt()
+        assert "memory_save" in p, "ask 规则缺记忆卡专项条款"
+        assert "只问一次" in p
 
 
 class TestDeclineDetection:
