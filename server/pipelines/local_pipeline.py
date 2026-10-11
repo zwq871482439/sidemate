@@ -213,20 +213,20 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 doc_continue_text = getattr(ctx, 'doc_continue', '') or ""
                 # G6 D7：文档车道豁免默认输出预留——正文阶段动辄 3000-8000 字，
                 # 默认档（profile default_max_tokens≈2048）必然句中截断。
-                # 提到 MAX_OUTPUT_TOKENS，并按模型上下文窗口封顶（留 2K 给 prompt）。
+                # 只抬默认（max_tokens 未传时）；用户显式传了小值不覆盖
+                # （冒烟实测：显式 300 会被误抬成 4096，截断链路测不到）。
                 try:
                     from config import MAX_OUTPUT_TOKENS as _MAX_OUT
                 except Exception:
                     _MAX_OUT = 4096
-                _doc_max = max(max_tokens or 0, _MAX_OUT)
-                try:
-                    _ctx_lim = mgr._get_device_token_limit(model_choice) or 8192
-                    _doc_max = min(_doc_max, max(1024, _ctx_lim - 2048))
-                except Exception:
-                    pass
-                if doc_continue_text and (max_tokens or 0) < _doc_max:
-                    log.info("[LOCAL] doc 车道输出预留: %s → %s（D7 豁免默认档）",
-                             max_tokens, _doc_max)
+                if not max_tokens:
+                    _doc_max = _MAX_OUT
+                    try:
+                        _ctx_lim = mgr._get_device_token_limit(model_choice) or 8192
+                        _doc_max = min(_doc_max, max(1024, _ctx_lim - 2048))
+                    except Exception:
+                        pass
+                    log.info("[LOCAL] doc 车道输出预留: 默认档 → %s（D7 豁免）", _doc_max)
                     max_tokens = _doc_max
                 _doc_truncated = False
                 # 提取用户引用的 KB 文档全文
@@ -719,13 +719,19 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 try:
                     if chat_file:
                         from core.doc_session import safe_workspace_path
+                        # chat_file 可能是会话文件夹路径，也可能是其下 messages.json
+                        # 的路径（冒烟实锤后者会把 .md 写进 workspace/messages.json/
+                        # 兜底取文件夹名）
+                        _cf = str(chat_file).rstrip("/\\")
+                        _cid = os.path.basename(_cf)
+                        if "." in _cid:
+                            _cid = os.path.basename(os.path.dirname(_cf))
                         _md_name = doc_filename[:-len(".docx")] + ".md"
-                        _md_path = safe_workspace_path(
-                            os.path.basename(chat_file).rstrip(os.sep), _md_name)
+                        _md_path = safe_workspace_path(_cid, _md_name)
                         os.makedirs(os.path.dirname(_md_path), exist_ok=True)
                         with open(_md_path, "w", encoding="utf-8") as _mf:
                             _mf.write(final_response)
-                        log.info("[LOCAL] DOC 源码回写工作区: %s (%d字)", _md_name,
+                        log.info("[LOCAL] DOC 源码回写工作区[%s]: %s (%d字)", _cid, _md_name,
                                  len(final_response))
                 except Exception as _md_e:
                     log.warning("[LOCAL] DOC 源码回写失败（不影响文档本体）: %s",
