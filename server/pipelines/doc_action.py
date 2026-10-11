@@ -33,6 +33,51 @@ _kb_context_cache = {}
 _kb_cache_lock = threading.Lock()
 
 
+_HEADING_RE = re.compile(
+    r'^(#{1,4}\s+\S'                      # Markdown #/##/###
+    r'|第[一二三四五六七八九十百\d]+[章节部分篇]'   # 第一章 / 第2节
+    r'|[一二三四五六七八九十]+[、.．]\s*\S'        # 一、 二、
+    r'|\d+[、.．)\]]\s*\S'                 # 1、 2. 3)
+    r'|[（(]\d+[）)][、.．\s]?\S'           # (1) （2）
+    r')'
+)
+
+
+def extract_headings(text: str):
+    """G6 D6：从 Phase 1 输出中确定性抽取标题行。
+
+    小模型常无视「只写提纲」的指令直接写正文——这时确认卡给用户看的应是
+    干净的章节列表，而不是一整篇草稿。抽不出足够标题时返回空列表（调用方
+    保留原文本作为提纲）。
+    """
+    heads = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line or len(line) > 60:   # 标题不会超过 60 字；长行必是正文
+            continue
+        if _HEADING_RE.match(line):
+            heads.append(line)  # 保留原行（含 # 前缀）：确认卡按 markdown 渲染、Phase 2 直接可用
+    return heads
+
+
+def condense_outline(text: str) -> str:
+    """G6 D6：Phase 1 输出「提纲 or 正文」判定与收敛。
+
+    小模型无视「只写提纲」指令直接写整篇正文时（特征：标题行抽得出来但
+    正文占比高），确认卡只保留章节标题列表；正常提纲原样返回。
+    """
+    stripped = (text or "").strip()
+    heads = extract_headings(stripped)
+    if len(heads) < 2:
+        return stripped
+    heads_text = "\n".join(heads)
+    if len(stripped) > len(heads_text) * 2.5:
+        log.info("[DOC_ACTION] Phase1 输出疑似正文（%d字 / %d个标题），确认卡改用标题列表",
+                 len(stripped), len(heads))
+        return heads_text
+    return stripped
+
+
 def run_doc_action(
     message: str,
     mgr,           # ModelManager
@@ -157,8 +202,10 @@ def _run_phase1(
         return
 
     # Step 3: yield 提纲确认事件（前端会展示确认/取消按钮）
-    log.info("[DOC_ACTION] 提纲生成完成 (%d 字)" % len(outline_text))
-    yield ("doc_outline", outline_text.strip())
+    # G6 D6：小模型常把「提纲」写成一整篇正文——标题行抽取兜底（见 condense_outline）
+    outline_for_confirm = condense_outline(outline_text)
+    log.info("[DOC_ACTION] 提纲生成完成 (%d 字)", len(outline_for_confirm))
+    yield ("doc_outline", outline_for_confirm)
 
 
 def _run_phase2(

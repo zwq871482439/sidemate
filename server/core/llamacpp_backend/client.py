@@ -138,6 +138,8 @@ class LlamaCppClient:
         full_thinking = ""
         chunk_count = 0
         usage_data = None
+        # G6 D7：捕获 finish_reason（"length"=输出被 max_tokens 截断），随 done 事件上抛
+        last_finish_reason = None
 
         try:
             for chunk in response:
@@ -157,6 +159,9 @@ class LlamaCppClient:
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
+                _fr = getattr(chunk.choices[0], "finish_reason", None)
+                if _fr:
+                    last_finish_reason = _fr
 
                 # 正文
                 content_piece = getattr(delta, "content", None)
@@ -192,11 +197,13 @@ class LlamaCppClient:
                 "content": full_content,
                 "think": full_thinking,
                 "chunks": chunk_count,
+                "finish_reason": last_finish_reason,
             }
         except Exception as e:
             if self._stop_requested:
                 yield {"phase": "done", "content": full_content, "think": full_thinking,
-                       "chunks": chunk_count, "stopped": True}
+                       "chunks": chunk_count, "stopped": True,
+                       "finish_reason": last_finish_reason}
             else:
                 yield {"phase": "raw", "content": "[ERROR] 流式中断: %s" % str(e)[:200]}
         finally:

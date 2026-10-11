@@ -431,6 +431,27 @@ async function _refreshLLMDot() {
   if (d) d.className = 'tb-mdot ' + _llmDotCls;
 }
 
+// G6 D5（0.11.1）：顶栏模型标签不随懒加载刷新——modelTag 此前只在页面加载/
+// 模式切换时取一次，离线首条消息触发懒加载（30-60s）后仍显示「离线 · 未加载」。
+// 轮询直至加载完成；已加载后转低频兜底（捕捉设置页换模型/卸载）。
+let _modelTagTimer = null;
+async function pollModelTag() {
+  if (state.mode === 'cloud') {
+    _modelTagTimer = setTimeout(pollModelTag, 15000);
+    return;
+  }
+  try {
+    const tag = await getModelTag(state.mode);
+    if (tag && tag !== state.modelTag) {
+      state.modelTag = tag;
+      render();  // 与模式切换/设置变更同一渲染路径
+    }
+    _refreshLLMDot();
+  } catch (e) { /* 状态接口瞬时失败：保底等下一轮 */ }
+  const waiting = !(state.modelTag || '').includes('未加载');
+  _modelTagTimer = setTimeout(pollModelTag, waiting ? 15000 : 3000);
+}
+
 // ===== 0.11 B1 顶栏模型档案快切（照原型 ui-011.html ① spec#1-3）=====
 const _ZAP = '<svg fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>';
 const _CK = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
@@ -933,7 +954,11 @@ function renderStreamingBubble(st) {
   const bubble = el.querySelector('.m-bubble');
   const statusEl = el.querySelector('.stream-status');
   const srcEl = el.querySelector('.m-sources');
-  statusEl.textContent = st.status || '';
+  // G6 D5：离线懒加载等待期给用户确定性说明（服务端也会发 mode_hint，
+  // 这里兜住 hint 到达前与漏发的窗口），首 token 一到自然被替换
+  const _loadHint = (!st.text && !st.status && state.mode !== 'cloud' && !_llmLoaded)
+    ? '正在准备本地模型（首次约 30-60 秒），请稍候…' : '';
+  statusEl.textContent = st.status || _loadHint;
   statusEl.style.display = st.status ? '' : 'none';
   if (st.sources && st.sources.length) {
     // F4（S9-B）流式期即出底部来源条（与回放同构：[n] 文件名 + 片段预览）
@@ -1726,6 +1751,7 @@ async function boot() {
       try { state.sessUnread = JSON.parse(sessionStorage.getItem('v2SessUnread') || '{}') || {}; } catch (e) { state.sessUnread = {}; }
     } catch (e) { state.sessUnread = {}; }
     if (!_sessStatusTimer) pollSessStatus();
+    if (!_modelTagTimer) pollModelTag();  // G6 D5：模型标签轮询（懒加载后刷新「未加载」）
     // 并行实验开关（存量迁移：当前并行而开关未点亮 → 自动点亮由设置页负责，这里只读）
     try {
       const all = await fetch('/api/config').then(r => r.json());

@@ -147,6 +147,9 @@ class StreamEngine:
                 mm._auto_reload_after_stop = False
                 log_scan.info("[AUTO-RELOAD] 正在自动重载模型: %s" % matched_name)
                 yield ("reload", matched_name)
+            # G6 D5：懒加载前给用户可见提示（首载把模型装进内存约 30-60 秒，
+            # 此前这段时间前端只有「生成中」无任何说明）
+            yield ("mode_hint", " 正在加载本地模型（首次约 30-60 秒），请稍候…")
             r = mm.load(matched_name)
             if "error" in r:
                 yield ("raw", "[ERROR] 加载失败: %s" % r["error"])
@@ -288,6 +291,10 @@ class StreamEngine:
                 return
 
             elif phase == "done":
+                # G6 D7：finish_reason=length → 输出被 max_tokens 截断（供管线给用户提示）
+                _finish_reason = event.get("finish_reason")
+                if _finish_reason == "length" and not mm.stop_requested:
+                    yield ("truncated", True)
                 break
 
         # think_mode=free 且有思考内容 → fold
