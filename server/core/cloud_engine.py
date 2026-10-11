@@ -1018,8 +1018,9 @@ class CloudEngine:
             # 官方 OpenAI 格式：thinking + reasoning_effort（low/high/max）。
             # 缺省 effort 是 high，所以「低」只发 enabled 时仍是长链。
             # thinking 放 extra_body，避免 SDK 把未知字段丢掉或直接 TypeError。
+            # 顶层 thinking 会 TypeError，去参重发后关档退回缺省高档。
             if level == "off":
-                return {"thinking": {"type": "disabled"}}
+                return {"extra_body": {"thinking": {"type": "disabled"}}}
             return {
                 "reasoning_effort": "low",
                 "extra_body": {"thinking": {"type": "enabled"}, "reasoning_effort": "low"},
