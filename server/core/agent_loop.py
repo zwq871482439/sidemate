@@ -924,6 +924,13 @@ class AgentLoop:
                                      % (_json.dumps(_card_spec, ensure_ascii=False), r["skill_name"]))}}
 
             elif tool_name == "save_memory":
+                # 0.11.1 G6 D10：记忆系统下线兜底（正常路径下 memory_enabled=False
+                # 时工具不注册，此处防直调/旧客户端残留调用）
+                from config import get as _cfg_mem
+                if not _cfg_mem("memory_enabled", False):
+                    return {"success": False, "tool": "save_memory",
+                            "error": "memory_disabled",
+                            "message": "记忆功能已下线（0.12 重新设计）"}
                 # 0.11 C3：策展记忆写入。#41 D3：提示词挡不住强模型，
                 # 没有本会话已确认的记忆卡记录就拒绝，且不写文件。
                 from session.chat_store import memory_text_confirmed
@@ -942,6 +949,12 @@ class AgentLoop:
                                  "message": "已写入（重复内容自动跳过）" if r.get("deduped") else "已写入长期记忆"}}
 
             elif tool_name == "recall_memory":
+                # 0.11.1 G6 D10：记忆系统下线兜底（同 save_memory）
+                from config import get as _cfg_mem
+                if not _cfg_mem("memory_enabled", False):
+                    return {"success": False, "tool": "recall_memory",
+                            "error": "memory_disabled",
+                            "message": "记忆功能已下线（0.12 重新设计）"}
                 # 0.11 C3：策展记忆检索
                 from core.curated_memory import recall
                 r = recall(self.chat_id, args.get("query", ""))

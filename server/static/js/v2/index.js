@@ -36,7 +36,6 @@ const state = {
   collapsedGroups: {},     // 项目分组折叠态（key=项目目录 / __legacy__）
   projects: [],            // 项目列表 [{dir, display, is_default, status}]（默认项目恒在）
   workdir: null,           // 当前会话所属项目 {legacy} | {dir, display, is_default, status}
-  handoff: null,           // 项目交接 {content, updated_at, source_chat, source_engine}
   pendingProjectDir: null, // 无会话时用户在空状态选的项目（首个发送时落在该项目）
   parallelEnabled: false,  // 并行实验开关（设置 → 在线 AI）
   cloudProfiles: [],       // 0.11 B1 模型档案 [{id,name,tag,model,active,api_key_set}]（在线模式顶栏快切）
@@ -140,7 +139,6 @@ const chatStream = createChatStream({
       await loadCurrentMessages();             // 后端快照 = 真相
     } catch (e) { /* 快照拉取失败不阻断渲染（残影修复的另一半） */ }
     render();
-    try { maybePromptHandoff(); } catch (e) {}  // 上下文 ≥80% 时弹交接建议
   },
 });
 let _streamState = null;
@@ -195,7 +193,6 @@ function render() {
     onSelectSession: async (c) => {
       if (c.current && state.messages !== null) return;
       _viewedProject = null;  // 切会话清掉跨项目查看
-      _handoffPrompted = false;  // 换会话重置 80% 交接提示
       state.scene = '';       // 场景 chip 是会话级状态，随会话切换清掉（防跨会话泄漏）
       state.actionMode = 'chat';
       state.switchingSess = true;  // 主区鱼骨（旧会话内容不再残留）
@@ -270,6 +267,7 @@ function render() {
       render();
     },
     onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
+    onDeleteSession: (c) => deleteSessionFlow(c),
     // onKbFilter 已随侧栏文档范围树移除（B2：筛选统一走主区 chips）
   }));
 
@@ -384,7 +382,6 @@ function render() {
       },
       onDeleteProject: (proj) => deleteProject(proj),
       onRenameProject: (proj) => renameProject(proj),
-      onGenerateHandoff: (btn) => generateHandoffFlow(btn, false),
     });
   }
   app.appendChild(_viewer.el);
@@ -667,7 +664,7 @@ function _renderScrollContent(scroll) {
     scroll.innerHTML = `<div class="legacy-empty">
       <div class="legacy-empty-ic">${iconSvg('archive')}</div>
       <div class="legacy-empty-t">旧版本会话 · 只读存档</div>
-      <div class="legacy-empty-d">这条会话来自旧版本，没有对话内容。可以看、导出、下载产物；<br>要聊新内容，点左侧「新建任务」。</div>
+      <div class="legacy-empty-d">这条会话来自旧版本，没有对话内容。可以看、导出、下载产物；<br>要聊新内容，点左侧「新建会话」。</div>
     </div>`;
   } else {
     scroll.innerHTML = '';
@@ -682,79 +679,13 @@ function _renderScrollContent(scroll) {
       onScene: onScene,
       projectLabel: projLabel,
       onPickProject: (anchor) => showProjectPicker(anchor),
-      handoffMeta: state.handoff ? { source_chat: state.handoff.source_chat, updated_at: state.handoff.updated_at } : null,
       peersMeta: _peers.length ? { count: Math.min(_peers.length, 8) } : null,
     }));
   }
 }
 
-// ===== 项目交接（PLAN ②++：生成/一键移动/80% 建议） =====
-let _handoffGenerating = false;
-
-async function generateHandoffFlow(btn, thenMove) {
-  const cur = state.sessions.find(c => c.current);
-  if (!cur || _handoffGenerating) return null;
-  _handoffGenerating = true;
-  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
-  let r = null;
-  try {
-    r = await api.generateHandoff(cur.name, true);  // 手动触发：离线也允许
-  } catch (e) { /* 走错误分支 */ }
-  _handoffGenerating = false;
-  if (btn) { btn.disabled = false; btn.textContent = '重新生成'; }
-  if (!r || !r.ok) {
-    uiAlert((r && r.error) || '会话记忆生成失败');
-    return null;
-  }
-  if (thenMove) {
-    // 一键移动：同项目新建会话并切换（handoff.md 会注入新会话）
-    const dir = state.workdir && state.workdir.dir;
-    await api.newChat(dir || undefined);
-    state.sessions = await loadSessions();
-    state.tab = 'chat';
-    state.messages = null;
-    await loadWorkdir();
-    render();
-  } else if (_viewer) {
-    _viewer.onSessionChange();  // 交接区刷新
-    if (!_viewer.isOpen) _viewer.setOpen(true, 'session');
-  }
-  return r;
-}
-
-// 80% 建议：流末检查 token 占比，≥80% 弹交接建议（每会话只提示一次）
-let _handoffPrompted = false;
-function maybePromptHandoff() {
-  if (_handoffPrompted || state.generating) return;
-  const maxTokens = state.contextWindow || 8192;
-  const hist = (state.messages || []).reduce((s, m) =>
-    s + estimateTokens(m.content || '') + estimateTokens(m.think || ''), 0);
-  if (maxTokens <= 0 || hist / maxTokens < 0.8) return;
-  _handoffPrompted = true;
-  const ov = document.createElement('div');
-  ov.className = 'kb-pk-overlay';
-  ov.innerHTML = `<div class="kb-pk" style="width:420px">
-    <div class="kb-pk-title">上下文将满（已用 ${Math.round(hist / maxTokens * 100)}%）</div>
-    <div class="wd-tip">
-      <p>要把当前进度<strong>保存为会话记忆</strong>并开一个新会话吗？记忆会写入项目目录，
-      新会话自动载入，不用从头解释。</p>
-    </div>
-    <div class="kb-pk-acts">
-      <button class="kb-pk-cancel" data-a="no">不了</button>
-      <button class="kb-pk-ok" data-a="yes">保存记忆并开新会话</button>
-    </div>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.querySelector('[data-a="no"]').addEventListener('click', () => ov.remove());
-  ov.querySelector('[data-a="yes"]').addEventListener('click', async () => {
-    const okBtn = ov.querySelector('[data-a="yes"]');
-    okBtn.disabled = true;
-    okBtn.textContent = '生成中…';
-    const r = await generateHandoffFlow(null, true);
-    if (r) ov.remove();
-    else { okBtn.disabled = false; okBtn.textContent = '保存记忆并开新会话'; }
-  });
-}
+// G6 D10（0.11.1）：会话记忆（handoff）功能整体下线——generateHandoffFlow 与
+// 「上下文将满」交接建议弹层（maybePromptHandoff）一并移除，0.12 重新设计。
 
 // ===== 文档两阶段：提纲确认栏（Phase 1 提纲 → 用户确认/编辑 → Phase 2 正文） =====
 let _outlineDismissed = null;  // 用户取消过的提纲消息 id（本地态，刷新恢复同经典版）
@@ -998,7 +929,7 @@ async function onSend(payload) {
   if (state.generating) return;
   // 旧版会话只读（后端 stream 同样拒绝，这里是前置提示）
   if (state.workdir && state.workdir.legacy) {
-    uiAlert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建任务」。');
+    uiAlert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建会话」。');
     return;
   }
   // 无会话则先建（零摩擦开始：空状态直达；落在空状态选择器选定的项目）
@@ -1220,15 +1151,10 @@ let _viewedProject = null;  // 跨项目查看（📂 点别的项目）时的�
 
 async function loadWorkdir() {
   const cur = state.sessions.find(c => c.current);
-  if (!cur) { state.workdir = null; state.handoff = null; return; }
+  if (!cur) { state.workdir = null; return; }
   try {
     state.workdir = await api.getWorkdir(cur.name);
   } catch (e) { state.workdir = null; }
-  // 项目交接（空状态来源行用）
-  try {
-    const h = await api.getHandoff(cur.name);
-    state.handoff = (h && h.handoff) ? h.handoff : null;
-  } catch (e) { state.handoff = null; }
 }
 
 async function loadProjects() {
@@ -1562,9 +1488,6 @@ function showSessionMenu(chat, anchorEl) {
   menuEl.innerHTML = `
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
-    <button data-a="handoff">生成会话记忆</button>
-    <button data-a="distill">存为技能（经验沉淀）</button>
-    <button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
@@ -1611,53 +1534,24 @@ function showSessionMenu(chat, anchorEl) {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
-  menuEl.querySelector('[data-a="handoff"]').addEventListener('click', async () => {
+  // G6 D10/D11/D12（0.11.1）：生成会话记忆/存为技能/标为私密 三个入口整体下线，
+  // 对应 handler 一并移除（后端端点保留但无 UI 入口；0.12 重新设计）。
+  menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {
     menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
-    await generateHandoffFlow(null, false);
-  });  const _privBtn = menuEl.querySelector('[data-a="private"]');
-  if (_privBtn) _privBtn.addEventListener('click', async () => {
-    menuEl.remove(); _menuEl = null;
-    const on = !chat.private;
-    // R3 C1：入口常显可发现；在线态点出设计说明而非静默隐藏
-    if (on && state.mode !== 'local') {
-      uiAlert('标私密仅适用于离线模式的会话——在线会话的内容本就在云端服务方，标记无意义。请先切到离线模式再操作。');
-      return;
-    }
-    if (on && !(await uiConfirm('把这条会话标为私密？\n\n私密会话的内容不会出现在：其他会话的「同项目会话」清单、「引用」前情注入、AI 的 read_session 读取。适合放敏感内容。'))) return;
-    try {
-      const r = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/private', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ private: on }),
-      });
-      const d = await r.json();
-      if (!r.ok) { uiAlert(d.error || '设置失败'); return; }
-      state.sessions = await loadSessions();
-      if (_viewer) _viewer.onSessionChange();
-      render();
-    } catch (e) { uiAlert('设置失败：' + (e && e.message ? e.message : '')); }
+    await deleteSessionFlow(chat);
   });
+}
 
-  // 0.11 C3 经验沉淀：会话轨迹 → SKILL.md（在线直连一次生成 → 注册）
-  menuEl.querySelector('[data-a="distill"]').addEventListener('click', async () => {
-    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
-    if (!(await uiConfirm('存为技能？将分析这个会话的任务轨迹，提炼一份可复用技能（需在线模式）')))
-      return;
-    const r = await fetch('/api/chats/' + encodeURIComponent(chat.name) + '/distill', { method: 'POST' })
-      .then(r => r.json()).catch(() => ({ error: '请求失败' }));
-    if (r && r.ok) {
-      uiAlert('技能已沉淀：「' + r.name + '」\n下次同类任务可让 AI 挂载使用（技能页可管理）。');
-    } else {
-      uiAlert('沉淀失败：' + ((r && r.error) || '未知错误'));
-    }
-  });
-  menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
-    const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
-    if (!(await uiConfirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`))) return;
-    await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });
-    state.sessions = await loadSessions();
-    await loadCurrentMessages();
-    render();
-  });
+// 删除会话共用流（⋯ 菜单与 D18 会话项直删按钮同一条路径）
+async function deleteSessionFlow(chat) {
+  const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
+  // G6 D15：显示名与文件夹名解耦——确认框用用户看到的名字（title），不再是内部编号
+  const displayName = chat.title || chat.name;
+  if (!(await uiConfirm(`删除会话「${displayName}」？会话记录将被删除${legacyNote}，此操作不可撤销。`))) return;
+  await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });
+  state.sessions = await loadSessions();
+  await loadCurrentMessages();
+  render();
 }
 
 // 轻量输入模态（webview 里原生 prompt 不可靠）

@@ -18,22 +18,22 @@ const I = {
   diagram: 'M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1zM17.5 14v7M14 17.5h7',
 };
 
-// 场景卡定义（原型 v14 定稿）
+// 场景卡定义（原型 v14 定稿；G6 D17 文案人话化改写）
 const ONLINE_SCENES = {
   hero: { scene: 'chat', icon: I.chat, title: '聊天', tag: '最常用',
     desc: '日常问答、头脑风暴、翻译润色 —— 也可以什么都不选，直接开聊' },
   sections: [
-    { title: '创作交付', desc: 'AI 现场设计，右视窗实时预览', grid: 'six', cards: [
-      { scene: 'ppt', icon: I.ppt, title: '写 PPT', desc: '丢材料进来，逐页设计预览，下载可编辑 PPTX' },
-      { scene: 'doc', icon: I.doc, title: '写文档', desc: '报告、方案、长文；先出网页预览，可转 Word' },
-      { scene: 'report', icon: I.report, title: '可视化报告', desc: '图表 + 网页报告，数据一眼看懂' },
-      { scene: 'poster', icon: I.poster, title: '设计海报', desc: '封面、海报、配图，多平台尺寸', gold: true },
-      { scene: 'gzh', icon: I.gzh, title: '公众号文章', desc: '一键排版粘贴，样式不丢', gold: true },
-      { scene: 'diagram', icon: I.diagram, title: '画图', desc: '交付级图示：架构/流程/ER/漏斗…39 型', gold: true },
+    { title: '创作交付', desc: '让 AI 直接做出成品文件，右侧边做边看', grid: 'six', cards: [
+      { scene: 'ppt', icon: I.ppt, title: '写 PPT', desc: '把材料和主题发给 AI，逐页生成，完成后下载 PPT 文件' },
+      { scene: 'doc', icon: I.doc, title: '写文档', desc: '写报告、方案、长文；先在线预览，满意再转 Word' },
+      { scene: 'report', icon: I.report, title: '可视化报告', desc: '把数据做成图表和报告页，一眼看懂' },
+      { scene: 'poster', icon: I.poster, title: '设计海报', desc: '封面、海报、配图，常用尺寸都有', gold: true },
+      { scene: 'gzh', icon: I.gzh, title: '公众号文章', desc: '排好版直接粘贴进公众号后台，样式不乱', gold: true },
+      { scene: 'diagram', icon: I.diagram, title: '画图', desc: '画架构图、流程图这类说明性图示', gold: true },
     ]},
-    { title: '研究深挖', desc: '联网与多轮工具循环', grid: 'two', cards: [
-      { scene: 'search', icon: I.search, title: '联网搜索', desc: '搜索 → 阅读原文 → 回答，附来源' },
-      { scene: 'deep', icon: I.deep, title: '深度分析', desc: '多轮工具循环，适合复杂课题' },
+    { title: '研究深挖', desc: '联网查资料，一步步往下挖', grid: 'two', cards: [
+      { scene: 'search', icon: I.search, title: '联网搜索', desc: '先搜索、再读原文，回答附来源链接' },
+      { scene: 'deep', icon: I.deep, title: '深度分析', desc: '自动多步查证和分析，适合复杂问题' },
     ]},
   ],
 };
@@ -66,10 +66,7 @@ export function renderEmptyState(mode, events) {
         <span class="eo-name">${events.projectLabel}</span>
         <button class="eo-change">更换 ▾</button>
       </div>` : '';
-  const handoffRow = events.handoffMeta ? `
-      <div class="empty-handoff" title="会话记忆已注入新会话">
-        ${icon('fileText')} 已载入会话记忆${events.handoffMeta.source_chat ? '（来自会话 ' + events.handoffMeta.source_chat + '）' : ''}${events.handoffMeta.updated_at ? ' · 更新于 ' + events.handoffMeta.updated_at : ''}
-      </div>` : '';
+  // G6 D10（0.11.1）：会话记忆注入行（handoffRow）随记忆系统整体下线移除
   const peersRow = (events.peersMeta && mode !== 'local') ? `
       <div class="empty-handoff" title="跨会话发现性：延续前情的三种方式">
         ${icon('clock')} 本项目有 ${events.peersMeta.count} 条近期会话——右侧视窗 · 会话 tab 可查看并用「引用」把前情带入
@@ -83,7 +80,6 @@ export function renderEmptyState(mode, events) {
         <p>本地模型运行，无需联网 —— 适合隐私敏感场景</p>
       </div>
       ${projRow}
-      ${handoffRow}
       ${peersRow}
       <div class="offline-grid">
         ${OFFLINE_CARDS.map(c => `
@@ -99,10 +95,9 @@ export function renderEmptyState(mode, events) {
       <div class="empty-hero">
         <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>开始一段新对话</h1>
-        <p>选择一个场景，或直接输入 —— 想做什么，随时切随</p>
+        <p>直接在下方输入框打字开聊；不确定怎么开始，就点一张场景卡</p>
       </div>
       ${projRow}
-      ${handoffRow}
       ${peersRow}
       <div class="hero-card" data-scene="${hero.scene}">
         <div class="h-ic">${ICON(hero.icon)}</div>
@@ -127,7 +122,7 @@ export function renderEmptyState(mode, events) {
               <div class="sc-t">${s.title}</div>
               <div class="sc-d">${s.desc}</div>
             </div>`).join('')}
-          <div class="sub-note">选风格后落对应场景 tag，技能会按所选风格指导内容收集与渲染</div>
+          <div class="sub-note">先选风格、再描述内容，AI 会按所选风格来做</div>
         </div>` : ''}
         `).join('')}
     `;

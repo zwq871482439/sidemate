@@ -148,8 +148,18 @@ def recall(chat_id: str, query: str) -> dict:
 
 
 def inject_hint(chat_id: str) -> str:
-    """system prompt 注入块：记忆概要 + 偏好条目（v1 关键词级，v2 向量化在 0.12）。"""
+    """system prompt 注入块：记忆概要 + 偏好条目（v1 关键词级，v2 向量化在 0.12）。
+
+    0.11.1 G6 D10：记忆系统整体下线——memory_enabled=False（默认）时不注入，
+    旧会话遗留的 memory.md 也不再进 prompt。
+    """
     if not (chat_id or "").strip():
+        return ""
+    try:
+        from config import get as _cfg
+        if not _cfg("memory_enabled", False):
+            return ""
+    except Exception:
         return ""
     try:
         mem = read_memory(chat_id)

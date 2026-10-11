@@ -1274,7 +1274,8 @@ def register_mcp_tools():
 
 
 _FRAGMENT_LOADERS = {
-    "cards": lambda: __import__("prompts").CARD_PROTOCOL_PROMPT,
+    # G6 D10：经 card_protocol_prompt() 按 memory_enabled 决定是否含记忆确认卡段
+    "cards": lambda: __import__("prompts").card_protocol_prompt(),
     "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,
     "d2": lambda: __import__("prompts").D2_PROTOCOL_PROMPT,
     "docx": lambda: __import__("prompts").DOCX_PROTOCOL_PROMPT,
@@ -1311,6 +1312,9 @@ _TOOL_PERM_MAP = {
     "read_session": "tool_enabled_read_session",
     "project_write": "tool_enabled_project_write",
     "deliver_package": "tool_enabled_deliver_package",
+    # 0.11.1 G6 D10：记忆系统下线——memory_enabled 默认 False，两工具不注册
+    "save_memory": "memory_enabled",
+    "recall_memory": "memory_enabled",
 }
 
 # 0.10 协议 skill 声明表（技能页展示 + 开关；描述=机制性说明，通用化原则）。

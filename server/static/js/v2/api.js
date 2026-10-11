@@ -126,16 +126,7 @@ export const api = {
       body: JSON.stringify({ name, svg }),
     }));
   },
-  // ---- 项目交接 handoff.md（PLAN ②++） ----
-  async getHandoff(chatName) {
-    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/handoff'));
-  },
-  // manual=true 时离线模式也允许（用户显式动作）
-  async generateHandoff(chatName, manual) {
-    return _json(await fetch('/api/chats/' + encodeURIComponent(chatName) + '/handoff/generate' + (manual ? '?manual=1' : ''), {
-      method: 'POST',
-    }));
-  },
+  // 项目交接 handoff 客户端已随 G6 D10 记忆系统下线移除（后端端点保留，0.12 重新设计）
 };
 
 // 模式映射：后端值 ↔ 新版 UI 显示

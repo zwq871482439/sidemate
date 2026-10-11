@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""#41 D3：save_memory 没有用户确认记录时不得落盘。"""
+"""#41 D3：save_memory 没有用户确认记录时不得落盘。
+
+G6 D10（0.11.1）：记忆系统整体下线（memory_enabled 默认 False）——确认门
+只在开关打开（0.12 重新启用 / 显式开启）时才可达，本文件的门禁语义保持，
+fixture 统一置 memory_enabled=True；下线默认路径见 test_memory_takedown.py。
+"""
 import json
 import os
 
@@ -15,6 +20,9 @@ def env(tmp_path, monkeypatch):
     data.mkdir()
     import config
     monkeypatch.setattr(config, "DATA_DIR", str(data))
+    cache = dict(config._config_cache)
+    cache["memory_enabled"] = True
+    monkeypatch.setattr(config, "_config_cache", cache)
     from session import chat_store
     monkeypatch.setattr(chat_store, "CHAT_DIR", str(chats))
     import session.projects as projects
@@ -66,6 +74,12 @@ class TestAcceptRecordsConfirmation:
         assert _is_memory_card_decline(q, "不用记")
         assert not _is_memory_card_accept("要执行这个计划吗？", "同意写入")
 
-    def test_prompt_pins_option_text(self):
-        from prompts import CARD_PROTOCOL_PROMPT
-        assert '["同意写入", "不用记"]' in CARD_PROTOCOL_PROMPT
+    def test_prompt_pins_option_text(self, monkeypatch):
+        # D10：记忆段从 CARD_PROTOCOL_PROMPT 抽到 MEMORY_CARD_PROMPT，
+        # 经 card_protocol_prompt() 按开关拼接——这里验证开关打开时文案仍钉死
+        import config
+        cache = dict(config._config_cache)
+        cache["memory_enabled"] = True
+        monkeypatch.setattr(config, "_config_cache", cache)
+        from prompts import card_protocol_prompt
+        assert '["同意写入", "不用记"]' in card_protocol_prompt()

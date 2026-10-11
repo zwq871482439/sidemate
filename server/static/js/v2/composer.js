@@ -99,10 +99,16 @@ export function renderComposer(state, events) {
     search:{ label: '联网搜索',   ph: '输入要联网搜索的主题…' },
     deep:  { label: '深度分析',   ph: '描述要深挖的课题…' },
   };
+  // 附件状态：{ kind: 'upload', name, path } | { kind: 'kb', names: [], ids: 'a,b' }
+  // （声明在 renderSceneTag 之前——D14 需要在挂 KB 附件时收起场景标签）
+  let attach = null;
   function renderSceneTag() {
     const sc = state.scene && SCENE_META[state.scene] ? state.scene : (SCENE_META[state.actionMode] ? state.actionMode : '');
     const meta = sc ? SCENE_META[sc] : null;
-    if (meta && sc !== 'chat') {
+    // G6 D14：已挂 KB 文档时输入框底部有「KB：文件名 ×」chip，上方场景标签
+    // 不再重复显示（二者留一——附件 chip 带文件名，信息量更大）；placeholder 引导保留
+    const dupKb = !!(attach && attach.kind === 'kb' && (sc === 'kb' || sc === 'kb_qa'));
+    if (meta && sc !== 'chat' && !dupKb) {
       sceneTagWrap.style.display = '';
       sceneTagWrap.innerHTML = `<span class="scene-tag">${esc(meta.label)}<span class="x" title="取消场景">×</span></span>`;
       sceneTagWrap.querySelector('.x').addEventListener('click', () => {
@@ -112,7 +118,7 @@ export function renderComposer(state, events) {
     } else {
       sceneTagWrap.style.display = 'none';
       sceneTagWrap.innerHTML = '';
-      textarea.placeholder = SCENE_META.chat.ph;
+      textarea.placeholder = meta && dupKb ? meta.ph : SCENE_META.chat.ph;
     }
   }
   renderSceneTag();
@@ -122,11 +128,8 @@ export function renderComposer(state, events) {
   const trayEl = wrap.querySelector('.attach-tray');
   const fileInput = wrap.querySelector('input[type=file]');
 
-  // 附件状态：{ kind: 'upload', name, path } | { kind: 'kb', names: [], ids: 'a,b' }
-  let attach = null;
-
   function renderTray() {
-    if (!attach) { trayEl.style.display = 'none'; trayEl.innerHTML = ''; return; }
+    if (!attach) { trayEl.style.display = 'none'; trayEl.innerHTML = ''; renderSceneTag(); return; }
     trayEl.style.display = 'flex';
     // 悬停指纹（相似材料小修）：token/大小，多份相近材料时可分辨选没选对
     const _tip = (attach.tokens ? '约 ' + attach.tokens + ' tokens' : '') +
@@ -137,6 +140,7 @@ export function renderComposer(state, events) {
       trayEl.innerHTML = `<span class="attach-chip" title="知识库文档：${esc(attach.names.join('、'))}${_tip ? ' · ' + _tip : ''}">${icon('book')} KB：${esc(attach.names.join('、'))}<span class="x" title="移除">×</span></span>`;
     }
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); _syncSendEnabled(); events.onAttachChange(null); });
+    renderSceneTag();  // D14：KB chip 出现/移除时同步收起/恢复场景标签
   }
 
   // ---- 计划/执行 pill（M2-3 写权限双模式；仅在线+有项目的会话显示） ----
@@ -324,7 +328,7 @@ export function renderComposer(state, events) {
   const isLegacy = !!(state.workdir && state.workdir.legacy);
   if (isLegacy) {
     textarea.disabled = true;
-    textarea.placeholder = '旧版本会话已转为只读存档——可查看、导出或下载产物；要聊新内容请点「新建任务」';
+    textarea.placeholder = '旧版本会话已转为只读存档——可查看、导出或下载产物；要聊新内容请点「新建会话」';
     sendBtn.disabled = true;
     sendBtn.style.opacity = '.5';
     sendBtn.style.cursor = 'not-allowed';

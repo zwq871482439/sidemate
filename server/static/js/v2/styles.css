@@ -198,6 +198,14 @@ body {
 .sess-item:hover .sess-more, .sess-more.on { opacity: 1; }
 .sess-more:hover { color: var(--d1-paper); background: rgba(255,255,255,.12); }
 
+/* G6 D18：会话项直删按钮（hover 显示；危险色区分 ⋯ 菜单） */
+.sess-del {
+  opacity: 0; background: none; border: none; color: var(--d1-dark-ink-3); cursor: pointer;
+  font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 4px;
+}
+.sess-item:hover .sess-del { opacity: 1; }
+.sess-del:hover { color: var(--pal-danger); background: rgba(239,68,68,.12); }
+
 .sess-menu {
   position: fixed; z-index: 70; min-width: 180px; background: var(--d1-paper-2);
   border: 1px solid var(--d1-n-line); border-radius: var(--d1-r-md);

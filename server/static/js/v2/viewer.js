@@ -41,8 +41,6 @@ export function createViewer(opts) {
   let files = null;    // null=未加载（工作区文件）
   let filesFor = '';   // 当前列表属于哪个会话
   let wd = null;       // 项目：{ files, artifacts, dir, display, is_default, status } | {legacy:true} | null=未加载
-  let handoff = null;  // 项目交接 {content, updated_at, source_engine, source_chat} | null
-  let handoffProj = null;
   let carrySids = [];  // M2 选带层：本会话勾选携带的前情会话 sid 列表
   let hs = null;       // M2-3 harness 状态：{exec_mode, goal, pending_plan, external_changes, can_undo}
   let pkb = null;      // M2-5 项目知识库：{enabled, files, chunks, size_bytes, hints}
@@ -85,12 +83,6 @@ export function createViewer(opts) {
     try {
       wd = await api.listWorkdirFiles(cur.name);
     } catch (e) { wd = false; }
-    // 项目交接（PLAN ②++：会话信息 tab 交接区）
-    try {
-      const h = await api.getHandoff(cur.name);
-      handoff = h && h.handoff ? h.handoff : null;
-      if (wd && wd.dir) handoffProj = h.project || null;
-    } catch (e) { handoff = null; }
     // M2 选带层：本会话携带的前情会话清单
     try {
       const r = await fetch('/api/chats/' + encodeURIComponent(cur.name) + '/carry', T());
@@ -185,7 +177,7 @@ export function createViewer(opts) {
       return `<div class="vw-card vw-card-legacy">
         <div class="vw-card-t">${icon('archive')} 旧版本会话</div>
         <div class="vw-card-r">该会话来自旧版本，已转为只读存档：可以查看、导出（会话 ⋯ 菜单）、在「文件」tab 下载产物。</div>
-        <div class="vw-card-r">要聊新内容，请用「新建任务」开一个新会话。</div>
+        <div class="vw-card-r">要聊新内容，请用「新建会话」开一个新会话。</div>
       </div>`;
     }
     const missing = wd && wd.status === 'missing';
@@ -194,8 +186,8 @@ export function createViewer(opts) {
       <div class="vw-card-t">项目「${esc(wd && wd.display ? wd.display : '默认项目')}」
         ${wd && !wd.is_default && !cross ? '<button class="vw-mini" data-a="rename" title="改显示名（不改文件夹名）">改名</button>' : ''}</div>
       ${cross ? '' : `<div class="vw-card-r"><span class="vw-k">模式</span>${esc(h.modelTag || h.modeLabel || '')}</div>
-      <div class="vw-card-r"><span class="vw-k">会话</span>${esc(cur.name)} · ${cur.msg_count || 0} 条消息</div>`}
-      ${wd && wd.dir ? `<div class="vw-card-r"><span class="vw-k">目录</span>${wd.is_default ? '默认项目目录' : '项目文件夹'}</div>
+      <div class="vw-card-r"><span class="vw-k">会话</span>${esc(cur.title || cur.name)} · ${cur.msg_count || 0} 条消息</div>`}
+      ${wd && wd.dir ? `<div class="vw-card-r"><span class="vw-k">目录</span>${wd.is_default ? '默认项目目录' : '项目文件夹'} · AI 生成的文件存这里，聊天记录单独保存</div>
       <div class="vw-card-r vw-path" title="${esc(wd.dir)}">${esc(wd.dir)}</div>` : ''}
       ${missing ? `<div class="vw-card-r vw-missing">${icon('alertTriangle')} 目录丢失——文件夹在磁盘上被删除或移动，会话只读可看</div>` : ''}
       ${wd && !wd.is_default ? '<div class="vw-card-r"><button class="vw-mini danger" data-a="delproj" title="删除项目：会话记录级联删除，目录文件永不动">删除项目…</button></div>' : ''}
@@ -335,16 +327,7 @@ export function createViewer(opts) {
   // 任务步骤浮窗移至 composer.js（todoFloat）
   function _harnessSection() { return ''; }
 
-  function _handoffSection() {    if (!wd || wd.legacy || !wd.dir) return '';
-    if (!handoff) {
-      return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">会话记忆</span>
-        <span class="vw-dir-acts"><button class="vw-dir-open" data-a="handoff" title="把当前进度保存为会话记忆">生成会话记忆</button></span></div>
-        <div class="vw-empty"><small>还没有会话记忆——上下文将满时自动保存</small></div>`;
-    }
-    return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">会话记忆 · 更新于 ${esc(handoff.updated_at || '')}</span>
-        <span class="vw-dir-acts"><button class="vw-dir-open" data-a="handoff" title="重新生成会话记忆">重新生成</button></span></div>
-      <div class="vw-handoff">${esc(handoff.content || '')}</div>`;
-  }
+  // G6 D10（0.11.1）：会话记忆区块整体下线（_handoffSection 移除，0.12 重新设计）
 
   function _sessionList() {    if (!wd || wd.legacy || !wd.dir) return '';
     const sessions = (opts.getSessions ? opts.getSessions() : []);
@@ -410,7 +393,6 @@ export function createViewer(opts) {
       body.innerHTML = `<div class="vw-files">
         ${_projectCard()}
         ${_sessionList()}
-        ${_handoffSection()}
         ${_pkbSection()}
         ${_wdFiles()}
       </div>
@@ -441,10 +423,6 @@ export function createViewer(opts) {
       const renameBtn = body.querySelector('[data-a="rename"]');
       if (renameBtn) renameBtn.addEventListener('click', () => {
         if (opts.onRenameProject && wd) opts.onRenameProject(wd);
-      });
-      const handoffBtn = body.querySelector('[data-a="handoff"]');
-      if (handoffBtn) handoffBtn.addEventListener('click', () => {
-        if (opts.onGenerateHandoff) opts.onGenerateHandoff(handoffBtn);
       });
       const delBtn = body.querySelector('[data-a="delproj"]');
       if (delBtn) delBtn.addEventListener('click', () => {
@@ -948,14 +926,13 @@ export function createViewer(opts) {
       if (tabName) tab = tabName;
       files = null;
       wd = null;  // 每次展开重新拉
-      handoff = null;
     }
     render();
   }
 
   // 会话切换/项目变化后刷新
   function onSessionChange() {
-    files = null; wd = null; handoff = null; previewFile = null; lastPreviewName = '';
+    files = null; wd = null; previewFile = null; lastPreviewName = '';
     document.querySelectorAll('.art-card.previewing').forEach(c => c.classList.remove('previewing'));
     ppt = null; pptLive = {}; Object.keys(pptCache).forEach(k => delete pptCache[k]);
     htmlLive = []; Object.keys(htmlCache).forEach(k => delete htmlCache[k]);

@@ -196,6 +196,9 @@ DEFAULTS = {
           # 文件读写（write_workspace 等）
     "tool_enabled_code_exec": False,       # 代码执行（预留，默认关）
     "tool_enabled_kb_search": True,        # 知识库检索（search_kb/get_context）
+    # 0.11.1 G6 D10：记忆系统（会话记忆/长期记忆）整体下线，0.12 重新设计。
+    # 关：save_memory/recall_memory 不注册、记忆卡协议不注入、长期记忆不进 prompt。
+    "memory_enabled": False,
 
     # ----- 文库检索参数（Patch 8 P8-10，从硬编码提取）-----
     "kb_vector_score_threshold": 0.35,    # 向量检索最低余弦相似度（Patch4 v3.1：0.28→0.35，适配 bge-m3 分数分布）
@@ -288,6 +291,7 @@ _CONFIG_VALIDATORS = {
     "tool_enabled_file_rw": lambda v: isinstance(v, bool),
     "tool_enabled_code_exec": lambda v: isinstance(v, bool),
     "tool_enabled_kb_search": lambda v: isinstance(v, bool),
+    "memory_enabled": lambda v: isinstance(v, bool),
     "parallel_keyword_gen": lambda v: isinstance(v, bool),
 }
 
