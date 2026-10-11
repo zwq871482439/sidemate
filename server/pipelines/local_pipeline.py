@@ -74,6 +74,7 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
     _doc_outline_only = False
     _kb_mode = False
     _token_stats = None  # token 统计数据
+    _chat_truncated = False  # G6 D7：finish_reason=length（chat 车道，提示在步骤 9 后统一落款）
     model_history = llm_history if llm_history else None
 
     # 从 config 获取 ai_mode（本地管道里永远是 local，但保持一致）
@@ -210,6 +211,24 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                 from pipelines.doc_action import run_doc_action
                 # 从 body 获取 doc_continue（通过 ctx 扩展字段）
                 doc_continue_text = getattr(ctx, 'doc_continue', '') or ""
+                # G6 D7：文档车道豁免默认输出预留——正文阶段动辄 3000-8000 字，
+                # 默认档（profile default_max_tokens≈2048）必然句中截断。
+                # 提到 MAX_OUTPUT_TOKENS，并按模型上下文窗口封顶（留 2K 给 prompt）。
+                try:
+                    from config import MAX_OUTPUT_TOKENS as _MAX_OUT
+                except Exception:
+                    _MAX_OUT = 4096
+                _doc_max = max(max_tokens or 0, _MAX_OUT)
+                try:
+                    _ctx_lim = mgr._get_device_token_limit(model_choice) or 8192
+                    _doc_max = min(_doc_max, max(1024, _ctx_lim - 2048))
+                except Exception:
+                    pass
+                if doc_continue_text and (max_tokens or 0) < _doc_max:
+                    log.info("[LOCAL] doc 车道输出预留: %s → %s（D7 豁免默认档）",
+                             max_tokens, _doc_max)
+                    max_tokens = _doc_max
+                _doc_truncated = False
                 # 提取用户引用的 KB 文档全文
                 _kb_doc_content = ""
                 if file_path:
@@ -267,11 +286,18 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                         think_content = content
                         think_folded = True
                         yield sse_event("fold", {"think_len": len(think_content)})
+                    elif phase == "truncated":
+                        # G6 D7：正文被 max_tokens 截断——落款提示随正文一起保存/展示
+                        _doc_truncated = True
                     elif phase == "text":
                         response_text += content
                         yield sse_event("token", {"content": content})
                     elif phase == "reload":
                         yield sse_event("model_reload", {"model": content})
+                if _doc_truncated:
+                    _note = "\n\n（注：内容达到单次生成长度上限被截断，发送「继续」可接着写。）"
+                    response_text += _note
+                    yield sse_event("token", {"content": _note})
 
             # ====== 步骤 7: StreamEngine → Ollama /api/chat ======
             else:
@@ -354,6 +380,10 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                         think_content = content
                         think_folded = True
                         yield sse_event("fold", {"think_len": len(think_content)})
+                    elif phase == "truncated":
+                        # G6 D7：输出被 max_tokens 截断——先标记；步骤 9 自动续写若能
+                        # 补全就不打扰用户，仍不完整才落款提示（随正文保存/展示）
+                        _chat_truncated = True
                     elif phase == "text":
                         response_text += content
                         yield sse_event("token", {"content": content})
@@ -473,7 +503,21 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             if cont_text:
                 log.info("[CONTINUE] 续写完成，新增 %d 字", len(cont_text))
 
+        # ====== 步骤 9b: 截断落款（G6 D7） ======
+        # finish_reason=length 且自动续写后仍不完整 → 给用户明确提示（随正文落库，
+        # 对齐 PM 证据「2243 字句中戛然而止、零提示」）
+        if _chat_truncated:
+            from session.continuation import is_output_incomplete as _still_incomplete
+            if _still_incomplete(response_text or raw_text):
+                _note = "\n\n（注：回复达到单次生成长度上限被截断，发送「继续」可接着写。）"
+                response_text += _note
+                yield sse_event("token", {"content": _note})
+
         # ====== 步骤 10: response_filter（语义重复截断） ======
+        # G6 D7：文档正文车道跳过——cleaned/语义重复截断会静默删掉合法文档内容
+        #（PM 实锤 STREAM 2243 字 → 落库 1947 字，断在句中），文档结构里
+        # 相近句式（背景/团队/风险各节）极易被误判重复。
+        _doc_final = (_doc_mode and not _doc_outline_only)
         elapsed = time.time() - t0
         response_chars = len(response_text.strip()) if response_text else 0
         think_chars = len(think_content.strip()) if (think_folded and think_content) else 0
@@ -487,9 +531,18 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
         final_text = response_text or raw_text
         filter_warnings = []
         filter_corrections = []
+        if _doc_final:
+            log.info("[FILTER] 文档车道跳过 response_filter（D7：防正文静默删改，%d字）",
+                     len(final_text))
         try:
             from intelligence.response_filter import filter_response
-            filter_result = filter_response(final_text, user_msg=message)
+            # G6 D7：文档正文车道跳过过滤——cleaned/语义重复截断会静默删掉合法文档
+            # 内容（PM 实锤 STREAM 2243 字 → 落库 1947 字断在句中），文档各章节
+            # 相近句式（背景/团队/风险）极易被误判重复
+            if _doc_final:
+                filter_result = {"warnings": [], "corrections": [], "cleaned": final_text}
+            else:
+                filter_result = filter_response(final_text, user_msg=message)
             filter_warnings = filter_result.get("warnings", [])
             filter_corrections = filter_result.get("corrections", [])
             # P6: 前缀累积警告不暴露给用户（仅日志内部使用），文本已在 cleaned 字段处理
@@ -660,6 +713,23 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
                     "filename": doc_filename,
                 })
                 log.info("[LOCAL] DOC 生成完成: %s", doc_filename)
+                # G6 D9：pandoc 车道同时把 Markdown 源码写进会话工作区（同名 .md）——
+                # docx 预览只认 agent create_docx 车道的结构化数据，pandoc 车道此前
+                # 落「该类型暂不支持预览」；viewer 对工作区同名 .md 有现成回退渲染。
+                try:
+                    if chat_file:
+                        from core.doc_session import safe_workspace_path
+                        _md_name = doc_filename[:-len(".docx")] + ".md"
+                        _md_path = safe_workspace_path(
+                            os.path.basename(chat_file).rstrip(os.sep), _md_name)
+                        os.makedirs(os.path.dirname(_md_path), exist_ok=True)
+                        with open(_md_path, "w", encoding="utf-8") as _mf:
+                            _mf.write(final_response)
+                        log.info("[LOCAL] DOC 源码回写工作区: %s (%d字)", _md_name,
+                                 len(final_response))
+                except Exception as _md_e:
+                    log.warning("[LOCAL] DOC 源码回写失败（不影响文档本体）: %s",
+                                str(_md_e)[:80])
                 # 回写 doc_url 到已保存的消息
                 if _saved and messages:
                     messages[-1]["doc_url"] = download_url

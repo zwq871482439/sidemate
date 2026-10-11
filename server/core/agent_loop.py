@@ -207,6 +207,31 @@ LOW_ROUNDS_WARN = 5
 ROUND_CONVERGE_HINT = 10
 
 
+def _format_search_kb_tool_result(result: dict) -> str:
+    """G6 D8：search_kb 工具结果 → 面向模型的平文本（对齐 attach 注入格式）。
+
+    JSON 包装的 data.context 对小模型信号太弱（实测 0.8B 直接答「资料未提及」），
+    改为：置顶声明 + 来源 + 原文 + 依据性硬约束（含「不得答未提及」）。
+    hint（轮次预警等）由调用方拼在返回值之后。
+    """
+    data = result.get("data") or {}
+    context = data.get("context") or ""
+    sources = data.get("sources") or []
+    lines = ["[知识库检索结果 · 以下为命中的原文内容，回答必须依据这些资料]"]
+    if result.get("hint"):
+        lines.append(str(result["hint"]))
+    if sources:
+        lines.append("来自文档: " + "、".join(
+            str(s.get("label", "?")) for s in sources[:5]))
+    lines.append("")
+    lines.append(context)
+    lines.append(
+        "\n[要求] 以上资料是知识库原文。若其中已包含答案，必须依据资料作答并标注来源；"
+        "严禁在资料已有相关内容时回答「资料未提及/没有相关内容」——"
+        "仅当换关键词检索多次后仍无命中才允许说明未检索到。")
+    return "\n".join(lines)
+
+
 def _extract_md_title(md_content):
     """从 Markdown 内容提取第一个 # 一级标题作为文档标题。
 
@@ -640,7 +665,15 @@ class AgentLoop:
                 yield ("agent_status", done_status)
 
                 # 追加 tool 结果到 messages
-                result_str = json.dumps(result, ensure_ascii=False)
+                # G6 D8：search_kb 结果改用平文本注入——此前 JSON.dumps 把检索
+                # 原文埋进 data.context 的转义字符串里，小模型（0.8B/2B）几乎不
+                # 采用，答「资料未提及」；attach 注入车道（平文本全文置顶）实测
+                # 同一模型答得完全正确，这里对齐该格式。
+                if tool_name == "search_kb" and isinstance(result, dict) \
+                        and result.get("success") and (result.get("data") or {}).get("context"):
+                    result_str = _format_search_kb_tool_result(result)
+                else:
+                    result_str = json.dumps(result, ensure_ascii=False)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc_id,
