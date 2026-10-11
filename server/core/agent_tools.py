@@ -1274,7 +1274,8 @@ def register_mcp_tools():
 
 
 _FRAGMENT_LOADERS = {
-    "cards": lambda: __import__("prompts").CARD_PROTOCOL_PROMPT,
+    # rc.5 记忆下线增量：经 card_protocol_prompt() 按 feature_memory 决定记忆段拼接
+    "cards": lambda: __import__("prompts").card_protocol_prompt(),
     "ppt": lambda: __import__("prompts").PPT_PROTOCOL_PROMPT,
     "d2": lambda: __import__("prompts").D2_PROTOCOL_PROMPT,
     "docx": lambda: __import__("prompts").DOCX_PROTOCOL_PROMPT,

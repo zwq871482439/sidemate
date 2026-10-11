@@ -123,6 +123,7 @@ function _handleEvent(d, st, hooks) {
   switch (d.type) {
     case 'token':
       st.text += d.content || '';
+      if (st.status) st.status = '';  // 首个正文 token 到达，过程提示退场
       hooks.onStreamTick(st, 'token');
       break;
     case 'think_token':
@@ -176,6 +177,14 @@ function _handleEvent(d, st, hooks) {
     case 'compress':
       st.status = d.msg || '较早的对话已省略';
       hooks.onStreamTick(st, 'token');
+      break;
+    case 'mode_hint':
+      // G6 D5：过程提示（正在加载本地模型/正在搜索文库/正在生成提纲…）——
+      // 此前 v2 流读取器不认这个事件，服务端发了也到不了气泡
+      if (d.message || d.hint || d.msg) {
+        st.status = d.message || d.hint || d.msg;
+        hooks.onStreamTick(st, 'token');
+      }
       break;
     case 'truncate':
       if (d.content) st.text = d.content;

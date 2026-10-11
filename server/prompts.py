@@ -90,13 +90,29 @@ CARD_PROTOCOL_PROMPT = (
     "   ask 规则：options 2-4 个、互斥且覆盖主要可能；allow_input 表示允许用户手敲补充；"
     "输出 ask 块后本轮立刻结束，不得自问自答；用户回答后再继续。"
     "用户已限定输出格式时（只回 X / 一行 / 不超过 N 字 / 不要解释），本轮不输出 ask 块。"
+    "注意：ask 是输出围栏块，不是工具——任何时刻都不要把它当工具调用。"
+)
+
+# 记忆确认卡协议段（0.11 C3）。rc.5（#28）：记忆系统随 feature_memory 默认下线，
+# 协议文本不再常驻卡片协议——经 card_protocol_prompt() 按开关拼接（省 token，
+# 且模型不再被指示产记忆卡，比输出侧 strip_memory_ask 更前置；两道防线并存）。
+MEMORY_CARD_PROMPT = (
     "记忆确认卡（kind=memory_save）额外约束：只对跨会话有价值的长期事实"
     "（偏好、日程、身份、项目基线）询问，一次会话内同类信息只问一次；"
     "用户已选择不记后，本会话不再询问记忆写入。"
     "选项必须正好是 [\"同意写入\", \"不用记\"]，不得改写成别的文案；"
     "question 必须包含将要写入的那一条记忆原文。"
-    "注意：ask 是输出围栏块，不是工具——任何时刻都不要把它当工具调用。"
 )
+
+
+def card_protocol_prompt() -> str:
+    """卡片协议全文。feature_memory=True 时追加记忆确认卡段（rc.5 默认 False）。"""
+    try:
+        from config import get as _cfg_get
+        enabled = bool(_cfg_get("feature_memory", False))
+    except Exception:
+        enabled = False
+    return CARD_PROTOCOL_PROMPT + MEMORY_CARD_PROMPT if enabled else CARD_PROTOCOL_PROMPT
 
 # 真 PPT 协议（0.10.1 M1-E：create_ppt 工具，SVG 单一中间表示 + DNA-01 设计卡）
 # 追加在在线 agent system prompt 尾部（create_ppt 工具启用时）；离线不注入
@@ -363,7 +379,9 @@ DOC_OUTLINE_PROMPT = (
     "2. 第一行是 # 一级标题（文档标题）\n"
     "3. 用 ## 二级标题列出主要章节\n"
     "4. 每个章节下用 1-2 句简短描述说明该章节要写什么\n"
-    "5. 全中文输出\n\n"
+    "5. 全中文输出\n"
+    "6. 【最重要的规则】只写提纲，禁止写正文——每个章节最多 2 句说明，"
+    "不允许出现成段的论述、数据或展开内容\n\n"
     "章节数量指引（根据文档类型灵活调整，不要固定3个）：\n"
     "- 技术方案/架构文档：5-7 个章节（背景、方案、实现、测试、风险等）\n"
     "- 分析报告/调研：4-6 个章节（概述、现状、分析、结论、建议）\n"
@@ -371,6 +389,12 @@ DOC_OUTLINE_PROMPT = (
     "- 教程/指南：4-8 个章节（按步骤或主题划分）\n"
     "- 简短说明/通知：2-3 个章节\n"
     "请根据实际内容需要选择合适的章节数量，宁可多分几个有实质内容的章节，也不要硬凑。\n\n"
+    "输出示例（照此结构，仅标题+一句说明）：\n"
+    "# 示例文档标题\n"
+    "## 一、项目背景\n"
+    "说明为什么要做这件事。\n"
+    "## 二、实施方案\n"
+    "说明打算怎么做。\n\n"
     "用户要求：{user_request}\n\n"
     "请直接输出提纲（从 # 标题开始），不要输出正文内容："
 )

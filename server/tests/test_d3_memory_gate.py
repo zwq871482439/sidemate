@@ -74,6 +74,12 @@ class TestAcceptRecordsConfirmation:
         assert _is_memory_card_decline(q, "不用记")
         assert not _is_memory_card_accept("要执行这个计划吗？", "同意写入")
 
-    def test_prompt_pins_option_text(self):
-        from prompts import CARD_PROTOCOL_PROMPT
-        assert '["同意写入", "不用记"]' in CARD_PROTOCOL_PROMPT
+    def test_prompt_pins_option_text(self, monkeypatch):
+        # rc.5 记忆下线增量：记忆段抽到 MEMORY_CARD_PROMPT，经
+        # card_protocol_prompt() 按 feature_memory 拼接——验证开关打开时文案仍钉死
+        import config
+        cache = dict(config._config_cache)
+        cache["feature_memory"] = True
+        monkeypatch.setattr(config, "_config_cache", cache)
+        from prompts import card_protocol_prompt
+        assert '["同意写入", "不用记"]' in card_protocol_prompt()
