@@ -166,6 +166,12 @@ def _persist_turn_impl(ctx, assistant_msg, context_cache=None):
     # 由管道统一打 engine=local/cloud/parallel，前端直读不再猜）
     if assistant_msg is not None:
         assistant_msg.setdefault("engine", ctx.ai_mode or "")
+        if assistant_msg.get("content"):
+            try:
+                from core.curated_memory import strip_memory_ask
+                assistant_msg["content"] = strip_memory_ask(assistant_msg["content"])
+            except Exception:
+                pass
 
     if ctx.user_msg_saved and ctx.user_msg_id:
         try:

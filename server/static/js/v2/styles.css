@@ -191,11 +191,13 @@ body {
 .sess-new-in .ic { font-size: 11px; }
 .sess-item .si-bar { display: flex; align-items: center; }
 .sess-item .si-bar .st { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sess-more {
+.sess-more, .sess-del {
   opacity: 0; background: none; border: none; color: var(--d1-dark-ink-3); cursor: pointer;
   font-size: 13px; padding: 2px 4px; border-radius: 4px;
 }
-.sess-item:hover .sess-more, .sess-more.on { opacity: 1; }
+.sess-del { font-size: 11px; }
+.sess-item:hover .sess-more, .sess-item:hover .sess-del, .sess-more.on { opacity: 1; }
+.sess-del:hover { color: var(--pal-danger); background: rgba(255,255,255,.12); }
 .sess-more:hover { color: var(--d1-paper); background: rgba(255,255,255,.12); }
 
 .sess-menu {

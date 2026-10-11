@@ -21,19 +21,19 @@ const I = {
 // 场景卡定义（原型 v14 定稿）
 const ONLINE_SCENES = {
   hero: { scene: 'chat', icon: I.chat, title: '聊天', tag: '最常用',
-    desc: '日常问答、头脑风暴、翻译润色 —— 也可以什么都不选，直接开聊' },
+    desc: '随便问问、一起想点子、改一段文字。也可以不点卡片，直接在下面打字' },
   sections: [
-    { title: '创作交付', desc: 'AI 现场设计，右视窗实时预览', grid: 'six', cards: [
-      { scene: 'ppt', icon: I.ppt, title: '写 PPT', desc: '丢材料进来，逐页设计预览，下载可编辑 PPTX' },
-      { scene: 'doc', icon: I.doc, title: '写文档', desc: '报告、方案、长文；先出网页预览，可转 Word' },
-      { scene: 'report', icon: I.report, title: '可视化报告', desc: '图表 + 网页报告，数据一眼看懂' },
-      { scene: 'poster', icon: I.poster, title: '设计海报', desc: '封面、海报、配图，多平台尺寸', gold: true },
-      { scene: 'gzh', icon: I.gzh, title: '公众号文章', desc: '一键排版粘贴，样式不丢', gold: true },
-      { scene: 'diagram', icon: I.diagram, title: '画图', desc: '交付级图示：架构/流程/ER/漏斗…39 型', gold: true },
+    { title: '创作交付', desc: '做成能打开、能下载的文件', grid: 'six', cards: [
+      { scene: 'ppt', icon: I.ppt, title: '写 PPT', desc: '把材料做成幻灯片，先看效果，再下载 PPT' },
+      { scene: 'doc', icon: I.doc, title: '写文档', desc: '写报告、方案或长文章，先看排版，再导出 Word' },
+      { scene: 'report', icon: I.report, title: '可视化报告', desc: '用图表把数字讲清楚' },
+      { scene: 'poster', icon: I.poster, title: '设计海报', desc: '做封面、海报或配图，可以选不同尺寸', gold: true },
+      { scene: 'gzh', icon: I.gzh, title: '公众号文章', desc: '排成公众号里能直接粘贴的样子', gold: true },
+      { scene: 'diagram', icon: I.diagram, title: '画图', desc: '画架构图、流程图或关系图', gold: true },
     ]},
-    { title: '研究深挖', desc: '联网与多轮工具循环', grid: 'two', cards: [
-      { scene: 'search', icon: I.search, title: '联网搜索', desc: '搜索 → 阅读原文 → 回答，附来源' },
-      { scene: 'deep', icon: I.deep, title: '深度分析', desc: '多轮工具循环，适合复杂课题' },
+    { title: '研究深挖', desc: '先查资料，再回答', grid: 'two', cards: [
+      { scene: 'search', icon: I.search, title: '联网搜索', desc: '上网查找，读原文，回答里标出来源' },
+      { scene: 'deep', icon: I.deep, title: '深度分析', desc: '题目比较复杂时，多查几轮再给结论' },
     ]},
   ],
 };
@@ -66,7 +66,7 @@ export function renderEmptyState(mode, events) {
         <span class="eo-name">${events.projectLabel}</span>
         <button class="eo-change">更换 ▾</button>
       </div>` : '';
-  const handoffRow = events.handoffMeta ? `
+  const handoffRow = (events.handoffMeta && events.features && events.features.memory) ? `
       <div class="empty-handoff" title="会话记忆已注入新会话">
         ${icon('fileText')} 已载入会话记忆${events.handoffMeta.source_chat ? '（来自会话 ' + events.handoffMeta.source_chat + '）' : ''}${events.handoffMeta.updated_at ? ' · 更新于 ' + events.handoffMeta.updated_at : ''}
       </div>` : '';
@@ -99,7 +99,7 @@ export function renderEmptyState(mode, events) {
       <div class="empty-hero">
         <div class="mark"><img src="/static/img/logo.jpg" alt="桌伴"></div>
         <h1>开始一段新对话</h1>
-        <p>选择一个场景，或直接输入 —— 想做什么，随时切随</p>
+        <p>点一张卡片，或者直接在下面输入</p>
       </div>
       ${projRow}
       ${handoffRow}

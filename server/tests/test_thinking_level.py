@@ -39,7 +39,9 @@ class TestThinkingKwargs:
 
     def test_deepseek_low_maps_enabled(self, env):
         env.update(cloud_thinking_level="low")
-        assert CloudEngine._thinking_kwargs("deepseek-v4-flash") == {"thinking": {"type": "enabled"}}
+        kw = CloudEngine._thinking_kwargs("deepseek-v4-flash")
+        assert kw.get("reasoning_effort") == "low"
+        assert (kw.get("extra_body") or {}).get("thinking") == {"type": "enabled"}
 
     def test_openai_low(self, env):
         env.update(cloud_thinking_level="low")

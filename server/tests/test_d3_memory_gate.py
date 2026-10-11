@@ -15,6 +15,14 @@ def env(tmp_path, monkeypatch):
     data.mkdir()
     import config
     monkeypatch.setattr(config, "DATA_DIR", str(data))
+    _orig_get = config.get
+
+    def _get(k, d=None):
+        if k == "feature_memory":
+            return True
+        return _orig_get(k, d)
+
+    monkeypatch.setattr(config, "get", _get)
     from session import chat_store
     monkeypatch.setattr(chat_store, "CHAT_DIR", str(chats))
     import session.projects as projects

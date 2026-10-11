@@ -997,10 +997,8 @@ async function loadCloudConfig() {
         modelEl.value = '';
       }
     }
-    // P8-3: 输入上限——用户覆盖值优先，其次自动匹配预填，未匹配留空引导手填
-    _setCtxField(data.context_window_user > 0 ? data.context_window_user : 0,
-                 data.context_matched ? data.context_window : 0,
-                 data.context_window_user > 0);
+    // 上下文长度只显示用户已填的值，并提示确认。不再按模型名自动填。
+    _setCtxField(data.context_window_user > 0 ? data.context_window_user : 0, 0, true);
     if (keyEl) {
       if (data.api_key_set && data.api_key_preview) {
         keyEl.value = data.api_key_preview;
@@ -1022,19 +1020,11 @@ async function loadCloudConfig() {
       var kbPerm = document.getElementById('kbPermissionSelect');
       if (kbPerm) kbPerm.value = data.kb_permission;
     }
-    if (modelEl && !modelEl._capsBound) {
-      modelEl._capsBound = true;
-      modelEl.addEventListener('blur', _autofillCloudCtx);
-      modelEl.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); _autofillCloudCtx(); }
-      });
-    }
-    // 输入上限手动编辑 → 标注"用户覆盖"
     var ctxEl = document.getElementById('cloudContextWindow');
     if (ctxEl && !ctxEl._p83Bound) {
       ctxEl._p83Bound = true;
       ctxEl.addEventListener('input', function() {
-        _setCtxHint('用户覆盖');
+        _setCtxHint('请确认上下文长度');
       });
     }
     _bindCloudFormOnce();
@@ -1054,19 +1044,15 @@ function _setCtxField(userVal, autoVal, isUserOverride) {
   if (!ctxEl) return;
   if (userVal > 0) {
     ctxEl.value = userVal;
-    _setCtxHint(isUserOverride ? '用户覆盖' : '已自动匹配，可改');
-  } else if (autoVal > 0) {
-    ctxEl.value = autoVal;
-    _setCtxHint('已自动匹配，可改');
   } else {
     ctxEl.value = '';
-    _setCtxHint('未识别，请查服务商文档后手填');
   }
+  _setCtxHint('请确认上下文长度');
 }
 
 function _setCtxHint(text) {
   var hint = document.getElementById('cloudCtxHint');
-  if (hint) hint.textContent = 'tokens · ' + text;
+  if (hint) hint.textContent = text || '请确认上下文长度';
 }
 
 // P8-3: 模型名变更 → 自动匹配输入上限（内置表），未匹配则留空引导手填
@@ -1500,8 +1486,8 @@ async function saveCloudConfig() {
   var ctxEl = document.getElementById('cloudContextWindow');
   var ctxRaw = ctxEl ? ctxEl.value.trim() : '';
   if (!ctxRaw) {
-    body.context_window = 32768;
-    showToast('输入上限未填，将按保守默认 32K 处理（可回设置页修改）', 'warning', 5000);
+    showToast('请确认上下文长度', 'error');
+    return;
   } else {
     var ctxNum = parseInt(ctxRaw, 10);
     if (!ctxNum || ctxNum <= 0) {

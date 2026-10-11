@@ -5,9 +5,10 @@ import './styles.css';
 import { api, MODE_LABEL, getModelTag } from './api.js';
 import { icon, iconSvg } from './icons.js';
 import { renderSidebar, loadSessions } from './sidebar.js';
+import { sessionLabel } from './pure.js';
 import { renderEmptyState } from './empty_state.js';
 import { renderChatFlow, loadMessages, setCardMode } from './chat_view.js';
-import { extractCards, hydrateCards, extractMermaid, hydrateMermaid, extractD2, hydrateD2 } from './cards_content.js';
+import { extractCards, hydrateCards, extractMermaid, hydrateMermaid, extractD2, hydrateD2, setFeatureFlags } from './cards_content.js';
 import { renderComposer, loadLocalActions, estimateTokens } from './composer.js';
 import { createChatStream } from './stream_chat.js';
 import { createKBView } from './kb.js';
@@ -30,6 +31,8 @@ const state = {
   actionMode: 'chat', // 离线 action / 在线恒 chat（chips 只预填引导词）
   localActions: [],   // 离线 action 列表
   contextWindow: 8192,
+  contextNeedsConfirm: false,
+  features: { memory: false, distill: false, privateMark: false },
   modelTag: '',
   scene: '',          // 场景占位符 tag（空状态场景卡落 tag，不打字进输入框）
   kbTree: null,       // （已退役：侧栏范围树移除，仅 buildKbTree 的 subMap 副作用在用）
@@ -175,8 +178,16 @@ function render() {
         // 而 /api/mode 回的是展示口径 1000000——与经典版一致，switch 后重拉 /api/mode
         try {
           const m2 = await api.getMode();
-          if (m2 && m2.context_window) state.contextWindow = m2.context_window;
-        } catch (e) { /* 保底用 switch 返回值 */ if (r.context_window) state.contextWindow = r.context_window; }
+          if (m2) {
+            state.contextNeedsConfirm = !!m2.context_needs_confirm;
+            state.contextWindow = m2.context_needs_confirm ? 0 : (m2.context_window || 0);
+          }
+        } catch (e) {
+          if (r.context_needs_confirm) {
+            state.contextNeedsConfirm = true;
+            state.contextWindow = 0;
+          } else if (r.context_window) state.contextWindow = r.context_window;
+        }
         state.modelTag = await getModelTag(state.mode);
         if (state.mode === 'cloud') await loadCloudProfiles();  // B1：顶栏档案快切
         if (state.mode === 'local' && !state.localActions.length) {
@@ -270,6 +281,7 @@ function render() {
       render();
     },
     onSessionMenu: (c, anchorEl) => showSessionMenu(c, anchorEl),
+    onDeleteSession: (c) => deleteSession(c),
     // onKbFilter 已随侧栏文档范围树移除（B2：筛选统一走主区 chips）
   }));
 
@@ -346,6 +358,7 @@ function render() {
       getCurrentChat: () => state.sessions.find(c => c.current),
       getSessions: () => state.sessions,
       getHarness: () => ({ modeLabel: MODE_LABEL[state.mode] || state.mode, modelTag: state.modelTag }),
+      getFeatures: () => state.features,
       getViewedProject: () => _viewedProject,
       onSwitchSession: async (c) => {
         _viewedProject = null;
@@ -598,6 +611,7 @@ function renderChatArea() {
     actionMode: state.actionMode,
     localActions: state.localActions,
     contextWindow: state.contextWindow,
+    contextNeedsConfirm: state.contextNeedsConfirm,
     historyTokens,
     hasMessages: !!(state.messages && state.messages.length),
     scene: state.scene,
@@ -667,7 +681,7 @@ function _renderScrollContent(scroll) {
     scroll.innerHTML = `<div class="legacy-empty">
       <div class="legacy-empty-ic">${iconSvg('archive')}</div>
       <div class="legacy-empty-t">旧版本会话 · 只读存档</div>
-      <div class="legacy-empty-d">这条会话来自旧版本，没有对话内容。可以看、导出、下载产物；<br>要聊新内容，点左侧「新建任务」。</div>
+      <div class="legacy-empty-d">这条会话来自旧版本，没有对话内容。可以看、导出、下载产物；<br>要聊新内容，点左侧「新建会话」。</div>
     </div>`;
   } else {
     scroll.innerHTML = '';
@@ -683,6 +697,7 @@ function _renderScrollContent(scroll) {
       projectLabel: projLabel,
       onPickProject: (anchor) => showProjectPicker(anchor),
       handoffMeta: state.handoff ? { source_chat: state.handoff.source_chat, updated_at: state.handoff.updated_at } : null,
+      features: state.features,
       peersMeta: _peers.length ? { count: Math.min(_peers.length, 8) } : null,
     }));
   }
@@ -998,7 +1013,7 @@ async function onSend(payload) {
   if (state.generating) return;
   // 旧版会话只读（后端 stream 同样拒绝，这里是前置提示）
   if (state.workdir && state.workdir.legacy) {
-    uiAlert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建任务」。');
+    uiAlert('这是旧版本会话，已转为只读存档。要聊新内容请点「新建会话」。');
     return;
   }
   // 无会话则先建（零摩擦开始：空状态直达；落在空状态选择器选定的项目）
@@ -1559,12 +1574,13 @@ function showSessionMenu(chat, anchorEl) {
   const menuEl = document.createElement('div');
   _menuEl = menuEl;
   menuEl.className = 'sess-menu';
+  const feat = state.features || {};
   menuEl.innerHTML = `
     <button data-a="rename">重命名</button>
     <button data-a="export">导出（.txt）</button>
-    <button data-a="handoff">生成会话记忆</button>
-    <button data-a="distill">存为技能（经验沉淀）</button>
-    <button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>
+    ${feat.memory ? '<button data-a="handoff">生成会话记忆</button>' : ''}
+    ${feat.distill ? '<button data-a="distill">存为技能（经验沉淀）</button>' : ''}
+    ${feat.privateMark ? `<button data-a="private">${chat.private ? '取消私密' : '标为私密'}</button>` : ''}
     <button data-a="del" class="danger">删除会话</button>`;
   document.body.appendChild(menuEl);
   const r = anchorEl.getBoundingClientRect();
@@ -1611,10 +1627,12 @@ function showSessionMenu(chat, anchorEl) {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
-  menuEl.querySelector('[data-a="handoff"]').addEventListener('click', async () => {
+  const _handBtn = menuEl.querySelector('[data-a="handoff"]');
+  if (_handBtn) _handBtn.addEventListener('click', async () => {
     menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
     await generateHandoffFlow(null, false);
-  });  const _privBtn = menuEl.querySelector('[data-a="private"]');
+  });
+  const _privBtn = menuEl.querySelector('[data-a="private"]');
   if (_privBtn) _privBtn.addEventListener('click', async () => {
     menuEl.remove(); _menuEl = null;
     const on = !chat.private;
@@ -1638,7 +1656,8 @@ function showSessionMenu(chat, anchorEl) {
   });
 
   // 0.11 C3 经验沉淀：会话轨迹 → SKILL.md（在线直连一次生成 → 注册）
-  menuEl.querySelector('[data-a="distill"]').addEventListener('click', async () => {
+  const _distillBtn = menuEl.querySelector('[data-a="distill"]');
+  if (_distillBtn) _distillBtn.addEventListener('click', async () => {
     menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
     if (!(await uiConfirm('存为技能？将分析这个会话的任务轨迹，提炼一份可复用技能（需在线模式）')))
       return;
@@ -1650,14 +1669,20 @@ function showSessionMenu(chat, anchorEl) {
       uiAlert('沉淀失败：' + ((r && r.error) || '未知错误'));
     }
   });
-  menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
-    const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
-    if (!(await uiConfirm(`删除会话「${chat.name}」？会话记录将被删除${legacyNote}，此操作不可撤销。`))) return;
-    await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });
-    state.sessions = await loadSessions();
-    await loadCurrentMessages();
-    render();
+  menuEl.querySelector('[data-a="del"]').addEventListener('click', async () => {
+    menuEl.remove(); if (_menuEl === menuEl) _menuEl = null;
+    await deleteSession(chat);
   });
+}
+
+async function deleteSession(chat) {
+  const legacyNote = chat.legacy ? '，其工作区里的旧版产物也会一并删除（可先在右视窗「文件」tab 下载）' : '';
+  const label = sessionLabel(chat);
+  if (!(await uiConfirm(`删除会话「${label}」？会话记录将被删除${legacyNote}，此操作不可撤销。`))) return;
+  await fetch('/api/chats/' + encodeURIComponent(chat.name), { method: 'DELETE' });
+  state.sessions = await loadSessions();
+  await loadCurrentMessages();
+  render();
 }
 
 // 轻量输入模态（webview 里原生 prompt 不可靠）
@@ -1690,7 +1715,10 @@ async function boot() {
   try {
     const m = await api.getMode();
     if (m && m.mode) state.mode = m.mode;
-    if (m && m.context_window) state.contextWindow = m.context_window;
+    if (m) {
+      state.contextNeedsConfirm = !!m.context_needs_confirm;
+      state.contextWindow = m.context_needs_confirm ? 0 : (m.context_window || state.contextWindow);
+    }
     state.modelTag = await getModelTag(state.mode);
     if (state.mode === 'cloud') await loadCloudProfiles();  // B1：顶栏档案快切
     // C1：恢复未读 badge + 启动会话状态轮询（五态指示器）
@@ -1702,6 +1730,13 @@ async function boot() {
     try {
       const all = await fetch('/api/config').then(r => r.json());
       state.parallelEnabled = !!(all && all.config && all.config.parallel_enabled);
+      const cfg = (all && all.config) || {};
+      state.features = {
+        memory: !!cfg.feature_memory,
+        distill: !!cfg.feature_distill_skill,
+        privateMark: !!cfg.feature_mark_private,
+      };
+      setFeatureFlags(state.features);
       // 0.11.1 M2-4：界面缩放（设置→常规；localStorage 同步镜像，跨启动生效）
       const _z = all && all.config && parseFloat(all.config.ui_font_scale);
       const z = _z || (parseFloat(localStorage.getItem('v2FontScale')) || 1);

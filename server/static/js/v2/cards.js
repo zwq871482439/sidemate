@@ -5,6 +5,7 @@
 // 序列化格式与 card_data 完全兼容（与经典版 enrich 同一结构），历史回放共用。
 
 import { icon, iconSvg } from './icons.js';
+import { isToolCompletion } from './pure.js';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -277,14 +278,21 @@ export function createCardArea() {
       if (!curUnit) _newUnit();
       const label = agentStatusLabel(status, d);
       const detail = d.query || d.url || d.path || d.filename || d.expression || d.message || '';
-      const isDone = status.endsWith('_done');
+      const isDone = isToolCompletion(status);
       if (isDone) {
         // 计数聚合（L1 文案来源）
         if (status === 'search_done') _cnt.searches++;
         if (status === 'fetch_done') _cnt.fetches++;
         if (status === 'kb_done' || status === 'proj_kb') _cnt.kb++;
-        // 匹配最近的 running 工具行（先在当前思考轮内找，找不到查台账尾部）
-        const t = [...curUnit.tools].reverse().find(t => t.status === 'running');
+        // 完成态不一定以 _done 结尾（skill_mounted / docs_listed 等）。
+        // 思考事件会新开一轮，完成事件要回到上一轮里那条 running，否则会再画一行。
+        let t = null;
+        for (let ui = units.length - 1; ui >= 0 && !t; ui--) {
+          const tools = units[ui].tools || [];
+          for (let ti = tools.length - 1; ti >= 0; ti--) {
+            if (tools[ti].status === 'running') { t = tools[ti]; break; }
+          }
+        }
         if (t) {
           t.status = 'done';
           if (t._row) t._row.querySelector('.dt').className = 'dt ok';

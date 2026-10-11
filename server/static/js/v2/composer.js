@@ -5,6 +5,7 @@
 import { api } from './api.js';
 import { icon, iconSvg } from './icons.js';
 import { uiAlert } from './ui_dialog.js';
+import { showSceneTag } from './pure.js';
 
 // Token 估算（照搬经典版 token-estimator.js：中文 ~1.5 字/token，英文 ~4 字/token）
 // 模块级消息队列（composer 重建不丢失——终验 T-7 修复）
@@ -29,7 +30,8 @@ export function renderComposer(state, events) {
   const wrap = document.createElement('div');
   wrap.className = 'composer';
 
-  const maxTokens = state.contextWindow || 8192;
+  const needsCtx = !!state.contextNeedsConfirm || (state.mode === 'cloud' && !(state.contextWindow > 0));
+  const maxTokens = needsCtx ? 0 : (state.contextWindow || 8192);
   const fmtK = (n) => (n / 1000).toFixed(1) + 'K';
   const fmtKU = (n) => (n / 1000).toFixed(1) + 'K词元';
 
@@ -48,8 +50,8 @@ export function renderComposer(state, events) {
             <span class="tb-tag tb-tag-used" id="v2TokenUsedTag" title="">已用 <span id="v2TokenHist">0.0K</span></span>
             <span class="tb-tag tb-tag-cur">本轮 <span id="v2TokenCur">0.0K</span></span>
           </span>
-          <span class="tb-lbl-right">剩余 <span class="tb-remain" id="v2TokenRemain">0.0K词元</span>
-            <span class="tb-limit">/ 总计 <span id="v2TokenLimit">${fmtKU(maxTokens)}</span></span></span>
+          <span class="tb-lbl-right">${needsCtx ? '<span class="tb-remain" id="v2TokenRemain">请确认上下文长度</span>' : `剩余 <span class="tb-remain" id="v2TokenRemain">0.0K词元</span>
+            <span class="tb-limit">/ 总计 <span id="v2TokenLimit">${fmtKU(maxTokens)}</span></span>`}</span>
         </div>
       </div>
     </div>
@@ -99,21 +101,22 @@ export function renderComposer(state, events) {
     search:{ label: '联网搜索',   ph: '输入要联网搜索的主题…' },
     deep:  { label: '深度分析',   ph: '描述要深挖的课题…' },
   };
+  let attach = null;
   function renderSceneTag() {
     const sc = state.scene && SCENE_META[state.scene] ? state.scene : (SCENE_META[state.actionMode] ? state.actionMode : '');
     const meta = sc ? SCENE_META[sc] : null;
-    if (meta && sc !== 'chat') {
+    const kbAttached = !!(attach && attach.kind === 'kb');
+    if (meta && showSceneTag(sc, kbAttached)) {
       sceneTagWrap.style.display = '';
       sceneTagWrap.innerHTML = `<span class="scene-tag">${esc(meta.label)}<span class="x" title="取消场景">×</span></span>`;
       sceneTagWrap.querySelector('.x').addEventListener('click', () => {
         events.onSceneClear && events.onSceneClear();
       });
-      textarea.placeholder = meta.ph;
     } else {
       sceneTagWrap.style.display = 'none';
       sceneTagWrap.innerHTML = '';
-      textarea.placeholder = SCENE_META.chat.ph;
     }
+    textarea.placeholder = meta ? meta.ph : SCENE_META.chat.ph;
   }
   renderSceneTag();
   const sendBtn = wrap.querySelector('.cb-send');
@@ -122,11 +125,8 @@ export function renderComposer(state, events) {
   const trayEl = wrap.querySelector('.attach-tray');
   const fileInput = wrap.querySelector('input[type=file]');
 
-  // 附件状态：{ kind: 'upload', name, path } | { kind: 'kb', names: [], ids: 'a,b' }
-  let attach = null;
-
   function renderTray() {
-    if (!attach) { trayEl.style.display = 'none'; trayEl.innerHTML = ''; return; }
+    if (!attach) { trayEl.style.display = 'none'; trayEl.innerHTML = ''; renderSceneTag(); return; }
     trayEl.style.display = 'flex';
     // 悬停指纹（相似材料小修）：token/大小，多份相近材料时可分辨选没选对
     const _tip = (attach.tokens ? '约 ' + attach.tokens + ' tokens' : '') +
@@ -137,6 +137,7 @@ export function renderComposer(state, events) {
       trayEl.innerHTML = `<span class="attach-chip" title="知识库文档：${esc(attach.names.join('、'))}${_tip ? ' · ' + _tip : ''}">${icon('book')} KB：${esc(attach.names.join('、'))}<span class="x" title="移除">×</span></span>`;
     }
     trayEl.querySelector('.x').addEventListener('click', () => { attach = null; attachTokens = 0; renderTray(); updateTokenBar(); _syncSendEnabled(); events.onAttachChange(null); });
+    renderSceneTag();
   }
 
   // ---- 计划/执行 pill（M2-3 写权限双模式；仅在线+有项目的会话显示） ----
@@ -306,9 +307,19 @@ export function renderComposer(state, events) {
 · 本轮生成 ${fmtK(curTotal)}
 · 剩余 ${fmtK(maxTokens - hist - curTotal - (attachTokens||0))}`;
     }
-    wrap.querySelector('#v2TokenLimit').textContent = fmtKU(maxTokens);
-    const ratio = maxTokens > 0 ? total / maxTokens : 0;
+    const limitEl = wrap.querySelector('#v2TokenLimit');
+    if (limitEl) limitEl.textContent = fmtKU(maxTokens);
+    const remainEl = wrap.querySelector('#v2TokenRemain');
     const statusEl = wrap.querySelector('#v2TokenStatus');
+    if (needsCtx) {
+      if (remainEl) remainEl.textContent = '请确认上下文长度';
+      if (statusEl) {
+        statusEl.textContent = '请确认上下文长度';
+        statusEl.classList.remove('status-ok', 'status-warn', 'status-over');
+      }
+      return;
+    }
+    const ratio = maxTokens > 0 ? total / maxTokens : 0;
     statusEl.textContent = ratio < 0.5 ? '空间充足' : (ratio < 0.8 ? '空间紧张' : '空间不足');
     statusEl.classList.remove('status-ok', 'status-warn', 'status-over');
     statusEl.classList.add(ratio >= 0.8 ? 'status-over' : ratio >= 0.5 ? 'status-warn' : 'status-ok');
@@ -324,7 +335,7 @@ export function renderComposer(state, events) {
   const isLegacy = !!(state.workdir && state.workdir.legacy);
   if (isLegacy) {
     textarea.disabled = true;
-    textarea.placeholder = '旧版本会话已转为只读存档——可查看、导出或下载产物；要聊新内容请点「新建任务」';
+    textarea.placeholder = '旧版本会话已转为只读存档——可查看、导出或下载产物；要聊新内容请点「新建会话」';
     sendBtn.disabled = true;
     sendBtn.style.opacity = '.5';
     sendBtn.style.cursor = 'not-allowed';

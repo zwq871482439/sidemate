@@ -319,8 +319,8 @@ def materialize(pid: str, mid: Optional[str]) -> dict:
         # 此前留旧值 → 切到无 Key 服务商（本地网关）时，上一家的 Key
         # 会随 Authorization 头发到新服务商的 base_url（跨主机串用，#9-①）。
         "cloud_api_key": p.get("api_key", ""),
-        # ctx=0 表示「按模型自动」——必须显式复位，否则残留上一个模型的
-        # 手动窗口值，预算/截断口径全错（#9-①）。
+        # ctx=0 表示用户还没填上下文长度。必须显式复位，不能残留上一个
+        # 模型的窗口，也不再按模型名去字典里自动填（#9-① / rc.5）。
         "cloud_context_window": int(m.get("ctx") or 0),
     }
     if m.get("thinking") in ("high", "low", "off"):

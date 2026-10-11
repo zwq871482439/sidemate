@@ -128,7 +128,11 @@ DEFAULTS = {
     "cloud_proxy_mode": "system",                # 云端请求代理："system"（跟随系统代理）| "direct"（直连，代理不稳时逃生口）
     "cloud_context_policy": "full",              # "full" | "current_only" | "slim_history"
     "cloud_slim_history_rounds": 6,               # slim_history 策略保留的轮数
-    "cloud_context_window": 0,                    # 用户手动配置的上下文窗口（0=使用模型默认值）
+    "cloud_context_window": 0,                    # 用户填写的上下文长度（0=未确认，不再按模型名自动匹配）
+    # 0.11.1 rc.5：入口隐藏、默认关。代码保留，不改已有会话数据。
+    "feature_memory": False,
+    "feature_distill_skill": False,
+    "feature_mark_private": False,
     "cloud_thinking_level": "high",               # 思考档位（0.10 M1，仅在线）："high"|"low"|"off"——按接口格式分发传参；400 时自动去参重发
 
     # ----- 联网研究（Patch 2）-----
@@ -289,6 +293,9 @@ _CONFIG_VALIDATORS = {
     "tool_enabled_code_exec": lambda v: isinstance(v, bool),
     "tool_enabled_kb_search": lambda v: isinstance(v, bool),
     "parallel_keyword_gen": lambda v: isinstance(v, bool),
+    "feature_memory": lambda v: isinstance(v, bool),
+    "feature_distill_skill": lambda v: isinstance(v, bool),
+    "feature_mark_private": lambda v: isinstance(v, bool),
 }
 
 

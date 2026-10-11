@@ -4,8 +4,8 @@
 覆盖：
 - 切到未填 Key 的服务商 → cloud_api_key 必须清空（不残留上一家的 Key，
   否则旧 Key 会随请求头发到新服务商的 base_url——跨主机密钥外泄面）
-- 模型 ctx=0（按模型自动）→ cloud_context_window 复位为 0，
-  不残留上一个模型的手动窗口
+- 模型 ctx=0（未填写）→ cloud_context_window 复位为 0，
+  不残留上一个模型的手动窗口，也不查模型字典
 - thinking 空 = 不改当前档（文档化设计，回归护栏）
 
 config 读写全部 monkeypatch 到内存 store，不碰真实 settings.json。
@@ -82,7 +82,7 @@ class TestMaterializeKeyIsolation:
 
 class TestMaterializeContextWindow:
     def test_ctx0_resets_window_to_auto(self, store, monkeypatch):
-        """X ctx=131072 → Y ctx=0（自动）：窗口必须复位 0，不能残留 131072。"""
+        """X ctx=131072 → Y ctx=0（未填）：窗口必须复位 0，不能残留 131072。"""
         monkeypatch.setattr(cp, "_reset_engine_client", lambda: None)
         store.d[cp.PROVIDERS_KEY] = [
             _pv("pv-a", "ProviderA", "https://a.example.com", key="sk-a",
@@ -94,7 +94,7 @@ class TestMaterializeContextWindow:
         r = cp.select("pv-a", "m-y")
         assert r["ok"] is True, r
         # 红点：现实现 ctx=0 时不写 cloud_context_window → 残留 131072
-        assert store.d["cloud_context_window"] == 0, "ctx=0（按模型自动）必须复位 cloud_context_window"
+        assert store.d["cloud_context_window"] == 0, "ctx=0（未填写）必须复位 cloud_context_window"
 
     def test_ctx_explicit_overwrites(self, store, monkeypatch):
         monkeypatch.setattr(cp, "_reset_engine_client", lambda: None)

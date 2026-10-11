@@ -23,6 +23,7 @@ handoff 迁移：memory.md 不存在且项目有 handoff.md → 其正文作为
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -147,8 +148,33 @@ def recall(chat_id: str, query: str) -> dict:
             "exists": mem["exists"]}
 
 
+def memory_enabled() -> bool:
+    from config import get as _cfg
+    return bool(_cfg("feature_memory", False))
+
+
+def strip_memory_ask(text: str) -> str:
+    """记忆下线时，从助手正文拿掉记忆确认卡。计划卡和其他 ask 卡保留。"""
+    if memory_enabled() or not text:
+        return text or ""
+
+    def _repl(m):
+        raw = m.group(1)
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            return m.group(0)
+        if isinstance(obj, dict) and str(obj.get("kind") or "") in ("memory_save", "memory_confirm"):
+            return ""
+        return m.group(0)
+
+    return re.sub(r"```ask\s*(\{.*?\})\s*```", _repl, text, flags=re.S).strip()
+
+
 def inject_hint(chat_id: str) -> str:
     """system prompt 注入块：记忆概要 + 偏好条目（v1 关键词级，v2 向量化在 0.12）。"""
+    if not memory_enabled():
+        return ""
     if not (chat_id or "").strip():
         return ""
     try:
