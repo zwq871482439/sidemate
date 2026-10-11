@@ -90,13 +90,29 @@ CARD_PROTOCOL_PROMPT = (
     "   ask 规则：options 2-4 个、互斥且覆盖主要可能；allow_input 表示允许用户手敲补充；"
     "输出 ask 块后本轮立刻结束，不得自问自答；用户回答后再继续。"
     "用户已限定输出格式时（只回 X / 一行 / 不超过 N 字 / 不要解释），本轮不输出 ask 块。"
+    "注意：ask 是输出围栏块，不是工具——任何时刻都不要把它当工具调用。"
+)
+
+# 记忆确认卡协议段（0.11 C3）。rc.5（#28）：记忆系统随 feature_memory 默认下线，
+# 协议文本不再常驻卡片协议——经 card_protocol_prompt() 按开关拼接（省 token，
+# 且模型不再被指示产记忆卡，比输出侧 strip_memory_ask 更前置；两道防线并存）。
+MEMORY_CARD_PROMPT = (
     "记忆确认卡（kind=memory_save）额外约束：只对跨会话有价值的长期事实"
     "（偏好、日程、身份、项目基线）询问，一次会话内同类信息只问一次；"
     "用户已选择不记后，本会话不再询问记忆写入。"
     "选项必须正好是 [\"同意写入\", \"不用记\"]，不得改写成别的文案；"
     "question 必须包含将要写入的那一条记忆原文。"
-    "注意：ask 是输出围栏块，不是工具——任何时刻都不要把它当工具调用。"
 )
+
+
+def card_protocol_prompt() -> str:
+    """卡片协议全文。feature_memory=True 时追加记忆确认卡段（rc.5 默认 False）。"""
+    try:
+        from config import get as _cfg_get
+        enabled = bool(_cfg_get("feature_memory", False))
+    except Exception:
+        enabled = False
+    return CARD_PROTOCOL_PROMPT + MEMORY_CARD_PROMPT if enabled else CARD_PROTOCOL_PROMPT
 
 # 真 PPT 协议（0.10.1 M1-E：create_ppt 工具，SVG 单一中间表示 + DNA-01 设计卡）
 # 追加在在线 agent system prompt 尾部（create_ppt 工具启用时）；离线不注入
