@@ -343,6 +343,21 @@ class CloudEngine:
             return ""
         return base64.b64encode(raw.encode("utf-8")).decode("utf-8")
 
+    @staticmethod
+    def resolve_context_tokens(user_ctx):
+        """上下文余量只用用户填写的长度。
+
+        0 表示还没确认，不查 MODEL_CAPABILITIES（那张表会把 DeepSeek V4 Flash
+        显示成 131072）。返回 (tokens, needs_confirm)。
+        """
+        try:
+            n = int(user_ctx or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n > 0:
+            return n, False
+        return 0, True
+
     def _lookup_capabilities(self, model: str) -> dict:
         """查找模型能力（精确匹配 → 大小写不敏感 → 规范化匹配 → 前缀匹配 → _default）
 
@@ -984,7 +999,7 @@ class CloudEngine:
         """按接口格式/服务商返回思考控制参数（空 dict = 不控制，保持模型默认）。
 
         分发表（用户定方案 2026-09-21，行业核实）：
-        - DeepSeek（V3.2+/v4）：thinking {type: enabled/disabled}（low 无分档→enabled）
+        - DeepSeek（V3.2+/v4）：off 关思考；low 发 reasoning_effort=low（缺省 effort 是 high）
         - OpenAI（GPT-5/o 系）：reasoning {effort: high/low/minimal}
           （老 o 系网关只认顶层 reasoning_effort——一并带上，双保险）
         - Anthropic：thinking {type: enabled, budget_tokens: 8192/1024} | disabled
@@ -1000,8 +1015,16 @@ class CloudEngine:
                 return {"thinking": {"type": "disabled"}}
             return {"thinking": {"type": "enabled", "budget_tokens": 1024 if level == "low" else 8192}}
         if _is_deepseek:
-            # DeepSeek 只有开/关；low 映射为开（无 effort 分档）
-            return {"thinking": {"type": "disabled" if level == "off" else "enabled"}}
+            # 官方 OpenAI 格式：thinking + reasoning_effort（low/high/max）。
+            # 缺省 effort 是 high，所以「低」只发 enabled 时仍是长链。
+            # thinking 放 extra_body，避免 SDK 把未知字段丢掉或直接 TypeError。
+            # 顶层 thinking 会 TypeError，去参重发后关档退回缺省高档。
+            if level == "off":
+                return {"extra_body": {"thinking": {"type": "disabled"}}}
+            return {
+                "reasoning_effort": "low",
+                "extra_body": {"thinking": {"type": "enabled"}, "reasoning_effort": "low"},
+            }
         # 其余 OpenAI 兼容：reasoning 对象 + 顶层 reasoning_effort 双保险
         effort = "minimal" if level == "off" else "low"
         return {"reasoning": {"effort": effort}, "reasoning_effort": effort}

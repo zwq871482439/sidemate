@@ -214,7 +214,9 @@ def api_get_workdir(chat_name: str, request: Request):
     safe, err = _safe_name_or_400(chat_name)
     if err:
         return err
-    return projects.resolve_chat_project(safe)
+    proj = dict(projects.resolve_chat_project(safe) or {})
+    proj["chat_record_path"] = os.path.join(CHAT_DIR, safe, "messages.json")
+    return proj
 
 
 @router.get("/api/chats/{chat_name}/workdir/files")
@@ -238,7 +240,8 @@ def api_workdir_files(chat_name: str, request: Request):
     versions = projects.list_dir_entries(os.path.join(root, PROJECT_ARTIFACT_DIR, "versions")) or []
     # 材料区不混进产物区条目
     files = [f for f in (files or []) if f["name"] != PROJECT_ARTIFACT_DIR]
-    return {"files": files, "artifacts": artifacts, "versions": versions, **proj}
+    return {"files": files, "artifacts": artifacts, "versions": versions, **proj,
+            "chat_record_path": os.path.join(CHAT_DIR, safe, "messages.json")}
 
 
 @router.post("/api/chats/{chat_name}/workdir/reference")

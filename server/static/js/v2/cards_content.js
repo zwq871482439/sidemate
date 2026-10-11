@@ -405,6 +405,14 @@ function _validate(type, spec) {
 //   skill_install  安装技能确认（spec#14-16）
 //   memory_save    记忆写入确认（spec#17-20）
 //   distill        经验沉淀建议（spec#21-23）
+let _featureFlags = { memory: false, distill: false };
+export function setFeatureFlags(flags) {
+  _featureFlags = {
+    memory: !!(flags && flags.memory),
+    distill: !!(flags && flags.distill),
+  };
+}
+
 const _CK = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
 const _CKC = '<span class="cf-ic y">' + _CK + '</span>';
 
@@ -489,6 +497,14 @@ function _renderAsk(card, spec, opts) {
   // ②flash 档经常不带 kind——按 question 文案推断（含「长期记忆」→ 结构化记忆卡），
   // 否则降级为普通问答卡（功能可用但缺位置条/diff 预览）
   const _kind2 = kind || ((spec.question || '').includes('长期记忆') ? 'memory_save' : '')
+  if (!_featureFlags.memory && (_kind2 === 'memory_save' || _kind2 === 'memory_confirm')) {
+    card.remove();
+    return;
+  }
+  if (!_featureFlags.distill && _kind2 === 'distill') {
+    card.remove();
+    return;
+  }
   if (_kind2 === 'skill_install' || _kind2 === 'memory_save' || _kind2 === 'memory_confirm'
       || _kind2 === 'distill'
       || (_kind2 === 'plan_confirm' && (spec.tools || spec.perms || spec.files))) {

@@ -19,7 +19,15 @@ import pytest
 
 def _patch_cfg(monkeypatch, mode):
     import config as _cfg
-    monkeypatch.setattr(_cfg, "get", lambda k, d=None: mode if k == "ai_mode" else d)
+
+    def fake(k, d=None):
+        if k == "ai_mode":
+            return mode
+        if k == "feature_memory":
+            return True
+        return d
+
+    monkeypatch.setattr(_cfg, "get", fake)
 
 
 @pytest.fixture()

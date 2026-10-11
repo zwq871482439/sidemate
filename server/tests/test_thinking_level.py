@@ -30,16 +30,19 @@ class TestThinkingKwargs:
 
     def test_deepseek_off(self, env):
         env.update(cloud_thinking_level="off")
-        assert CloudEngine._thinking_kwargs("deepseek-v4-flash") == {"thinking": {"type": "disabled"}}
+        assert CloudEngine._thinking_kwargs("deepseek-v4-flash") == {
+            "extra_body": {"thinking": {"type": "disabled"}}}
 
     def test_deepseek_by_base_url(self, env):
         env.update(cloud_thinking_level="off", cloud_base_url="https://api.deepseek.com")
         kw = CloudEngine._thinking_kwargs("whatever")
-        assert kw == {"thinking": {"type": "disabled"}}
+        assert kw == {"extra_body": {"thinking": {"type": "disabled"}}}
 
     def test_deepseek_low_maps_enabled(self, env):
         env.update(cloud_thinking_level="low")
-        assert CloudEngine._thinking_kwargs("deepseek-v4-flash") == {"thinking": {"type": "enabled"}}
+        kw = CloudEngine._thinking_kwargs("deepseek-v4-flash")
+        assert kw.get("reasoning_effort") == "low"
+        assert (kw.get("extra_body") or {}).get("thinking") == {"type": "enabled"}
 
     def test_openai_low(self, env):
         env.update(cloud_thinking_level="low")

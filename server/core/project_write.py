@@ -208,6 +208,50 @@ def _backup_existing(proj_dir, rel, abs_path):
     return {"dir": vdir, "file": ts}
 
 
+ARTIFACT_PLAN_TOOLS = frozenset({
+    "create_docx", "create_ppt", "create_poster", "format_gzh", "render_d2",
+})
+
+
+def artifact_blocked_in_plan(chat_name, tool_name, args=None):
+    """计划模式下产物工具不执行。
+
+    执行模式、或不是产物工具时返回 None（调用方照常执行）。
+    计划模式返回 plan_mode，并登记待确认文件，提示模型发 plan_confirm 卡。
+    """
+    if tool_name not in ARTIFACT_PLAN_TOOLS:
+        return None
+    meta = _read_meta(chat_name) or {}
+    if (meta.get("exec_mode") or "plan") == "execute":
+        return None
+    args = args or {}
+    label = (args.get("filename") or args.get("title") or args.get("path") or tool_name)
+    label = "%s：%s" % (tool_name, str(label).strip()[:80] or tool_name)
+    pending = [p for p in (meta.get("pending_plan") or []) if p.get("path") != label]
+    pending.append({
+        "path": label, "overwrite": False, "bytes": 0,
+        "note": tool_name, "tool": tool_name,
+        "ts": time.strftime("%H:%M:%S"),
+    })
+    meta["pending_plan"] = pending[-MAX_PENDING_PLAN:]
+    if meta:
+        _write_meta(chat_name, meta)
+    shown = json.dumps(label, ensure_ascii=False)
+    return {
+        "ok": False, "error": "plan_mode", "pending": True,
+        "planned_path": label,
+        "message": (
+            "当前是【计划模式】，%s 没有执行，没有生成文件。"
+            "请在回复正文输出计划确认卡：\n```ask\n"
+            "{\"kind\":\"plan_confirm\",\"question\":\"准备生成这些文件\","
+            "\"files\":[{\"name\":%s,\"mod\":false}],"
+            "\"options\":[\"同意，执行写入\",\"调整\"]}\n```\n"
+            "用户点「同意」后系统会切到执行模式，再重新调用本工具。"
+            % (label, shown)
+        ),
+    }
+
+
 # ---------- 主动作：写文件（计划/执行双模式入口） ----------
 
 def write_file(chat_name, rel_path, content, note=""):

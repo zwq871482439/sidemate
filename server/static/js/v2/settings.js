@@ -392,7 +392,7 @@ export function createSettingsView(events) {
     const _thinkB = t => t === 'high' ? '<span class="pv-badge th-hi">思考·高</span>'
       : t === 'low' ? '<span class="pv-badge th-lo">思考·低</span>'
       : t === 'off' ? '<span class="pv-badge th-off">思考·关</span>' : '';
-    const _ctxT = c => c > 0 ? Math.round(c / 1000) + 'K' : '自动';
+    const _ctxT = c => c > 0 ? (Math.round(c / 1000) + 'K · 请确认上下文长度') : '请确认上下文长度';
 
     const _modelRow = (m) => `
       <div class="pv-mrow${m.active ? ' on' : ''}" data-mid="${esc(m.id)}">
@@ -441,7 +441,8 @@ export function createSettingsView(events) {
           <option value="low" ${m.thinking === 'low' ? 'selected' : ''}>低</option>
           <option value="off" ${m.thinking === 'off' ? 'selected' : ''}>关</option>
         </select>
-        <label>上下文</label><input class="set-input mp-f" data-f="ctx" type="number" min="0" placeholder="0=自动" style="width:90px" value="${m.ctx > 0 ? m.ctx : ''}">
+        <label>上下文长度</label><input class="set-input mp-f" data-f="ctx" type="number" min="1" placeholder="必填，如 1048576" style="width:140px" value="${m.ctx > 0 ? m.ctx : ''}">
+        <span class="set-note">请确认上下文长度</span>
         <button class="btn-primary-v2" data-mact="save-param">保存</button>
         <button class="kb-tool-btn" data-mact="cancel-param">取消</button>
       </div>`;
@@ -463,7 +464,7 @@ export function createSettingsView(events) {
           ${p && !p.active ? '<button class="kb-tool-btn" id="pvDel" style="color:var(--pal-danger)">删除服务商</button>' : ''}
         </div>
         <div class="pv-sep"></div>
-        <div class="sub" style="margin-bottom:6px">模型（${esc(p ? p.name : '')}）</div>
+        <div class="sub" style="margin-bottom:6px">模型（${esc(p ? p.name : '')}）· 请确认上下文长度。已填的数会保留，不再按模型名自动填写。</div>
         <div id="mdlList">${p && p.models.length ? p.models.map(_modelRow).join('') : '<div class="set-note">还没有模型——手动添加或从 API 获取</div>'}</div>
         <div id="mdlParamWrap"></div>
         <div class="pv-addrow">
@@ -495,6 +496,12 @@ export function createSettingsView(events) {
       <div class="set-group">
         <h2>能力配置</h2>
         <div class="sub">在线模式的能力开关与预算</div>
+        <div class="set-row"><div class="stx"><b>记忆</b><p>默认关闭。打开后才出现记忆确认卡、生成会话记忆，并把记忆工具交给模型。已有记忆文件不会被删除。</p></div>
+          <button class="switch ${gcfg.feature_memory ? 'on' : ''}" id="cfMemory"></button></div>
+        <div class="set-row"><div class="stx"><b>存为技能</b><p>默认关闭。打开后会话菜单才出现「存为技能」。</p></div>
+          <button class="switch ${gcfg.feature_distill_skill ? 'on' : ''}" id="cfDistill"></button></div>
+        <div class="set-row"><div class="stx"><b>标为私密</b><p>默认关闭，只藏入口。已经标过私密的会话保持私密。</p></div>
+          <button class="switch ${gcfg.feature_mark_private ? 'on' : ''}" id="cfPrivate"></button></div>
         <div class="set-row"><div class="stx"><b>并行模式 <span class="exp-tag" style="font-size:9.5px;color:var(--d1-gold-2);border:1px solid rgba(232,181,77,.4);border-radius:6px;padding:1px 6px">实验性</span></b>
           <p>同时用本地+在线引擎对知识库开展问答。开启后左栏出现第三档「并行」</p></div>
           <button class="switch ${parallelOn ? 'on' : ''}" id="cfParallel"></button></div>
@@ -591,6 +598,7 @@ export function createSettingsView(events) {
         const payload = { id: form.dataset.mid };
         form.querySelectorAll('.mp-f').forEach(f => { payload[f.dataset.f] = f.value.trim(); });
         payload.ctx = parseInt(payload.ctx || '0', 10) || 0;
+        if (!payload.ctx) { note('请确认上下文长度', false); return; }
         // model 字段不进表单（不可改）——从当前列表回填，save_model 必填
         const _m = (viewPv.models || []).find(x => x.id === payload.id);
         if (_m) payload.model = _m.model;
@@ -653,6 +661,18 @@ export function createSettingsView(events) {
       body.querySelector('#cfPolicy').addEventListener('change', e => _saveCfg({ cloud_context_policy: e.target.value }, '上下文策略已保存'));
       body.querySelector('#cfSlim').addEventListener('change', e => _saveCfg({ slim_history_rounds: parseInt(e.target.value || '6', 10) }, '轮数已保存'));
       body.querySelector('#cfKbPerm').addEventListener('change', e => _saveCfg({ kb_permission: e.target.value }, '知识库权限已保存'));
+      const _flag = (id, key, onMsg, offMsg) => {
+        const el = body.querySelector(id);
+        if (!el) return;
+        el.addEventListener('click', async (e) => {
+          const on = !e.target.classList.contains('on');
+          await _saveCfg({ [key]: on }, on ? onMsg : offMsg);
+          e.target.classList.toggle('on', on);
+        });
+      };
+      _flag('#cfMemory', 'feature_memory', '记忆已打开', '记忆已关闭');
+      _flag('#cfDistill', 'feature_distill_skill', '存为技能已打开', '存为技能已关闭');
+      _flag('#cfPrivate', 'feature_mark_private', '标为私密入口已打开', '标为私密入口已关闭');
       body.querySelector('#cfParallel').addEventListener('click', async (e) => {
         const on = !e.target.classList.contains('on');
         await _saveCfg({ parallel_enabled: on }, null);
