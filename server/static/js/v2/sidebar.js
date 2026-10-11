@@ -4,6 +4,7 @@
 
 import { api, MODE_LABEL, MODE_ORDER } from './api.js';
 import { icon, iconSvg } from './icons.js';
+import { sessionLabel } from './pure.js';
 
 // S8（P1-8）：模式按钮 tooltip——折叠态只有两个文字钮，悬停说明尤其重要
 const MODE_TIP = {
@@ -54,7 +55,7 @@ export function renderSidebar(root, state, events) {
     <button class="sb-nav-item ${state.tab === 'skills' ? 'on' : ''}" data-tab="skills"><span class="ic">${iconSvg('puzzle')}</span><span class="sb-label">技能</span></button>
       <button class="sb-nav-item ${state.tab === 'settings' ? 'on' : ''}" data-tab="settings"><span class="ic">${ICONS.settings}</span><span class="sb-label">设置</span></button>
     </nav>
-    <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建任务</span></button>
+    <button class="sb-new"><span class="ic">${ICONS.plus}</span><span class="sb-label">新建会话</span></button>
     <div class="sb-sess-title sb-label">会话</div><div class="sb-sessions"></div>
   `;
 
@@ -101,10 +102,14 @@ export function renderSidebar(root, state, events) {
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
     item.dataset.chat = c.name || '';
-    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${_hlTitle((c.title && c.title !== c.name) ? c.title : '新会话', filter)}</div><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
+    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${_hlTitle(sessionLabel(c), filter)}</div><button class="sess-del" title="删除会话">删除</button><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
     item.addEventListener('click', (e) => {
-      if (e.target.closest('.sess-more')) return;
+      if (e.target.closest('.sess-more') || e.target.closest('.sess-del')) return;
       events.onSelectSession(c);
+    });
+    item.querySelector('.sess-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (events.onDeleteSession) events.onDeleteSession(c);
     });
     item.querySelector('.sess-more').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -186,7 +191,7 @@ export function renderSidebar(root, state, events) {
           '<div class="sb-skel-row"><div class="sb-skel-bar" style="width:' + [52, 68, 44, 61, 38, 57, 47][i] + '%"></div><div class="sb-skel-meta"></div></div>'
         ).join('') + '</div>';
     } else {
-      listEl.innerHTML = `<div class="sess-empty">${filter ? `没有找到“${esc(state.filter)}”<br><small>换个关键词，或点右上 ✕ 清空搜索</small>` : '还没有会话，点上方「新建任务」开始'}</div>`;
+      listEl.innerHTML = `<div class="sess-empty">${filter ? `没有找到“${esc(state.filter)}”<br><small>换个关键词，或点右上 ✕ 清空搜索</small>` : '还没有会话，点上方「新建会话」开始'}</div>`;
     }
   }
 

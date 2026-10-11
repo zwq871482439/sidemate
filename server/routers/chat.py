@@ -1588,21 +1588,12 @@ def _calc_context_usage(chat_file: str = None):
     
     used_tokens = int((sys_chars + FC_SCHEMA_CHARS + history_chars) / 1.5)
     
-    # 获取模型上下文窗口大小
+    # 上下文窗口：在线只认用户填写的长度，不查模型字典。
+    needs_confirm = False
     if ai_mode == "cloud":
-        # 优先用用户手动配置的上下文窗口
-        user_ctx = _cfg_get("cloud_context_window", 0)
-        if user_ctx and user_ctx > 0:
-            total_tokens = user_ctx
-        else:
-            try:
-                from core.cloud_engine import CloudEngine
-                _ce = CloudEngine.__new__(CloudEngine)
-                total_tokens = _ce._lookup_capabilities(
-                    _cfg_get("cloud_model", "gpt-4o-mini")
-                )["context_window"]
-            except Exception:
-                total_tokens = 32768
+        from core.cloud_engine import CloudEngine
+        total_tokens, needs_confirm = CloudEngine.resolve_context_tokens(
+            _cfg_get("cloud_context_window", 0))
     else:
         total_tokens = 8192   # 本地模型 8K (num_ctx, P6 统一)
 
@@ -1619,7 +1610,8 @@ def _calc_context_usage(chat_file: str = None):
         "used_tokens": used_tokens,
         "total_tokens": total_tokens,
         "percentage": percentage,
-        "level": level,
+        "level": "unconfirmed" if needs_confirm else level,
+        "needs_confirm": needs_confirm,
     }
 
 

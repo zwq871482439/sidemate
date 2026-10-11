@@ -1405,6 +1405,9 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         perm_key = _TOOL_PERM_MAP.get(name)
         if perm_key and not _cfg(perm_key, True):
             continue
+        # 0.11.1 rc.5：记忆默认下线，不把 save/recall 交给模型
+        if name in ("save_memory", "recall_memory") and not _cfg("feature_memory", False):
+            continue
 
         tools.append(tool_def["schema"])
         enabled_names.append(name)
@@ -1486,19 +1489,21 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
         log.warning("[AGENT_TOOLS] 技能简表注入失败: %s", str(_skill_e)[:80])
 
     # ===== 0.11 C3：策展记忆注入（偏好条目 + 概览，v1 关键词级） =====
-    try:
-        from core.curated_memory import inject_hint
-        _mh = inject_hint(chat_id)
-        if _mh:
-            base += "\n" + _mh
-    except Exception:
-        pass
+    # rc.5 默认关：不注入，避免模型看见「已载入记忆」后继续问要不要记。
+    if _cfg("feature_memory", False):
+        try:
+            from core.curated_memory import inject_hint
+            _mh = inject_hint(chat_id)
+            if _mh:
+                base += "\n" + _mh
+        except Exception:
+            pass
 
     # ===== F5（#12）：用户已拒绝记忆写入——确定性兜底（会话 meta 强约束） =====
     # prompt 收窄（工具描述+ask 规则）管「少问」，这里管「拒绝后绝不再问」：
     # flash 档对措辞纪律不稳定，靠 meta 标记硬保证。
     try:
-        if chat_id:
+        if chat_id and _cfg("feature_memory", False):
             from session.chat_store import read_meta
             if read_meta(chat_id).get("memory_declined"):
                 base += ("\n\n[长期记忆]\n用户已在本会话明确拒绝过长期记忆写入："
@@ -1639,7 +1644,8 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
         try:
             from session import projects as _proj
             _pd = _proj.resolve_chat_project(chat_id)
-            if not _pd.get("legacy") and _pd.get("dir"):
+            from config import get as _feat
+            if _feat("feature_memory", False) and not _pd.get("legacy") and _pd.get("dir"):
                 _h = _proj.read_handoff(_pd["dir"])
                 if _h and _h.get("content") and _h.get("source_engine") != "local":
                     out += ("\n\n[项目交接 · 来自项目「%s」的 handoff.md（更新于 %s）]\n%s\n"

@@ -690,7 +690,12 @@ window._resetParallelState = _resetParallelState;
 function _updateTokenBarFromChars(totalChars) {
   // 粗估 token = 字符数 / 3（中英混合经验值）
   var estTokens = Math.round(totalChars / 3);
-  var totalLimit = 1048576;  // DeepSeek-V4-Flash 上下文窗口
+  var totalLimit = (window._contextWindow > 0) ? window._contextWindow : 0;
+  if (!totalLimit) {
+    var remainEl0 = document.getElementById('tokenRemain');
+    if (remainEl0) remainEl0.textContent = '请确认上下文长度';
+    return;
+  }
   var remainK = Math.max(0, (totalLimit - estTokens) / 1000).toFixed(1);
   var usedK = (estTokens / 1000).toFixed(1);
   var percent = Math.min(100, (estTokens / totalLimit) * 100);

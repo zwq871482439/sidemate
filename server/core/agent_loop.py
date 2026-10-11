@@ -867,6 +867,12 @@ class AgentLoop:
             dict: 工具执行结果（成功或失败）
         """
         try:
+            from core.project_write import artifact_blocked_in_plan
+            _blocked = artifact_blocked_in_plan(self.chat_id, tool_name, args)
+            if _blocked:
+                return {"success": False, "tool": tool_name, "error": "plan_mode",
+                        "message": _blocked.get("message") or ""}
+
             if tool_name == "install_skill":
                 # 0.11 B3：AI 自装 Skill（两步：校验暂存 → 用户确认卡 → 落地）
                 from core.skill_installer import validate_and_stage, install_staged, cancel_staged, _staging_root
@@ -924,6 +930,12 @@ class AgentLoop:
                                      % (_json.dumps(_card_spec, ensure_ascii=False), r["skill_name"]))}}
 
             elif tool_name == "save_memory":
+                # 0.11.1 rc.5：记忆默认下线。开关关闭时不写文件。
+                from config import get as _cfg_mem
+                if not _cfg_mem("feature_memory", False):
+                    return {"success": False, "tool": "save_memory",
+                            "error": "feature_off",
+                            "message": "记忆功能暂时下线，未写入。"}
                 # 0.11 C3：策展记忆写入。#41 D3：提示词挡不住强模型，
                 # 没有本会话已确认的记忆卡记录就拒绝，且不写文件。
                 from session.chat_store import memory_text_confirmed
@@ -942,6 +954,11 @@ class AgentLoop:
                                  "message": "已写入（重复内容自动跳过）" if r.get("deduped") else "已写入长期记忆"}}
 
             elif tool_name == "recall_memory":
+                from config import get as _cfg_mem
+                if not _cfg_mem("feature_memory", False):
+                    return {"success": False, "tool": "recall_memory",
+                            "error": "feature_off",
+                            "message": "记忆功能暂时下线。"}
                 # 0.11 C3：策展记忆检索
                 from core.curated_memory import recall
                 r = recall(self.chat_id, args.get("query", ""))

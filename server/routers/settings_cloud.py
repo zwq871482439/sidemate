@@ -33,18 +33,13 @@ def api_mode():
     cloud_configured = bool(cloud_api_key)
 
     context_window = 0
+    context_needs_confirm = False
     if ai_mode == "cloud":
-        try:
-            from core.cloud_engine import CloudEngine
-            cloud_model = cfg_get("cloud_model", "gpt-4o-mini")
-            user_ctx = cfg_get("cloud_context_window", 0)
-            if user_ctx and user_ctx > 0:
-                context_window = user_ctx
-            else:
-                _ce = CloudEngine.__new__(CloudEngine)
-                context_window = _ce._lookup_capabilities(cloud_model)["context_window"]
-        except Exception:
-            context_window = 131072  # CloudEngine default
+        from core.cloud_engine import CloudEngine
+        context_window, context_needs_confirm = CloudEngine.resolve_context_tokens(
+            cfg_get("cloud_context_window", 0))
+    else:
+        context_window = 8192
 
     # 本地模式的 max_history_chars（与 model_manager 一致）
     max_history_chars = 12000
@@ -61,7 +56,9 @@ def api_mode():
         "available": ["local", "cloud"],
         "cloud_configured": cloud_configured,
         "cloud_model": cfg_get("cloud_model", "gpt-4o-mini") if ai_mode == "cloud" or cloud_configured else None,
-        "context_window": context_window or (8192 if ai_mode in ("local", "parallel") else 131072),
+        "context_window": context_window,
+        "context_needs_confirm": context_needs_confirm,
+        "context_confirm_text": "请确认上下文长度" if context_needs_confirm else "",
         "max_history_chars": max_history_chars,
     }
 
@@ -96,15 +93,18 @@ async def api_mode_switch(request: Request):
     context_window = MAX_INPUT_TOKENS
     max_output_tokens = MAX_OUTPUT_TOKENS
     max_history_chars = int(context_window * 0.75)
+    context_needs_confirm = False
     if target == "cloud":
         try:
             from core.cloud_engine import CloudEngine
             cloud_model = _cfg_mode("cloud_model", "gpt-4o-mini")
             _ce = CloudEngine.__new__(CloudEngine)
             caps = _ce._lookup_capabilities(cloud_model)
-            context_window = caps["context_window"]
+            context_window, context_needs_confirm = CloudEngine.resolve_context_tokens(
+                _cfg_mode("cloud_context_window", 0))
             max_output_tokens = caps["max_output"]
-            max_history_chars = int(context_window * 0.75)
+            if context_window > 0:
+                max_history_chars = int(context_window * 0.75)
         except Exception:
             pass
 
@@ -112,6 +112,7 @@ async def api_mode_switch(request: Request):
         "ok": True,
         "mode": target,
         "context_window": context_window,
+        "context_needs_confirm": context_needs_confirm,
         "max_history_chars": max_history_chars,
         "max_output_tokens": max_output_tokens,
     }
@@ -149,9 +150,8 @@ def api_cloud_config():
     _ce = CloudEngine.__new__(CloudEngine)
     caps = _ce._lookup_capabilities(cloud_model)
 
-    # 优先用用户手动配置的值，否则用模型默认值
-    user_ctx = cfg_get("cloud_context_window", 0)
-    context_window = user_ctx if user_ctx and user_ctx > 0 else caps["context_window"]
+    context_window, context_needs_confirm = CloudEngine.resolve_context_tokens(
+        cfg_get("cloud_context_window", 0))
 
     return {
         "base_url": cfg_get("cloud_base_url", "https://api.openai.com/v1"),
@@ -163,8 +163,10 @@ def api_cloud_config():
         "api_format": cfg_get("cloud_api_format", "openai"),
         "proxy_mode": cfg_get("cloud_proxy_mode", "system"),
         "context_window": context_window,
-        "context_window_user": user_ctx,
-        "context_matched": _ce._capabilities_matched(cloud_model),
+        "context_window_user": context_window,
+        "context_matched": False,
+        "context_needs_confirm": context_needs_confirm,
+        "context_confirm_text": "请确认上下文长度",
         "max_output_tokens": caps["max_output"],
         "context_policy": cfg_get("cloud_context_policy", "full"),
         "slim_history_rounds": cfg_get("cloud_slim_history_rounds", 6),
@@ -223,10 +225,7 @@ async def api_cloud_config_save(request: Request):
                 raise ValueError
             updates["cloud_context_window"] = cw
         except (ValueError, TypeError):
-            return JSONResponse({"error": "context_window 必须为 0-2097152 的整数（0=自动匹配）"}, status_code=400)
-    elif "model" in body:
-        # 模型变更且未显式带上输入上限 → 重置为 0（重新自动匹配）
-        updates["cloud_context_window"] = 0
+            return JSONResponse({"error": "context_window 必须为 0-2097152 的整数（0=未确认，请填写上下文长度）"}, status_code=400)
 
     if "context_policy" in body:
         policy = body["context_policy"]
@@ -280,9 +279,9 @@ async def api_cloud_config_save(request: Request):
     cloud_model = updates.get("cloud_model", _cfg_save("cloud_model", "gpt-4o-mini"))
     _ce = CloudEngine.__new__(CloudEngine)
     caps = _ce._lookup_capabilities(cloud_model)
-    user_ctx = _cfg_save("cloud_context_window", 0)
-    effective_ctx = user_ctx if user_ctx and user_ctx > 0 else caps["context_window"]
-    return {"ok": ok, "context_window": effective_ctx, "max_output_tokens": caps["max_output"]}
+    user_ctx, _needs = CloudEngine.resolve_context_tokens(_cfg_save("cloud_context_window", 0))
+    return {"ok": ok, "context_window": user_ctx, "context_needs_confirm": _needs,
+            "max_output_tokens": caps["max_output"]}
 
 
 # ============================================================
@@ -336,21 +335,17 @@ async def api_cloud_profiles_switch(request: Request):
 
 @router.get("/api/cloud/model-capabilities")
 def api_cloud_model_capabilities(model: str = ""):
-    """查询模型能力（从字典自动获取，用于前端实时预览）
-
-    matched=false 表示未命中内置表（回落默认值），前端应把输入上限留空引导手填。
-    """
-    model = model.strip()
+    """上下文长度不再按模型名自动匹配。保留端点，避免旧页面打到 404。"""
+    model = (model or "").strip()
     if not model:
         return {"error": "model 参数为空"}
-    from core.cloud_engine import CloudEngine
-    _ce = CloudEngine.__new__(CloudEngine)
-    caps = _ce._lookup_capabilities(model)
     return {
         "model": model,
-        "context_window": caps["context_window"],
-        "max_output": caps["max_output"],
-        "matched": _ce._capabilities_matched(model),
+        "context_window": None,
+        "max_output": None,
+        "matched": False,
+        "context_needs_confirm": True,
+        "message": "请确认上下文长度",
     }
 
 
@@ -388,16 +383,12 @@ async def api_cloud_models(request: Request):
         else:
             import openai
             client = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=15.0)
-            _ce = CloudEngine.__new__(CloudEngine)
             for m in client.models.list():
                 mid = getattr(m, "id", None)
                 if not mid:
                     continue
-                # OpenAI 的 list 不带上下文长度，用内置表尽力匹配
-                ctx = None
-                if _ce._capabilities_matched(mid):
-                    ctx = _ce._lookup_capabilities(mid)["context_window"]
-                models.append({"id": mid, "display_name": mid, "context_window": ctx})
+                # 列表接口不带上下文长度。不再用内置表猜测，避免把 1M 模型显示成 131K。
+                models.append({"id": mid, "display_name": mid, "context_window": None})
         return {"ok": True, "models": models, "format": fmt}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)[:200]}, status_code=502)

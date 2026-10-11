@@ -9,6 +9,7 @@
 
 import { api } from './api.js';
 import { icon, iconSvg } from './icons.js';
+import { sessionLabel } from './pure.js';
 import { uiAlert, uiConfirm } from './ui_dialog.js';
 
 function esc(s) {
@@ -185,7 +186,7 @@ export function createViewer(opts) {
       return `<div class="vw-card vw-card-legacy">
         <div class="vw-card-t">${icon('archive')} 旧版本会话</div>
         <div class="vw-card-r">该会话来自旧版本，已转为只读存档：可以查看、导出（会话 ⋯ 菜单）、在「文件」tab 下载产物。</div>
-        <div class="vw-card-r">要聊新内容，请用「新建任务」开一个新会话。</div>
+        <div class="vw-card-r">要聊新内容，请用「新建会话」开一个新会话。</div>
       </div>`;
     }
     const missing = wd && wd.status === 'missing';
@@ -194,9 +195,10 @@ export function createViewer(opts) {
       <div class="vw-card-t">项目「${esc(wd && wd.display ? wd.display : '默认项目')}」
         ${wd && !wd.is_default && !cross ? '<button class="vw-mini" data-a="rename" title="改显示名（不改文件夹名）">改名</button>' : ''}</div>
       ${cross ? '' : `<div class="vw-card-r"><span class="vw-k">模式</span>${esc(h.modelTag || h.modeLabel || '')}</div>
-      <div class="vw-card-r"><span class="vw-k">会话</span>${esc(cur.name)} · ${cur.msg_count || 0} 条消息</div>`}
-      ${wd && wd.dir ? `<div class="vw-card-r"><span class="vw-k">目录</span>${wd.is_default ? '默认项目目录' : '项目文件夹'}</div>
-      <div class="vw-card-r vw-path" title="${esc(wd.dir)}">${esc(wd.dir)}</div>` : ''}
+      <div class="vw-card-r"><span class="vw-k">会话</span>${esc(sessionLabel(cur))} · ${cur.msg_count || 0} 条消息</div>`}
+      ${wd && wd.dir ? `<div class="vw-card-r"><span class="vw-k">目录</span>这是项目文件夹，聊天记录存在别处</div>
+      <div class="vw-card-r vw-path" title="${esc(wd.dir)}">项目文件夹：${esc(wd.dir)}</div>
+      ${wd.chat_record_path ? `<div class="vw-card-r vw-path" title="${esc(wd.chat_record_path)}">聊天记录：${esc(wd.chat_record_path)}</div>` : ''}` : ''}
       ${missing ? `<div class="vw-card-r vw-missing">${icon('alertTriangle')} 目录丢失——文件夹在磁盘上被删除或移动，会话只读可看</div>` : ''}
       ${wd && !wd.is_default ? '<div class="vw-card-r"><button class="vw-mini danger" data-a="delproj" title="删除项目：会话记录级联删除，目录文件永不动">删除项目…</button></div>' : ''}
     </div>`;
@@ -335,7 +337,14 @@ export function createViewer(opts) {
   // 任务步骤浮窗移至 composer.js（todoFloat）
   function _harnessSection() { return ''; }
 
-  function _handoffSection() {    if (!wd || wd.legacy || !wd.dir) return '';
+  function _memoryOn() {
+    const f = opts.getFeatures ? opts.getFeatures() : null;
+    return !!(f && f.memory);
+  }
+
+  function _handoffSection() {
+    if (!_memoryOn()) return '';
+    if (!wd || wd.legacy || !wd.dir) return '';
     if (!handoff) {
       return `<div class="vw-sec vw-dir-head"><span class="vw-dir-title">会话记忆</span>
         <span class="vw-dir-acts"><button class="vw-dir-open" data-a="handoff" title="把当前进度保存为会话记忆">生成会话记忆</button></span></div>
@@ -354,8 +363,8 @@ export function createViewer(opts) {
     return `<div class="vw-sec">同项目会话 · ${peers.length}${carrySids.length ? `<span class="vw-carry-hint">（引用 ${carrySids.length} 条前情）</span>` : ''}</div>
       <div class="vw-peers">
       ${peers.map(c => `
-        <div class="vw-peer ${c.current ? 'on' : ''}" data-name="${esc(c.name)}" title="${esc(c.name)}">
-          <span class="pn">${esc(c.title || c.name)}</span><span class="pm">${c.msg_count || 0} 条</span>
+        <div class="vw-peer ${c.current ? 'on' : ''}" data-name="${esc(c.name)}" title="${esc(sessionLabel(c))}">
+          <span class="pn">${esc(sessionLabel(c))}</span><span class="pm">${c.msg_count || 0} 条</span>
           ${c.current ? '' : `<button class="vw-carry ${carrySids.includes(c.name) ? 'on' : ''}" data-sid="${esc(c.name)}" title="${carrySids.includes(c.name) ? '取消引用' : '引用此会话的前情到下一条消息'}">引用</button>`}
         </div>`).join('')}
       </div>`;
