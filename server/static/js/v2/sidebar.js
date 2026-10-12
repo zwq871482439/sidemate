@@ -102,7 +102,7 @@ export function renderSidebar(root, state, events) {
     const item = document.createElement('div');
     item.className = 'sess-item' + (c.current ? ' on' : '');
     item.dataset.chat = c.name || '';
-    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : '<span class="si-st idle"></span>'}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${_hlTitle(sessionLabel(c), filter)}</div><button class="sess-del" title="删除会话">删除</button><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
+    item.innerHTML = `<div class="si-bar"><div class="st">${st ? `<span class="si-st ${st}" title="${stt}"></span>` : ''}${c.private ? '<span class="si-priv" title="私密会话：内容不进其他会话的前情注入">' + iconSvg('lock') + '</span> ' : ''}${_hlTitle(sessionLabel(c), filter)}</div><button class="sess-del" title="删除会话">删除</button><button class="sess-more" title="重命名/导出/删除">⋯</button></div><div class="sm">${c.msg_count || 0} 条消息${stt ? ' · <span class="si-st-t ' + st + '">' + stt + '</span>' : ''}${c.unread ? '<span class="si-badge" title="有新完成内容"></span>' : ''}</div>`;
     item.addEventListener('click', (e) => {
       if (e.target.closest('.sess-more') || e.target.closest('.sess-del')) return;
       events.onSelectSession(c);
