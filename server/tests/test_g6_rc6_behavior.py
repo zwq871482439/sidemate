@@ -145,6 +145,87 @@ class TestClassifierDocSignal(unittest.TestCase):
         assert resolve_strategy("帮我写一个科幻故事")["type"] == "creative"
 
 
+# ============================== D33 静默截断（总调度评审 #34） ==============================
+
+def _long_unique_list_text():
+    """总调度复现规格：60 条互不重复的列表文本，总长 > 2000 字（目标 ~2800）"""
+    subjects = ["陌生来电", "中奖短信", "可疑链接", "来路不明二维码", "冒充客服",
+                "退款操作", "高息投资", "刷单返利", "注销贷款", "征信洗白"]
+    actions = ["挂断后拨打官方电话核实", "直接删除不要点开", "和家人核对后再处理",
+               "去营业厅当面确认", "在官方应用内查询", "拨打96110反诈专线咨询",
+               "不予理会并加入黑名单", "保存证据后报警"]
+    cautions = ["绝不透露验证码", "绝不向陌生账户转账", "绝不共享手机屏幕",
+                "绝不点击陌生链接", "绝不透露银行卡号", "绝不在电话里当场做决定"]
+    parts = ["老年人防诈骗要点汇总（六十条）："]
+    n = 0
+    for s in subjects:
+        for a in actions:
+            if n >= 60:
+                break
+            parts.append("\n*  第%d条：遇到%s类情况，正确做法是%s，切记%s。\n"
+                         % (n + 1, s, a, cautions[n % len(cautions)]))
+            n += 1
+    parts.append("以上要点请转告家中老人，反复演练；如遇诈骗请立即拨打96110报警求助。\n")
+    return "".join(parts)
+
+
+class TestD33SilentTruncation:
+    """总调度 D33：>2000 字的合法回答被 clean 的「不处理」分支静默截成 2000 字"""
+
+    def test_long_unique_text_passes_filter_intact(self):
+        from intelligence.response_filter import filter_response
+        t = _long_unique_list_text()
+        assert len(t) > 2000, "测试样本必须超过 2000 字（当前 %d）" % len(t)
+        out = filter_response(t)
+        assert out["cleaned"] == t, "无重复长文必须原样通过（D33：静默截断）"
+
+    def test_pm_repro_passes_filter_intact(self):
+        from intelligence.response_filter import filter_response
+        out = filter_response(_pm_list_text())
+        assert out["cleaned"] == _pm_list_text()
+
+    def test_true_accumulation_still_cleaned_via_filter(self):
+        from intelligence.response_filter import filter_response
+        out = filter_response(_true_accumulation_text())
+        assert "高价值日常办公工作" in out["cleaned"]
+        assert len(out["cleaned"]) < len(_true_accumulation_text())
+
+    def test_clean_noop_branches_return_full_text(self):
+        """clean 的所有「不处理」分支原样返回（含 >2000 字场景）"""
+        from intelligence.response_filter import clean_prefix_accumulation
+        t = _long_unique_list_text()
+        assert clean_prefix_accumulation(t) == t
+
+
+# ============================== #81 加固：三开关服务端强制 False ==============================
+
+class TestFeatureFlagsForcedOff:
+    """总调度决定：记忆/存为技能/标为私密在服务端一律视为关，不读配置"""
+
+    def test_get_forces_false_even_if_config_true(self, tmp_path, monkeypatch):
+        import config as _cfgmod
+        fake = tmp_path / "settings.json"
+        fake.write_text('{"feature_memory": true, "feature_distill_skill": true,'
+                        ' "feature_mark_private": true}', encoding="utf-8")
+        monkeypatch.setattr(_cfgmod, "_CONFIG_FILE", str(fake))
+        monkeypatch.setattr(_cfgmod, "_config_cache", _cfgmod.load_config())  # 缓存在 import 时已建，须重建
+        # （红阶段已验证：无强制时该配置读出 True，用例不空转）
+        assert _cfgmod._config_cache.get("feature_memory") is True, "缓存重建必须吃到 true"
+        for k in ("feature_memory", "feature_distill_skill", "feature_mark_private"):
+            assert _cfgmod.get(k, False) is False, "%s 必须强制 False" % k
+
+    def test_memory_card_prompt_suppressed(self, tmp_path, monkeypatch):
+        import config as _cfgmod
+        fake = tmp_path / "settings.json"
+        fake.write_text('{"feature_memory": true}', encoding="utf-8")
+        monkeypatch.setattr(_cfgmod, "_CONFIG_FILE", str(fake))
+        monkeypatch.setattr(_cfgmod, "_config_cache", _cfgmod.load_config())
+        assert _cfgmod._config_cache.get("feature_memory") is True, "缓存重建必须吃到 true"
+        from prompts import card_protocol_prompt, CARD_PROTOCOL_PROMPT
+        assert card_protocol_prompt() == CARD_PROTOCOL_PROMPT, \
+            "feature_memory=True 配置下记忆卡协议段也必须被抑制（强制 False）"
+
+
 # ============================== #77 看门狗健康端点 ==============================
 
 _LAUNCHER = os.path.join(os.path.dirname(_SERVER_DIR), "launcher")

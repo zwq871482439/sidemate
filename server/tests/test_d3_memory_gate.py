@@ -81,5 +81,7 @@ class TestAcceptRecordsConfirmation:
         cache = dict(config._config_cache)
         cache["feature_memory"] = True
         monkeypatch.setattr(config, "_config_cache", cache)
+        import config as _cfg2
+        monkeypatch.setattr(_cfg2, "_FORCED_OFF_KEYS", frozenset())  # rc.6 强制关的机制测试豁免：验证的是 0.12 重开后的机制
         from prompts import card_protocol_prompt
         assert '["同意写入", "不用记"]' in card_protocol_prompt()
