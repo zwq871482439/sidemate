@@ -248,6 +248,10 @@ async def api_chat(req: ChatRequest):
     if not DEFAULT_LLM and not req.model:
         return JSONResponse({"error": "暂无可用模型，请先到「设置 → 模型下载」下载并加载模型"}, status_code=503)
     chat_file = req.chat_file or get_current_chat()
+    if not chat_file:
+        # D36：与 stream 入口同款兜底——零会话直发不再让持久化路径拿到 None
+        chat_file = _new_chat_file()
+        set_current_chat(chat_file)
     context_cache = load_chat_cache(chat_file)
     return JSONResponse(mgr.chat(
         message=req.message,
@@ -312,6 +316,12 @@ async def api_chat_stream(request: Request):
     model_name = req.model or DEFAULT_LLM
     max_tokens = req.max_tokens
     chat_file = req.chat_file or get_current_chat()
+    if not chat_file:
+        # D36（rc.6 真装门禁）：全新安装零会话时直接发消息（API/脚本路径）——
+        # chat_file=None 会让收尾持久化 os.path(None) 抛错（done 后 error 事件）
+        chat_file = _new_chat_file()
+        set_current_chat(chat_file)
+        log.info("[CHAT] 无当前会话，已自动落新会话: %s" % chat_file)
     history_raw = req.history or []
     action_mode = body.get("action_mode", "chat") or "chat"
     file_path = body.get("file_path")
