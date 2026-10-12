@@ -342,12 +342,37 @@ class ModelManager:
         self._last_loaded_model = matched_name
         self._model_mem_mb[matched_name] = 0
         self._llm_probe_cache = None  # #77：加载后立即失效探测缓存（顶栏状态点即时转绿）
+        self._boot_engine_async(matched_name)
 
         if progress_callback:
             progress_callback(100, "就绪")
 
         log.info("[Model] %s 已就绪（Ollama 管理）" % matched_name)
         return {"status": "loaded", "model": matched_name, "time": 0, "mem_mb": 0}
+
+    def _boot_engine_async(self, matched_name: str) -> None:
+        """#84（rc.6 真装门禁实锤）：加载即拉起 llama-server。
+
+        P7-4 架构下 load() 曾是 Ollama 时代的空壳——只翻 _loaded 标记、不启动
+        引擎：/api/load 秒回 loaded，但状态点恒灰（运行时真相 is_healthy=False），
+        直到首条消息才被聊天侧懒启动拉起；且陈旧标记会跳过 stream_engine 的
+        mode_hint（#71 同型）。此处与 chat.py 懒加载同款：后台线程 start()，
+        start 幂等（already_running），不阻塞 load 返回。
+        """
+        import threading as _th
+
+        def _boot():
+            try:
+                from server import ollama_manager as _om
+                r = _om.start()
+                log.info("[LOAD] 引擎随加载启动: %s (port=%s)" % (
+                    r.get("status", r.get("error", "?")), r.get("port", "?")))
+                if r.get("status") in ("started", "already_running"):
+                    _om.mark_model_loaded(gguf_path=r.get("model", ""))
+            except Exception as e:
+                log.warning("[LOAD] 引擎随加载启动异常: %s" % str(e)[:100])
+
+        _th.Thread(target=_boot, daemon=True, name="load-boot-engine").start()
 
     def unload(self, name: str) -> Dict:
         """P7-4: 卸载模型（llama-server 无 keep_alive，改为停止进程）"""

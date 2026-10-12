@@ -394,6 +394,24 @@ def set_value(key: str, value: Any) -> bool:
     return save_config({key: value})
 
 
+def resolve_ollama_port() -> int:
+    """llama-server 端口解析（D35，rc.6 真装门禁实锤）。
+
+    此前 OllamaManager() 恒用默认 11434——launcher.json 的 ollama_port（经
+    OLLAMA_PORT 环境变量注入，launcher/main.go:878）与 settings.json 的
+    ollama_port 双双被无视（实测：沙盒配 11438 实际起 11434）。同机多实例
+    时引擎互相"收养"（EXTERNAL 复用按模型名匹配），测试被邻实例代答。
+    优先级：环境变量（launcher 注入）> settings.json > 11434。
+    """
+    _env = os.environ.get("OLLAMA_PORT")
+    if _env and str(_env).strip().isdigit() and 0 < int(_env) < 65536:
+        return int(_env)
+    v = get("ollama_port", 0)
+    if isinstance(v, int) and 0 < v < 65536:
+        return v
+    return 11434
+
+
 # 清理策略描述（给前端显示用）
 CLEANUP_OPTIONS = {
     "on_start": "每次启动时清空",

@@ -191,7 +191,11 @@ from fastapi.staticfiles import StaticFiles
 
 # Ollama Manager（进度上报移入 _lifespan）
 from core.ollama_manager import OllamaManager
-ollama_manager = OllamaManager()
+from config import resolve_ollama_port
+# D35（rc.6 真装门禁实锤）：此前恒用默认 11434——launcher.json 的 ollama_port
+# （经 OLLAMA_PORT 环境变量传入）和 settings.json 的 ollama_port 双双被无视
+# （实测：PM 沙盒配 11438 实际起 11434）。同机多实例时引擎互相"收养"。
+ollama_manager = OllamaManager(port=resolve_ollama_port())
 
 _lifespan_entered = False
 
