@@ -178,7 +178,9 @@ func panelWndProc(hWnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintp
 			// 每 2 秒刷新端口状态（Patch5 P0：用 HTTP 深度探活替代 TCP 端口探活）
 			// S4: P7-4 改为 /v1/models（llama-server 不提供 /api/tags）
 			panelState.ollamaAlive = isServiceAlive(fmt.Sprintf("http://127.0.0.1:%d/v1/models", panelState.ollamaPort), "llama-server")
-			panelState.serverAlive = isServiceAlive(fmt.Sprintf("http://127.0.0.1:%d/api/status", panelState.serverPort), "python")
+			// 0.11.1 #77：面板 2s 轮询改轻量心跳端点（async 零 IO）——生成期
+			// 重 IO 状态端点会因线程池饥饿超时，面板曾误显示"已停止"
+			panelState.serverAlive = isServiceAlive(fmt.Sprintf("http://127.0.0.1:%d/api/health", panelState.serverPort), "python")
 			splashProcInvalidateRect.Call(uintptr(hWnd), 0, 0)
 		} else if wParam == 201 {
 			panelCheckMouseOutside(hWnd)

@@ -72,6 +72,7 @@ class ModelManager:
         # 模型配置：构建 Ollama 模型条目
         self.model_configs = {}
         self._loaded = {}  # 必须在 _scan_ollama_models 之前初始化（该方法会写入 _loaded）
+        self._llm_probe_cache = None  # #77：status() 的 llama 探测 TTL 缓存 (ts, result)
         self._scan_ollama_models()
 
         # 状态
@@ -275,18 +276,27 @@ class ModelManager:
         # 0.10 修复：llm 的 loaded 从写死 True（P7-4 遗留"装了=就绪"）改为
         # 运行时真相——引擎健康且正服务该模型。否则停了引擎仍报已加载，
         # 前端状态点/卡片/环境检查全被误导。非 llm 类型不受影响。
-        _llm_loaded = None  # None=探测失败（单测环境），维持旧语义；dict=探测成功（引擎未跑→全 False）
-        try:
-            from server import ollama_manager as _om
-            _llm_loaded = {}
-            if _om.impl.is_healthy():
-                _served = " ".join(_om.impl.served_model_ids()).lower()
-                for _m in (_om.registry.scan() or []):
-                    _fn = (_m.gguf_filename or "").lower()
-                    _stem = _fn[:-5] if _fn.endswith(".gguf") else _fn
-                    _llm_loaded[_m.model_id] = bool(_fn) and (_fn in _served or _stem in _served)
-        except Exception:
-            _llm_loaded = None
+        # 0.11.1 #77：探测结果 TTL 缓存（10s）——/api/status 的轮询方（顶栏
+        # 状态点、面板、看门狗旧版）不再每次都打 llama HTTP×2 + registry
+        # 全盘扫描；生成期这些调用不再与推理抢资源。load/unload 主动失效。
+        import time as _time
+        _now = _time.time()
+        if self._llm_probe_cache and (_now - self._llm_probe_cache[0]) < 10.0:
+            _llm_loaded = self._llm_probe_cache[1]
+        else:
+            _llm_loaded = None  # None=探测失败（单测环境），维持旧语义；dict=探测成功（引擎未跑→全 False）
+            try:
+                from server import ollama_manager as _om
+                _llm_loaded = {}
+                if _om.impl.is_healthy():
+                    _served = " ".join(_om.impl.served_model_ids()).lower()
+                    for _m in (_om.registry.scan() or []):
+                        _fn = (_m.gguf_filename or "").lower()
+                        _stem = _fn[:-5] if _fn.endswith(".gguf") else _fn
+                        _llm_loaded[_m.model_id] = bool(_fn) and (_fn in _served or _stem in _served)
+            except Exception:
+                _llm_loaded = None
+            self._llm_probe_cache = (_now, _llm_loaded)
         result = {}
         for name, cfg in self.model_configs.items():
             result[name] = {
@@ -331,6 +341,7 @@ class ModelManager:
         self._load_times[matched_name] = 0.0
         self._last_loaded_model = matched_name
         self._model_mem_mb[matched_name] = 0
+        self._llm_probe_cache = None  # #77：加载后立即失效探测缓存（顶栏状态点即时转绿）
 
         if progress_callback:
             progress_callback(100, "就绪")
@@ -355,6 +366,7 @@ class ModelManager:
         self._loaded.pop(matched_name, None)
         self._load_times.pop(matched_name, None)
         self._model_mem_mb.pop(matched_name, None)
+        self._llm_probe_cache = None  # #77：卸载后立即失效探测缓存（状态点即时转空）
         return {"status": "unloaded", "model": matched_name, "freed_mb": 0}
 
     def delete_model(self, name: str) -> Dict:
@@ -373,6 +385,7 @@ class ModelManager:
                 self._load_times.pop(matched_name, None)
                 self._model_mem_mb.pop(matched_name, None)
                 self.model_configs.pop(matched_name, None)
+                self._llm_probe_cache = None  # #77：删除后失效探测缓存
                 log.info("[Model] 已删除模型文件: %s" % matched_name)
                 return {"ok": True, "model": matched_name, "msg": "模型已删除"}
             else:

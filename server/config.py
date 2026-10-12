@@ -370,8 +370,21 @@ def _invalidate_cache() -> None:
         _config_cache = load_config()
 
 
+# 0.11.1 rc.6 #81 加固（总调度决定）：三个 feature flag 在服务端一律视为
+# 关闭、不读配置——UI 开关已随 PR #33 撤下，此为后端兜底，杜绝 settings.json
+# 手改复活因质量问题下线的半成品功能（记忆/存为技能/标为私密）。
+# 0.12 重新设计后把 key 从此集合移除，即恢复配置读取。
+_FORCED_OFF_KEYS = frozenset({
+    "feature_memory",
+    "feature_distill_skill",
+    "feature_mark_private",
+})
+
+
 def get(key: str, default: Any = None) -> Any:
     """获取单个配置项（直接读内存缓存，零磁盘 IO）"""
+    if key in _FORCED_OFF_KEYS:
+        return False
     with _cache_lock:
         return _config_cache.get(key, default if default is not None else DEFAULTS.get(key, default))
 

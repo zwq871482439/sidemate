@@ -16,6 +16,10 @@ def _set_feature_memory(monkeypatch, on):
     cache = dict(config._config_cache)
     cache["feature_memory"] = on
     monkeypatch.setattr(config, "_config_cache", cache)
+    # rc.6 #81 强制关豁免：这些用例守 0.12 重开后仍需有效的机制
+    # （prompt 拼接 / 工具注册接线），临时清空强制集让 flag 可开
+    if on:
+        monkeypatch.setattr(config, "_FORCED_OFF_KEYS", frozenset())
 
 
 class TestProtocolTextTakedown:

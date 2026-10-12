@@ -384,6 +384,26 @@ def _is_cn_common_phrase(ngram: str) -> bool:
     """判断 4-gram 是否为中文常见句首短语（非前缀累积）"""
     return ngram in _CN_COMMON_PHRASE_4GRAMS
 
+# 0.11.1 #70：markdown 结构 4-gram 白名单——列表/标题/引用/表格等结构标记
+# 在合法长答案中天然高频（PM 案例："\n*  " ×24 → 1764 字被替换成 17 字），
+# 它们是排版结构不是 prose 证据，不应参与前缀累积判定。
+_MD_STRUCT_CHAR_SET = frozenset(
+    "\n\r\t *-+#>.|:=·•─═—–![]()（）「」\"'`0123456789。！？；，：、"
+)
+
+def _is_markdown_structure_4gram(ngram: str) -> bool:
+    """判断 4-gram 是否纯 markdown 结构符号（含汉字/字母=prose，不算）"""
+    if not ngram:
+        return False
+    for ch in ngram:
+        if '\u4e00' <= ch <= '\u9fff':
+            return False
+        if ch.isalpha():
+            return False
+        if ch not in _MD_STRUCT_CHAR_SET:
+            return False
+    return True
+
 # 数学/LaTeX 文本检测模式：如果文本中包含这些模式，说明是数学推理输出
 # 前缀累积不会包含这些模式，所以可以安全跳过
 _MATH_TEXT_PATTERN = re.compile(
@@ -456,11 +476,14 @@ def detect_prefix_accumulation(text: str) -> Tuple[bool, str]:
     
     # 跳过 LaTeX 命令片段：数学推理中 \frac, \sqrt 等高频出现是正常的
     # 同时跳过中文常见句首短语（如"您好，请"在问候语中重复是正常的）
-    # 按频率排序，找到第一个非 LaTeX、非常见短语的 top 4-gram
+    # 以及 markdown 结构标记（#70：列表/标题/表格符号在合法长答案中高频）
+    # 按频率排序，找到第一个非 LaTeX、非常见短语、非结构符号的 top 4-gram
     for top_4g, top_4c in fourgrams.most_common(5):
         if _is_latex_or_math_4gram(top_4g):
             continue
         if _is_cn_common_phrase(top_4g):
+            continue
+        if _is_markdown_structure_4gram(top_4g):
             continue
         # 正常文本中 top 4-gram 出现 ≤ 5 次
         # 前缀累积中 top 4-gram 出现 ≥ 8 次
@@ -497,24 +520,30 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
     """
     if not text or len(text) < _PREFIX_ACCUM_MIN_TEXT_LEN:
         return text
-    
+
+    # D33（总调度评审 #34）：所有「不处理」分支一律原样返回 text——此前返回
+    # text[:max_len]（默认 2000），把一切超长回答在 filter_response 里静默
+    # 截断（60 条互不重复的 2810 字列表文被砍成 2000 字）。max_len 只对真正
+    # 发生清理的分支生效。
+
     # 数学/公式推理文本跳过（与 detect_prefix_accumulation 保持一致）
     if _looks_like_math_text(text):
-        return text[:max_len]
-    
+        return text
+
     # 代码文本跳过：代码的缩进/重复结构会触发 4-gram 误判，但那是正常代码结构，
     # 不应被前缀累积清理误伤（否则会把完整函数截断成一两行）
     if _looks_like_code_text(text):
-        return text[:max_len]
-    
+        return text
+
     from collections import Counter
-    
+
     # 全文 4-gram 频率分析
     fourgrams = Counter(text[i:i+4] for i in range(len(text) - 3))
     if not fourgrams:
-        return text[:max_len]
+        return text
     
     # 跳过 LaTeX 命令片段和中文常见句首短语，找到第一个真正的 top 4-gram
+    # （含 markdown 结构符号跳过——#70：排版结构不算累积证据）
     top_4g = None
     top_4c = 0
     for _4g, _4c in fourgrams.most_common(5):
@@ -522,11 +551,13 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
             continue
         if _is_cn_common_phrase(_4g):
             continue
+        if _is_markdown_structure_4gram(_4g):
+            continue
         top_4g, top_4c = _4g, _4c
         break
     
     if not top_4g or top_4c < _PREFIX_ACCUM_4GRAM_THRESHOLD:
-        return text[:max_len]  # 无重复（或仅 LaTeX 重复）
+        return text  # 无重复（或仅 LaTeX 重复）——D33：不截断
     
     # 句子分割（供策略1使用）
     _sent_split = re.split(r'([。！？\n])', text)
@@ -542,6 +573,23 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
     # === 策略1：多句子模式下找最后一个独立句子 ===
     # 只有 >= 2 个句子时才有意义做句子间对比
     if len(merged) >= 2:
+        # #70 累积链证据护栏：真前缀累积的签名是"句子逐条扩展前一条"的链
+        # （句子 i 以句子 j 的去标点核心开头且更长）。合法的平行结构（如 24
+        # 条互不相干的列表项）没有这种链——高频 4-gram 只是排版符号或常用
+        # 搭配。无链即拒绝整篇替换，防止把 1764 字的合法答案砍成 17 字。
+        _ext_pairs = 0
+        for _i in range(len(merged)):
+            _s = merged[_i].strip()
+            for _j in range(max(0, _i - 5), _i):
+                _prev = merged[_j].strip().rstrip("。！？；，、")
+                if len(_prev) >= 5 and _s.startswith(_prev) and len(_s) > len(_prev):
+                    _ext_pairs += 1
+                    break
+        if _ext_pairs < 2:
+            log.info("[REPEAT] 检出高频 4-gram 但无前缀扩展链证据（%d 对），"
+                     "拒绝对整篇替换（#70 护栏）" % _ext_pairs)
+            return text  # D33：护栏拒绝时也不截断
+
         best_candidate = ""
         for i in range(len(merged) - 1, -1, -1):
             s = merged[i].strip()
@@ -576,16 +624,16 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
     # === 策略2：回退到简单截取 ===
     last_pos = text.rfind(top_4g)
     if last_pos < 10:
-        return text[:max_len]
+        return text  # D33：不截断
     
     cleaned = text[last_pos:].strip()
     if cleaned and any(ch in cleaned for ch in '。！？') and len(cleaned) >= 20:
         if text.count(cleaned) >= _PREFIX_ACCUM_SAME_COUNT_THRESHOLD:
-            return text[:max_len]
+            return text  # D33：排比句保护拒绝时也不截断
         log.info("[REPEAT] 前缀累积重复清理(回退): %d字 → %d字" % (len(text), len(cleaned)))
         return cleaned[:max_len]
-    
-    return text[:max_len]
+
+    return text  # D33：不截断
 
 
 
@@ -1095,12 +1143,18 @@ def filter_response(text: str, user_msg: str = "") -> Dict:
     # 1. 前缀累积重复清理（严重问题时自动截取有效部分）
     # 2. 废话前缀清理（去掉"好的，让我来分析"等）
     # 3. 未闭合 Markdown 标记自愈（补全缺失的 ** 等，不告知用户）
-    cleaned = clean_prefix_accumulation(text)
-    if cleaned != text:
-        # 前缀累积重复已被清理，在清理后文本上再做废话前缀清理
-        cleaned = _clean_thinking_prefix(cleaned)
+    # D33（总调度评审 #34）：仅当检出前缀累积时才调用 clean_prefix_accumulation
+    # ——此前无条件调用，其「不处理」分支曾返回 text[:2000]，一切超长回答
+    # 在此被静默截断（60 条 2810 字互不重复列表文 → 2000 字）。
+    if accum_detected:
+        cleaned = clean_prefix_accumulation(text)
+        if cleaned != text:
+            # 前缀累积重复已被清理，在清理后文本上再做废话前缀清理
+            cleaned = _clean_thinking_prefix(cleaned)
+        else:
+            # 无前缀累积重复，仅做废话前缀清理
+            cleaned = _clean_thinking_prefix(text)
     else:
-        # 无前缀累积重复，仅做废话前缀清理
         cleaned = _clean_thinking_prefix(text)
     # 自愈：补全未闭合的 ** 标记（静默修复，不产生警告）
     cleaned = _fix_unclosed_markdown(cleaned)

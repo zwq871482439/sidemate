@@ -236,8 +236,13 @@ class LlamaCppManager:
             self._running = False
             return {"status": "external_not_managed"}
 
+        # 0.11.1 #71：必须在 _do_stop() 之前快照 ownership——其 finally 会把
+        # ownership 清成 None，停止后再判断 → 真停止也返回 not_running，
+        # IDLE-UNLOAD 巡检因此永远走「不清理加载标记」分支，_loaded 陈旧
+        # 导致下一条离线消息跳过懒加载分支（无提示、直打死引擎）。
+        was_managed = self._ownership == "MANAGED"
         self._do_stop()
-        return {"status": "stopped"} if self._ownership == "MANAGED" else {"status": "not_running"}
+        return {"status": "stopped"} if was_managed else {"status": "not_running"}
 
     def _do_stop(self):
         """实际停止进程（内部用）"""
