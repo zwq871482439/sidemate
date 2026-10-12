@@ -316,7 +316,12 @@ function render() {
     const scroll = main.querySelector('#main-scroll');
     if (!_kbView) {
       _kbView = createKBView({
-        onGoClassic: () => { location.href = '/classic.html'; },
+        // #79：KB 模块未装空态 → 直达 v2 设置·模型下载页（原经典版死链已撤）
+        onGoSettings: () => {
+          state.tab = 'settings';
+          render();
+          if (_settingsView) _settingsView.showSub('download');
+        },
         onAskChat: (q) => {
           // 推荐追问：切聊天 tab 预填输入框
           state.tab = 'chat';
@@ -346,7 +351,7 @@ function render() {
     // 设置：壳 + 常规子页已迁入；其余子页在设置内占位逐页迁
     const scroll = main.querySelector('#main-scroll');
     if (!_settingsView) {
-      _settingsView = createSettingsView({ onGoClassic: () => { location.href = '/classic.html'; } });
+      _settingsView = createSettingsView({});
       _settingsView.mount();
     }
     scroll.appendChild(_settingsView.el);
@@ -508,7 +513,7 @@ function _updateSessDots() {
     if (!c) return;
     const st = c.sessStatus || '';
     const dot = el.querySelector('.si-st');
-    if (dot) { dot.className = 'si-st ' + (st || 'idle'); dot.title = _STT[st] || ''; }
+    if (dot) { if (st) { dot.className = 'si-st ' + st; dot.title = _STT[st] || ''; } else { dot.remove(); } }
     const t = el.querySelector('.si-st-t');
     if (t) {
       t.className = 'si-st-t ' + st;
@@ -715,6 +720,7 @@ function _renderScrollContent(scroll) {
       c.project_dir === _curProj && !c.current && !c.private && !c.legacy) : [];
     scroll.appendChild(renderEmptyState(state.mode, {
       onScene: onScene,
+      currentScene: state.scene || '',
       projectLabel: projLabel,
       onPickProject: (anchor) => showProjectPicker(anchor),
       handoffMeta: state.handoff ? { source_chat: state.handoff.source_chat, updated_at: state.handoff.updated_at } : null,

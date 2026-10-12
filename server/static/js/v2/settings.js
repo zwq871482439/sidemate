@@ -72,7 +72,7 @@ async function _switchWithLoading(btn, modelId, name) {
 }
 
 export function createSettingsView(events) {
-  // events: { onGoClassic() }
+  // events: {}（0.11.1 #79：onGoClassic 已随经典版残留入口一并移除）
   const el = document.createElement('div');
   el.className = 'set-wrap';
   let cur = 'general';
@@ -104,7 +104,7 @@ export function createSettingsView(events) {
       <div class="wip-wrap" style="margin:40px auto">
         <div class="w-ic">◌</div>
         <h2>${label} · 迁移中</h2>
-        <p>此子页正在迁入新版。现在请先在 <a href="/">经典版界面</a> 使用，两边数据完全互通。</p>
+        <p>此子页正在迁入新版，即将开放。</p>
       </div>`;
   }
 
@@ -113,16 +113,14 @@ export function createSettingsView(events) {
     body.innerHTML = `
       <div class="set-group">
         <h2>外观与状态</h2>
-        <div class="sub">界面版本（离线模型与推理设备已拆到「离线AI」页）</div>
-        <div class="set-row"><div class="stx"><b>界面版本</b><p>0.10 新版三栏界面（默认），经典版可在 /classic.html 访问（保留一个版本后移除）</p></div>
-          <button class="kb-tool-btn" id="setGoClassic">回经典版</button></div>
+        <div class="sub">界面缩放与深色模式（离线模型与推理设备已拆到「离线AI」页）</div>
         <div class="set-row"><div class="stx"><b>界面缩放</b><p>整体放大界面（含文字），适合高分屏小字看不清的场景；立即生效</p></div>
           <select class="set-input" id="setFontScale" style="width:auto">
             <option value="1">100%（默认）</option>
             <option value="1.1">110%</option>
             <option value="1.25">125%（大字）</option>
           </select></div>
-        <div class="set-row"><div class="stx"><b>深色模式</b><p>新版深色主题在后续版本实装（DNA-01 深色档）；需要深色请用经典版</p></div>
+        <div class="set-row"><div class="stx"><b>深色模式</b><p>新版深色主题在后续版本实装（DNA-01 深色档）</p></div>
           <span style="font-size:11.5px;color:var(--d1-ink-3)">暂不可用</span></div>
       </div>
       <div class="set-group">
@@ -146,8 +144,6 @@ export function createSettingsView(events) {
             <button class="kb-tool-btn" id="backupImport">恢复</button>
           </span></div>
       </div>`;
-
-    body.querySelector('#setGoClassic').addEventListener('click', () => events.onGoClassic());
 
     // 0.11.1 M2-4：界面缩放（body zoom；localStorage 先行 + 服务端持久）
     const fsSel = body.querySelector('#setFontScale');
@@ -495,13 +491,7 @@ export function createSettingsView(events) {
       </div>
       <div class="set-group">
         <h2>能力配置</h2>
-        <div class="sub">在线模式的能力开关与预算</div>
-        <div class="set-row"><div class="stx"><b>记忆</b><p>默认关闭。打开后才出现记忆确认卡、生成会话记忆，并把记忆工具交给模型。已有记忆文件不会被删除。</p></div>
-          <button class="switch ${gcfg.feature_memory ? 'on' : ''}" id="cfMemory"></button></div>
-        <div class="set-row"><div class="stx"><b>存为技能</b><p>默认关闭。打开后会话菜单才出现「存为技能」。</p></div>
-          <button class="switch ${gcfg.feature_distill_skill ? 'on' : ''}" id="cfDistill"></button></div>
-        <div class="set-row"><div class="stx"><b>标为私密</b><p>默认关闭，只藏入口。已经标过私密的会话保持私密。</p></div>
-          <button class="switch ${gcfg.feature_mark_private ? 'on' : ''}" id="cfPrivate"></button></div>
+        <div class="sub">在线模式的能力开关与预算（记忆/存为技能/标为私密随 0.12 重新设计回归）</div>
         <div class="set-row"><div class="stx"><b>并行模式 <span class="exp-tag" style="font-size:9.5px;color:var(--d1-gold-2);border:1px solid rgba(232,181,77,.4);border-radius:6px;padding:1px 6px">实验性</span></b>
           <p>同时用本地+在线引擎对知识库开展问答。开启后左栏出现第三档「并行」</p></div>
           <button class="switch ${parallelOn ? 'on' : ''}" id="cfParallel"></button></div>
@@ -670,9 +660,6 @@ export function createSettingsView(events) {
           e.target.classList.toggle('on', on);
         });
       };
-      _flag('#cfMemory', 'feature_memory', '记忆已打开', '记忆已关闭');
-      _flag('#cfDistill', 'feature_distill_skill', '存为技能已打开', '存为技能已关闭');
-      _flag('#cfPrivate', 'feature_mark_private', '标为私密入口已打开', '标为私密入口已关闭');
       body.querySelector('#cfParallel').addEventListener('click', async (e) => {
         const on = !e.target.classList.contains('on');
         await _saveCfg({ parallel_enabled: on }, null);
@@ -837,15 +824,7 @@ export function createSettingsView(events) {
       </div>
       <div class="set-group">
         <h2>知识库引擎</h2>
-        <div class="sub">知识库自身功能（文档打标、标签分组）使用的 AI 引擎</div>
-        <div class="set-row"><div class="stx"><b>打标引擎</b><p>文档打标和 AI 洞察使用的模型（不影响对话）</p></div>
-          <select class="set-input" id="kbEngineSel" style="width:auto">
-            <option value="local">离线模型（隐私优先）</option>
-            <option value="cloud">在线模型（质量优先）</option>
-          </select></div>
-        <div class="set-row"><div class="stx"><b>Reranker 常驻</b><p>重排序模型常驻内存（检索更快，占用约 300MB）</p></div>
-          <button class="switch" id="kbReranker"></button></div>
-        <div class="sub">选择知识库自身功能（文档打标、标签分组）使用的 AI 引擎。不影响对话——对话由左栏离线/在线/并行模式控制。</div>
+        <div class="sub">打标引擎：文档打标和 AI 洞察使用的模型。不影响对话——对话由左栏离线/在线/并行模式控制。</div>
         <div class="set-row"><div class="stx">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;margin-bottom:8px">
             <input type="radio" name="v2KbAiMode" value="local" ${cfg.kb_ai_mode !== 'cloud' ? 'checked' : ''}> 离线模型（隐私优先）</label>
@@ -1018,7 +997,6 @@ export function createSettingsView(events) {
       fetch('/api/models/available').then(r => r.json()).catch(() => ({models:[]})),
     ]);
     const currentModel = ((availR && availR.models) || []).find(m => m.current);
-    const estMap = {}; (((availR && availR.models) || []).forEach(m => estMap[m.model_id] = m.estimated_ram_gb || 0));
     const cfg = (all && all.config) || {};
     let _dlSrc = cfg.dl_source || 'modelscope';
     const dlSource = _dlSrc;
@@ -1042,8 +1020,8 @@ export function createSettingsView(events) {
         <div style="display:flex;gap:6px">
           ${m.installed
             ? `${currentModel && currentModel.model_id === m.model_id
-                 ? '<span class="mo-badge cur">使用中</span>' 
-                 : `<button class="mo-btn mo-btn-primary" data-use-dl="${esc(m.model_id)}" data-name-dl="${esc(m.display_name)}" data-est-dl="${(estMap[m.model_id] || 0).toFixed(1)}">使用</button>`}
+                 ? '<span class="mo-badge cur">使用中</span>'
+                 : '<span class="mo-badge idle" title="到「离线AI」页启用此模型">未启用</span>'}
                <button class="kb-tool-btn" data-dl="${esc(m.model_id)}">重新下载</button>
                <button class="kb-tool-btn" style="color:var(--pal-danger)" data-del="${esc(m.model_id)}" data-name="${esc(m.display_name)}">删除</button>`
             : `<button class="btn-primary-v2" data-dl="${esc(m.model_id)}">下载</button>`}
@@ -1170,12 +1148,6 @@ export function createSettingsView(events) {
       await fetch('/api/models/download/cancel', { method: 'POST' }).catch(() => {});
       body.querySelector('#dlProgGroup').style.display = 'none';
     });
-    body.querySelectorAll('[data-use-dl]').forEach(b => b.addEventListener('click', async () => {
-      const ok = await _confirmUse(b.dataset.nameDl, parseFloat(b.dataset.estDl || '0'), await _memInfo());
-      if (!ok) return;
-      await _switchWithLoading(b, b.dataset.useDl, b.dataset.nameDl);
-      renderDownload(body);
-    }));
     body.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
       if (!(await uiConfirm(`删除模型「${b.dataset.name}」？删除后需重新下载才能使用。`))) return;
       await fetch('/api/model/delete', {

@@ -60,6 +60,8 @@ const POSTER_SUBS = [
 export function renderEmptyState(mode, events) {
   const wrap = document.createElement('div');
   wrap.className = 'empty-wrap';
+  // #74：当前场景（选中卡片金边+已选徽章；点击卡后 onScene→renderChatArea 重渲染生效）
+  const cur = events.currentScene || '';
   const projRow = events.projectLabel ? `
       <div class="empty-own" title="选择任务所属的项目（发出第一条消息后定型）">
         <span class="eo-ic">${iconSvg('folderOpen')}</span>
@@ -87,8 +89,9 @@ export function renderEmptyState(mode, events) {
       ${peersRow}
       <div class="offline-grid">
         ${OFFLINE_CARDS.map(c => `
-          <div class="offline-card" data-scene="${c.scene}">
+          <div class="offline-card${c.scene === cur ? ' cur' : ''}" data-scene="${c.scene}">
             <div class="s-ic">${ICON(c.icon)}</div><h3>${c.title}</h3><p>${c.desc}</p>
+            ${c.scene === cur ? '<span class="picked">已选</span>' : ''}
           </div>`).join('')}
       </div>
       <div class="offline-note">需要更强的能力？切换到在线模式解锁 8 个场景</div>
@@ -104,28 +107,30 @@ export function renderEmptyState(mode, events) {
       ${projRow}
       ${handoffRow}
       ${peersRow}
-      <div class="hero-card" data-scene="${hero.scene}">
+      <div class="hero-card${hero.scene === cur ? ' cur' : ''}" data-scene="${hero.scene}">
         <div class="h-ic">${ICON(hero.icon)}</div>
         <div class="h-tx"><h2>${hero.title} <span class="tag">${hero.tag}</span></h2><p>${hero.desc}</p></div>
+        ${hero.scene === cur ? '<span class="picked">已选</span>' : ''}
         <span class="h-go">→</span>
       </div>
       ${ONLINE_SCENES.sections.map(sec => `
         <div class="sec-title"><span class="t">${sec.title}</span><span class="d">${sec.desc}</span></div>
         <div class="scene-grid ${sec.grid}">
           ${sec.cards.map(c => `
-            <div class="scene-card ${c.gold ? 'gold' : ''} ${c.scene === 'poster' && posterExpanded ? 'on' : ''}" data-scene="${c.scene}">
+            <div class="scene-card ${c.gold ? 'gold' : ''} ${c.scene === 'poster' && posterExpanded ? 'on' : ''}${c.scene === cur ? ' cur' : ''}" data-scene="${c.scene}">
               <div class="s-ic">${ICON(c.icon)}</div><h3>${c.title}</h3><p>${c.desc}</p>
-              ${c.scene === 'poster' && posterExpanded ? '<span class="picked">已选</span>' : ''}
+              ${(c.scene === 'poster' && posterExpanded) || c.scene === cur ? '<span class="picked">已选</span>' : ''}
               ${c.soon ? `<span class="soon">${c.soon}</span>` : ''}
             </div>`).join('')}
         </div>
         ${sec.cards.some(c => c.scene === 'poster') ? `
         <div class="poster-subs ${posterExpanded ? 'show' : ''}">
           ${POSTER_SUBS.map(s => `
-            <div class="poster-sub" data-scene="${s.scene}">
+            <div class="poster-sub${s.scene === cur ? ' cur' : ''}" data-scene="${s.scene}">
               <div class="sub-thumb ${s.cls}">${s.thumb}</div>
               <div class="sc-t">${s.title}</div>
               <div class="sc-d">${s.desc}</div>
+              ${s.scene === cur ? '<span class="picked">已选</span>' : ''}
             </div>`).join('')}
           <div class="sub-note">选风格后落对应场景 tag，技能会按所选风格指导内容收集与渲染</div>
         </div>` : ''}
