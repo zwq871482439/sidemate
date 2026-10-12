@@ -109,7 +109,10 @@ func (wd *Watchdog) runCheckCycle() {
 	defer wd.mu.Unlock()
 
 	// ---- 检查 Python ----
-	pythonURL := fmt.Sprintf("http://127.0.0.1:%d/api/status", wd.cfg.ServerPort)
+	// 0.11.1 #77：改用 /api/health（async 零 IO，事件循环直出）——/api/status
+	// 是同步重端点（llama HTTP×2 + registry 全盘扫描），生成期线程池占满时
+	// 排队超时，曾导致 2×30s 误判 → 硬杀 Python、该轮生成全丢。
+	pythonURL := fmt.Sprintf("http://127.0.0.1:%d/api/health", wd.cfg.ServerPort)
 	pythonOK, pythonDetail := wd.healthCheckDeep(pythonURL, "python")
 
 	if pythonOK {

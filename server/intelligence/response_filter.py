@@ -384,6 +384,26 @@ def _is_cn_common_phrase(ngram: str) -> bool:
     """判断 4-gram 是否为中文常见句首短语（非前缀累积）"""
     return ngram in _CN_COMMON_PHRASE_4GRAMS
 
+# 0.11.1 #70：markdown 结构 4-gram 白名单——列表/标题/引用/表格等结构标记
+# 在合法长答案中天然高频（PM 案例："\n*  " ×24 → 1764 字被替换成 17 字），
+# 它们是排版结构不是 prose 证据，不应参与前缀累积判定。
+_MD_STRUCT_CHAR_SET = frozenset(
+    "\n\r\t *-+#>.|:=·•─═—–![]()（）「」\"'`0123456789。！？；，：、"
+)
+
+def _is_markdown_structure_4gram(ngram: str) -> bool:
+    """判断 4-gram 是否纯 markdown 结构符号（含汉字/字母=prose，不算）"""
+    if not ngram:
+        return False
+    for ch in ngram:
+        if '\u4e00' <= ch <= '\u9fff':
+            return False
+        if ch.isalpha():
+            return False
+        if ch not in _MD_STRUCT_CHAR_SET:
+            return False
+    return True
+
 # 数学/LaTeX 文本检测模式：如果文本中包含这些模式，说明是数学推理输出
 # 前缀累积不会包含这些模式，所以可以安全跳过
 _MATH_TEXT_PATTERN = re.compile(
@@ -456,11 +476,14 @@ def detect_prefix_accumulation(text: str) -> Tuple[bool, str]:
     
     # 跳过 LaTeX 命令片段：数学推理中 \frac, \sqrt 等高频出现是正常的
     # 同时跳过中文常见句首短语（如"您好，请"在问候语中重复是正常的）
-    # 按频率排序，找到第一个非 LaTeX、非常见短语的 top 4-gram
+    # 以及 markdown 结构标记（#70：列表/标题/表格符号在合法长答案中高频）
+    # 按频率排序，找到第一个非 LaTeX、非常见短语、非结构符号的 top 4-gram
     for top_4g, top_4c in fourgrams.most_common(5):
         if _is_latex_or_math_4gram(top_4g):
             continue
         if _is_cn_common_phrase(top_4g):
+            continue
+        if _is_markdown_structure_4gram(top_4g):
             continue
         # 正常文本中 top 4-gram 出现 ≤ 5 次
         # 前缀累积中 top 4-gram 出现 ≥ 8 次
@@ -515,12 +538,15 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
         return text[:max_len]
     
     # 跳过 LaTeX 命令片段和中文常见句首短语，找到第一个真正的 top 4-gram
+    # （含 markdown 结构符号跳过——#70：排版结构不算累积证据）
     top_4g = None
     top_4c = 0
     for _4g, _4c in fourgrams.most_common(5):
         if _is_latex_or_math_4gram(_4g):
             continue
         if _is_cn_common_phrase(_4g):
+            continue
+        if _is_markdown_structure_4gram(_4g):
             continue
         top_4g, top_4c = _4g, _4c
         break
@@ -542,6 +568,23 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
     # === 策略1：多句子模式下找最后一个独立句子 ===
     # 只有 >= 2 个句子时才有意义做句子间对比
     if len(merged) >= 2:
+        # #70 累积链证据护栏：真前缀累积的签名是"句子逐条扩展前一条"的链
+        # （句子 i 以句子 j 的去标点核心开头且更长）。合法的平行结构（如 24
+        # 条互不相干的列表项）没有这种链——高频 4-gram 只是排版符号或常用
+        # 搭配。无链即拒绝整篇替换，防止把 1764 字的合法答案砍成 17 字。
+        _ext_pairs = 0
+        for _i in range(len(merged)):
+            _s = merged[_i].strip()
+            for _j in range(max(0, _i - 5), _i):
+                _prev = merged[_j].strip().rstrip("。！？；，、")
+                if len(_prev) >= 5 and _s.startswith(_prev) and len(_s) > len(_prev):
+                    _ext_pairs += 1
+                    break
+        if _ext_pairs < 2:
+            log.info("[REPEAT] 检出高频 4-gram 但无前缀扩展链证据（%d 对），"
+                     "拒绝对整篇替换（#70 护栏）" % _ext_pairs)
+            return text[:max_len]
+
         best_candidate = ""
         for i in range(len(merged) - 1, -1, -1):
             s = merged[i].strip()

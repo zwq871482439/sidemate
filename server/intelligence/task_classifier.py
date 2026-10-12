@@ -60,6 +60,16 @@ _CREATIVE_KEYWORDS = [
 # creative 不含"写"字——"写个函数"走 code，"写个故事"走 creative
 # "帮我写周报"等无 code/creative 信号的走 default
 
+# 0.11.1 #72：文档名词信号——"帮我写一篇防诈骗指南"此前命中 _CODE_PHRASES
+# 且无创作词 → 误入 code 档注入编程 persona。文档类产出名词排除 code 道，
+# 落 default（或被 analysis/creative 等后续规则按内容接住）。
+_DOC_KEYWORDS = [
+    "指南", "方案", "报告", "文章", "文档", "总结", "周报", "月报",
+    "通知", "公告", "规划", "建议", "清单", "规范", "制度", "说明",
+    "教程", "大纲", "纪要", "汇报", "简介", "手册", "白皮书",
+    "发言稿", "讲话稿", "软文", "推送", "材料", "要点",
+]
+
 
 def is_greeting(message: str) -> bool:
     """精确匹配闲聊，整句 trim 后匹配"""
@@ -91,10 +101,11 @@ def resolve_strategy(message: str, strategy_override: str = None) -> dict:
         config = STRATEGY_CONFIG.get("greeting", {})
         return {"type": "greeting", **config}
 
-    # 2. code（编程短语优先于纯关键词）
+    # 2. code（编程短语优先于纯关键词；#72：文档/创作信号排除）
     if any(phrase in msg_lower for phrase in _CODE_PHRASES):
         has_creative_signal = any(kw in msg_lower for kw in _CREATIVE_KEYWORDS)
-        if not has_creative_signal:
+        has_doc_signal = any(kw in msg_lower for kw in _DOC_KEYWORDS)
+        if not has_creative_signal and not has_doc_signal:
             config = STRATEGY_CONFIG.get("code", {})
             return {"type": "code", **config}
 

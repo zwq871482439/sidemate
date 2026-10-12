@@ -141,6 +141,21 @@ def api_warmup():
 
 
 
+@router.get("/api/health")
+async def api_health():
+    """#77：看门狗/面板专用心跳——async + 零 IO。
+
+    /api/status 是同步重端点（llama HTTP×2 + registry 全盘扫描），生成期
+    线程池占满时它排队超时，Go 看门狗 2×30s 误判后端死亡 → 硬杀 Python、
+    该轮生成全丢。本端点在事件循环直出，免疫线程池饥饿。启动阶段的
+    ready 进度轮询仍用 /api/status（那时无生成负载）。
+    注意：版本号从 config 取（FULL_VERSION 同源），不 import server 模块
+    ——后者带进程级看门狗副作用，在非 --serve 环境导入即退出。
+    """
+    from config import __version__ as _v
+    return {"ok": True, "version": _v}
+
+
 @router.get("/api/status")
 def api_status():
     """模型状态 + 后台初始化状态"""
