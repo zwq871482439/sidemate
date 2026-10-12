@@ -23,7 +23,7 @@ const STATUS_LABEL = {
 };
 
 export function createKBView(events) {
-  // events: { onGoClassic(), onAskChat(question)（推荐追问跳聊天） }
+  // events: { onGoSettings()（模块未装→设置·模型下载）, onAskChat(question)（推荐追问跳聊天） }
   const state = {
     moduleReady: null,   // null=loading, false=未安装/未就绪, true=可用
     docs: [],
@@ -91,10 +91,10 @@ export function createKBView(events) {
       el.innerHTML = `
         <div class="kb-onboard">
           <h2>知识库未就绪</h2>
-          <p>需要安装并加载知识库模块（检索模型）。<br>请到经典版「设置 → 模型下载 / 环境检查」完成安装。</p>
-          <button class="btn-primary-v2" id="kbGoClassic">去经典版完成配置</button>
+          <p>需要安装并加载知识库模块（检索模型）。<br>请到「设置 → 模型下载」完成安装，再在「环境检查」确认加载。</p>
+          <button class="btn-primary-v2" id="kbGoSettings">去设置完成配置</button>
         </div>`;
-      el.querySelector('#kbGoClassic').addEventListener('click', () => events.onGoClassic());
+      el.querySelector('#kbGoSettings').addEventListener('click', () => events.onGoSettings());
       return;
     }
 
