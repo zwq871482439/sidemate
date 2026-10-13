@@ -512,13 +512,32 @@ function _updateSessDots() {
     const c = (state.sessions || []).find(x => x.name === el.dataset.chat);
     if (!c) return;
     const st = c.sessStatus || '';
-    const dot = el.querySelector('.si-st');
-    if (dot) { if (st) { dot.className = 'si-st ' + st; dot.title = _STT[st] || ''; } else { dot.remove(); } }
-    const t = el.querySelector('.si-st-t');
-    if (t) {
+    // #73 修正（rc.6 复扫发现）：renderSessItem 已不再预置 idle 圆点（无状态不渲染），
+    // 此前只更新/删除既有圆点、从不创建——生成中金点因此永远出不来。状态出现时现建。
+    let dot = el.querySelector('.si-st');
+    if (st) {
+      if (!dot) {
+        dot = document.createElement('span');
+        el.querySelector('.si-bar .st') && el.querySelector('.si-bar .st').prepend(dot);
+      }
+      dot.className = 'si-st ' + st;
+      dot.title = _STT[st] || '';
+    } else if (dot) {
+      dot.remove();
+    }
+    // 状态文字（子行「生成中/待确认」）同理：出现时现建，无则移除
+    let t = el.querySelector('.si-st-t');
+    if (st) {
+      if (!t) {
+        t = document.createElement('span');
+        t.className = 'si-st-t ' + st;
+        el.querySelector('.sm') && el.querySelector('.sm').appendChild(t);
+      }
       t.className = 'si-st-t ' + st;
-      t.textContent = st ? _STT[st] : '';
-      t.style.display = st ? '' : 'none';
+      t.textContent = _STT[st] || '';
+      t.style.display = '';
+    } else if (t) {
+      t.remove();
     }
     let badge = el.querySelector('.si-badge');
     if (c.unread && !badge) {
@@ -965,7 +984,9 @@ function renderStreamingBubble(st) {
   const _loadHint = (!st.text && !st.status && state.mode !== 'cloud' && !_llmLoaded)
     ? '正在准备本地模型（首次约 30-60 秒），请稍候…' : '';
   statusEl.textContent = st.status || _loadHint;
-  statusEl.style.display = st.status ? '' : 'none';
+  // #71 修正（rc.6 复扫发现）：display 门控此前只看 st.status——冷启动加载提示
+  // 写进了 textContent 却永不可见（引擎拉起的十几秒里气泡全空白）。
+  statusEl.style.display = (st.status || _loadHint) ? '' : 'none';
   if (st.sources && st.sources.length) {
     // F4（S9-B）流式期即出底部来源条（与回放同构：[n] 文件名 + 片段预览）
     srcEl.style.display = 'block';
