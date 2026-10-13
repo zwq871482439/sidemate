@@ -47,6 +47,35 @@ _NOISE_DOMAINS = (
     "dictionary", "hudong", "baike.baidu.com" if False else "zidian",
 )
 
+# 搜索引擎自家导航首页（PM 复查 #89：Bing 反爬返回非正常结果页时，解析器
+# 会捞出 wap.baidu.com / map.baidu.com 等首页链接冒充结果，且旧噪音表
+# 只认日历/词典拦不住，导致永远轮不到百度兜底——实测同查询百度兜底全切题）
+_ENGINE_NAV_HOME_HOSTS = frozenset((
+    "www.baidu.com", "wap.baidu.com", "m.baidu.com", "map.baidu.com",
+    "image.baidu.com", "tieba.baidu.com", "zhidao.baidu.com", "news.baidu.com",
+    "www.bing.com", "cn.bing.com", "bing.com", "www.sogou.com", "so.com",
+    "www.google.com", "www.ddg.gg",
+))
+
+
+def _is_junk_result(url: str) -> bool:
+    """搜索引擎自家首页 / 任意站点登录页——不可能承载查询答案，一律判垃圾"""
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(url or "")
+    except Exception:
+        return True
+    host = (p.netloc or "").lower()
+    path = (p.path or "").strip("/").lower()
+    if not host:
+        return True
+    if host in _ENGINE_NAV_HOME_HOSTS and path == "":
+        return True
+    # 注意：baidu.com/link?url= 跳转链是正常结果载体，不在此列（host 带路径）
+    if path in ("login", "login.html", "signin", "sign-in", "register"):
+        return True
+    return False
+
 # 百度结果（h3 锚点；href 为百度跳转链，fetch_url 会跟随重定向）
 _BAIDU_H3_PATTERN = re.compile(
     r'<h3[^>]*>\s*<a[^>]*href="(http[^"]+)"[^>]*>(.*?)</a>',
@@ -202,20 +231,25 @@ class SearchEngine:
         # 年份即可恢复；仍失真时百度实测同查询全切题。
         try:
             results = self._bing_search(query, count)
-            if results and not self._mostly_noise(results):
+            if results and not self._mostly_noise(results) and self._results_match_query(query, results):
                 log.info("[SEARCH] Bing 命中 '%s' → %d 条", query[:40], len(results))
                 return results
+            if results:
+                log.warning("[SEARCH] Bing 结果异常（噪音/与查询无关，疑似反爬页）'%s'，降级", query[:40])
 
             # 第二级：年份词改写重试（"2026年AI技术突破" → "AI技术突破 2026"）
             rewritten = self._demote_year(query)
             if rewritten and rewritten != query:
                 results = self._bing_search(rewritten, count)
-                if results and not self._mostly_noise(results):
+                if results and not self._mostly_noise(results) and self._results_match_query(rewritten, results):
                     log.info("[SEARCH] Bing 改写命中 '%s' → %d 条", rewritten[:40], len(results))
                     return results
 
             # 第三级：百度兜底（DDG 等实测网络不可达；百度 h3 可解析、相关性好）
             results = self._baidu_search(query, count)
+            if results and not self._results_match_query(query, results):
+                log.warning("[SEARCH] 百度兜底结果与查询无关（疑似异常页），丢弃: '%s'", query[:40])
+                return []
             log.info("[SEARCH] 百度兜底 '%s' → %d 条", query[:40], len(results))
             return results
 
@@ -228,6 +262,8 @@ class SearchEngine:
     def _is_noise(result: dict) -> bool:
         u = (result.get("url") or "").lower()
         t = (result.get("title") or "").lower()
+        if _is_junk_result(result.get("url") or ""):
+            return True
         if any(d in u for d in _NOISE_DOMAINS):
             return True
         # 标题强特征：万年历/节假日/放假安排（年份词塌缩的高频产物）
@@ -242,6 +278,31 @@ class SearchEngine:
             return False
         n = sum(1 for r in results if self._is_noise(r))
         return n * 2 >= len(results)
+
+    @staticmethod
+    def _results_match_query(query: str, results: list) -> bool:
+        """#89：结果须与查询有词面重叠，否则视为反爬异常页（导航站/热门站列表）。
+
+        Bing 无 TLS 伪装时反爬页有两种花色：搜索引擎自家首页（导航页过滤器
+        可拦）与「常用网站」列表（微信网页版等，长得像 SERP 拦不住）。真
+        SERP 的标题/摘要必然含查询词；异常页与查询零相关。中文按 2-gram、
+        英文按词匹配，命中 ≥2 个不同词片才算相关（单 hit 易被巧合穿过）。
+        """
+        terms = set()
+        for tok in re.split(r"[\s，。、,；;：:？?]+", (query or "").strip()):
+            tok = tok.strip()
+            if not tok:
+                continue
+            if tok.isascii() and re.match(r"^[A-Za-z0-9]+$", tok):
+                terms.add(tok.lower())
+            else:
+                for i in range(len(tok) - 1):
+                    terms.add(tok[i:i + 2])
+        if not terms:
+            return True
+        hay = " ".join(((r.get("title") or "") + " " + (r.get("snippet") or "")) for r in results).lower()
+        hits = sum(1 for t in terms if t in hay)
+        return hits >= min(2, len(terms))
 
     # ---- 内部：年份词降权改写 ----
     @staticmethod
@@ -291,6 +352,9 @@ class SearchEngine:
             # 过滤 Bing 内部链接
             if "bing.com" in link or "microsoft.com" in link:
                 continue
+            # #89：过滤搜索引擎导航首页/登录页（反爬异常页会混入这类锚点）
+            if _is_junk_result(link):
+                continue
 
             results.append({
                 "title": title[:200],
@@ -299,7 +363,9 @@ class SearchEngine:
             })
             if len(results) >= count:
                 break
-        return results
+        # #89：解析出的结果太少 = 返回的并非正常 SERP（反爬页/异常页），
+        # 返回空让上游走改写重试与百度兜底，绝不把导航页当结果交出去
+        return results if len(results) >= 3 else []
 
     # ---- 内部：百度兜底（0.10：DDG 网络不可达后的国内可达备选） ----
     def _baidu_search(self, query: str, count: int):
@@ -316,6 +382,8 @@ class SearchEngine:
             # 百度结果链接是 baidu.com/link?url= 跳转链，fetch_url 跟随重定向到原文
             if "baidu.com" in link and "/link?" not in link:
                 continue  # 百度自家非结果页（百科/知道等除外跳转链一律放行）
+            if _is_junk_result(link):
+                continue  # #89：导航首页/登录页
             snippet = ""
             ab = _BAIDU_ABSTRACT.search(html, m.end())
             if ab:
