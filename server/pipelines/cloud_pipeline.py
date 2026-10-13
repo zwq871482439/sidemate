@@ -24,6 +24,8 @@ import time
 import logging
 from typing import Generator
 
+from pipelines._base import persist_error_turn
+
 log = logging.getLogger(__name__)
 
 
@@ -234,7 +236,11 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                         mgr._cloud_engine = CloudEngine(mgr)
                     cloud_engine = mgr._cloud_engine
                 except Exception as e:
-                    yield sse_event("error", {"content": "云端引擎不可用: %s" % str(e)[:100]})
+                    _em = "云端引擎不可用: %s" % str(e)[:100]
+                    persist_error_turn(ctx, "在线 AI 调用失败：" + _em,
+                                       error_type="engine_unavailable",
+                                       detail=str(e)[:200], model_choice=model_choice)
+                    yield sse_event("error", {"content": _em})
                     yield 'data: [DONE]\n\n'
                     _saved = True
                     return
@@ -251,13 +257,21 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                     elif phase == "error":
                         # 结构化错误（新版 CloudEngine）
                         if isinstance(content, dict):
-                            yield sse_event("error", {
-                                "content": content.get("user_msg", "未知错误"),
-                                "error_type": content.get("error_type", "unknown"),
-                                "detail": content.get("detail", ""),
-                            })
+                            _eu = content.get("user_msg", "未知错误") or "未知错误"
+                            _et = content.get("error_type", "unknown")
+                            _ed = content.get("detail", "") or ""
                         else:
-                            yield sse_event("error", {"content": str(content)})
+                            _eu, _et, _ed = str(content), "unknown", ""
+                        # P0 #43：错误回合必须落盘——SSE 会被流式清理吞掉，
+                        # 不落库则表现为「发消息没反应」
+                        persist_error_turn(ctx, "在线 AI 调用失败：" + _eu.strip(),
+                                           error_type=_et, detail=_ed,
+                                           model_choice=model_choice)
+                        yield sse_event("error", {
+                            "content": _eu,
+                            "error_type": _et,
+                            "detail": _ed,
+                        })
                         # P6 #29: error 后必须发 done + [DONE]，否则前端永远卡在 loading
                         # (与下方 cloud_pipeline_agent 的 error 处理保持一致)
                         yield sse_event("done", {
@@ -267,6 +281,7 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                             "task_type": saved_task_type,
                         })
                         yield 'data: [DONE]\n\n'
+                        _saved = True
                         return
                     elif phase == "raw":
                         # 兼容旧的 raw 格式
@@ -292,6 +307,9 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
                         _token_stats = content
 
         except Exception as e:
+            persist_error_turn(ctx, "在线 AI 调用失败：处理过程中出错，请重试。",
+                               error_type="pipeline_error", detail=str(e)[:200],
+                               model_choice=model_choice)
             yield sse_event("error", {
                 "content": "⚠️ 处理过程中出错，请重试。",
                 "error_type": "pipeline_error",
@@ -360,6 +378,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             mgr._cloud_engine = CloudEngine(mgr)
         cloud_engine = mgr._cloud_engine
     except Exception as e:
+        persist_error_turn(ctx, "在线 AI 调用失败：云端引擎不可用: %s" % str(e)[:100],
+                           error_type="engine_unavailable", detail=str(e)[:200],
+                           model_choice=model_choice)
         yield sse_event("error", {"content": "云端引擎不可用: %s" % str(e)[:100]})
         yield 'data: [DONE]\n\n'
         return
@@ -369,6 +390,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         from core.search_engine import SearchEngine
         search_engine = SearchEngine()
     except Exception as e:
+        persist_error_turn(ctx, "在线 AI 调用失败：搜索引擎不可用: %s" % str(e)[:100],
+                           error_type="search_engine_unavailable", detail=str(e)[:200],
+                           model_choice=model_choice)
         yield sse_event("error", {"content": "搜索引擎不可用: %s" % str(e)[:100]})
         yield 'data: [DONE]\n\n'
         return
@@ -790,13 +814,22 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             elif phase == "error":
                 # 结构化错误：{"user_msg", "error_type", "detail"}
                 if isinstance(content, dict):
-                    yield sse_event("error", {
-                        "content": content.get("user_msg", "未知错误"),
-                        "error_type": content.get("error_type", "unknown"),
-                        "detail": content.get("detail", ""),
-                    })
+                    _au = content.get("user_msg", "未知错误") or "未知错误"
+                    _at = content.get("error_type", "unknown")
+                    _ad = content.get("detail", "") or ""
                 else:
-                    yield sse_event("error", {"content": str(content)})
+                    _au, _at, _ad = str(content), "unknown", ""
+                # P0 #43：错误回合落盘（防 finally 双落，先标记 _agent_collect）
+                if _agent_collect is not None:
+                    _agent_collect["_saved"] = True
+                persist_error_turn(ctx, "在线 AI 调用失败：" + _au.strip(),
+                                   error_type=_at, detail=_ad,
+                                   model_choice=model_choice)
+                yield sse_event("error", {
+                    "content": _au,
+                    "error_type": _at,
+                    "detail": _ad,
+                })
                 # 关键：error 后必须发 done + [DONE]，否则前端永远卡在 loading
                 yield sse_event("done", {
                     "model": model_choice,
@@ -816,6 +849,11 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         log.error("[CLOUD-AGENT] Agent Loop 异常: %s", str(e)[:200])
         # FC fallback：将已有文本作为正常回复
         if not full_text:
+            persist_error_turn(ctx, "在线 AI 调用失败：Agent 调用异常，请稍后重试。",
+                               error_type="agent_error", detail=str(e)[:200],
+                               model_choice=model_choice)
+            if _agent_collect is not None:
+                _agent_collect["_saved"] = True
             yield sse_event("error", {
                 "content": "⚠️ Agent 调用异常，请稍后重试。",
                 "error_type": "agent_error",

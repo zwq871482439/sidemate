@@ -232,7 +232,8 @@ def iter_stream_events(base_url: str, api_key: str, model: str,
             except Exception:
                 pass
             raise AnthropicAPIError(
-                "Anthropic API 错误（%d）: %s" % (resp.status_code, detail),
+                "Anthropic API 错误（%d）: %s" % (resp.status_code,
+                                                  _detail_or_hint(resp.status_code, detail)),
                 status_code=resp.status_code)
 
         event_type = None
@@ -330,7 +331,8 @@ def list_models(base_url: str, api_key: str) -> list:
         resp = cli.get(url, headers=_headers(api_key))
     if resp.status_code != 200:
         raise AnthropicAPIError(
-            "Anthropic API 错误（%d）: %s" % (resp.status_code, resp.text[:200]),
+            "Anthropic API 错误（%d）: %s" % (resp.status_code,
+                                              _detail_or_hint(resp.status_code, resp.text[:200])),
             status_code=resp.status_code)
     data = resp.json()
     return [
@@ -340,21 +342,93 @@ def list_models(base_url: str, api_key: str) -> list:
     ]
 
 
-def test_connection(base_url: str, api_key: str) -> tuple:
-    """测试连接：GET /v1/models 验证 Key + 连通性。返回 (ok, latency_ms, error)"""
+def friendly_error_detail(err) -> str:
+    """P0 #43：错误详情为空（如 404 空 body）时兜底成可操作文案。
+
+    服务端日志曾出现「Anthropic API 错误（404）: 」空尾巴——用户与排障
+    都无从下手。供日志/测试连接/上层翻译共用。
+    """
+    s = str(err or "").strip()
+    if s and not s.rstrip().rstrip("：:").endswith(("错误", "Error", "error")):
+        # 有实质内容且不是以冒号收尾的半截消息，原样返回
+        if not s.endswith(":") and not s.endswith("："):
+            return s
+    code = getattr(err, "status_code", None)
+    if code == 404:
+        return ("端点不存在（404）：请检查 API 地址与所选协议是否匹配——"
+                "Anthropic 协议需填兼容端点（如 DeepSeek 为 "
+                "https://api.deepseek.com/anthropic，官方为 https://api.anthropic.com）")
+    if code == 401:
+        return "认证失败（401）：API Key 无效或已过期"
+    return "服务返回错误且未附详情，请检查网络与 API 配置"
+
+
+def _detail_or_hint(status_code: int, detail: str) -> str:
+    """非 200 响应的 detail 为空时补可读提示（raise 消息不再空尾）。"""
+    if detail and detail.strip():
+        return detail
+    if status_code == 404:
+        return "端点不存在——请检查 API 地址与协议组合（Anthropic 兼容地址通常带 /anthropic 前缀）"
+    if status_code == 401:
+        return "认证失败——API Key 无效或未授权"
+    return "（服务未返回详情）"
+
+
+def test_connection(base_url: str, api_key: str, model: str = "") -> tuple:
+    """测试连接（P0 #43 重做）：有模型时真发最小 messages 请求验证可用性。
+
+    旧实现统一 GET /v1/models，对 Anthropic 兼容服务两头失真：
+    - DeepSeek 等兼容层无 models 端点 → 404 假阴性（配置正确也报失败）；
+    - 地址误填 OpenAI 根地址 → 打到 OpenAI 端点 200 假阳性（聊天实际必挂）。
+
+    现在：指定 model 时 POST {base}/v1/messages（max_tokens=1，约 30 token）
+    真实走一遍聊天链路；无 model 时退回 models 列表探测并给出明确指引。
+
+    Returns:
+        (ok, latency_ms, error)
+    """
     import time
     if not api_key:
         return (False, 0, "API Key 未配置")
+    if not model:
+        # 未指定模型：退回列表探测（官方端点可用；兼容层无此接口时给指引）
+        try:
+            t0 = time.time()
+            list_models(base_url, api_key)
+            return (True, int((time.time() - t0) * 1000), None)
+        except AnthropicAPIError as e:
+            if e.status_code == 404:
+                return (False, 0, "该地址无模型列表接口（部分 Anthropic 兼容服务如此，"
+                                  "如 DeepSeek）。请先添加模型 ID，再用「测试连接」"
+                                  "做真实调用测试。")
+            return (False, 0, friendly_error_detail(e))
+        except httpx.TimeoutException:
+            return (False, 0, "⏱️ 连接超时：服务器响应时间过长。请检查网络或稍后重试。")
+        except Exception as e:
+            return (False, 0, str(e)[:200])
     try:
         t0 = time.time()
-        list_models(base_url, api_key)
-        return (True, int((time.time() - t0) * 1000), None)
-    except AnthropicAPIError as e:
-        if e.status_code == 401:
-            return (False, 0, " 认证失败：API Key 无效或已过期。请在设置中检查 API Key。")
-        if e.status_code == 403:
-            return (False, 0, " 权限不足：当前 API Key 无权访问。")
-        return (False, 0, str(e)[:200])
+        url = build_messages_url(base_url)
+        body = {"model": model, "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}]}
+        with httpx.Client(trust_env=_trust_env(), timeout=_TIMEOUT) as cli:
+            resp = cli.post(url, headers=_headers(api_key), json=body)
+        latency = int((time.time() - t0) * 1000)
+        if resp.status_code == 200:
+            return (True, latency, None)
+        detail = (resp.text or "")[:200]
+        if resp.status_code == 401:
+            return (False, latency, "认证失败（401）：API Key 无效或未授权该模型。" + detail)
+        if resp.status_code == 404:
+            return (False, latency,
+                    "端点不存在（404）：请检查 API 地址与所选协议是否匹配——"
+                    "Anthropic 协议需填兼容端点（如 DeepSeek 为 "
+                    "https://api.deepseek.com/anthropic）")
+        if resp.status_code == 403:
+            return (False, latency, "权限不足（403）：当前 API Key 无权访问。" + detail)
+        return (False, latency,
+                "Anthropic API 错误（%d）: %s" % (resp.status_code,
+                                                  _detail_or_hint(resp.status_code, detail)))
     except httpx.TimeoutException:
         return (False, 0, "⏱️ 连接超时：服务器响应时间过长。请检查网络或稍后重试。")
     except Exception as e:
