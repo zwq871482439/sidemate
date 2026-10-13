@@ -13,7 +13,7 @@ function esc(s) {
 const SUBPAGES = [
   { id: 'general', label: '常规' },
   { id: 'cloud', label: '在线 AI' },
-  { id: 'offline', label: '离线AI' },
+  { id: 'offline', label: '离线 AI' },
   { id: 'kb', label: '知识库' },
   { id: 'privacy', label: '隐私安全' },
   { id: 'download', label: '模型下载' },
@@ -113,7 +113,7 @@ export function createSettingsView(events) {
     body.innerHTML = `
       <div class="set-group">
         <h2>外观与状态</h2>
-        <div class="sub">界面缩放与深色模式（离线模型与推理设备已拆到「离线AI」页）</div>
+        <div class="sub">界面缩放与深色模式（离线模型与推理设备已拆到「离线 AI」页）</div>
         <div class="set-row"><div class="stx"><b>界面缩放</b><p>整体放大界面（含文字），适合高分屏小字看不清的场景；立即生效</p></div>
           <select class="set-input" id="setFontScale" style="width:auto">
             <option value="1">100%（默认）</option>
@@ -388,7 +388,8 @@ export function createSettingsView(events) {
     const _thinkB = t => t === 'high' ? '<span class="pv-badge th-hi">思考·高</span>'
       : t === 'low' ? '<span class="pv-badge th-lo">思考·低</span>'
       : t === 'off' ? '<span class="pv-badge th-off">思考·关</span>' : '';
-    const _ctxT = c => c > 0 ? (Math.round(c / 1000) + 'K · 请确认上下文长度') : '请确认上下文长度';
+    // PM 复查：已填数值只显示数值，「请确认」仅在未填（0）时提示
+    const _ctxT = c => c > 0 ? (Math.round(c / 1000) + 'K') : '请确认上下文长度';
 
     const _modelRow = (m) => `
       <div class="pv-mrow${m.active ? ' on' : ''}" data-mid="${esc(m.id)}">
@@ -438,7 +439,7 @@ export function createSettingsView(events) {
           <option value="off" ${m.thinking === 'off' ? 'selected' : ''}>关</option>
         </select>
         <label>上下文长度</label><input class="set-input mp-f" data-f="ctx" type="number" min="1" placeholder="必填，如 1048576" style="width:140px" value="${m.ctx > 0 ? m.ctx : ''}">
-        <span class="set-note">请确认上下文长度</span>
+        ${m.ctx > 0 ? '' : '<span class="set-note">请确认上下文长度</span>'}
         <button class="btn-primary-v2" data-mact="save-param">保存</button>
         <button class="kb-tool-btn" data-mact="cancel-param">取消</button>
       </div>`;
@@ -460,7 +461,7 @@ export function createSettingsView(events) {
           ${p && !p.active ? '<button class="kb-tool-btn" id="pvDel" style="color:var(--pal-danger)">删除服务商</button>' : ''}
         </div>
         <div class="pv-sep"></div>
-        <div class="sub" style="margin-bottom:6px">模型（${esc(p ? p.name : '')}）· 请确认上下文长度。已填的数会保留，不再按模型名自动填写。</div>
+        <div class="sub" style="margin-bottom:6px">模型（${esc(p ? p.name : '')}）${p && p.models.length && p.models.every(m => m.ctx > 0) ? '· 上下文已确认。' : '· 有模型未确认上下文长度。'}已填的数会保留，不再按模型名自动填写。</div>
         <div id="mdlList">${p && p.models.length ? p.models.map(_modelRow).join('') : '<div class="set-note">还没有模型——手动添加或从 API 获取</div>'}</div>
         <div id="mdlParamWrap"></div>
         <div class="pv-addrow">
@@ -1021,7 +1022,7 @@ export function createSettingsView(events) {
           ${m.installed
             ? `${currentModel && currentModel.model_id === m.model_id
                  ? '<span class="mo-badge cur">使用中</span>'
-                 : '<span class="mo-badge idle" title="到「离线AI」页启用此模型">未启用</span>'}
+                 : '<span class="mo-badge idle" title="到「离线 AI」页启用此模型">未启用</span>'}
                <button class="kb-tool-btn" data-dl="${esc(m.model_id)}">重新下载</button>
                <button class="kb-tool-btn" style="color:var(--pal-danger)" data-del="${esc(m.model_id)}" data-name="${esc(m.display_name)}">删除</button>`
             : `<button class="btn-primary-v2" data-dl="${esc(m.model_id)}">下载</button>`}

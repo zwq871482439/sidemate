@@ -571,7 +571,7 @@ function _tbModelHtml() {
       ${_profMenuHtml()}
     </span>`;
   }
-  return `<span class="tb-model" id="tbModelTag" title="模型加载状态，点击管理（离线AI）">${state.mode !== 'cloud' ? _llmDotHtml() : ''}${esc(state.modelTag)}</span>`;
+  return `<span class="tb-model" id="tbModelTag" title="模型加载状态，点击管理（离线 AI）">${state.mode !== 'cloud' ? _llmDotHtml() : ''}${esc(state.modelTag)}</span>`;
 }
 
 function _profMenuHtml() {

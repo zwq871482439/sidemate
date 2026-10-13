@@ -142,5 +142,33 @@ class TestSessDotLifecycle(unittest.TestCase):
         self.assertIn("(st.status || _loadHint) ? '' : 'none'", src,
                       "display 门控必须含 _loadHint，否则冷启动提示不可见")
 
+
+
+class TestCloudCtxHintAndSpacing(unittest.TestCase):
+    """PM 复查：已填上下文不再提示「请确认」；「离线AI」补空格为「离线 AI」"""
+
+    def test_ctx_label_no_nag_when_filled(self):
+        src = _read("settings.js")
+        self.assertNotIn("K · 请确认上下文长度", src, "已填值时不得再拼「请确认」")
+        self.assertIn("c > 0 ? (Math.round(c / 1000) + 'K') : '请确认上下文长度'", src)
+
+    def test_param_editor_note_conditional(self):
+        src = _read("settings.js")
+        self.assertIn("${m.ctx > 0 ? '' : '<span class=\"set-note\">请确认上下文长度</span>'}", src,
+                      "参数编辑器提示仅未填时显示")
+
+    def test_models_sub_conditional(self):
+        src = _read("settings.js")
+        self.assertIn("上下文已确认", src)
+        self.assertIn("有模型未确认上下文长度", src)
+
+    def test_offline_label_spaced(self):
+        src = _read("settings.js")
+        self.assertIn("label: '离线 AI'", src)
+        self.assertNotIn("label: '离线AI'", src)
+        self.assertNotIn("「离线AI」", src, "可见文案（含 tooltip）不得出现无空格「离线AI」")
+        idx = _read("index.js")
+        self.assertNotIn("（离线AI）", idx)
+
 if __name__ == "__main__":
     unittest.main()
