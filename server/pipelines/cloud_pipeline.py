@@ -819,9 +819,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                     _ad = content.get("detail", "") or ""
                 else:
                     _au, _at, _ad = str(content), "unknown", ""
-                # P0 #43：错误回合落盘（防 finally 双落，先标记 _agent_collect）
-                if _agent_collect is not None:
-                    _agent_collect["_saved"] = True
+                # P0 #43：错误回合落盘（防 finally 双落，先标记 _collect）
+                if _collect is not None:
+                    _collect["_saved"] = True
                 persist_error_turn(ctx, "在线 AI 调用失败：" + _au.strip(),
                                    error_type=_at, detail=_ad,
                                    model_choice=model_choice)
@@ -852,8 +852,8 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
             persist_error_turn(ctx, "在线 AI 调用失败：Agent 调用异常，请稍后重试。",
                                error_type="agent_error", detail=str(e)[:200],
                                model_choice=model_choice)
-            if _agent_collect is not None:
-                _agent_collect["_saved"] = True
+            if _collect is not None:
+                _collect["_saved"] = True
             yield sse_event("error", {
                 "content": "⚠️ Agent 调用异常，请稍后重试。",
                 "error_type": "agent_error",
