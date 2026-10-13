@@ -460,6 +460,7 @@ export function createSettingsView(events) {
           <button class="kb-tool-btn" id="cfTest">测试连接</button>
           ${p && !p.active ? '<button class="kb-tool-btn" id="pvDel" style="color:var(--pal-danger)">删除服务商</button>' : ''}
         </div>
+        <div class="set-note" id="cfNote" style="display:none"></div>
         <div class="pv-sep"></div>
         <div class="sub" style="margin-bottom:6px">模型（${esc(p ? p.name : '')}）${p && p.models.length && p.models.every(m => m.ctx > 0) ? '· 上下文已确认。' : '· 有模型未确认上下文长度。'}已填的数会保留，不再按模型名自动填写。</div>
         <div id="mdlList">${p && p.models.length ? p.models.map(_modelRow).join('') : '<div class="set-note">还没有模型——手动添加或从 API 获取</div>'}</div>
@@ -470,7 +471,6 @@ export function createSettingsView(events) {
           <button class="kb-tool-btn" id="pvFetch">⇣ 从 API 获取模型列表</button>
         </div>
         <div id="fetchWrap"></div>
-        <div class="set-note" id="cfNote" style="display:none"></div>
       </div>
       <div class="set-group">
         <h2>对话行为</h2>
@@ -552,6 +552,7 @@ export function createSettingsView(events) {
       });
       body.querySelector('#cfTest').addEventListener('click', async (e) => {
         e.target.disabled = true; e.target.textContent = '测试中…';
+        note('测试中…', true);
         const r = await fetch('/api/cloud/test', { method: 'POST' }).then(r => r.json()).catch(() => null);
         note(r && r.ok ? '连接成功：' + (r.message || r.model || 'OK') : ('连接失败：' + ((r && (r.error || r.message)) || '未知错误')), !!(r && r.ok));
         e.target.disabled = false; e.target.textContent = '测试连接';

@@ -466,8 +466,16 @@ async def api_chat_stream(request: Request):
             # （60s 给等待提示并继续等，P8-7）；就绪后落入正常生成路径。
             _lz_ok = await _lazy_load_engine(ollama_manager)
             if not _lz_ok:
+                # P0 #43：本地加载失败同样不留无痕回合（SSE 会被流式清理吞掉）
+                from pipelines._base import persist_error_turn, ErrorPersistCtx
+                _em_local = "模型加载失败或超时。请到「设置→模型下载」确认模型已安装，或稍后重试。"
+                persist_error_turn(
+                    ErrorPersistCtx(chat_file=chat_file, message=message,
+                                    ai_mode="local"),
+                    "离线 AI 调用失败：" + _em_local,
+                    error_type="local_model_not_ready")
                 def _not_ready_gen():
-                    yield 'data: {"type": "error", "content": "模型加载失败或超时。请到「设置→模型下载」确认模型已安装，或稍后重试。"}\n\n'
+                    yield 'data: {"type": "error", "content": "%s"}\n\n' % _em_local
                     yield 'data: [DONE]\n\n'
                 return StreamingResponse(_not_ready_gen(), media_type="text/event-stream")
 

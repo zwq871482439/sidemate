@@ -147,6 +147,18 @@ def _translate_cloud_error(exc: Exception) -> dict:
                 "error_type": "server_error",
                 "detail": err_str[:200],
             }
+        elif status_code == 404:
+            # P0 #43：端点不存在几乎总是「地址与协议组合错」——给可操作指引，
+            # 且 detail 空尾（404 空 body）兜底，日志不再出现半截消息
+            from core.anthropic_adapter import friendly_error_detail as _fed
+            return {
+                "user_msg": (" 端点不存在（404）：请检查 API 地址与所选协议是否匹配"
+                             "（Anthropic 协议需填兼容端点，如 DeepSeek 为 "
+                             "https://api.deepseek.com/anthropic）"),
+                "error_type": "endpoint_not_found",
+                "detail": (_fed(exc) if not err_str.strip() or err_str.rstrip().endswith((":", "："))
+                           else err_str[:200]),
+            }
         elif status_code >= 400:
             return {
                 "user_msg": "️ 请求错误（%d）：%s" % (status_code, err_str[:100]),
@@ -958,7 +970,11 @@ class CloudEngine:
 
         if fmt == "anthropic":
             from core import anthropic_adapter as _ant
-            return _ant.test_connection(base_url, api_key)
+            # P0 #43：有模型时真发最小 messages 请求（兼容层无 models 端点，
+            # GET /v1/models 对 DeepSeek 等两头失真）
+            return _ant.test_connection(
+                base_url, api_key,
+                model=_temp_model or _cfg("cloud_model", ""))
 
         if not _HAS_OPENAI:
             return (False, 0, "openai 包未安装")

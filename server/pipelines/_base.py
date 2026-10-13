@@ -123,6 +123,54 @@ def persist_abort(ctx, content, think="", model_choice="", task_type="text",
         return False
 
 
+class ErrorPersistCtx:
+    """管道未启动阶段（本地加载 gate 等）错误落盘用的最小上下文。
+
+    user_msg_id 置 -1（伪值）使 _persist_turn_impl 走「按磁盘现状追加」
+    分支：磁盘末条是 user 就追加错误消息，不覆写任何已有写入。
+    """
+    def __init__(self, chat_file, message="", ai_mode="", model_choice=""):
+        self.chat_file = chat_file
+        self.message = message
+        self.ai_mode = ai_mode
+        self.model_choice = model_choice
+        self.user_msg_saved = True
+        self.user_msg_id = -1
+        self.history_raw = []
+        self.body = {}
+
+
+def persist_error_turn(ctx, user_msg, error_type="", detail="", model_choice=None):
+    """终止性失败回合落盘（P0 #43：在线调用失败静默）。
+
+    错误只走 SSE 时会被前端流式清理吞掉、且不进会话历史——表现为
+    「发消息没反应、报错闪一下就没」。落一条 task_type=error 的
+    assistant 消息后，前端流结束重拉即可见，刷新/切换会话仍在。
+    落盘失败绝不向上抛（错误上报主流程优先）。
+    """
+    from datetime import datetime as _dt
+    try:
+        msg = {
+            "role": "assistant",
+            "content": user_msg or "生成失败，请重试。",
+            "ts": _dt.now().strftime("%H:%M:%S"),
+            "model": model_choice or getattr(ctx, "model_choice", "") or "",
+            "chars": 0,
+            "task_type": "error",
+            "engine": getattr(ctx, "ai_mode", "") or "",
+        }
+        if error_type:
+            msg["error_type"] = str(error_type)[:60]
+        if detail:
+            msg["error_detail"] = str(detail)[:300]
+        persist_turn(ctx, msg)
+        log.info("[SAVE] 错误回合落盘: type=%s msg=%s", str(error_type)[:40], str(user_msg)[:60])
+        return True
+    except Exception as e:
+        log.warning("[SAVE] 错误回合落盘失败（不影响错误上报）: %s", str(e)[:100])
+        return False
+
+
 def persist_turn(ctx, assistant_msg, context_cache=None):
     """回合落盘 + 首条消息后自动命名钩子（M1-E）。
 
