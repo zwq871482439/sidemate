@@ -22,9 +22,9 @@ log = logging.getLogger(__name__)
 # 支持的格式
 SUPPORTED_FORMATS = ("md", "docx", "txt", "pdf")
 # 可作为"源"读取的格式（pdf 只能读不能写）
-READABLE = {"md", "docx", "txt", "pdf"}
-# 可作为"目标"写入的格式（pdf 不可写）
-WRITABLE = {"md", "docx", "txt"}
+READABLE = {"md", "docx", "txt", "pdf", "html"}
+# 可作为"目标"写入的格式（pdf 经 Edge 无头打印直通道支持，见 convert）
+WRITABLE = {"md", "docx", "txt", "pdf"}
 
 
 def _strip_markdown(md_text: str) -> str:
@@ -119,6 +119,87 @@ def _write_docx(md_text: str, path: str, title: str = "文档"):
     generate_docx(md_text, path, title=title)
 
 
+def _edge_path() -> str:
+    """定位系统 Edge（Windows 10+ 自带，无头打印 html→pdf 零新增依赖）。"""
+    import shutil
+    for p in (
+        os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+        os.path.join(os.environ.get("ProgramFiles", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+        shutil.which("msedge") or "",
+    ):
+        if p and os.path.exists(p):
+            return p
+    return ""
+
+
+def _html_to_pdf(src_html: str, dst_pdf: str) -> dict:
+    """P0 #52：html → pdf（Edge 无头打印，保真含图表/样式）。
+
+    LLM 的可视化产物（write_workspace 生成的 HTML 报告）此前无法转 PDF，
+    用户「要 PDF」时只能拿到 HTML——补齐交付链最后一环。
+    """
+    import subprocess
+    edge = _edge_path()
+    if not edge:
+        return {"ok": False, "error": "未找到 Microsoft Edge，无法打印 PDF（Windows 10+ 自带，请确认安装）"}
+    try:
+        import tempfile as _tf
+        from urllib.parse import quote as _urlq
+        # 中文/空格路径必须百分号编码——未编码的 file:/// URL Edge 静默打不开（实测）
+        url = "file:///" + _urlq(src_html.replace("\\", "/"))
+        # 独立 user-data-dir：①避免命令被用户正在运行的 Edge 实例接管（打印不执行）；
+        # ②每次独立目录——固定目录一旦损坏/被上次崩溃残留锁定会持续静默失败（实测）
+        _profile = _tf.mkdtemp(prefix="sidemate_edge_pdf_")
+        import time as _time
+        subprocess.run(
+            [edge, "--headless", "--disable-gpu", "--no-pdf-header-footer",
+             "--user-data-dir=" + _profile,
+             "--print-to-pdf=" + dst_pdf, url],
+            capture_output=True, timeout=90)
+        # Edge 返回 rc=0 后 PDF 仍需 1-2s 异步落盘——立即检查会误判「无输出」（实测竞态）
+        for _ in range(40):
+            if os.path.exists(dst_pdf) and os.path.getsize(dst_pdf) > 100:
+                _rmtree_safe(_profile)
+                return {"ok": True, "chars": os.path.getsize(dst_pdf)}
+            _time.sleep(0.3)
+        _rmtree_safe(_profile)
+        return {"ok": False, "error": "PDF 生成失败（Edge 无输出）"}
+    except Exception as e:
+        return {"ok": False, "error": "PDF 生成失败: %s" % str(e)[:100]}
+
+
+def _rmtree_safe(path: str):
+    import shutil
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _md_to_pdf(md_text: str, dst_pdf: str, title: str = "文档") -> dict:
+    """md/txt → pdf：包一层极简 HTML（中文字体+基础排版）再走 Edge 打印。
+
+    仅做朴素渲染（保留换行的等宽块）——富排版路径是让 LLM 直接产 HTML 产物
+    再转 PDF，这里只兜纯文本类交付。
+    """
+    import html as _h
+    html_doc = ("<!doctype html><html><head><meta charset='utf-8'><style>"
+                "body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;"
+                "max-width:820px;margin:24px auto;line-height:1.7;color:#222}"
+                "pre{white-space:pre-wrap;font-family:'Microsoft YaHei',monospace}"
+                "</style></head><body><h2>%s</h2><pre>%s</pre></body></html>"
+                % (_h.escape(title), _h.escape(md_text)))
+    tmp_html = dst_pdf[:-4] + ".tmp_print.html"
+    with open(tmp_html, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+    r = _html_to_pdf(tmp_html, dst_pdf)
+    try:
+        os.remove(tmp_html)
+    except Exception:
+        pass
+    return r
+
+
 def convert(src_path: str, dst_path: str) -> dict:
     """执行格式转换。
 
@@ -143,6 +224,19 @@ def convert(src_path: str, dst_path: str) -> dict:
         return {"ok": False, "error": "源和目标是同一文件"}
     if src_ext == "pdf" and dst_ext != "txt":
         return {"ok": False, "error": "PDF 只能转为 txt（提取文本），不能转为 %s" % dst_ext}
+
+    # P0 #52：PDF 输出直通道（Edge 无头打印）——html 保真直转；md/txt 朴素排版。
+    # 不走 md 中间格式（样式/图表保真），docx→pdf 暂不支持（提示走 HTML 产物）
+    if dst_ext == "pdf":
+        if src_ext == "html":
+            return _html_to_pdf(src_path, dst_path)
+        if src_ext in ("md", "txt"):
+            with open(src_path, "r", encoding="utf-8") as f:
+                return _md_to_pdf(f.read(), dst_path,
+                                  title=os.path.splitext(os.path.basename(src_path))[0])
+        if src_ext == "docx":
+            return {"ok": False, "error": "docx 暂不支持直接转 PDF——请让 AI 生成 HTML 报告后再转（保真更好）"}
+        return {"ok": False, "error": "该源格式暂不支持转 PDF"}
 
     try:
         # 1. 读源文件 → 统一的中间 markdown 文本
