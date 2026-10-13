@@ -544,7 +544,7 @@ TOOL_REGISTRY = {
             "type": "function",
             "function": {
                 "name": "format_convert",
-                "description": "转换工作区文件的格式。支持：md↔docx、md↔txt、docx→txt、pdf→txt（提取文本）。用于把文档转成用户需要的格式。注意：只在工作区内操作，不能转成 pdf。docx→pdf 不支持。",
+                "description": "转换工作区文件的格式。支持：md↔docx、md↔txt、docx→txt、pdf→txt（提取文本）、html→pdf、md→pdf。用户要 PDF 交付时：先写 HTML 报告（含图表样式），再用本工具转 .pdf（保真）。注意：只在工作区内操作；docx→pdf 暂不支持（请走 HTML）。",
                 "parameters": {
                     "type": "object",
                     "properties": {
