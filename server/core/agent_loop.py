@@ -1357,11 +1357,14 @@ class AgentLoop:
                         },
                     }
                 except Exception as e:
+                    # 模板里的字面 % 必须写成 %%——此前用单 %，求值失败时错误消息
+                    # 自身被 %-格式化二次炸掉（TypeError: not enough arguments），
+                    # 工具返回的只有这个二次异常，真实原因被完全掩盖（六轮实测 #52）
                     return {
                         "success": False,
                         "tool": "calculator",
                         "error": "calc_failed",
-                        "message": "计算失败（%s）。仅支持 + - * / % 和括号，以及 min/max/round/abs。" % str(e)[:60],
+                        "message": "计算失败（%s）。仅支持 + - * / %% 和括号，以及 min/max/round/abs。" % str(e)[:60],
                     }
 
             elif tool_name == "format_convert":

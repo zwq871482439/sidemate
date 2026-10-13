@@ -892,7 +892,29 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
         if _user_stopped:
             full_text = "[用户已手动终止响应]"
         else:
-            full_text = "抱歉，Agent 未能生成有效回复，请重试。"
+            # P0 #52：think-only 概率失败（实测 33%）——模型大量思考后零正文/零工具，
+            # 直接吞掉整轮任务。追加一轮「立即输出」的纯补全，把思考成果转成正文；
+            # 续跑失败才落兜底文案。事件仍走流式（token/think_token）。
+            if think_len > 0:
+                try:
+                    _rescue_prompt = prompt + (
+                        "\n\n[系统提示：你刚才完成了长时间思考但没有输出任何结果。"
+                        "请立即基于以上思考直接输出最终回答：不要再调用任何工具，不要再思考，直接给结果。]")
+                    for _ph, _c in cloud_engine.run(
+                            _rescue_prompt, history=model_history,
+                            context_cache=context_cache):
+                        if _ph == "text" and _c:
+                            full_text += _c
+                            yield sse_event("token", {"content": _c})
+                        elif _ph == "think_token" and _c:
+                            yield sse_event("think_token", {"content": _c})
+                    if full_text.strip():
+                        log.info("[CLOUD-AGENT] think-only 续跑成功: %d 字", len(full_text))
+                except Exception as _re:
+                    log.warning("[CLOUD-AGENT] think-only 续跑失败（落兜底文案）: %s",
+                                str(_re)[:100])
+            if not full_text.strip():
+                full_text = "抱歉，Agent 未能生成有效回复，请重试。"
         response_chars = len(full_text)
 
     saved_task_type = _collect.get("saved_task_type", "agent")
