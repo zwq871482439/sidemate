@@ -122,5 +122,25 @@ class TestDownloadPageNoUseButton(unittest.TestCase):
         self.assertIn("使用中", _read("settings.js"))
 
 
+
+
+class TestSessDotLifecycle(unittest.TestCase):
+    """rc.6 PM 复扫回归守卫：#33 撤 idle 圆点后 _updateSessDots 必须能「现建」状态点
+    （此前只更新/删除既有圆点——生成中金点永远出不来），#71 加载提示的 display
+    门控必须把 _loadHint 计入（否则提示写了永不可见）"""
+
+    def test_update_creates_dot_when_status(self):
+        src = _read("index.js")
+        i = src.index("function _updateSessDots")
+        seg = src[i:i + 1800]
+        self.assertIn("createElement('span')", seg, "状态出现时要现建 si-st 元素")
+        self.assertIn("prepend(dot)", seg)
+        self.assertNotIn("if (dot) { if (st)", seg, "旧的只更新不创建写法必须消失")
+
+    def test_load_hint_display_gating(self):
+        src = _read("index.js")
+        self.assertIn("(st.status || _loadHint) ? '' : 'none'", src,
+                      "display 门控必须含 _loadHint，否则冷启动提示不可见")
+
 if __name__ == "__main__":
     unittest.main()
