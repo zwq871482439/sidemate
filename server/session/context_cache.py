@@ -55,6 +55,10 @@ def clean_history_for_model(messages, max_rounds=None, ai_mode=None):
             content = str(content)
         if h.get("role") == "assistant" and (content.startswith("[ERROR]") or "[TIMEOUT" in content):
             continue
+        # #43 带出：rc.7 起错误回合以 task_type=error 落盘——历史里带上的话，
+        # 下一轮模型会把「在线 AI 调用失败：……」当成自己说过的话，须剔除
+        if h.get("role") == "assistant" and h.get("task_type") == "error":
+            continue
         content = re.sub(r'`\d+字`\s*`[\d.]+s`\s*`[\d.]+字/s`', '', content)
         content = re.sub(r'<details[^>]*>.*?</details>', '', content, flags=re.DOTALL)
         content = re.sub(r'</?(?:details|think|summary|think_details)[^>]*>', '', content)

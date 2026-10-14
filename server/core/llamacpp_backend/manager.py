@@ -27,6 +27,27 @@ import httpx
 log = logging.getLogger(__name__)
 
 
+def _windows_short_path(path: str) -> Optional[str]:
+    """GetShortPathNameW 取 8.3 短路径（#45 中文路径兜底）。
+
+    非系统盘常禁用短名——此时 API 返回原长路径，必须验证结果确实
+    ASCII 化才算成功；失败/异常返回 None。
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        n = ctypes.windll.kernel32.GetShortPathNameW(path, buf, 1024)
+        if n == 0 or n >= 1024:
+            return None
+        short = buf.value
+        short.encode("ascii")
+        return short
+    except (UnicodeEncodeError, Exception):
+        return None
+
+
 class LlamaCppManager:
     """llama-server 进程生命周期管理"""
 
@@ -343,11 +364,36 @@ class LlamaCppManager:
         log.warning("[LLAMACPP] 重试 %d 次后仍无法连接" % retries)
         return False
 
+    def _cjk_safe_launch_path(self, model_path: str):
+        """#45：非 ASCII 安装路径下 llama-server 加载不到模型文件。
+
+        目录含非 ASCII 时改用 cwd=模型目录 + --model 只传 ASCII 文件名；
+        文件名也非 ASCII 时退回 8.3 短路径；两者都不可用时抛错指明
+        「请安装到英文路径」。返回 (launch_path, cwd)。
+        """
+        try:
+            model_path.encode("ascii")
+            return model_path, None
+        except UnicodeEncodeError:
+            pass
+        d, base = os.path.split(model_path)
+        if d and base.isascii():
+            log.info("[LLAMACPP] 模型路径含非 ASCII，改用 cwd+文件名启动: %s" % base)
+            return base, d
+        short = _windows_short_path(model_path)
+        if short:
+            log.info("[LLAMACPP] 模型文件名含非 ASCII，改用 8.3 短路径启动")
+            return short, None
+        raise RuntimeError(
+            "模型路径含中文且无法生成英文短路径，llama-server 无法加载：%s"
+            "（请将 Sidemate 安装到英文路径后重试）" % model_path)
+
     def _launch_process(self, model_path: str):
         """启动 llama-server 子进程"""
+        launch_path, cwd = self._cjk_safe_launch_path(model_path)
         cmd = [
             self._llama_server_path,
-            "--model", model_path,
+            "--model", launch_path,
             "--host", self._host,
             "--port", str(self._port),
             "--ctx-size", str(self._ctx_size),
@@ -372,6 +418,7 @@ class LlamaCppManager:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             env=env,
+            cwd=cwd,
             creationflags=creation_flags,
         )
         self._running = True
