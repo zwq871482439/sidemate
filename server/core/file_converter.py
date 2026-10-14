@@ -140,8 +140,11 @@ def _html_to_pdf(src_html: str, dst_pdf: str) -> dict:
     """
     import subprocess
     edge = _edge_path()
+    _meta = {"src_format": "html", "dst_format": "pdf",
+             "dst_name": os.path.basename(dst_pdf)}
     if not edge:
-        return {"ok": False, "error": "未找到 Microsoft Edge，无法打印 PDF（Windows 10+ 自带，请确认安装）"}
+        return {"ok": False, "error": "未找到 Microsoft Edge，无法打印 PDF（Windows 10+ 自带，请确认安装）", **_meta}
+    _profile = None
     try:
         import tempfile as _tf
         from urllib.parse import quote as _urlq
@@ -160,12 +163,14 @@ def _html_to_pdf(src_html: str, dst_pdf: str) -> dict:
         for _ in range(40):
             if os.path.exists(dst_pdf) and os.path.getsize(dst_pdf) > 100:
                 _rmtree_safe(_profile)
-                return {"ok": True, "chars": os.path.getsize(dst_pdf)}
+                return {"ok": True, "chars": os.path.getsize(dst_pdf), **_meta}
             _time.sleep(0.3)
         _rmtree_safe(_profile)
-        return {"ok": False, "error": "PDF 生成失败（Edge 无输出）"}
+        return {"ok": False, "error": "PDF 生成失败（Edge 无输出）", **_meta}
     except Exception as e:
-        return {"ok": False, "error": "PDF 生成失败: %s" % str(e)[:100]}
+        if _profile:
+            _rmtree_safe(_profile)
+        return {"ok": False, "error": "PDF 生成失败: %s" % str(e)[:100], **_meta}
 
 
 def _rmtree_safe(path: str):
@@ -197,6 +202,11 @@ def _md_to_pdf(md_text: str, dst_pdf: str, title: str = "文档") -> dict:
         os.remove(tmp_html)
     except Exception:
         pass
+    # 源头是 md——覆盖 _html_to_pdf 带回的 html 标记（#52：结果提示
+    # 「已将 x 转为 None（None→None）」即缺这三个字段）
+    r["src_format"] = "md"
+    r["dst_format"] = "pdf"
+    r["dst_name"] = os.path.basename(dst_pdf)
     return r
 
 
