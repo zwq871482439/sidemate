@@ -2,7 +2,7 @@
 """0.10.1 轮次预算用户可调（PLAN 四章）测试：get_max_rounds 读 config.agent_max_rounds，
 默认 26，范围 8~100，非法/留空回落默认。"""
 
-from core.agent_loop import get_max_rounds, MAX_ROUNDS
+from core.agent_loop import MAX_ROUNDS, get_max_rounds
 
 
 class TestRoundBudget:

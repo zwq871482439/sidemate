@@ -24,11 +24,10 @@ pipelines/local_pipeline.py — 离线模式 SSE 管道
 纯函数生成器，无闭包/nonlocal。
 """
 
+import logging
 import os
 import re
-import json
 import time
-import logging
 from typing import Generator
 
 log = logging.getLogger(__name__)
@@ -90,8 +89,8 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
         ctx_pct = ctx_usage["percentage"]
 
         if ctx_pct > 95:
-            from session.chat_store import new_chat_file as _new_chat_file
             from routers.deps import set_current_chat
+            from session.chat_store import new_chat_file as _new_chat_file
             new_file = _new_chat_file()
             new_name = os.path.basename(new_file).replace(".json", "")
             log.info("[CTX] 离线上下文 >95%% (%.1f%%)，自动新建会话: %s", ctx_pct, new_name)
@@ -139,8 +138,13 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             # 阶段2 重构：8 处散乱 yield → 2 个 Step 对象(reformulate/search)，事件走 step_model
             if action_mode == "kb":
                 log.info("[LOCAL] KB 模式：检索文库")
-                from core.step_model import (Step, StepOutput, TransformData,
-                                              step_to_sse, step_output_to_sse)
+                from core.step_model import (
+                    Step,
+                    StepOutput,
+                    TransformData,
+                    step_output_to_sse,
+                    step_to_sse,
+                )
 
                 # 5a. Reformulate: 始终执行，有历史时补全上下文，无历史时提取搜索关键词
                 s_reformulate = Step(id="reformulate", label="分析问题")
@@ -616,12 +620,14 @@ def run_local_pipeline(ctx) -> Generator[str, None, None]:
             log.warning("[FILTER] 过滤器异常: %s", str(e)[:100])
 
         # ====== 步骤 11: 保存对话 ======
+        from pipelines._base import _sanitize_output
+        from session.chat_store import save_chat
         from session.context_cache import (
             clean_think_content_wrapped as _clean_think,
+        )
+        from session.context_cache import (
             update_session_cache,
         )
-        from session.chat_store import save_chat
-        from pipelines._base import _sanitize_output
 
         final_response = response_text or raw_text
         final_response = mgr.strip_think(final_response)

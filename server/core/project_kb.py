@@ -123,8 +123,8 @@ def index_file(proj_dir, rel_path, embedder):
     if not os.path.isfile(abs_path):
         return {"ok": False, "error": "not_found", "message": "文件不存在：%s" % rel}
 
-    from knowledge.file_extractor import extract_text
     from knowledge.chunker import chunk_text
+    from knowledge.file_extractor import extract_text
     text = extract_text(abs_path)
     if not text or not text.strip() or text.startswith("[不支持"):
         return {"ok": False, "error": "empty",
@@ -281,7 +281,7 @@ def status(proj_dir):
 
 def large_material_hints(proj_dir, indexed_paths=None):
     """大文件提示：项目根下 >50KB 的可提取文本材料且未入库 → 建议入项目知识库。"""
-    from knowledge.file_extractor import extract_text  # noqa: F401（存在性）
+    from knowledge.file_extractor import extract_text  # noqa: F401  # 存在性检查：确认可导入
     exts = (".txt", ".md", ".csv", ".docx", ".xlsx", ".pdf", ".pptx",
             ".epub", ".html", ".htm", ".srt", ".rtf")
     indexed = set(indexed_paths or [])

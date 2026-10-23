@@ -19,11 +19,11 @@ meta.json schema：
   "multimodal": false
 }
 """
-import os  # #35：os.link 用（原漏导入，迁移 Ollama 时抛 NameError 接不住 OSError）
 import json
 import logging
+import os  # #35：os.link 用（原漏导入，迁移 Ollama 时抛 NameError 接不住 OSError）
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 log = logging.getLogger(__name__)
 

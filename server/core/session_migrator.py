@@ -12,9 +12,9 @@ core/session_migrator.py — 会话存储迁移（旧 JSON → 新文件夹格�
   - 幂等：已迁移的不会重复迁移
 """
 
-import os
 import json
 import logging
+import os
 
 from common.utils import atomic_write_json
 

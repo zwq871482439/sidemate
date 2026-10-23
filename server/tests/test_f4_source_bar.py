@@ -15,7 +15,7 @@ import types
 import pytest
 from fastapi.testclient import TestClient
 
-from knowledge.models import KBDocument, KBChunk
+from knowledge.models import KBChunk, KBDocument
 
 
 class _FakeKB:

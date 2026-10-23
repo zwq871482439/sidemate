@@ -6,8 +6,8 @@
 - #52 带出：_html_to_pdf/_md_to_pdf 返回值补 dst_name/src_format/dst_format
 """
 import os
-import sys
 import subprocess
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

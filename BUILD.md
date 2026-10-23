@@ -83,8 +83,35 @@ sidemate/
 ├── lib/             ← llama-server + DLL（不进 git）
 ├── data/            ← 运行时数据（不进 git）
 ├── envsetup.py      ← 一键部署脚本
-└── requirements.txt ← Python 依赖清单
+├── requirements.txt ← Python 依赖清单
+└── pyproject.toml   ← Ruff 等工具配置
 ```
+
+
+## 代码检查（Ruff）
+
+本仓库用 [Ruff](https://docs.astral.sh/ruff/) 做 Python 检查与格式化，配置在根目录 `pyproject.toml` 的 `[tool.ruff]`。
+
+```bash
+# 安装（开发机；不要写进 requirements.txt 运行时依赖）
+pip install ruff
+
+# 检查（当前规则：E/W/F/I，见 pyproject.toml）
+ruff check .
+
+# 自动修复可安全修复项
+ruff check --fix .
+
+# 格式化（全库一次性 format 另开 PR；本地可先对改动文件跑）
+ruff format path/to/file.py
+# 或预览全库将改动多少文件：
+ruff format --check .
+```
+
+说明：
+- 排除 `server/vendor`、`server/archive`、`launcher/archive`、`server/static`
+- 目标版本 `py312`（与 BUILD 前置「Python 3.12+」一致；嵌入式发行版为 3.14）
+- **尚未**接入 pre-commit / CI（见 issue #65，后续单独立项）
 
 ## 运行测试
 

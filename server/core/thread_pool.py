@@ -17,7 +17,7 @@ core/thread_pool.py — 全局线程池管理器（Patch5 T01）
 """
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
 log = logging.getLogger(__name__)

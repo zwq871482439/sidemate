@@ -8,14 +8,15 @@ routers/download.py — 模型下载端点
   GET  /api/models/download/progress/{task_id} — SSE 下载进度
   POST /api/models/download/cancel  — 取消下载
 """
-import os
 import json
 import logging
+import os
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from routers.deps import get_mgr, get_kb
 from core import download_engine
+from routers.deps import get_kb, get_mgr
 
 router = APIRouter()
 log = logging.getLogger("download")
@@ -276,9 +277,10 @@ def _finalize_install(task):
             # 否则 is_installed("llm") 永远 False，换浏览器/清缓存后
             # 欢迎页会误判"需要一个 AI 引擎"
             try:
+                from datetime import datetime
+
                 from config import EXTENSIONS_DIR
                 from core.extension_manager import ExtensionRegistry
-                from datetime import datetime
                 ExtensionRegistry(EXTENSIONS_DIR).register("llm", {
                     "id": "llm",
                     "version": "auto-detected",

@@ -10,8 +10,8 @@ import subprocess
 
 import pytest
 
-from session import chat_store
 import core.project_write as pw
+from session import chat_store
 
 
 @pytest.fixture()
@@ -59,8 +59,8 @@ class TestArtifactPlanGate:
         assert "周报" not in os.listdir(sandbox["proj"])
 
     def test_execute_tool_execute_reaches_render(self, sandbox, monkeypatch):
-        import core.poster_render as pr
         import core.doc_session as ds
+        import core.poster_render as pr
         monkeypatch.setattr(pr, "render_poster", lambda **k: "<html>ok</html>")
         monkeypatch.setattr(ds, "write_workspace_file", lambda *a, **k: {"path": "x.html"})
         pw.set_exec_mode(sandbox["sid"], "execute")

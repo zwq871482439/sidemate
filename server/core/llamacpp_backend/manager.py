@@ -14,13 +14,13 @@ P7-4 底座替换：替代 ollama_manager.py。
   - ownership 三态（MANAGED/EXTERNAL/None，避免误杀外部实例）
   - 端口占用重试（3 次重试避免误报）
 """
-import os
-import time
-import socket
 import logging
+import os
+import socket
 import subprocess
 import threading
-from typing import Optional, List
+import time
+from typing import List, Optional
 
 import httpx
 

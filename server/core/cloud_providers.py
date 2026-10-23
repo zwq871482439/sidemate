@@ -298,7 +298,7 @@ def select(pid: str, mid: str) -> dict:
 
 def materialize(pid: str, mid: Optional[str]) -> dict:
     """把 (服务商, 模型) 写进传统 cloud_* 键——引擎零改动的关键。"""
-    from config import get as _cfg, save_config
+    from config import save_config
     p = _find_provider(pid)
     if not p:
         return {"error": "服务商不存在"}
@@ -393,7 +393,8 @@ def fetch_remote_models(base_url: str, api_key: str, fmt: str = "openai",
 # ============================================================
 
 def migrate_from_profiles() -> None:
-    from config import get as _cfg, save_config
+    from config import get as _cfg
+    from config import save_config
     # 幂等按「键是否存在」判定，不能用真值：providers 为空列表（用户删光了
     # 服务商）也是已迁移态，真值判断会重跑迁移、把旧 cloud_profiles 里的
     # 档案复活（#9-②）

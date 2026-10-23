@@ -9,11 +9,11 @@ core/table_ops.py — 工作区表格读写（table_ops 工具的核心逻辑）
 数据分析（求和/筛选/统计）不在此工具范围，由 calculator 工具配合完成：
   Agent 用 table_read 读出数据 → 用 calculator 计算。
 """
-import os
 import csv
 import io
-import re
 import logging
+import os
+import re
 
 log = logging.getLogger(__name__)
 

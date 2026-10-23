@@ -31,14 +31,12 @@ pipelines/parallel_pipeline.py — 并行模式管道（P6）
   - 云端列：独立多轮对话（原始question + memory_cloud完整历史拼接）
 """
 
-import os
 import json
-import time
 import logging
-import threading
 import queue
-from typing import Generator, List
+import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Generator
 
 log = logging.getLogger(__name__)
 
@@ -519,7 +517,6 @@ def _run_parallel_pipeline_impl(ctx) -> Generator[str, None, None]:
     parallel_options = getattr(ctx, 'parallel_options', None) or {}
     allow_cloud_keywords = parallel_options.get("allow_cloud_keywords", False)
 
-    from config import get as _cfg_get
 
     t0 = time.time()
     _saved = False
@@ -561,7 +558,7 @@ def _run_parallel_pipeline_impl(ctx) -> Generator[str, None, None]:
 
     # AgentTimeline 步骤计时（阶段2重构：6 个计时变量 → 4 个 Step 对象）
     # group 标记并发：retrieve/local_gen/cloud_gen = phase_1 并发，merge = phase_2 串行
-    from core.step_model import Step, StepOutput, step_to_sse, step_output_to_sse, steps_to_timeline
+    from core.step_model import Step, step_to_sse, steps_to_timeline
     step_retrieve = Step(id="retrieve", label="本地知识库检索", group="phase_1")
     step_local_gen = Step(id="local_gen", label="本地AI生成回答", group="phase_1")
     step_cloud_gen = Step(id="cloud_gen", label="云端AI补充", group="phase_1")

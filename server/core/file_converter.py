@@ -13,9 +13,9 @@ core/file_converter.py — 工作区文件格式转换（format_convert 工具�
 不支持的转换（超出范围，工具返回明确错误）：
   docx → pdf / pdf → docx / 任意 → pdf（需要排版引擎，风险高）
 """
+import logging
 import os
 import re
-import logging
 
 log = logging.getLogger(__name__)
 

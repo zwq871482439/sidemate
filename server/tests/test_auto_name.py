@@ -17,8 +17,8 @@ import os
 
 import pytest
 
-from session import chat_store
 import pipelines
+from session import chat_store
 
 
 @pytest.fixture()

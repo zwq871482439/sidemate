@@ -24,11 +24,11 @@ Yield 格式（与 cloud_pipeline 消费者对齐）：
   ("error", str)           — 错误信息
 """
 
-import os
-import json
-import time
 import ast
+import json
 import logging
+import os
+import time
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ _SAFE_MATH_FUNCS = {
 }
 # 二元/一元运算符 → Python 运算的映射表（供 _safe_math_eval 的纯 AST 求值器使用）
 import operator as _op
+
 _BINOP_TABLE = {
     ast.Add: _op.add, ast.Sub: _op.sub, ast.Mult: _op.mul,
     ast.Div: _op.truediv, ast.Mod: _op.mod, ast.Pow: _op.pow,
@@ -348,7 +349,7 @@ class AgentLoop:
         Yields:
             (phase, content) 元组
         """
-        from core.agent_tools import get_tools_and_prompt, get_status_event, get_tool_def
+        from core.agent_tools import get_tools_and_prompt
 
         # Patch4 v3：不再有 DocSession / doc_sections 状态（文档 = workspace 里的 .md 文件）
 
@@ -844,8 +845,8 @@ class AgentLoop:
         Returns:
             (content, fixed_count): 修复后的内容 + 修复段数
         """
-        import re as _re
         import json as _json
+        import re as _re
 
         blocks = list(_re.finditer(r"```mermaid\s*\n(.*?)```", content, flags=_re.DOTALL))
         if not blocks:
@@ -908,7 +909,12 @@ class AgentLoop:
 
             if tool_name == "install_skill":
                 # 0.11 B3：AI 自装 Skill（两步：校验暂存 → 用户确认卡 → 落地）
-                from core.skill_installer import validate_and_stage, install_staged, cancel_staged, _staging_root
+                from core.skill_installer import (
+                    _staging_root,
+                    cancel_staged,
+                    install_staged,
+                    validate_and_stage,
+                )
                 source = (args.get("source") or "").strip()
                 name = (args.get("name") or "").strip()
                 if args.get("confirmed"):
@@ -1003,9 +1009,13 @@ class AgentLoop:
 
             if tool_name == "mount_skill":
                 # 0.11 A2：技能懒加载——工具返回值即 SKILL.md 正文（渐进披露）
-                from core.skill_loader import (get_skill_body, append_mount_log,
-                                               SKILL_MOUNT_LIMIT, auto_trigger_enabled,
-                                               skill_disabled)
+                from core.skill_loader import (
+                    SKILL_MOUNT_LIMIT,
+                    append_mount_log,
+                    auto_trigger_enabled,
+                    get_skill_body,
+                    skill_disabled,
+                )
                 name = (args.get("name") or "").strip()
                 if not auto_trigger_enabled():
                     append_mount_log(name, False, "自动触发已关闭", self.chat_id)
@@ -1050,6 +1060,7 @@ class AgentLoop:
             elif tool_name == "read_skill_ref":
                 # 0.11.1 B3：技能参考文件按需加载（白名单子树 + 扩展名 + 64KB 上限）
                 import os as _os5
+
                 from core.skill_loader import get_skill_by_name
                 sname = (args.get("skill") or "").strip()
                 rpath = (args.get("path") or "").strip().replace("\\", "/")
@@ -1092,8 +1103,8 @@ class AgentLoop:
 
             elif tool_name == "create_poster":
                 # 0.11 A3：确定性海报渲染（三模板，token 色，模型只提供内容）
-                from core.poster_render import render_poster
                 from core.doc_session import write_workspace_file
+                from core.poster_render import render_poster
                 try:
                     html = render_poster(
                         style=args.get("style", "typo"),
@@ -1118,8 +1129,8 @@ class AgentLoop:
 
             elif tool_name == "format_gzh":
                 # 0.11 A3：公众号排版——HTML → 微信编辑器兼容（内联样式/白名单）
-                from core.gzh_format import format_gzh_html
                 from core.doc_session import read_workspace_file, write_workspace_file
+                from core.gzh_format import format_gzh_html
                 content = args.get("content") or ""
                 source = (args.get("source") or "").strip()
                 if not content and source:
@@ -1159,7 +1170,7 @@ class AgentLoop:
                 url = args.get("url", "")
                 # 异常 URL 日志检测（不阻断，仅记录可疑外泄尝试）
                 try:
-                    from urllib.parse import urlparse, parse_qs
+                    from urllib.parse import parse_qs, urlparse
                     _parsed = urlparse(url)
                     _query = parse_qs(_parsed.query)
                     _suspicious = False
@@ -1183,8 +1194,8 @@ class AgentLoop:
                     pass
 
                 # SSRF 防护：抓取前校验目标地址分类
-                from core.search_engine import classify_url
                 from config import get as _cfg
+                from core.search_engine import classify_url
                 category, detail = classify_url(url)
                 if category == "blocked":
                     # 链路本地/非法协议/解析失败 —— 硬拒绝
@@ -1376,7 +1387,6 @@ class AgentLoop:
                     return {"success": False, "tool": "format_convert", "error": "缺少参数",
                             "message": "需要 source 和 target 两个文件名"}
                 try:
-                    from config import WORKSPACE_DIR
                     from core.doc_session import safe_workspace_path
                     from core.file_converter import convert
                     src_path = safe_workspace_path(self.chat_id, src_name)
@@ -1415,9 +1425,8 @@ class AgentLoop:
                     return {"success": False, "tool": "table_ops", "error": "缺少参数",
                             "message": "需要 action（read/write）和 filename"}
                 try:
-                    from config import WORKSPACE_DIR
-                    from core.doc_session import safe_workspace_path
                     from core import table_ops as table_mod
+                    from core.doc_session import safe_workspace_path
                     file_path = safe_workspace_path(self.chat_id, filename)
                     if action == "read":
                         result = table_mod.read_xlsx(file_path)
@@ -1569,8 +1578,9 @@ class AgentLoop:
                 stats["docs"] += 1
                 try:
                     from core.doc_session import (
-                        read_workspace_file, mark_doc_completed, _docs_root,
                         _workspace_root,
+                        mark_doc_completed,
+                        read_workspace_file,
                     )
                     # 1. 读 workspace/{filename}
                     try:
@@ -1653,6 +1663,7 @@ class AgentLoop:
                 # M2-4：成果包——工作区交付物打 zip（不含 ppt/ 工程目录等中间件）
                 import re as _re2
                 import zipfile as _zipfile
+
                 from core.doc_session import _workspace_root, list_workspace_files
                 title = _re2.sub(r'[\\/:*?"<>|]+', "_", (args.get("title") or "").strip())[:60] or "成果包"
                 ws_root = _workspace_root(self.chat_id)
@@ -1749,8 +1760,8 @@ class AgentLoop:
 
             elif tool_name == "project_kb_search":
                 # M2-5：项目知识库语义检索（当前会话所属项目；嵌入复用全局 KB 引擎）
-                from session import projects as _pkb_p
                 from core import project_kb as _pkb
+                from session import projects as _pkb_p
                 _pd = _pkb_p.resolve_chat_project(self.chat_id)
                 if not _pd.get("dir") or not _pkb.has_index(_pd["dir"]):
                     return {"success": False, "tool": "project_kb_search",
@@ -1778,7 +1789,8 @@ class AgentLoop:
             elif tool_name == "read_session":
                 # M2 冷层：同项目校验 + 每 sid 每任务只读一次（防循环）+
                 # 私密会话拒读（隐私铁律：离线内容不出机）
-                from session import chat_store as _cs3, projects as _proj4
+                from session import chat_store as _cs3
+                from session import projects as _proj4
                 sid = (args.get("chat_name") or "").strip()
                 if not hasattr(self, "_read_sids"):
                     self._read_sids = set()
@@ -2043,7 +2055,7 @@ class AgentLoop:
 
             elif tool_name == "list_docs":
                 # Patch4 v3：列出 workspace 里的 .md 文档 + completed 标记
-                from core.doc_session import list_workspace_files, list_completed_docs
+                from core.doc_session import list_completed_docs, list_workspace_files
                 try:
                     files = list_workspace_files(self.chat_id)
                     completed = list_completed_docs(self.chat_id)

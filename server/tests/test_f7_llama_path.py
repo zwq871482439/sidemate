@@ -13,8 +13,9 @@ import routers.settings_system as ss
 @pytest.fixture()
 def isolated_env(monkeypatch, tmp_path):
     """ROOT_DIR 指到临时目录（lib 不存在）；shutil.which 默认无命中。"""
-    import config
     import shutil
+
+    import config
     monkeypatch.setattr(config, "ROOT_DIR", str(tmp_path))
     monkeypatch.setattr(shutil, "which", lambda name: None)
     return tmp_path

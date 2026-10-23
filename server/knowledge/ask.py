@@ -77,7 +77,7 @@ class _KBAskMixin:
                 ):
                     if chunk_type in ("text", "raw"):
                         response_chunks.append(chunk_text)
-                
+
                 answer = "".join(response_chunks).strip()
                 if not answer:
                     answer = "模型未生成回答。"

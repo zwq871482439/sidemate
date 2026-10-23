@@ -11,8 +11,11 @@ doc_reader.py - Word 文档读取技能
 """
 __version__ = "v1.0"
 
-import os, sys, json, logging
-from typing import Optional, List, Dict
+import json
+import logging
+import os
+import sys
+from typing import Dict, List, Optional
 
 log = logging.getLogger(__name__)
 

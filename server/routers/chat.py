@@ -15,41 +15,47 @@ routers/chat.py — Chat/会话/QA/文件上传 Router
   POST /api/qa/ask            — 问答Tab提问
   POST /api/file_upload       — 文件上传
 """
+import json
 import os
 import re
-import json
 import time
-import logging
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from common.utils import atomic_write_json
 from common.security import check_local_origin, local_origin_error
+from common.utils import atomic_write_json
 from routers.deps import (
-    get_mgr, get_kb,
-    get_current_chat_file, get_current_chat, set_current_chat, get_default_llm,
-    get_log, WORKSPACE_DIR, CHAT_DIR, UPLOAD_DIR, FILES_DIR,
+    CHAT_DIR,
+    UPLOAD_DIR,
+    get_current_chat,
+    get_default_llm,
+    get_kb,
+    get_log,
+    get_mgr,
+    set_current_chat,
 )
 
 # Patch 12: 从拆分后的模块导入
 from session.chat_store import (
-    safe_chat_name,
-    today_str,
-    new_chat_file,
-    save_chat,
+    _chat_save_lock,
+    list_chats,
     load_chat,
     load_chat_cache,
-    list_chats,
+    new_chat_file,
     rename_chat,
-    _chat_save_lock,
+    safe_chat_name,
+    save_chat,
+    today_str,
 )
 from session.context_cache import (
     clean_history_for_model,
-    clean_think_content_wrapped as clean_think_content,
     update_session_cache,
+)
+from session.context_cache import (
+    clean_think_content_wrapped as clean_think_content,
 )
 from session.continuation import (
     get_latest_chat,
@@ -61,6 +67,7 @@ log = get_log()
 
 # ===== 0.10.1 启动不预载：懒加载单飞（并发请求只触发一次 start）=====
 import threading as _threading
+
 _lazy_load_mu = _threading.Lock()
 _lazy_loading = False
 
@@ -467,7 +474,7 @@ async def api_chat_stream(request: Request):
             _lz_ok = await _lazy_load_engine(ollama_manager)
             if not _lz_ok:
                 # P0 #43：本地加载失败同样不留无痕回合（SSE 会被流式清理吞掉）
-                from pipelines._base import persist_error_turn, ErrorPersistCtx
+                from pipelines._base import ErrorPersistCtx, persist_error_turn
                 _em_local = "模型加载失败或超时。请到「设置→模型下载」确认模型已安装，或稍后重试。"
                 persist_error_turn(
                     ErrorPersistCtx(chat_file=chat_file, message=message,
@@ -968,16 +975,17 @@ async def api_chats_set_private(chat_name: str, request: Request):
         return JSONResponse({"error": "非法对话名称"}, status_code=400)
     body = await request.json()
     on = bool(body.get("private"))
-    from config import get as _cfg_get
-    from session import chat_store as _cs
     import os as _os
+
     from config import CHAT_DIR as _CD
+    from config import get as _cfg_get
     meta_path = _os.path.join(_CD, safe_name, "meta.json")
     if not _os.path.isfile(meta_path):
         return JSONResponse({"error": "会话不存在"}, status_code=404)
-    from common.utils import atomic_write_json
     import json as _json
     import time as _t
+
+    from common.utils import atomic_write_json
     try:
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = _json.load(f)
@@ -1074,8 +1082,11 @@ async def api_chat_distill(chat_name: str):
     _fm = re.search(r"```(?:markdown|yaml)?\s*\n(---.*?)```\s*$", raw, re.DOTALL)
     if _fm:
         raw = _fm.group(1).strip()
-    from core.skill_loader import parse_skill_md, _skills_dir
-    import tempfile as _tf, shutil as _sh, os as _os
+    import os as _os
+    import shutil as _sh
+    import tempfile as _tf
+
+    from core.skill_loader import _skills_dir, parse_skill_md
     _tfdir = _tf.mkdtemp(prefix="distill_")
     try:
         with open(_os.path.join(_tfdir, "SKILL.md"), "w", encoding="utf-8") as f:
@@ -1183,9 +1194,10 @@ async def api_chats_set_carry(chat_name: str, request: Request):
         return JSONResponse({"error": "非法对话名称"}, status_code=400)
     body = await request.json()
     sids = [s for s in (body.get("sids") or []) if isinstance(s, str) and s][:4]
-    from session import chat_store, projects
     import os as _os
+
     from config import CHAT_DIR as _CD
+    from session import chat_store, projects
     cur_proj = projects.resolve_chat_project(safe_name)
     valid = []
     for sid in sids:
@@ -1200,6 +1212,7 @@ async def api_chats_set_carry(chat_name: str, request: Request):
         if sid not in valid:
             valid.append(sid)
     import time as _t
+
     from common.utils import atomic_write_json
     meta_path = _os.path.join(_CD, safe_name, "meta.json")
     if not _os.path.isfile(meta_path):
@@ -1579,11 +1592,11 @@ def _calc_context_usage(chat_file: str = None):
     # 1. System prompt（从 prompts 模块读取）
     sys_chars = 0
     try:
-        from prompts import SYSTEM_PROMPT_V2, KB_SYSTEM_PROMPT_TEMPLATE
+        from prompts import SYSTEM_PROMPT_V2
         sys_chars = len(SYSTEM_PROMPT_V2)
     except ImportError:
         sys_chars = 100  # fallback
-    
+
     # 2. 场景增强（最多一行）
     try:
         from prompts import STRATEGY_ENHANCEMENTS
@@ -1591,21 +1604,21 @@ def _calc_context_usage(chat_file: str = None):
         sys_chars += enhancement_chars
     except ImportError:
         pass
-    
+
     # 3. FC 工具 schema 估算（离线模式固定 ~300 字）
     FC_SCHEMA_CHARS = 300
-    
+
     # 4. 历史消息：按 context_cutoff 裁剪（和前端 sendMessage 一致）
     cutoff_idx = -1
     for ci, m in enumerate(messages):
         if m.get("context_cutoff"):
             cutoff_idx = ci
-    
+
     trimmed_messages = messages[cutoff_idx + 1:] if cutoff_idx >= 0 else messages
     history_chars = sum(len(m.get("content", "")) for m in trimmed_messages)
-    
+
     used_tokens = int((sys_chars + FC_SCHEMA_CHARS + history_chars) / 1.5)
-    
+
     # 上下文窗口：在线只认用户填写的长度，不查模型字典。
     needs_confirm = False
     if ai_mode == "cloud":

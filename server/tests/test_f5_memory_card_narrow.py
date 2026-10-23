@@ -122,7 +122,7 @@ class TestDeclineDetection:
 
 class TestMetaFlagWrite:
     def test_set_chat_meta_flag_merges(self, chatdir):
-        from session.chat_store import set_chat_meta_flag, read_meta
+        from session.chat_store import read_meta, set_chat_meta_flag
         # 传会话文件夹路径
         ok = set_chat_meta_flag(str(chatdir / "t-fresh"), "memory_declined", True)
         assert ok is True
@@ -137,7 +137,7 @@ class TestMetaFlagWrite:
 
     def test_set_flag_on_messages_json_path(self, chatdir):
         """chat.py 手里常是 messages.json 的路径——要能落到同目录 meta。"""
-        from session.chat_store import set_chat_meta_flag, read_meta
+        from session.chat_store import read_meta, set_chat_meta_flag
         ok = set_chat_meta_flag(str(chatdir / "t-declined" / "messages.json"),
                                 "memory_declined", True)
         assert ok is True

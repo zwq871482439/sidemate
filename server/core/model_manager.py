@@ -7,14 +7,18 @@
 """
 __version__ = "v2.0"
 
-import time, os, threading, re, json, logging
-from typing import Optional, List, Dict
+import logging
+import os
+import re
+import threading
+import time
+from typing import Dict, List, Optional
 
-from core.generate_queue import GenerateQueue, GenerateTicket
+from config import get as _cfg
+from core.generate_queue import GenerateQueue
 from core.prompt_builder import PromptBuilder
 from core.stream_engine import StreamEngine
 from core.think_processor import ThinkProcessor
-from config import get as _cfg
 
 log = logging.getLogger(__name__)
 log_scan = logging.getLogger("local-ai")
@@ -204,8 +208,9 @@ class ModelManager:
     def _scan_ollama_models(self):
         """P7-4: 从 ModelRegistry 获取可用模型列表（替代 Ollama /api/tags）"""
         try:
-            from core.llamacpp_backend import ModelRegistry
             import os as _os
+
+            from core.llamacpp_backend import ModelRegistry
             _server_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
             _models_dir = _os.path.join(_server_dir, "models")
             registry = ModelRegistry(_models_dir)
@@ -535,7 +540,8 @@ class ModelManager:
         if new_device not in ("gpu", "cpu"):
             return {"error": "无效设备，支持: gpu, cpu"}
 
-        from config import set_value, get as _cfg
+        from config import get as _cfg
+        from config import set_value
         old_layers = _cfg("llamacpp_gpu_layers", 99)
         new_layers = 99 if new_device == "gpu" else 0
 
@@ -834,8 +840,8 @@ class ModelManager:
     @staticmethod
     def _detect_hardware():
         """检测具体硬件型号"""
-        import subprocess
         import platform
+        import subprocess
         hw = {"cpu": "", "gpu": ""}
         try:
             if platform.system() == "Windows":

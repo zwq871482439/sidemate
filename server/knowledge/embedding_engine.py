@@ -12,10 +12,10 @@ Patch5 T03: 升级为 FlagModel（FlagEmbedding），支持 dense + sparse 双�
 
 模型路径从扩展注册表读取；扩展未安装时 mode="none"，encode 返回零向量但不崩溃。
 """
-import os
 import logging
+import os
 import threading
-from typing import List, Tuple, Dict, Any
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
@@ -75,7 +75,9 @@ class EmbeddingEngine:
 
         # 可能的模型根：ROOT_DIR(server/) 和 PROJECT_ROOT(server 父目录) 都试
         try:
-            from config import ROOT_DIR as _root_dir, PROJECT_ROOT as _proj_root, EXTENSIONS_DIR
+            from config import EXTENSIONS_DIR
+            from config import PROJECT_ROOT as _proj_root
+            from config import ROOT_DIR as _root_dir
         except ImportError:
             _root_dir = _project_dir
             _proj_root = os.path.dirname(_project_dir)

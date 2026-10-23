@@ -8,24 +8,23 @@ Tests cover:
 - F10 回归：可选依赖缺失不应让 all_ok 变 False
 """
 
-import pytest  # #35
-
-import sys
 import os
+import sys
+
+import pytest  # #35
 
 # Ensure server root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import deps_check
 from core.deps_check import (
-    REQUIRED_DEPS,
     OPTIONAL_DEPS,
-    check_all,
-    check_optional,
-    check_deps,
+    REQUIRED_DEPS,
     _import_check,
+    check_all,
+    check_deps,
+    check_optional,
 )
-
 
 # ============================================================
 #  OPTIONAL_DEPS 声明

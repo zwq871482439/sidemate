@@ -13,20 +13,18 @@ session/chat_store.py — 对话文件管理（文件夹格式 + 旧格式兼容
   - list_chats       — 列出所有对话
   - migrate_chats    — 启动时触发迁移
 """
+import glob as _glob
+import json
+import logging
 import os
 import re
-import json
-import time
-import logging
 import threading
-import glob as _glob
-import shutil
+import time
 from datetime import datetime
 
-from config import CHAT_DIR
 from common.utils import atomic_write_json
+from config import CHAT_DIR
 from routers.deps import (
-    get_current_chat_file,
     get_current_chat,
     set_current_chat,
 )

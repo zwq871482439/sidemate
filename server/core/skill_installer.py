@@ -26,7 +26,6 @@ import re
 import shutil
 import tempfile
 import zipfile
-from typing import Optional
 
 log = logging.getLogger(__name__)
 

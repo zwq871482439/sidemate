@@ -14,7 +14,6 @@ import os
 import threading
 import time
 import uuid
-from typing import List
 
 log = logging.getLogger(__name__)
 

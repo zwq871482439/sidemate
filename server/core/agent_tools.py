@@ -12,7 +12,6 @@ core/agent_tools.py — Agent 工具注册表 + 动态 System Prompt 组装
   - 不做用户可配置的工具系统
 """
 
-import json
 import logging
 
 log = logging.getLogger(__name__)
@@ -1397,8 +1396,8 @@ def get_tools_and_prompt(mode="chat", kb=None, template=None, kb_permission="ful
             # M2-5：当前会话所属项目的知识库开关开且索引非空才注册
             _pkb_ok = False
             try:
-                from session import projects as _pkb_proj
                 from core import project_kb as _pkb_mod
+                from session import projects as _pkb_proj
                 _pd = _pkb_proj.resolve_chat_project(chat_id) if chat_id else {}
                 _pkb_ok = bool(_pd.get("dir")) and _pkb_mod.has_index(_pd["dir"])
             except Exception:
@@ -1590,9 +1589,8 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
 
     try:
         import os as _os
-        import json as _json
-        from core.doc_session import _chat_root, _workspace_root, _docs_root
-        from config import CHAT_DIR
+
+        from core.doc_session import _chat_root
 
         chat_path = _chat_root(chat_id)
         if not _os.path.isdir(chat_path):
@@ -1662,7 +1660,8 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
         # 同项目最近 8 条会话一行式（标题/sid/时间/条数），动态拼装零 LLM 成本；
         # 隐私铁律：离线私密会话不进在线索引段（read_session 同样拒读）
         try:
-            from session import projects as _proj2, chat_store as _cs
+            from session import chat_store as _cs
+            from session import projects as _proj2
             _pd2 = _proj2.resolve_chat_project(chat_id)
             if not _pd2.get("legacy") and _pd2.get("dir"):
                 _lines = []
@@ -1687,7 +1686,8 @@ def _inject_session_context(chat_id, kb, base_prompt, kb_tag_str="", history=Non
         # ===== 选带层（carry_sids：用户勾选携带的会话，②+++ 议题1）=====
         # 注入各携带会话的轻量摘要（去重/封顶）；私密会话跳过
         try:
-            from session import chat_store as _cs2, projects as _proj3
+            from session import chat_store as _cs2
+            from session import projects as _proj3
             _carry = (_cs2.read_meta(chat_id).get("carry_sids") or [])[:4]
             if _carry:
                 _pd3 = _proj3.resolve_chat_project(chat_id)
@@ -1751,7 +1751,7 @@ def _assemble_context(blocks):
 
 def _collect_docs_block(chat_id):
     """收集 workspace 里的 .md 文档列表 + completed 标记（Patch4 v3）。"""
-    from core.doc_session import list_workspace_files, list_completed_docs
+    from core.doc_session import list_completed_docs, list_workspace_files
     try:
         files = list_workspace_files(chat_id)
     except Exception:

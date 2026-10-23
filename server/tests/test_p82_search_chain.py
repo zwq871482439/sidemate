@@ -13,7 +13,7 @@ class TestToolLimits(unittest.TestCase):
     """2.2 次数调整：TOOL_LIMITS / MAX_ROUNDS 常量"""
 
     def test_limits_values(self):
-        from core.agent_loop import TOOL_LIMITS, MAX_ROUNDS
+        from core.agent_loop import MAX_ROUNDS, TOOL_LIMITS
         self.assertEqual(TOOL_LIMITS["search_web"], 5)
         self.assertEqual(TOOL_LIMITS["fetch_url"], 15)
         self.assertEqual(TOOL_LIMITS["search_kb"], 5)
@@ -26,7 +26,7 @@ class TestToolLimits(unittest.TestCase):
 
     def test_rounds_headroom(self):
         """最坏情况 5+15=20 轮检索后，至少留 5 轮收尾"""
-        from core.agent_loop import TOOL_LIMITS, MAX_ROUNDS
+        from core.agent_loop import MAX_ROUNDS, TOOL_LIMITS
         worst = TOOL_LIMITS["search_web"] + TOOL_LIMITS["fetch_url"]
         self.assertGreaterEqual(MAX_ROUNDS - worst, 5)
 
@@ -40,7 +40,7 @@ class TestBudgetMessage(unittest.TestCase):
     本类只钉数字计算与两段生成式（与 agent_loop 相同的规则）。"""
 
     def _make_budget_line(self, tool_counts, rounds):
-        from core.agent_loop import TOOL_LIMITS, MAX_ROUNDS
+        from core.agent_loop import MAX_ROUNDS, TOOL_LIMITS
         return ("\n[剩余预算 · 仅供规划，勿在回复中提及]"
                 " 联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮" % (
                     max(0, TOOL_LIMITS["search_web"] - tool_counts.get("search_web", 0)),
@@ -63,7 +63,7 @@ class TestBudgetMessage(unittest.TestCase):
 
     def test_static_block_is_constant(self):
         """静态块只含初始额度（模块常量），不含随轮次变化的数字"""
-        from core.agent_loop import TOOL_LIMITS, MAX_ROUNDS
+        from core.agent_loop import MAX_ROUNDS, TOOL_LIMITS
         static = ("## 检索预算（初始额度）\n"
                   "联网搜索 %d 次 · 网页阅读 %d 次 · 知识库搜索 %d 次 · 总轮次 %d 轮" % (
                       TOOL_LIMITS["search_web"], TOOL_LIMITS["fetch_url"],
@@ -144,6 +144,7 @@ class TestSingletonLocks(unittest.TestCase):
 
     def test_thread_pool_singleton(self):
         import threading
+
         from core.thread_pool import get_thread_pool
         results = []
         def worker():

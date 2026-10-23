@@ -15,20 +15,20 @@ routers/settings_system.py — 系统信息/模型管理/设备/环境/配置/�
   资源：    /api/resource-info
   加载进度：/api/load-progress
 """
+import logging
 import os
 import time
-import logging
 from datetime import datetime
-from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, JSONResponse
 
-from routers.deps import (
-    get_mgr, get_kb,
-    get_log, WORKSPACE_DIR, UPLOAD_DIR,
-)
 from common.security import check_local_origin, local_origin_error
+from routers.deps import (
+    WORKSPACE_DIR,
+    get_kb,
+    get_mgr,
+)
 
 router = APIRouter()
 log = logging.getLogger("settings.system")
@@ -43,6 +43,7 @@ def _diagnose_llama_server() -> dict:
     返回实际命中路径；都找不到时 ok=False 并给明确文案。
     """
     import shutil
+
     from config import ROOT_DIR
     candidates = [
         os.path.join(ROOT_DIR, "..", "lib", "ollama", "llama-server.exe"),
@@ -168,9 +169,10 @@ def api_status():
 
     # 【Patch5 启动重构】后台初始化状态机（Go Launcher 段2 轮询依据）
     try:
-        import server as _svr
         # P6 调试：__main__ vs server 模块别名问题
         import sys as _sys
+
+        import server as _svr
         _main_mod = _sys.modules.get('__main__')
         _srv_mod = _sys.modules.get('server')
         _main_state = getattr(_main_mod, '_bg_init_state', None) if _main_mod else None
@@ -294,7 +296,8 @@ def _onboard_completed() -> bool:
     老用户有明显使用痕迹（聊过天/配过云端/装过 LLM），不应被重新引导——
     检测到任一痕迹即自动补写标记（幂等，下次走快路径）。
     """
-    from config import get as cfg_get, DATA_DIR, EXTENSIONS_DIR
+    from config import DATA_DIR, EXTENSIONS_DIR
+    from config import get as cfg_get
     marker = os.path.join(DATA_DIR, ".onboard_done")
     if os.path.exists(marker):
         return True
@@ -328,7 +331,7 @@ def api_app_state():
     返回原始状态（onboard/mode/local/cloud/kb），锁卡类型、发送门禁等
     由前端 AppState.derive() 单点派生，不再各处拼凑。
     """
-    from config import get as cfg_get, DATA_DIR
+    from config import get as cfg_get
 
     # onboard：服务端标记文件为唯一权威（前端 localStorage 降级为缓存；
     # 0.9.7 升级用户由 _onboard_completed 的迁移兜底自动补标记）
@@ -487,8 +490,8 @@ def api_env_check():
 def api_env_diagnose():
     """统一环境检查：聚合依赖检查 + 核心包完整性 + 引擎状态"""
     import sys
-    import os
-    from core.deps_check import REQUIRED_DEPS, OPTIONAL_DEPS, _import_check, check_optional
+
+    from core.deps_check import REQUIRED_DEPS, _import_check, check_optional
 
     result = {"all_ok": True}
 
@@ -575,6 +578,7 @@ def _load_allowed_packages():
     """
     import os
     import re
+
     from config import PROJECT_ROOT
     allowed = set()
     for req_name in ("requirements.txt", "requirements_gen.txt"):
@@ -603,11 +607,11 @@ async def api_env_repair(request: Request):
     """用 pip 联网安装缺失依赖"""
     if not check_local_origin(request):
         return JSONResponse(local_origin_error(), status_code=403)
-    import sys
-    import uuid
     import queue
-    import threading
     import subprocess
+    import sys
+    import threading
+    import uuid
 
     body = await request.json()
     packages = body.get("packages", [])
@@ -650,7 +654,6 @@ async def api_env_repair(request: Request):
 
             installed = []
             failed = []
-            import importlib
             # import_name 映射表（pip 名 → import 名）
             _IMPORT_MAP = {
                 "python_docx": "docx", "openai": "openai", "psutil": "psutil",
@@ -692,6 +695,7 @@ async def api_env_repair(request: Request):
 async def api_env_repair_progress(task_id: str):
     """SSE 端点：环境修复进度"""
     import asyncio
+
     from sse_starlette.sse import EventSourceResponse
 
     progress_queue = _env_repair_tasks.get(task_id)
@@ -892,7 +896,7 @@ def api_workspace_list():
 def api_config_get():
     """获取用户配置（cloud_api_key 打码，避免完整密钥经 API 泄漏）"""
     try:
-        from config import load_config, CLEANUP_OPTIONS
+        from config import CLEANUP_OPTIONS, load_config
         cfg = load_config()
         # 打码 API Key：只保留前后各 4 位，中间用 *** 占位
         api_key = cfg.get("cloud_api_key", "")
@@ -971,8 +975,8 @@ def api_resource_info():
     kb_extension_installed = False
     # P6 归档：recorder_installed 永远 False（模块已下线）
     try:
-        from core.extension_manager import ExtensionRegistry
         from config import EXTENSIONS_DIR
+        from core.extension_manager import ExtensionRegistry
         _ext_dir = EXTENSIONS_DIR
         _registry = ExtensionRegistry(_ext_dir)
         kb_extension_installed = _registry.is_installed("knowledge")
@@ -1030,9 +1034,9 @@ def api_onboard_status():
     检查 .onboard_done 标记文件以及各组件安装状态，
     前端据此判断是否显示首次引导流程。
     """
-    import os
+    from config import EXTENSIONS_DIR
+    from config import get as cfg_get
     from core.extension_manager import ExtensionRegistry
-    from config import get as cfg_get, DATA_DIR, EXTENSIONS_DIR
 
     registry = ExtensionRegistry(EXTENSIONS_DIR)
 
@@ -1066,6 +1070,7 @@ async def api_onboard_complete():
     前端调用此端点标记引导已完成。
     """
     import os
+
     from config import DATA_DIR
 
     onboard_marker = os.path.join(DATA_DIR, ".onboard_done")
@@ -1089,8 +1094,9 @@ async def api_onboard_complete():
 def api_system_info():
     """系统运行环境信息（关于对话框用）"""
     import platform
-    from server import FULL_VERSION
+
     from config import get as cfg_get
+    from server import FULL_VERSION
 
     # P7-4: llama-server 状态（替代 Ollama /api/version）
     ollama_status = "stopped"
@@ -1098,6 +1104,7 @@ def api_system_info():
     try:
         # 检查 llama-server 进程是否在运行（用 /v1/models 探活）
         import httpx
+
         from config import get as _cfg_get
         _host = _cfg_get("ollama_host", "127.0.0.1")
         _port = _cfg_get("ollama_port", 11434)
@@ -1201,12 +1208,12 @@ def api_license(file: str = "LICENSE"):
     allowed = {"LICENSE", "THIRD-PARTY-NOTICES"}
     if file not in allowed:
         return JSONResponse({"error": "文件不允许访问"}, status_code=403)
-    
+
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     license_path = os.path.join(os.path.dirname(project_root), file)
     if not os.path.isfile(license_path):
         return JSONResponse({"error": "文件不存在"}, status_code=404)
-    
+
     try:
         with open(license_path, "r", encoding="utf-8") as f:
             return JSONResponse({"content": f.read(), "filename": file})
@@ -1380,7 +1387,7 @@ def api_cloud_usage(range_days: int = 7, granularity: str = "hour"):
 @router.get("/api/mcp/servers")
 def api_mcp_list():
     """列出 MCP 服务器配置+连接状态（0.11 B2：带 transport/url/auth 供本地/远程分组）。"""
-    from core.mcp_client import load_mcp_config, get_mcp_manager
+    from core.mcp_client import get_mcp_manager, load_mcp_config
     config = load_mcp_config()
     mgr = get_mcp_manager()
     servers = []
@@ -1447,7 +1454,7 @@ async def api_mcp_add(request: Request):
 @router.delete("/api/mcp/servers/{name}")
 def api_mcp_delete(name: str):
     """删除 MCP 服务器配置并断开。"""
-    from core.mcp_client import load_mcp_config, save_mcp_config, get_mcp_manager
+    from core.mcp_client import get_mcp_manager, load_mcp_config, save_mcp_config
     config = load_mcp_config()
     config["servers"] = [s for s in config["servers"] if s.get("name") != name]
     save_mcp_config(config)
@@ -1463,8 +1470,8 @@ async def api_mcp_connect(request: Request):
     """连接所有已配置的 MCP 服务器并注册工具。"""
     if not check_local_origin(request):
         return JSONResponse(local_origin_error(), status_code=403)
-    from core.mcp_client import get_mcp_manager
     from core.agent_tools import register_mcp_tools
+    from core.mcp_client import get_mcp_manager
     mgr = get_mcp_manager()
     connected = mgr.connect_all()
     registered = register_mcp_tools()
@@ -1532,6 +1539,7 @@ def _preset_skill_names() -> set:
     try:
         import os as _os
         import re as _re
+
         from core.skill_loader import _skills_default_dir
         sd = _skills_default_dir()
         if not _os.path.isdir(sd):
@@ -1558,9 +1566,14 @@ def _preset_skill_names() -> set:
 @router.get("/api/skills/list")
 def api_skills_list():
     """列出全部技能：系统（协议+权限）+ 用户（SKILL.md）。"""
-    from core.pipeline_skills import _SKILLS
-    from core.skill_loader import discover_skills, skill_disabled, auto_trigger_enabled, read_mount_log
     from config import get as _cfg
+    from core.pipeline_skills import _SKILLS
+    from core.skill_loader import (
+        auto_trigger_enabled,
+        discover_skills,
+        read_mount_log,
+        skill_disabled,
+    )
 
     # 用户技能先行构建（系统区需按名去重：register_user_skills 会把带
     # pipeline_types 的用户技能注册进管线——同一技能不应在两区重复出现）
@@ -1665,7 +1678,7 @@ async def api_skills_toggle(request: Request):
         return {"ok": True, "id": "auto", "enabled": enabled}
     # 0.11.1：用户技能行级开关（禁用=退出自动触发通道；场景卡显式挂载不受影响）
     if skill_id.startswith("user_"):
-        from core.skill_loader import set_skill_disabled, get_skill_by_name
+        from core.skill_loader import get_skill_by_name, set_skill_disabled
         name = skill_id[5:]
         if not get_skill_by_name(name):
             return JSONResponse({"error": "技能不存在"}, status_code=404)
@@ -1706,8 +1719,9 @@ async def api_skills_delete(request: Request):
     # 0.11.1：预装技能不允许删除（删了场景卡/预装能力就废了；不想要请用禁用开关）
     if name in _preset_skill_names():
         return JSONResponse({"error": "预装技能不允许删除——不想要可用行内开关禁用（升级会补齐预装）"}, status_code=400)
-    from core.skill_loader import _skills_dir
     import os
+
+    from core.skill_loader import _skills_dir
     root = _skills_dir()
     for entry in os.listdir(root):
         if entry == name + ".md":

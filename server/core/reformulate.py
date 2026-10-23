@@ -30,7 +30,7 @@ def reformulate_query(query: str, history: list, mgr) -> str:
     if len(_query_stripped) <= 3:
         return query
 
-    from prompts import REFORMULATE_PROMPT, REFORMULATE_NO_HISTORY_PROMPT
+    from prompts import REFORMULATE_NO_HISTORY_PROMPT, REFORMULATE_PROMPT
 
     # 有 history 才拼摘要（最近2轮的Q+A摘要，限制500字）；summary 为空时退化为无历史分支
     history_summary = _build_history_summary(history, max_chars=500) if history else ""

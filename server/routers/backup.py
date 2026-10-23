@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """数据备份/恢复 API — 导出/导入聊天记录、设置、文库元数据"""
-import os, json, io, time, logging, zipfile, glob as _glob
+import io
+import json
+import logging
+import os
+import zipfile
 from datetime import datetime
-from fastapi import APIRouter, UploadFile, File
+
+from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import StreamingResponse
-from config import CHAT_DIR, DATA_DIR, ROOT_DIR
+
+from config import CHAT_DIR, DATA_DIR
 
 router = APIRouter()
 log = logging.getLogger(__name__)

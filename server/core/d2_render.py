@@ -15,11 +15,11 @@ core/d2_render.py — D2 图表服务端渲染（0.10：d2lang 支持；0.11.1�
 hydrateD2 共用同一份（聊天内联图与落盘产物观感一致）。
 """
 import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -162,6 +162,7 @@ def render_svg(source: str) -> dict:
 def render_to_workspace(chat_id: str, name: str, source: str) -> dict:
     """渲染并写入会话工作区，返回给 Agent 的结果。"""
     import re as _re
+
     from core.doc_session import write_workspace_file
 
     r = render_svg(source)

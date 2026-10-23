@@ -43,11 +43,11 @@ _SLASH_RE = re.compile(r'^/([a-zA-Z]+)\s*(.*)', re.DOTALL)
 def resolve_action(message: str, current_action: str = "chat") -> dict:
     """
     解析用户输入，确定 Action 和 Strategy。
-    
+
     Args:
         message: 用户原始输入
         current_action: 当前 Action（默认 "chat"）
-    
+
     Returns:
         {
             "action": str,           # 最终 action: "chat"|"doc"|扩展ID
@@ -64,17 +64,17 @@ def resolve_action(message: str, current_action: str = "chat") -> dict:
         "slash_hint": None,
         "slash_key": None,
     }
-    
+
     if not message:
         return result
-    
+
     m = _SLASH_RE.match(message.strip())
     if not m:
         return result
-    
+
     slash_key = m.group(1).lower()
     rest = m.group(2).strip()
-    
+
     # 检查是否是已知的 /xx 指令
     if slash_key in _SLASH_ACTION:
         result["action"] = _SLASH_ACTION[slash_key]
@@ -89,7 +89,7 @@ def resolve_action(message: str, current_action: str = "chat") -> dict:
     else:
         # 未知 /xx 指令，原样保留（不处理）
         return result
-    
+
     return result
 
 

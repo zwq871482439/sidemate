@@ -11,7 +11,6 @@ import os
 
 import pytest
 
-
 # ============================== D6 提纲收敛 ==============================
 
 class TestCondenseOutline:
@@ -64,6 +63,7 @@ class TestTruncationSurface:
     def test_client_done_carries_finish_reason(self):
         """done 事件应带 finish_reason 字段（客户端协议层）。"""
         import inspect
+
         from core.llamacpp_backend import client as _c
         src = inspect.getsource(_c.LlamaCppClient.chat_stream)
         assert "finish_reason" in src, "client.chat_stream 未捕获 finish_reason"
@@ -71,6 +71,7 @@ class TestTruncationSurface:
     def test_engine_yields_truncated_on_length(self):
         """stream_engine 收到 done(finish_reason=length) 后应 yield ("truncated", True)。"""
         import inspect
+
         from core import stream_engine as _se
         src = inspect.getsource(_se.StreamEngine._stream_chat)  # run 对其 yield from 透传
         assert '"truncated"' in src or "'truncated'" in src, \
@@ -79,6 +80,7 @@ class TestTruncationSurface:
     def test_doc_final_skips_response_filter(self):
         """文档正文车道跳过 filter_response（防 STREAM 2243 → 落库 1947 静默丢字）。"""
         import inspect
+
         from pipelines import local_pipeline as _lp
         src = inspect.getsource(_lp)
         assert "_doc_final" in src and "filter_result = {\"warnings\": [], \"corrections\": [], \"cleaned\": final_text}" in src
@@ -86,6 +88,7 @@ class TestTruncationSurface:
     def test_doc_lane_output_reservation_raised(self):
         """doc Phase2 max_tokens 提到 MAX_OUTPUT_TOKENS 并按窗口封顶。"""
         import inspect
+
         from pipelines import local_pipeline as _lp
         src = inspect.getsource(_lp)
         assert "MAX_OUTPUT_TOKENS as _MAX_OUT" in src and "_doc_max" in src
@@ -93,6 +96,7 @@ class TestTruncationSurface:
     def test_truncation_note_text(self):
         """chat 车道截断落款文案（步骤 9b）在场。"""
         import inspect
+
         from pipelines import local_pipeline as _lp
         src = inspect.getsource(_lp)
         assert "单次生成长度上限" in src
@@ -114,6 +118,7 @@ class TestSearchKbFormatting:
 
     def test_plain_text_not_json(self):
         import json
+
         from core.agent_loop import _format_search_kb_tool_result
         out = _format_search_kb_tool_result(self._result())
         assert not out.strip().startswith("{"), "工具消息不应再是 JSON 包装"
@@ -144,6 +149,7 @@ class TestSearchKbFormatting:
 class TestDocxMarkdownWriteback:
     def test_workspace_writeback_code_present(self):
         import inspect
+
         from pipelines import local_pipeline as _lp
         src = inspect.getsource(_lp)
         assert "safe_workspace_path" in src and '".md"' in src or "_md_name" in src

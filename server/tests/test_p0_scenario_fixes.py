@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.file_converter import convert, READABLE, WRITABLE
+from core.file_converter import READABLE, WRITABLE, convert
 
 
 class TestCalculatorErrorPath(unittest.TestCase):

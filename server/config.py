@@ -15,9 +15,9 @@ config.py - 全局配置管理（统一中心）
   - 长文本分段：chunk 相关参数
 """
 
-import os
 import json
 import logging
+import os
 import threading
 from typing import Any, Dict
 
@@ -189,7 +189,6 @@ DEFAULTS = {
     "tool_enabled_file_rw": True,    # 0.10 协议 skill 化：各产物/编排工具独立开关（技能页管理；关闭=工具+协议 prompt 一并撤）
     "tool_enabled_create_ppt": True,
     "tool_enabled_create_docx": True,
-    "tool_enabled_code_exec": True,
     "tool_enabled_render_d2": True,
     "tool_enabled_run_plan": True,
     "tool_enabled_spawn_reader": True,

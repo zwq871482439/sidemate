@@ -13,9 +13,9 @@
 """
 __version__ = "v1.0"
 
-import re
 import logging
-from typing import List, Dict, Optional, Tuple
+import re
+from typing import Dict, List, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def _is_code_block(text: str) -> bool:
 
 def _compress_code(text: str) -> str:
     """压缩代码块：保留函数签名和关键结构，安全地去除注释和空行
-    
+
     v1.0 改进：
     - 区分注释行和字符串内的 #
     - 保留 docstring
@@ -140,7 +140,7 @@ def _compress_code(text: str) -> str:
 
 def _strip_trailing_comment(line: str) -> str:
     """安全地移除行尾注释（不破坏字符串内的 # 和 //）
-    
+
     策略：统计引号平衡，只删除最后一个引号对之外的 #
     """
     # 统计未转义的引号数量，判断是否有未闭合的字符串
@@ -158,7 +158,7 @@ def _strip_trailing_comment(line: str) -> str:
 
 def _compress_text(text: str) -> str:
     """压缩自然语言文本：保留关键结论，去掉冗余解释
-    
+
     v1.0 改进：
     - 更精确的中文句子分割
     - 保留首尾句 + 含关键词的句子

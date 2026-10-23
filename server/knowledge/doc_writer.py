@@ -14,8 +14,11 @@ doc_writer.py - Word 文档生成技能
 """
 __version__ = "v1.0"
 
-import os, sys, json, logging
-from typing import Optional, List, Dict
+import json
+import logging
+import os
+import sys
+from typing import Optional
 
 log = logging.getLogger(__name__)
 

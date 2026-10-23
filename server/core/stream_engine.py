@@ -17,9 +17,9 @@ P7-4 底座替换：从 Ollama 原生 /api/chat 迁移到 llama-server /v1/chat/
   - token 统计：done 帧 prompt_eval_count/eval_count → chunk.usage
   - keep_alive：删除（llama-server 启动即常驻）
 """
-import time
 import logging
-from typing import Optional, List
+import time
+from typing import List, Optional
 
 from core.generate_queue import GenerateQueue
 
@@ -103,8 +103,9 @@ class StreamEngine:
         think_mode = "off"
         sampler_overrides = {}
         try:
-            from intelligence.task_classifier import resolve_strategy
             from prompts import STRATEGY_CONFIG_V2
+
+            from intelligence.task_classifier import resolve_strategy
             strategy = resolve_strategy(message)
             strategy_name = strategy.get("type", "default")
             strategy_config = STRATEGY_CONFIG_V2.get(strategy_name, {})

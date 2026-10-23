@@ -9,19 +9,20 @@ Patch4 修复 1（A 层）新增：
 """
 
 import os
-import logging
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 
-from routers.deps import get_log, WORKSPACE_DIR
-from config import UPLOAD_DIR, DOCS_DIR, CHAT_DIR
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+
 from common.security import check_local_origin, local_origin_error
+from config import CHAT_DIR, DOCS_DIR, UPLOAD_DIR
+from routers.deps import WORKSPACE_DIR, get_log
 
 router = APIRouter()
 log = get_log()
 
 # D1 重构：录音文件存储在 data/recorder/audio/
 from config import RECORDER_DATA_DIR
+
 RECORDING_DIR = os.path.realpath(os.path.join(RECORDER_DATA_DIR, "audio"))
 RECORDING_DIR_LEGACY = os.path.join(WORKSPACE_DIR, "recordings")
 FILE_DIR = os.path.join(WORKSPACE_DIR, "files")
@@ -40,11 +41,11 @@ def list_cache_files(category: str = "all"):
     else:
         target_dir = UPLOAD_DIR
         dirs = [(target_dir, "uploads")]
-    
+
     files = []
     total_size = 0
     seen = set()  # 去重
-    
+
     for target_dir, cat_label in dirs:
         if not os.path.exists(target_dir):
             continue
@@ -62,7 +63,7 @@ def list_cache_files(category: str = "all"):
                     "category": cat_label,
                 })
                 total_size += stat.st_size
-    
+
     files.sort(key=lambda x: -x["modified"])
     return {"files": files, "total": len(files), "total_size": total_size}
 
@@ -76,7 +77,7 @@ def delete_cache_file(filename: str, request: Request, category: str = "uploads"
     safe_name = os.path.basename(filename)
     if safe_name != filename:
         return JSONResponse({"error": "非法文件名"}, status_code=400)
-    
+
     search_dirs = []
     if category == "recordings":
         search_dirs = [RECORDING_DIR, RECORDING_DIR_LEGACY]
@@ -84,7 +85,7 @@ def delete_cache_file(filename: str, request: Request, category: str = "uploads"
         search_dirs = [DOCS_DIR]
     else:
         search_dirs = [UPLOAD_DIR]
-    
+
     for target_dir in search_dirs:
         fp = os.path.join(target_dir, safe_name)
         if os.path.exists(fp):
@@ -94,7 +95,7 @@ def delete_cache_file(filename: str, request: Request, category: str = "uploads"
                 return {"ok": True}
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
-    
+
     return JSONResponse({"error": "文件不存在"}, status_code=404)
 
 
@@ -111,7 +112,7 @@ def clear_cache_files(request: Request, category: str = "all"):
         dirs = [DOCS_DIR]
     else:
         dirs = [UPLOAD_DIR]
-    
+
     deleted = 0
     for target_dir in dirs:
         if not os.path.exists(target_dir):
@@ -124,7 +125,7 @@ def clear_cache_files(request: Request, category: str = "all"):
                     deleted += 1
                 except Exception:
                     pass
-    
+
     log.info("[CACHE] 清空缓存: %s (删除 %d 文件)" % (category, deleted))
     return {"ok": True, "deleted": deleted}
 

@@ -12,11 +12,11 @@ test_security_pure.py — 安全相关纯函数单元测试
 运行：cd server && python -m pytest tests/test_security_pure.py -v
      或单独：python -m pytest tests/test_security_pure.py::test_xxx -v
 """
+import hashlib
+import json
 import os
 import sys
-import json
 import zipfile
-import hashlib
 
 import pytest
 
@@ -77,9 +77,10 @@ class TestSafeMathEval:
 
     def test_no_eval_used(self):
         """回归保护：确认求值器不再使用 eval/compile 执行"""
-        import re
-        import core.agent_loop as mod
         import inspect
+        import re
+
+        import core.agent_loop as mod
         src = inspect.getsource(mod._safe_math_eval)
         # 求值器内部不应出现 eval(...) 或 compile(...) 调用（注释除外）
         # 用正则匹配独立的 eval(/compile( 调用，排除函数名定义 _safe_math_eval
@@ -97,7 +98,7 @@ class TestSafeMathEval:
 # 2. safe_workspace_path（路径安全）
 # ============================================================
 
-from core.doc_session import safe_workspace_path, _chat_root
+from core.doc_session import _chat_root, safe_workspace_path
 
 VALID_CHAT_ID = "2026-06-27_001"
 

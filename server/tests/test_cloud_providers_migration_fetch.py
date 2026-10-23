@@ -229,6 +229,7 @@ class TestFetchEndpointProxyModePriority:
 
     def _run(self, monkeypatch, store, body, provider=None):
         import asyncio
+
         from routers.settings_cloud import api_v2_fetch_models
         _stub_httpx(monkeypatch)
         monkeypatch.setattr(cp, "_find_provider", lambda pid: provider)

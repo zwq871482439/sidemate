@@ -16,8 +16,9 @@ Sidemate — FastAPI + llama.cpp + Qwen3.5
 
 # ===== Windows 编码修复（必须在所有输出之前）=====
 # 英文 Windows 默认 cp1252，print 中文会 UnicodeEncodeError
-import sys as _sys
 import io as _io
+import sys as _sys
+
 if _sys.platform == "win32":
     _sys.stdout = _io.TextIOWrapper(_sys.stdout.buffer, encoding='utf-8', errors='replace')
     _sys.stderr = _io.TextIOWrapper(_sys.stderr.buffer, encoding='utf-8', errors='replace')
@@ -38,7 +39,13 @@ _os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 _os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 _os.environ.setdefault("TQDM_DISABLE", "1")  # 禁用 sentence_transformers tqdm 进度条
 
-import os, sys, time, logging, json, warnings, threading as _threading
+import json
+import logging
+import os
+import sys
+import threading as _threading
+import time
+import warnings
 
 # ===== Embedded Python 兼容：确保 server 目录在 sys.path 中 =====
 _server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -47,7 +54,6 @@ if _server_dir not in sys.path:
 
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated.*")
 from datetime import datetime
-from typing import Optional
 
 # ===== 启动进度上报（Go Launcher 轮询读取）=====
 # D1 重构：进度文件迁移到项目根 data/ 目录（与 config.DATA_DIR 一致）
@@ -87,7 +93,8 @@ if '--serve' not in sys.argv:
 # ===== 看门狗结束，以下为正常服务进程 =====
 
 # ===== 路径配置 =====
-from config import ROOT_DIR, WORKSPACE_DIR, DATA_DIR, CHAT_DIR, LOG_DIR, UPLOAD_DIR, CACHE_DIR, DOCS_DIR, BACKUP_DIR, ensure_dirs
+from config import CACHE_DIR, CHAT_DIR, DATA_DIR, DOCS_DIR, LOG_DIR, WORKSPACE_DIR, ensure_dirs
+
 ensure_dirs()
 
 # ===== 配置常量 =====
@@ -96,7 +103,8 @@ PORT = int(os.environ.get("LOCAL_AI_PORT", "8976"))
 LOG_FILE = os.path.join(LOG_DIR, "server.log")
 
 # 会话缓存常量（P1-A4: 已移至 session/context_cache.py 中按需调用）
-from config import get as _cfg_get, DEFAULTS as _DEFAULTS, __version__ as CONFIG_VERSION
+from config import __version__ as CONFIG_VERSION
+from config import get as _cfg_get
 
 # 版本号唯一来源：config.py 的 DEFAULTS["version"]（当前 0.9.7）
 # 前端/launcher/CHANGELOG 均以此为准
@@ -106,6 +114,7 @@ FULL_VERSION = CONFIG_VERSION
 _LOG_LEVEL = getattr(logging, os.environ.get("LOCAL_AI_LOG_LEVEL", "INFO").upper(), logging.INFO)
 # P5 审计修复 P2-14: 日志轮转（maxBytes=10MB, backupCount=5）
 from logging.handlers import RotatingFileHandler
+
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 logging.basicConfig(
     level=_LOG_LEVEL,
@@ -133,6 +142,7 @@ _bg_init_thread = None
 log.info("[STARTUP] 检查依赖完整性...")
 _report_startup("deps", 5, "检查依赖完整性...")
 from core.deps_check import check_deps
+
 _deps_result = check_deps(_server_dir)
 if _deps_result["all_ok"]:
     log.info("[STARTUP] 依赖检查通过 ✅")
@@ -148,9 +158,13 @@ else:
 # ===== 依赖安全网（manifest + SHA256 抽检）=====
 from core import deps_check
 from core.deps_check import (
-    generate_manifest, verify_manifest,
-    load_manifest, save_manifest, generate_fingerprint,
+    generate_fingerprint,
+    generate_manifest,
+    load_manifest,
+    save_manifest,
+    verify_manifest,
 )
+
 SITE_PACKAGES_DIR = deps_check.resolve_site_packages(os.path.dirname(sys.executable))
 _MANIFEST_PATH = os.path.join(DATA_DIR, "deps_manifest.json")
 _PYTHON_DIR = os.path.dirname(sys.executable)  # python/ 目录
@@ -183,15 +197,17 @@ else:
 
 # ===== 加载核心框架 =====
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
-from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+
+from config import resolve_ollama_port
 
 # Ollama Manager（进度上报移入 _lifespan）
 from core.ollama_manager import OllamaManager
-from config import resolve_ollama_port
+
 # D35（rc.6 真装门禁实锤）：此前恒用默认 11434——launcher.json 的 ollama_port
 # （经 OLLAMA_PORT 环境变量传入）和 settings.json 的 ollama_port 双双被无视
 # （实测：PM 沙盒配 11438 实际起 11434）。同机多实例时引擎互相"收养"。
@@ -488,11 +504,11 @@ app = FastAPI(title="sidemate", version=FULL_VERSION, lifespan=_lifespan)
 # F3 扩面（sidemate-dev#6）：request.json() 的空 body/坏 JSON 统一 400，
 # 不再 500（~60 处裸调用点一次兜底，见 common/json_body.py）
 from common.json_body import register_json_error_handler
+
 register_json_error_handler(app)
 # CORS 配置：
 #   严格模式（默认）= 仅允许 LOCAL_AI_CORS 配置的本地源，防止本机恶意页面静默调用 API
 #   调试模式 = 允许任意源（用户在设置中显式开启，用于第三方前端调试）
-from config import get as _cfg_get
 _CORS_ORIGINS = os.environ.get("LOCAL_AI_CORS", "http://localhost:8976,http://127.0.0.1:8976").split(",")
 if _cfg_get("cors_strict", True):
     app.add_middleware(CORSMiddleware, allow_origins=_CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
@@ -506,11 +522,13 @@ else:
 
 # 模型管理器（Patch 12: 从 core 包导入）
 from core.model_manager import ModelManager
+
 mgr = ModelManager()
 
 # 文库
+
 from knowledge import get_knowledge_base
-import uuid
+
 try:
     import numpy as np
 except ImportError:
@@ -518,8 +536,9 @@ except ImportError:
 kb = get_knowledge_base()
 kb._model_manager = mgr
 # Patch3: 使用 ExtensionRegistry 检测文库扩展安装状态（正规流程）
-from core.extension_manager import ExtensionRegistry
 from config import EXTENSIONS_DIR
+from core.extension_manager import ExtensionRegistry
+
 _ext_registry = ExtensionRegistry(EXTENSIONS_DIR)
 _kb_installed = _ext_registry.is_installed("knowledge")
 
@@ -562,6 +581,7 @@ log.info("默认模型: %s (可用: %s)" % (DEFAULT_LLM, _available_llms))
 
 # 当前对话文件（可变引用）
 import glob as _glob
+
 os.makedirs(CHAT_DIR, exist_ok=True)
 
 # Patch4：启动时不再主动创建旧 .json 格式文件，改为委托 new_chat_file() 创建 v3 文件夹
@@ -599,13 +619,17 @@ if _latest:
 
 # ===== 注册所有 Router =====
 _report_startup("routers", 55, "注册 API 路由...")
-from routers import chat as _r_chat, kb as _r_kb
-from routers import settings_system as _r_settings_sys, settings_cloud as _r_settings_cloud, settings_extensions as _r_settings_ext, skill as _r_skill
-from routers import files as _r_files
-from routers.backup import router as backup_router
+from routers import chat as _r_chat
 from routers import diagnostics as _r_diag
 from routers import download as _r_download
+from routers import files as _r_files
+from routers import kb as _r_kb
+from routers import settings_cloud as _r_settings_cloud
+from routers import settings_extensions as _r_settings_ext
+from routers import settings_system as _r_settings_sys
+from routers import skill as _r_skill
 from routers import workdir as _r_workdir
+from routers.backup import router as backup_router
 
 app.include_router(_r_chat.router)
 app.include_router(_r_kb.router)
@@ -692,6 +716,7 @@ except Exception as e:
 # ===== 0.10.1 闲置自动卸载（默认 30 分钟无本地推理调用 → 卸载引擎） =====
 def _idle_unload_worker():
     import time as _t
+
     from config import get as _cfg
     while True:
         _t.sleep(60)
@@ -742,13 +767,14 @@ except Exception as e:
 
 # 0.10 M4：MCP 自动连接（有配置时启动即连）
 try:
-    from core.mcp_client import load_mcp_config, get_mcp_manager
     from core.agent_tools import register_mcp_tools
+    from core.mcp_client import get_mcp_manager, load_mcp_config
     _mcp_cfg = load_mcp_config()
     if _mcp_cfg.get("servers"):
         import threading as _mt
         def _mcp_auto():
-            import time; time.sleep(8)  # 等服务完全启动
+            import time
+            time.sleep(8)  # 等服务完全启动
             try:
                 mgr = get_mcp_manager()
                 n = mgr.connect_all()

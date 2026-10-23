@@ -52,19 +52,6 @@ def register_skill(name: str, pipeline_types: List[str], prompt_fragment: str,
     })
 
 
-def get_skill_prompts(pipeline_type: str, user_hint: str = "") -> List[str]:
-    """获取适用于某管线的所有 skill prompt 片段（按 priority 排序）。"""
-    applicable = []
-    for sk in _SKILLS:
-        if pipeline_type not in sk["pipeline_types"]:
-            continue
-        if sk["matcher"] and not sk["matcher"](user_hint):
-            continue
-        applicable.append(sk)
-    applicable.sort(key=lambda x: x["priority"])
-    return [sk["prompt_fragment"] for sk in applicable]
-
-
 # ---------------------------------------------------------------------------
 # 预装 skill：设计-DNA选卡（从 design_dna 桥接）
 # ---------------------------------------------------------------------------
@@ -73,7 +60,6 @@ def _install_default_skills():
     """预装 skill（import 时执行一次）。"""
 
     # 1. 设计-DNA选卡（所有产物管线都适用）
-    from core.design_dna import card_prompt_block
 
     def _dna_matcher(hint: str) -> bool:
         return True  # DNA 选卡恒适用（选哪张卡由 pick_card 内部决定）

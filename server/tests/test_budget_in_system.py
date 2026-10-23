@@ -50,6 +50,7 @@ def stub_env(monkeypatch):
     查停止标记，真身会把看门狗拉进 pytest（test_auto_name 同款坑）。
     """
     import types
+
     import core.agent_tools as at
     monkeypatch.setattr(at, "get_tools_and_prompt",
                         lambda **kw: ([{"type": "function",

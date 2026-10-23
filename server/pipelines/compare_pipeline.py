@@ -19,14 +19,13 @@ pipelines/compare_pipeline.py — 云端AI知识对比管道（Patch 3 轨道B�
   - 云端列：独立多轮对话（原始question + memory_cloud完整历史拼接）
 """
 
-import os
 import json
-import time
 import logging
-import threading
 import queue
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Generator
-from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 
 log = logging.getLogger(__name__)
 
@@ -239,7 +238,6 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
     action_mode = ctx.action_mode or "chat"
     model_choice = ctx.model_choice
 
-    from config import get as _cfg_get
 
     t0 = time.time()
     _saved = False
@@ -251,7 +249,7 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
     body = ctx.body or {}
     session_id = body.get("kb_session_id", "default")
     try:
-        from routers.kb import _kb_sessions, _kb_sessions_lock, _KB_SESSION_MAX_TURNS
+        from routers.kb import _KB_SESSION_MAX_TURNS, _kb_sessions, _kb_sessions_lock
     except ImportError:
         _kb_sessions = {}
         _kb_sessions_lock = threading.Lock()
@@ -464,7 +462,12 @@ def run_compare_pipeline(ctx) -> Generator[str, None, None]:
     # ====== 双线记忆更新 + 磁盘持久化 ======
     # 先保存 round 文件（answer + merge_result）
     try:
-        from routers.kb import _kb_save_round, _kb_get_next_round, _kb_load_rounds, _kb_rounds_to_history
+        from routers.kb import (
+            _kb_get_next_round,
+            _kb_load_rounds,
+            _kb_rounds_to_history,
+            _kb_save_round,
+        )
         round_num = _kb_get_next_round(session_id)
         _kb_save_round(session_id, round_num,
                        question=message,

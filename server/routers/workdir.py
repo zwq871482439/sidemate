@@ -20,9 +20,8 @@ routers/workdir.py — 项目（即文件夹）与目录 API（0.10.1「项目�
 M1 只读边界：AI 不写项目目录（产物区写权限归 M2 计划/执行双模式）；
 上传/引用是用户显式动作。旧版会话（meta 无 project_dir）只读。
 """
-import os
-import json
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -33,8 +32,8 @@ from fastapi.responses import JSONResponse
 from common.security import check_local_origin, local_origin_error
 from common.utils import atomic_write_json
 from config import CHAT_DIR
-from session.chat_store import safe_chat_name
 from session import projects
+from session.chat_store import safe_chat_name
 
 router = APIRouter()
 log = logging.getLogger("routers.workdir")

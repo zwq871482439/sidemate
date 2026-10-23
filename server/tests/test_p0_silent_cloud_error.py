@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import pipelines._base as pbase
 import core.anthropic_adapter as ant
+import pipelines._base as pbase
 
 
 # ---------------------------------------------------------------- persist_error_turn

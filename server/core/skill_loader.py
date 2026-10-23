@@ -244,7 +244,8 @@ def skill_disabled(name: str) -> bool:
 
 def set_skill_disabled(name: str, disabled: bool) -> None:
     """写入/移出禁用名单（技能页开关调用）。"""
-    from config import get as _cfg, set_value
+    from config import get as _cfg
+    from config import set_value
     cur = _cfg("skill_disabled", [])
     cur = [x for x in cur if isinstance(x, str) and x != name]
     if disabled:

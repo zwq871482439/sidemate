@@ -9,12 +9,12 @@
   - LLM 下载完成后由调用方调 /api/rescan 刷新注册表。
   - KB 下载完成后由调用方复用 ExtensionRegistry 注册 + kb.load_models()。
 """
-import os
-import time
-import threading
-import queue
 import logging
-from typing import Optional, Dict, List, Callable
+import os
+import queue
+import threading
+import time
+from typing import Dict, List, Optional
 
 import httpx
 

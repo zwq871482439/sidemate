@@ -9,16 +9,16 @@ test_workdir.py — 「项目即文件夹」模型测试（PLAN 1.5 四次定稿
 
 纪律（HANDOFF）：不 import server、不调 list_chats；直读 meta.json / 文件系统验证。
 """
+import json
 import os
 import sys
-import json
+
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
-from session import projects
-from session import chat_store
+from session import chat_store, projects
 
 
 @pytest.fixture

@@ -117,10 +117,9 @@ def build_doc(chat_id, deck, filename=None):
 
     try:
         from docx import Document
-        from docx.shared import Pt, Cm, RGBColor
-        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-        from docx.enum.table import WD_TABLE_ALIGNMENT
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.oxml.ns import qn
+        from docx.shared import Pt, RGBColor
     except ImportError:
         return {"ok": False, "error": "python-docx 不可用（pip install python-pptx 同链路）",
                 "message": "python-docx 未安装"}
@@ -212,8 +211,8 @@ def _setup_page(doc):
 
 def _setup_styles(doc):
     """Normal 样式：小四 11pt / 1.5 行距 / 首行缩进 2 字符（中文字符宽度单位）。"""
-    from docx.shared import Pt
     from docx.oxml.ns import qn
+    from docx.shared import Pt
     st = doc.styles["Normal"]
     st.font.name = "Microsoft YaHei"
     st.font.size = Pt(11)
@@ -225,8 +224,8 @@ def _setup_styles(doc):
 
 def _add_page_number(paragraph):
     """页脚页码：PAGE 字段（python-docx 无直接 API，走 XML）。"""
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
     run = paragraph.add_run()
     for el, attrs, text in (
         ("w:fldChar", {"w:fldCharType": "begin"}, None),
@@ -243,9 +242,8 @@ def _add_page_number(paragraph):
 
 def _render_markdown_block(doc, md):
     """markdown → docx 段落（标题/列表/表格/引用/行内粗斜体；简化版，覆盖报告写作常用语法）。"""
-    from docx.shared import Pt, RGBColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
 
     lines = (md or "").split("\n")
     i = 0

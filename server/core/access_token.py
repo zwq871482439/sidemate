@@ -18,11 +18,11 @@ core/access_token.py — 令牌授权系统（Patch5 T01/T03）
     is_valid, level = mgr.verify_token(token, "doc_xxx")
     accessible_ids = mgr.filter_private_docs(all_doc_ids, token)
 """
-import time
-import secrets
 import logging
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+import secrets
+import time
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -341,6 +341,7 @@ class AccessTokenManager:
 
 _access_token_manager: Optional[AccessTokenManager] = None
 import threading as _threading
+
 _atm_lock = _threading.Lock()
 
 

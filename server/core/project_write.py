@@ -54,8 +54,8 @@ def _read_meta(chat_name):
 
 def _write_meta(chat_name, meta):
     # 走 chat_store 的 CHAT_DIR（测试可隔离），不直取 config
-    from session import chat_store as _cs
     from common.utils import atomic_write_json
+    from session import chat_store as _cs
     meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     atomic_write_json(os.path.join(_cs.CHAT_DIR, chat_name, "meta.json"), meta)
 

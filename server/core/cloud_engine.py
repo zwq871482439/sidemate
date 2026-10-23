@@ -7,9 +7,9 @@
 依赖：openai>=1.30
 """
 import base64
-import time
 import logging
-from typing import Optional, List
+import time
+from typing import List, Optional
 
 try:
     import openai

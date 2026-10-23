@@ -6,13 +6,14 @@ knowledge/search.py — 文库检索 Mixin
 search() 主入口、get_context() 上下文拼接。
 从 knowledge_base.py 拆分而来。
 """
-import os
 import json
-import math
-import time
 import logging
+import math
+import os
+import time
+from typing import Dict, List, Tuple
+
 import numpy as np
-from typing import List, Dict, Tuple
 
 from common.utils import atomic_write_json
 
@@ -321,7 +322,7 @@ class _KBSearchMixin:
         关键设计：不重新计算 query-candidate 相关性！
         直接用 RRF 融合分数（或向量/BM25原始分数）作为 relevance，
         MMR 只负责计算候选之间的冗余度（diversity 部分）。
-        
+
         这样 RRF/Reranker 的精排结果不会被 MMR 打散，MMR 只去重。
 
         Args:

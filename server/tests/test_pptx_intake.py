@@ -7,8 +7,8 @@
 - batch_queue 白名单含 pptx
 - chat.py qa 上传白名单含 .pptx
 """
-import os
 import inspect
+import os
 
 import pytest
 
@@ -56,8 +56,9 @@ class TestPptxExtraction:
         assert "pptx" in _SUPPORTED_EXTENSIONS
 
     def test_qa_upload_whitelist(self):
-        import routers.chat as rc
         import inspect
+
+        import routers.chat as rc
         src = inspect.getsource(rc)
         assert '".pptx"' in src  # _ALLOWED_UPLOAD_EXTS 含 .pptx
 

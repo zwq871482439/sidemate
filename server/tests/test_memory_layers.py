@@ -16,10 +16,9 @@ import os
 
 import pytest
 
-from session import chat_store
-import core.agent_tools as at
 import core.agent_loop as al
-
+import core.agent_tools as at
+from session import chat_store
 
 PROJ = None  # fixture 里填
 
