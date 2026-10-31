@@ -6,18 +6,19 @@ routers/diagnostics.py — 系统诊断路由 (Patch5 C7 T03)
   GET /api/diagnostics/info    — 返回 JSON 格式的诊断信息
   GET /api/diagnostics/export  — 返回可读文本格式的诊断报告（可下载）
 """
-import os
-import sys
-import json
-import platform
 import logging
+import os
+import platform
+import sys
 from datetime import datetime
 
 from fastapi import APIRouter, Request
-from fastapi.responses import PlainTextResponse, JSONResponse
-from common.security import check_local_origin
+from fastapi.responses import JSONResponse, PlainTextResponse
 
-from config import get as _cfg_get, PROJECT_ROOT, __version__ as _VERSION
+from common.security import check_local_origin
+from config import PROJECT_ROOT
+from config import __version__ as _VERSION
+from config import get as _cfg_get
 from routers.deps import get_mgr
 
 router = APIRouter()

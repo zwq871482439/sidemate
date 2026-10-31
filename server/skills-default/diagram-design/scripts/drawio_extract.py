@@ -20,8 +20,6 @@ Exit codes: 0 ok, 2 unreadable / unsupported input.
 
 from __future__ import annotations
 
-from typing import NoReturn  # #35：字符串注解引用（_fail 的 "NoReturn"）
-
 import argparse
 import base64
 import html
@@ -30,9 +28,12 @@ import re
 import struct
 import sys
 import zlib
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import (
+    Any,
+    NoReturn,  # #35：字符串注解引用（_fail 的 "NoReturn"）
+)
 from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 

@@ -8,9 +8,9 @@
 纯 PyTorch 模式（transformers AutoModelForSequenceClassification）。
 模型路径从扩展注册表读取；扩展未安装时 _loaded=False，rerank() 直接返回原始候选。
 """
-import os
 import logging
-from typing import List, Dict
+import os
+from typing import Dict, List
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +53,8 @@ class RerankerEngine:
 
         # 可能的模型根：ROOT_DIR(server/) 和 PROJECT_ROOT(server 父目录) 都试
         try:
-            from config import ROOT_DIR as _root_dir, PROJECT_ROOT as _proj_root
+            from config import PROJECT_ROOT as _proj_root
+            from config import ROOT_DIR as _root_dir
         except ImportError:
             _root_dir = _project_dir
             _proj_root = os.path.dirname(_project_dir)
@@ -62,8 +63,8 @@ class RerankerEngine:
         # 尝试从扩展注册表获取模型路径
         model_path = None
         try:
-            from core.extension_manager import ExtensionRegistry
             from config import EXTENSIONS_DIR
+            from core.extension_manager import ExtensionRegistry
             registry = ExtensionRegistry(EXTENSIONS_DIR)
             if registry.is_installed("knowledge"):
                 registered_path = registry.get_model_path("knowledge", "reranker")
@@ -103,8 +104,7 @@ class RerankerEngine:
             )
             if has_weights:
                 try:
-                    import torch
-                    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+                    from transformers import AutoModelForSequenceClassification, AutoTokenizer
                     log.info("[KB-Reranker] 从 PyTorch 加载: %s", model_path)
                     self._tokenizer = AutoTokenizer.from_pretrained(model_path)
                     self._model = AutoModelForSequenceClassification.from_pretrained(model_path)

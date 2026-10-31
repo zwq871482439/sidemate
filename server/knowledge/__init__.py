@@ -10,11 +10,13 @@ self 引用不变（因为最终被 KnowledgeBase 实例化）。
 import threading
 from typing import Optional
 
-from knowledge.models import KBDocument, KBChunk
+from knowledge.ask import _KBAskMixin
+from knowledge.models import KBChunk, KBDocument
 from knowledge.ops import _KBOpsMixin
 from knowledge.search import _KBSearchMixin
-from knowledge.ask import _KBAskMixin
 from knowledge.stats import _KBStatsMixin
+
+__all__ = ["KBChunk", "KBDocument", "KnowledgeBase", "get_knowledge_base"]
 
 
 class KnowledgeBase(_KBOpsMixin, _KBSearchMixin, _KBAskMixin, _KBStatsMixin):

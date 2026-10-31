@@ -13,11 +13,11 @@
 import json
 import os
 import zipfile
+from collections import defaultdict
 
 import pytest
 
 import core.agent_loop as al
-from collections import defaultdict
 
 
 @pytest.fixture()

@@ -301,6 +301,7 @@ def build_deck(chat_id, deck, out_name=None):
     # 1) 终检：svg_quality_checker --stage final（编译链要求 matched 质量报告才放行）
     try:
         import sys as _sys
+
         from svg_quality.cli import main as _qc_main
         _old_argv, _old_out, _old_err = _sys.argv, _sys.stdout, _sys.stderr
         _sys.argv = ["svg_quality_checker.py", d, "--stage", "final", "--json"]

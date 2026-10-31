@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+
 """
 common/security.py — 本地源校验（防止第三方网页静默调用高危 API）
 
@@ -13,7 +14,6 @@ common/security.py — 本地源校验（防止第三方网页静默调用高危
 """
 
 from fastapi import Request
-
 
 # 端口跟随运行配置（LOCAL_AI_PORT，与 server.py 同源）：默认 8976，
 # 开发用隔离实例换端口时前端 Origin 不被误拒（实测 8981 实例踩过）

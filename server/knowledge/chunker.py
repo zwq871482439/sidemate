@@ -16,10 +16,10 @@ chunker.py — 文本智能分段器
 """
 __version__ = "v1.0"
 
-import re
 import logging
-from dataclasses import dataclass, field
-from typing import List, Optional
+import re
+from dataclasses import dataclass
+from typing import List
 
 log = logging.getLogger(__name__)
 

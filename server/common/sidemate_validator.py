@@ -16,7 +16,7 @@ import hashlib
 import json
 import os
 import zipfile
-from typing import Tuple, Optional, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 # 文件类型白名单 -- 允许的扩展名
 ALLOWED_EXTENSIONS = {

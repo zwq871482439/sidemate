@@ -7,9 +7,8 @@ v0.9 变更：
   - 历史截断从 token 计数改为字符数估算
   - 保留系统提示词构建逻辑、文库上下文注入
 """
-import re
 import logging
-from typing import Optional, List
+from typing import List, Optional
 
 log = logging.getLogger(__name__)
 log_scan = logging.getLogger("local-ai")
@@ -69,7 +68,8 @@ class PromptBuilder:
 
         # Chat 模式：通用 prompt + 场景一句话
         try:
-            from prompts import SYSTEM_PROMPT_V2, STRATEGY_ENHANCEMENTS
+            from prompts import STRATEGY_ENHANCEMENTS, SYSTEM_PROMPT_V2
+
             # 根据当前模式动态填充能力描述（F2：在线版带模式声明，与 prompts.py 同步）
             from config import get as _cfg
             _ai_mode = _cfg("ai_mode", "local")

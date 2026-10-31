@@ -9,8 +9,8 @@ llamacpp_backend — llama.cpp 推理后端（P7-4 底座替换）
   - client.py    : OpenAI 兼容 API 客户端（流式/非流式/think/工具调用）
   - registry.py  : 模型注册表（meta.json 扫描 + 硬件推荐）
 """
-from .manager import LlamaCppManager
 from .client import LlamaCppClient
-from .registry import ModelRegistry, ModelInfo
+from .manager import LlamaCppManager
+from .registry import ModelInfo, ModelRegistry
 
 __all__ = ["LlamaCppManager", "LlamaCppClient", "ModelRegistry", "ModelInfo"]

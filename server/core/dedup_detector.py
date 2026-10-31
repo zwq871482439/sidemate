@@ -17,11 +17,11 @@ core/dedup_detector.py — 去重检测引擎（B4）
         # 正常导入，但标记 metadata
         doc.metadata["duplicate_of"] = result.existing_doc_id
 """
-import os
 import logging
+import os
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 

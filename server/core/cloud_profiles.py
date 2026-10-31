@@ -83,7 +83,8 @@ def _find_raw(pid: str) -> Optional[dict]:
 
 def save_profile(profile: dict) -> dict:
     """新建或更新档案（无 id=新建；api_key 留空=保留原值）。"""
-    from config import get as _cfg, save_config
+    from config import get as _cfg
+    from config import save_config
     from core.cloud_engine import CloudEngine
     profiles = [_p for _p in (_cfg("cloud_profiles", []) or []) if isinstance(_p, dict)]
 
@@ -127,7 +128,8 @@ def save_profile(profile: dict) -> dict:
 
 
 def delete_profile(pid: str) -> dict:
-    from config import get as _cfg, save_config
+    from config import get as _cfg
+    from config import save_config
     profiles = [_p for _p in (_cfg("cloud_profiles", []) or []) if isinstance(_p, dict)]
     if _cfg("cloud_active_profile", "") == pid:
         return {"error": "不能删除使用中的档案，请先切换到其他档案"}
@@ -188,7 +190,8 @@ def _reset_engine_client():
 
 def sync_active_from_legacy() -> None:
     """设置页旧表单保存了 cloud_* 键后，把值同步回激活档案（双向一致）。"""
-    from config import get as _cfg, save_config
+    from config import get as _cfg
+    from config import save_config
     active = _cfg("cloud_active_profile", "")
     if not active:
         return
@@ -218,7 +221,8 @@ def ensure_default_profiles() -> None:
     v2 就是唯一权威来源，本函数直接返回——否则迁移清空的 cloud_profiles
     会在下次启动被这里的「重新包装」写回来，清理只在当次进程里成立。
     """
-    from config import get as _cfg, save_config
+    from config import get as _cfg
+    from config import save_config
     try:
         from core.cloud_providers import PROVIDERS_KEY as _V2_KEY
         if _cfg(_V2_KEY, None) is not None:

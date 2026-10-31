@@ -17,18 +17,21 @@ session/projects.py — 项目注册表与目录服务（0.10.1「项目即文�
 
 旧版会话：meta 无 project_dir（有 group 或都没有）→ 只读桶，见 is_legacy_chat。
 """
-import os
 import json
-import shutil
-import time
 import logging
+import os
 import threading
+import time
 
-from config import (
-    DATA_DIR, CHAT_DIR, PROJECTS_ROOT,
-    DEFAULT_PROJECT_NAME, DEFAULT_PROJECT_DIR, PROJECT_ARTIFACT_DIR,
-)
 from common.utils import atomic_write_json
+from config import (
+    CHAT_DIR,
+    DATA_DIR,
+    DEFAULT_PROJECT_DIR,
+    DEFAULT_PROJECT_NAME,
+    PROJECT_ARTIFACT_DIR,
+    PROJECTS_ROOT,
+)
 
 log = logging.getLogger(__name__)
 
@@ -536,8 +539,8 @@ def write_handoff(project_dir, content, source_engine, source_chat, log_line="")
 
 def build_handoff_prompt(chat_name, old_content):
     """交接生成 prompt（五段式，≤1500 字，重写制）。"""
-    from session.chat_store import load_chat
     from config import CHAT_DIR
+    from session.chat_store import load_chat
     msgs = []
     try:
         msgs = load_chat(os.path.join(CHAT_DIR, chat_name)) or []

@@ -7,8 +7,8 @@ v0.9 简化说明：
   - 保留 strip_think() 用于兼容旧对话历史中的残留 think 标签
   - 新增 process_reasoning() 处理 Ollama 返回的 reasoning_content
 """
-import re
 import logging
+import re
 
 log = logging.getLogger(__name__)
 log_scan = logging.getLogger("local-ai")

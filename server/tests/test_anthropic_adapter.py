@@ -9,9 +9,9 @@
   5. iter_stream_events：模拟 SSE 流解析（text / thinking / tool_use 增量 / usage / stop_reason）
   6. HTTP 错误 → AnthropicAPIError(status_code)
 """
+import json
 import os
 import sys
-import json
 import unittest
 from unittest.mock import patch
 

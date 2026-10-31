@@ -37,6 +37,7 @@ class TestEnvDiagnoseLoadedModel:
         修复前：走到 `not _llama_exists` → NameError → 500。
         """
         import routers.settings_system as ss
+
         # 模型已加载
         from server import ollama_manager
         monkeypatch.setattr(ollama_manager, "list_available_models",
@@ -108,8 +109,9 @@ class TestSetTodosTool:
 class TestExtensionsUploadRequest:
     def test_upload_request_is_real_request_not_query(self, fake_server):
         """修复前：422 且 detail 里有 loc=["query","request"]（注解退化）。"""
-        import routers.settings_extensions as se
         from fastapi import FastAPI
+
+        import routers.settings_extensions as se
         real = FastAPI()
         real.include_router(se.router)
         c = TestClient(real)

@@ -18,9 +18,8 @@ P7-4 底座替换：替代 stream_engine.py 中直接调用 Ollama /api/chat 的
   - 流式 token 统计（stream_options.include_usage）
   - Qwen3.5 <｜end▁of▁thinking｜> 标签处理
 """
-import re
 import logging
-from typing import Optional, List, Iterator, Dict, Union
+from typing import Dict, Iterator, List, Optional, Union
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +28,7 @@ _THINK_END_TAG = "\u200b\u2502\u2581end\u2581of\u2581thinking\u2581\u2502\u200b"
 
 # 0.10.1 闲置自动卸载：记录最近一次本地推理调用时间（chat/chat_stream 统一打点）
 import time as _time_mod
+
 _last_llm_use = _time_mod.time()
 
 

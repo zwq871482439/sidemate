@@ -14,10 +14,9 @@ core/template_parser.py — 文档模板解析器
 依赖：python-docx（已预装）
 """
 
+import logging
 import os
 import re
-import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 

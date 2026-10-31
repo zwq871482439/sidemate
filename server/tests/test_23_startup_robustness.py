@@ -6,7 +6,7 @@
 - 全局 JSON 处理器：服务端内部读坏磁盘 JSON 也走同一处理器 → 400 +
   日志有路径与 traceback（文案中性，不咬定是请求体问题）
 - ppt_master 两处 subprocess 的解码兜底（errors=replace）源码级护栏
-- server.py 非法转义 \"\/\" 清除的源码级护栏
+- server.py 非法转义 \"\\/\" 清除的源码级护栏
 """
 import json
 import logging

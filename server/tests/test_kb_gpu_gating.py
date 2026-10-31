@@ -5,9 +5,9 @@ Verifies that after notify_doc_ready(), the _process() function in
 api_kb_upload correctly checks scheduler._batch_queue connectivity
 and logs appropriately.
 """
-import unittest
-from unittest.mock import MagicMock, patch, PropertyMock
 import logging
+import unittest
+from unittest.mock import MagicMock, PropertyMock, patch
 
 
 class TestGpuGatingCheck(unittest.TestCase):
@@ -22,7 +22,7 @@ class TestGpuGatingCheck(unittest.TestCase):
 
     def _run_gating_check(self, batch_queue_value, has_is_batch_idle=True):
         """Simulate the GPU gating check logic from routers/kb.py:859-865.
-        
+
         Returns (log_info_calls, log_warning_calls) as lists of (msg, args).
         """
         import re
@@ -84,7 +84,7 @@ class TestGpuGatingCheck(unittest.TestCase):
         # Should skip the if block entirely
         if hasattr(scheduler, 'notify_doc_ready'):
             self.fail("notify_doc_ready should not exist")
-        
+
         # This is the correct behavior — nothing logged, no crash
         self.assertFalse(hasattr(scheduler, 'notify_doc_ready'))
 

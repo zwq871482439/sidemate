@@ -9,9 +9,9 @@
   - 相同优先级先来先服务（FIFO）
   - Watchdog：持有超过 120 秒视为僵尸，强制释放
 """
-import time
-import threading
 import logging
+import threading
+import time
 
 log = logging.getLogger(__name__)
 

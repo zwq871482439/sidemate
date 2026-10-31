@@ -33,11 +33,10 @@ import argparse
 import fnmatch
 import json
 import os
-import re
 import sys
 import time
-import urllib.request
 import urllib.parse
+import urllib.request
 
 BASE = os.environ.get("SIDE_EVAL_BASE", "http://127.0.0.1:8976")
 TIMEOUT = int(os.environ.get("SIDE_EVAL_TIMEOUT", "240"))

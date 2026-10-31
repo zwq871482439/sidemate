@@ -19,10 +19,9 @@ doc_action.py — 文档生成 + 产物转换（local + cloud 共享模块）
 调用方式：chat.py 的 doc 分支 for 循环 yield run_doc_action() 的产出
 """
 
+import logging
 import os
 import re
-import time
-import logging
 import threading
 
 log = logging.getLogger(__name__)
@@ -303,8 +302,8 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
       3. _generate_docx_manual —— pandoc 也不可用时的纯 python-docx 回退
     """
     from docx import Document
-    from docx.shared import Pt
     from docx.oxml.ns import qn
+    from docx.shared import Pt
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -382,8 +381,8 @@ def generate_docx(content: str, output_path: str, title: str = "文档"):
                 del _rfonts.attrib[_full]
 
     # 遍历所有段落，统一字体 + 排版美化
-    from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_LINE_SPACING
+    from docx.shared import RGBColor
     _TITLE_COLOR = RGBColor(0x1F, 0x29, 0x37)    # 深灰，标题色
     _ACCENT_COLOR = RGBColor(0x2D, 0x4A, 0x6F)   # 品牌蓝，H1
     for _para in doc.paragraphs:
@@ -1042,9 +1041,9 @@ function initPptMermaid(){
 def _generate_docx_manual(content: str, output_path: str, title: str = "文档"):
     """pandoc 不可用时的手动回退方案"""
     from docx import Document
-    from docx.shared import Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
+    from docx.shared import Pt
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 

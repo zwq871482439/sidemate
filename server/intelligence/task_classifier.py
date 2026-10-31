@@ -6,8 +6,8 @@ task_classifier.py — 策略路由器 v10
 """
 __version__ = "v10"
 
-import re
 import logging
+import re
 
 log = logging.getLogger(__name__)
 

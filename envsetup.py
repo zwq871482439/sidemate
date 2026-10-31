@@ -18,16 +18,15 @@ Usage:
 If target_dir is omitted, defaults to the script's own directory.
 """
 
-import os
-import sys
-import ssl
-import json
-import shutil
-import zipfile
 import hashlib
+import os
+import shutil
+import ssl
 import subprocess
-import urllib.request
+import sys
 import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 
 # ====================================================================

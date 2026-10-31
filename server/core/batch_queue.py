@@ -23,15 +23,15 @@ SQLite 表结构：
         bq.enqueue(batch_id, f.path, f.filename, f.type, f.size)
     bq.start_worker(kb_instance)
 """
-import os
 import json
-import uuid
-import time
-import sqlite3
 import logging
+import os
+import sqlite3
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Callable
+import time
+import uuid
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
@@ -687,6 +687,7 @@ def _extract_file_text(file_path: str, file_type: str) -> str:
 
         elif file_type == "xlsx":
             import io
+
             import openpyxl
             text = ""
             with open(file_path, "rb") as f:

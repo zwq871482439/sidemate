@@ -10,8 +10,9 @@
 
 注意：_execute_tool 递归走 search_engine/kb 的地方全部 stub，不发真请求。
 """
-import core.agent_loop as al
 from collections import defaultdict
+
+import core.agent_loop as al
 
 
 def _stats():

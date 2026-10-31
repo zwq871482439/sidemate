@@ -22,23 +22,21 @@ routers/kb.py — 文库管理 Router
   POST   /api/kb/search                          — KB 检索
   POST   /api/kb/import_text                     — 导入文本
 """
-import os
-import sys
 import json
-import time
-import uuid
-import logging
+import os
 import shutil
-import zipfile
+import sys
 import threading
+import time
+import zipfile
 from datetime import datetime
-from typing import Optional, Dict, List, Any
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, UploadFile, File, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from routers.deps import get_mgr, get_kb, get_log, WORKSPACE_DIR, UPLOAD_DIR
 from common.security import check_local_origin, local_origin_error
+from routers.deps import get_kb, get_log, get_mgr
 
 router = APIRouter()
 log = get_log()
@@ -124,6 +122,7 @@ def _extract_upload_text(tmp_path: str, ext: str):
         raise ValueError("不支持 .doc 旧格式，请用 Word 另存为 .docx 后重新上传")
     elif ext == "xlsx":
         import io
+
         import openpyxl
         with open(tmp_path, "rb") as f:
             content_bytes = f.read()
@@ -187,8 +186,8 @@ def _extract_upload_text(tmp_path: str, ext: str):
 def _is_module_installed():
     """检查 KB 模块是否已安装（优先使用 ExtensionRegistry）"""
     try:
-        from core.extension_manager import ExtensionRegistry
         from config import EXTENSIONS_DIR
+        from core.extension_manager import ExtensionRegistry
         registry = ExtensionRegistry(EXTENSIONS_DIR)
         return registry.is_installed("knowledge")
     except Exception:
@@ -321,7 +320,7 @@ def _kb_load_rounds(session_id: str) -> list:
 
 def _kb_rounds_to_history(rounds: list) -> list:
     """将 round 列表转换为 LLM history 格式 [{role, content}, ...]
-    
+
     对比模式：assistant content = 【本地回答】answer\\n【综合分析】merge_result
     普通模式：assistant content = answer
     """
@@ -870,6 +869,7 @@ async def api_kb_upload(file: UploadFile = File(...), request: Request = None):
     # Patch5 T05: 文件解析是 CPU/IO 密集操作（pdfplumber/docx/openpyxl），
     # 放到线程池执行避免阻塞事件循环。
     import asyncio
+
     from core.thread_pool import get_thread_pool
     text = ""
     image_count = 0  # 文档中检测到的图片数
@@ -2133,7 +2133,8 @@ async def _split_big_categories(kb, graph_data, run_llm):
         try:
             from knowledge.tags import normalize_tag as _norm_sub
             raw = await run_llm(prompt, 500)
-            import json as _json, re as _re
+            import json as _json
+            import re as _re
             # 解析策略1：标准 JSON 对象
             m = _re.search(r"\{.*\}", raw, _re.DOTALL)
             if m:
@@ -2269,11 +2270,12 @@ async def api_kb_overview_refresh(request: Request):
             cat_counts[cat] = cat_counts.get(cat, 0) + 1
 
     # ==== 辅助：用 StreamEngine 跑一轮 LLM ====
-    from core.thread_pool import get_thread_pool
-    import asyncio, json
+    import asyncio
+    import json
 
     # 知识库引擎：AI 洞察使用 kb_ai_mode 配置（独立于全局 ai_mode）
     from config import get as _cfg_kb
+    from core.thread_pool import get_thread_pool
     _kb_engine = _cfg_kb("kb_ai_mode", "local")
 
     def _run_llm(prompt: str, max_tokens: int = 500) -> str:

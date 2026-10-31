@@ -52,6 +52,7 @@ class TestProtocolTextTakedown:
 
     def test_cloud_engine_consumes_function(self):
         import inspect
+
         from core import cloud_engine as ce
         src = inspect.getsource(ce)
         assert "card_protocol_prompt" in src

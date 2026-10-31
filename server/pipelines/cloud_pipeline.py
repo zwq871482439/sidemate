@@ -18,10 +18,9 @@ pipelines/cloud_pipeline.py — 在线模式 SSE 管道（Agent Loop 版）
   6. 保存对话
 """
 
-import os
-import json
-import time
 import logging
+import os
+import time
 from typing import Generator
 
 from pipelines._base import persist_error_turn
@@ -52,7 +51,6 @@ def run_cloud_pipeline(ctx) -> Generator[str, None, None]:
     prompt = ctx.prompt or message
     model_history = ctx.llm_history
 
-    from config import get as _cfg_get
 
     # ====== 初始化状态变量 ======
     raw_text = ""
@@ -681,7 +679,9 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
                             and content.get("action") == "build"
                             and content.get("filename")
                             and content.get("url")):
-                        from urllib.parse import quote as _url_quote  # 函数内后段才局部导入，这里必须自带
+                        from urllib.parse import (
+                            quote as _url_quote,  # 函数内后段才局部导入，这里必须自带
+                        )
                         _dx_name = content["filename"]
                         if not _dx_name.lower().endswith(".docx"):
                             _dx_name += ".docx"
@@ -921,12 +921,13 @@ def _run_agent_loop(ctx, message, prompt, model_history, model_choice,
     # P6 #6: 用户终止时标记 _aborted,前端识别后渲染统一终止提示
     _aborted_flag = _user_stopped
 
+    from pipelines._base import _sanitize_output, persist_turn
     from session.context_cache import (
         clean_think_content_wrapped as _clean_think,
+    )
+    from session.context_cache import (
         update_session_cache,
     )
-    from session.chat_store import save_chat
-    from pipelines._base import _sanitize_output, persist_turn
 
     final_response = _sanitize_output(full_text)
     response_chars = len(final_response)
@@ -1011,12 +1012,14 @@ def _save_and_done(ctx, response_text, raw_text, think_content, think_folded,
                    message, chat_file, history_raw, model_choice, context_cache, mgr,
                    token_stats=None):
     """保存对话并发射 done 事件（非 Agent Loop 路径）"""
-    from pipelines._base import sse_event, _sanitize_output, persist_turn
+    from pipelines._base import _sanitize_output, persist_turn, sse_event
+    from session.chat_store import save_chat
     from session.context_cache import (
         clean_think_content_wrapped as _clean_think,
+    )
+    from session.context_cache import (
         update_session_cache,
     )
-    from session.chat_store import save_chat
 
     elapsed = time.time() - t0
     final_response = response_text or raw_text

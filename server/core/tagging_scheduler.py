@@ -5,9 +5,9 @@ tagging_scheduler.py — 异步文档打标调度器（P2 优先级，FIFO）
 后台线程：循环取 doc_id → 调用本地 LLM 生成标签+摘要 → 写回 KB 元数据。
 设计为同步架构（threading.Thread），适配 FastAPI 同步模式。
 """
-import threading
 import logging
 import re
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -179,8 +179,8 @@ class TaggingScheduler:
         log.info("[TAG] 开始打标: doc_id=%s, filename=%s, content_len=%d",
                  doc_id, doc.filename, len(content))
         try:
-            from core.generate_queue import GenerateQueue
             from config import get as _cfg
+            from core.generate_queue import GenerateQueue
             response_parts = []
             # 知识库引擎：打标使用 kb_ai_mode 配置（独立于全局 ai_mode）
             kb_ai_mode = _cfg("kb_ai_mode", "local")

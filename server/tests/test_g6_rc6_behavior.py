@@ -17,9 +17,9 @@
 """
 import os
 import sys
+import unittest
 
 import pytest
-import unittest
 
 _SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SERVER_DIR not in sys.path:
@@ -221,7 +221,7 @@ class TestFeatureFlagsForcedOff:
         monkeypatch.setattr(_cfgmod, "_CONFIG_FILE", str(fake))
         monkeypatch.setattr(_cfgmod, "_config_cache", _cfgmod.load_config())
         assert _cfgmod._config_cache.get("feature_memory") is True, "缓存重建必须吃到 true"
-        from prompts import card_protocol_prompt, CARD_PROTOCOL_PROMPT
+        from prompts import CARD_PROTOCOL_PROMPT, card_protocol_prompt
         assert card_protocol_prompt() == CARD_PROTOCOL_PROMPT, \
             "feature_memory=True 配置下记忆卡协议段也必须被抑制（强制 False）"
 
@@ -249,6 +249,7 @@ class TestWatchdogHealthEndpoint(unittest.TestCase):
     def test_health_endpoint_functional(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from routers.settings_system import router
         app = FastAPI()
         app.include_router(router)

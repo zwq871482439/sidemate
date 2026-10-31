@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 """Unit tests for _parse_llm_groups() — BUG-1 & BUG-2 regression tests."""
 
-import sys
-import os
 import json
+import os
+import sys
 
 # Ensure server is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from routers.kb import _parse_llm_groups
-
 
 ALL_TAGS = ["中医基础", "中医理论", "五运六气", "六气学说", "运气学说", "中医诊断"]
 

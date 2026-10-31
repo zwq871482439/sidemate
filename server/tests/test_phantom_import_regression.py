@@ -11,8 +11,8 @@ import inspect
 
 class TestPhantomImportRegression:
     def test_no_phantom_read_document_text(self):
-        import pipelines.cloud_pipeline as cp
         import core.agent_loop as al
+        import pipelines.cloud_pipeline as cp
         # 幽灵引用的真实形态是 import 语句（注释里提到名字不算）
         phantom = "from pipelines.doc_action import read_document_text"
         for mod in (cp, al):

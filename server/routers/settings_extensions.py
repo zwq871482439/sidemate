@@ -9,29 +9,26 @@ routers/settings_extensions.py — 扩展包管理端点
   扩展卸载：/api/extensions/uninstall/{ext_type}/{ext_name}
   旧版兼容：/api/extensions/{ext_type}/{ext_name}
 """
-import os
-import sys
-import re
 import json
-import time
 import logging
-import shutil
-import subprocess
-import zipfile
-import uuid as _uuid
-import threading as _threading
+import os
 import queue as _queue
+import shutil
+import threading as _threading
+import uuid as _uuid
+import zipfile
 from datetime import datetime
 
-from fastapi import APIRouter, UploadFile, File, Request  # #35：Request 原漏导入——
+from fastapi import APIRouter, File, Request, UploadFile  # #35：Request 原漏导入——
+
 # Py3.14 惰性注解下不炸 import，但 FastAPI 把 request 退化成 query 参数，真实上传 422
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from routers.deps import (
-    get_mgr, get_kb,
-    WORKSPACE_DIR,
-)
 from common.security import check_local_origin, local_origin_error
+from routers.deps import (
+    get_kb,
+    get_mgr,
+)
 
 router = APIRouter()
 log = logging.getLogger("settings.extensions")

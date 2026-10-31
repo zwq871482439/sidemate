@@ -5,14 +5,12 @@ routers/deps.py — 共享依赖注入
 每个 Router 通过 FastAPI Depends() 获取全局服务实例，
 避免直接从 server.py import 造成循环依赖。
 """
-import os
 import logging
 import threading
 
 log = logging.getLogger(__name__)
 
 # 全局常量 — 从 config 获取
-from config import WORKSPACE_DIR, CHAT_DIR, UPLOAD_DIR, FILES_DIR
 
 # _current_chat_file 并发保护
 _chat_file_lock = threading.Lock()

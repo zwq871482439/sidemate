@@ -22,21 +22,21 @@
     from response_filter import filter_response, clean_prefix_accumulation, strip_think_tags, clean_think_content
     result = filter_response(text)
     # result = {"text": 原文, "warnings": [...], "has_issues": bool, "cleaned": 清理后文本}
-    
+
     # 单独调用前缀累积重复清理：
     cleaned = clean_prefix_accumulation(text)
-    
+
     # 剥离思维链标签（models.py 统一使用）：
     cleaned = strip_think_tags(text)
-    
+
     # 清理思考内容中的重复段落（server.py 统一使用）：
     cleaned = clean_think_content(text)
 """
 __version__ = "v1.4"
 
-import re
 import logging
-from typing import Tuple, List, Dict
+import re
+from typing import Dict, List, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ _THINK_LEAK_WEAK = [
 
 def _detect_code_hallucination(text: str, user_msg: str = "") -> Tuple[List[str], List[str]]:
     """检测代码块中的中文标识符幻觉
-    
+
     v1.2 改进：
     - 区分"中文标识符"和"真正的幻觉"：如果用户没有要求中文命名，
       代码中出现中文函数名才是问题
@@ -156,7 +156,7 @@ def _detect_code_hallucination(text: str, user_msg: str = "") -> Tuple[List[str]
             shown = issues[:_MAX_REPORT_ITEMS]
             if len(issues) > _MAX_REPORT_ITEMS:
                 shown.append(f"  - ... 还有 {len(issues)-_MAX_REPORT_ITEMS} 处")
-            
+
             if user_wants_chinese:
                 # 用户有意要求中文 → 只给建议，不警告
                 suggestions.append(f"代码块 #{i+1} 包含中文标识符（用户要求，符合预期）")
@@ -196,7 +196,7 @@ def _detect_unclosed_structures(text: str) -> List[str]:
     # 未闭合的 Markdown 粗体/斜体
     bold_count = len(re.findall(r'(?<!\*)\*\*(?!\*)', text))
     if bold_count % 2 == 1:
-        warnings.append(f"未闭合的 Markdown 粗体标记")
+        warnings.append("未闭合的 Markdown 粗体标记")
 
     return warnings
 
@@ -230,7 +230,7 @@ def _fix_unclosed_markdown(text: str) -> str:
 
 def _detect_thinking_leak(text: str) -> List[str]:
     """检测正文中外泄的"思考过程"
-    
+
     策略：强信号 1 处即报，弱信号 >=3 处才报
     """
     warnings = []
@@ -452,28 +452,28 @@ def _looks_like_code_text(text: str) -> bool:
 
 def detect_prefix_accumulation(text: str) -> Tuple[bool, str]:
     """检测前缀累积重复模式
-    
+
     Args:
         text: 待检测文本
-        
+
     Returns:
         (detected, warning_msg): 是否检测到, 警告信息
     """
     if not text or len(text) < _PREFIX_ACCUM_MIN_TEXT_LEN:
         return False, ""
-    
+
     # 数学/公式推理文本天然包含高频重复片段（如 \frac{}{}），
     # 流式 delta filter 已处理真正的累积，此处跳过数学文本
     if _looks_like_math_text(text):
         return False, ""
-    
+
     from collections import Counter
-    
+
     # 全文 4-gram 频率分析
     fourgrams = Counter(text[i:i+4] for i in range(len(text) - 3))
     if not fourgrams:
         return False, ""
-    
+
     # 跳过 LaTeX 命令片段：数学推理中 \frac, \sqrt 等高频出现是正常的
     # 同时跳过中文常见句首短语（如"您好，请"在问候语中重复是正常的）
     # 以及 markdown 结构标记（#70：列表/标题/表格符号在合法长答案中高频）
@@ -490,31 +490,31 @@ def detect_prefix_accumulation(text: str) -> Tuple[bool, str]:
         if top_4c >= _PREFIX_ACCUM_4GRAM_THRESHOLD:
             return True, f"前缀累积重复（4-gram '{top_4g}' 出现 {top_4c} 次）"
         break  # 第一个非 LaTeX/常见短语 的 4-gram 频率不够，说明无累积
-    
+
     return False, ""
 
 
 def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
     """清理输出中的前缀累积重复内容
-    
+
     Qwen3-8B 典型病态输出模式：
     Pattern 1（单一递增）:
       "我是我是办公我是办公助手我是办公助手，专注于我是办公助手，专注于提升..."
       = 每次循环输出从某段起始文本开始的递增长前缀
-    
+
     Pattern 2（多组交织）:
       "我可以我可以协助我可以协助处理...我可以协助处理文档编辑、数据整理与分析等工作。
        我可以协助处理文档编辑、数据整理与分析等工作。
        我能够我能够提供我能够提供会议...我能够提供会议纪要撰写及日程安排建议等我可以协助处理文档编辑、数据整理与分析等工作。"
       = 多组独立的递增序列，每组有自己的"基线句子"，交织出现
-    
+
     检测方法：全文 4-gram 频率分析确认重复
     清理策略：找到文本中的"独立完整句子"——不被其他句子的前缀包含
-    
+
     Args:
         text: 待清理文本
         max_len: 最大输出长度
-        
+
     Returns:
         清理后的文本
     """
@@ -541,7 +541,7 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
     fourgrams = Counter(text[i:i+4] for i in range(len(text) - 3))
     if not fourgrams:
         return text
-    
+
     # 跳过 LaTeX 命令片段和中文常见句首短语，找到第一个真正的 top 4-gram
     # （含 markdown 结构符号跳过——#70：排版结构不算累积证据）
     top_4g = None
@@ -555,10 +555,10 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
             continue
         top_4g, top_4c = _4g, _4c
         break
-    
+
     if not top_4g or top_4c < _PREFIX_ACCUM_4GRAM_THRESHOLD:
         return text  # 无重复（或仅 LaTeX 重复）——D33：不截断
-    
+
     # 句子分割（供策略1使用）
     _sent_split = re.split(r'([。！？\n])', text)
     merged = []
@@ -569,7 +569,7 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
             merged.append(_s + _punct)
     if len(_sent_split) % 2 == 1 and _sent_split[-1].strip():
         merged.append(_sent_split[-1].strip())
-    
+
     # === 策略1：多句子模式下找最后一个独立句子 ===
     # 只有 >= 2 个句子时才有意义做句子间对比
     if len(merged) >= 2:
@@ -604,7 +604,7 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
                     break
             # 检查这个句子后面是否紧跟了另一句的开头（= 它是基线，后面在递增新组）
             # 在多组交织模式中，最后一组递增的最终完整句子就是最好的候选
-            
+
             if not is_extension:
                 best_candidate = s
                 break
@@ -612,7 +612,7 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
                 # 即使是扩展，如果是最后一个有句号的完整句子，也可以用
                 if not best_candidate and s.endswith(('。', '！', '？')):
                     best_candidate = s
-        
+
         # 如果找到好的候选，用它替换
         if best_candidate and len(best_candidate) >= 15:
             # 排比句保护：如果候选在原文中出现 >= 3 次，可能是排比句
@@ -620,12 +620,12 @@ def clean_prefix_accumulation(text: str, max_len: int = 2000) -> str:
                 log.info("[REPEAT] 前缀累积重复清理: %d字 → %d字 (top 4-gram '%s' 出现%d次)" % (
                     len(text), len(best_candidate), top_4g, top_4c))
                 return best_candidate[:max_len]
-    
+
     # === 策略2：回退到简单截取 ===
     last_pos = text.rfind(top_4g)
     if last_pos < 10:
         return text  # D33：不截断
-    
+
     cleaned = text[last_pos:].strip()
     if cleaned and any(ch in cleaned for ch in '。！？') and len(cleaned) >= 20:
         if text.count(cleaned) >= _PREFIX_ACCUM_SAME_COUNT_THRESHOLD:
@@ -1074,7 +1074,7 @@ def clean_think_content(text: str, max_len: int = 2000) -> str:
 
 def _clean_thinking_prefix(text: str) -> str:
     """清理开头常见的废话前缀
-    
+
     多轮清理：先删客套词，再删"让我来"类前缀，最后清理残留标点
     """
     cleaned = text

@@ -9,9 +9,9 @@ P7-4 变更：内部从 Ollama 进程委托到 LlamaCppManager。
   - llama-server: llama-server --model X.gguf（启动时必须指定模型）
   - start() 无参时，从 ModelRegistry 找默认模型的 GGUF 路径
 """
+import logging
 import os
 import time
-import logging
 
 log = logging.getLogger(__name__)
 

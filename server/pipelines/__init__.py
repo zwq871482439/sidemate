@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """管道注册 + 路由"""
-from pipelines._base import StreamContext
 from typing import Generator
+
+from pipelines._base import StreamContext
 
 
 def create_pipeline(ctx: StreamContext) -> Generator[str, None, None]:

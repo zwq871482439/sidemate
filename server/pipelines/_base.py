@@ -17,11 +17,11 @@ save_conversation / save_on_stop / EngineResult），它们是早期设计的
 不依赖本文件的任何高层抽象。
 """
 
-import re
 import json
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import List, Optional
 
 log = logging.getLogger(__name__)
 
@@ -180,6 +180,7 @@ def persist_turn(ctx, assistant_msg, context_cache=None):
     result = _persist_turn_impl(ctx, assistant_msg, context_cache)
     try:
         import os as _os
+
         from pipelines import auto_name_if_default
         _chat_name = _os.path.splitext(_os.path.basename(ctx.chat_file))[0]
         auto_name_if_default(_chat_name, ctx.message, ctx.ai_mode)
@@ -207,7 +208,7 @@ def _persist_turn_impl(ctx, assistant_msg, context_cache=None):
     Returns:
         (messages, mode) — mode: "append"（单写）/ "legacy"（回退重建）
     """
-    from session.chat_store import save_chat, load_chat, _next_msg_id
+    from session.chat_store import _next_msg_id, load_chat, save_chat
 
     # 引擎标记（0.10.1：修复"云端模型显示成离线 AI"——footer 的离线/在线前缀
     # 此前靠 action_mode=='agent' 猜，云 agent 路径 action_mode='chat' 必猜错。

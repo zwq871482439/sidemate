@@ -1,0 +1,49 @@
+# Sidemate — 工具配置（运行时依赖仍见 requirements.txt）
+# Issue #65: 引入 Ruff（代码检查 + 格式化）；pre-commit / CI 接入另排期。
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [
+    "server/vendor",
+    "server/archive",
+    "launcher/archive",
+    "server/static",
+]
+
+[tool.ruff.lint]
+# 首轮启用：pycodestyle (E/W) + Pyflakes (F) + isort (I)。
+# 更严规则（B/UP/SIM/RUF 等）另开 PR，避免一次 diff 过大。
+select = ["E", "W", "F", "I"]
+ignore = [
+    "E501",  # 行宽交给 formatter；存量中文注释/长字符串很多
+    "E402",  # 启动脚本常见：先改环境变量 / 改 sys.path 再 import
+    "E701",  # 单行冒号多语句 — 存量少量，后续分批
+    "E702",  # 单行分号多语句 — 存量（如 docx_compile），后续分批
+    "E731",  # lambda 赋值 — 少量存量，后续分批
+    "E741",  # 歧义变量名（l/O/I）— 少量存量，后续分批
+    "F841",  # 未使用局部变量 — 需人工确认，不宜批量删
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里常见「先 import 再条件跳过」与 fixture 辅助导入
+"server/tests/**" = ["F401", "F811"]
+"**/test_*.py" = ["F401", "F811"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "common",
+    "config",
+    "core",
+    "intelligence",
+    "knowledge",
+    "pipelines",
+    "routers",
+    "session",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = false

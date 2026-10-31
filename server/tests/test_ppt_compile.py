@@ -19,7 +19,6 @@ import pytest
 
 from core import ppt_compile as pc
 
-
 # PoC 验收过的 SVG 页（_ppt_poc/proj/svg_output/P01.svg，DNA-01 深蓝金）
 SVG_P1 = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
   <rect width="1280" height="720" fill="#0F2B46"/>

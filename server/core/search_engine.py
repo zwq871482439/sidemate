@@ -11,8 +11,8 @@ core/search_engine.py — 搜索引擎封装（本机直搜 Bing + 网页正文�
   - readability-lxml（网页正文提取，可选）
 """
 
-import re
 import logging
+import re
 
 log = logging.getLogger(__name__)
 

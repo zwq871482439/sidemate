@@ -8,22 +8,21 @@ Tests cover:
 - _collect_all_tags() — tag collection from documents
 """
 
-import sys
-import os
 import json
+import os
+import sys
 import uuid
 
 # Ensure server root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
 from unittest.mock import MagicMock, PropertyMock, patch
 
+import pytest
 
 # ============================================================
 #  _parse_llm_groups() — parsers/validators
 # ============================================================
-
 from routers.kb import _parse_llm_groups
 
 

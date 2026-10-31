@@ -10,9 +10,9 @@ P2 = KB打标（低优先级）
   - P2 任务正在执行时，等它自然完成（Ollama 不支持 cancel API）
   - Watchdog：持有超过 120 秒视为僵尸，强制释放
 """
-import time
-import threading
 import logging
+import threading
+import time
 
 log = logging.getLogger(__name__)
 

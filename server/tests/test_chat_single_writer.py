@@ -14,11 +14,15 @@ import time
 
 import pytest
 
+from pipelines._base import StreamContext, persist_turn
 from session import chat_store
 from session.chat_store import (
-    append_message, load_chat, save_chat, new_chat_file, _next_msg_id,
+    _next_msg_id,
+    append_message,
+    load_chat,
+    new_chat_file,
+    save_chat,
 )
-from pipelines._base import StreamContext, persist_turn
 
 
 @pytest.fixture()

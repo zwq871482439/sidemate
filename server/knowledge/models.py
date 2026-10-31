@@ -5,7 +5,7 @@ knowledge/models.py — 文库数据结构
 从 knowledge_base.py 提取的 dataclass 定义。
 """
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Any, Dict
 
 
 @dataclass

@@ -5,23 +5,22 @@ knowledge/ops.py — 文库核心操作 Mixin
 包含 __init__、持久化、文档管理、处理控制（暂停/取消/恢复）、模型卸载/加载。
 从 knowledge_base.py 拆分而来。
 """
-import os
-import re
-import uuid
-import time
 import json
+import logging
+import os
 import shutil
 import threading
-import logging
-import numpy as np
-from typing import Optional, List, Dict, Any, Tuple
+import time
+import uuid
 from dataclasses import asdict
 from datetime import datetime
+from typing import Dict, List, Optional
 
-from common.utils import TaskCancelledError, CancellationToken, atomic_write_json
-from knowledge.models import KBDocument, KBChunk
-from knowledge.tags import normalize_tag
+import numpy as np
+
+from common.utils import CancellationToken, TaskCancelledError, atomic_write_json
 from knowledge.embedding_engine import EmbeddingEngine
+from knowledge.models import KBChunk, KBDocument
 from knowledge.reranker_engine import RerankerEngine
 
 log = logging.getLogger(__name__)

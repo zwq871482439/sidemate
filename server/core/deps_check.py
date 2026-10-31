@@ -17,7 +17,6 @@ import logging
 import os
 import random
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Tuple
 
 log = logging.getLogger("deps_check")

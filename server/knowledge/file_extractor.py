@@ -5,9 +5,9 @@ file_extractor.py — 文件内容提取 + 长文件三级策略
 .doc/.xls/.ppt 旧格式不支持，返回提示让用户转存新格式
 """
 
+import logging
 import os
 import re
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ CHARS_PER_TOKEN = 1.5                # 粗估字/token 比
 def extract_text(file_path: str) -> str:
     """根据扩展名提取文本"""
     ext = os.path.splitext(file_path)[1].lower()
-    
+
     if ext in ('.txt', '.md', '.csv'):
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -35,7 +35,7 @@ def extract_text(file_path: str) -> str:
         except Exception as e:
             log.error(f"读取文本文件失败: {e}")
             return ""
-    
+
     elif ext == '.docx':
         try:
             from docx import Document
@@ -47,10 +47,10 @@ def extract_text(file_path: str) -> str:
         except Exception as e:
             log.error(f"提取 docx 失败: {e}")
             return ""
-    
+
     elif ext == '.doc':
         return "[不支持 .doc 旧格式，请用 Word 另存为 .docx 后重新上传]"
-    
+
     elif ext == '.xlsx':
         try:
             import openpyxl
@@ -67,7 +67,7 @@ def extract_text(file_path: str) -> str:
         except Exception as e:
             log.error(f"提取 xlsx 失败: {e}")
             return ""
-    
+
     elif ext == '.xls':
         return "[不支持 .xls 旧格式，请用 Excel 另存为 .xlsx 后重新上传]"
 
@@ -166,6 +166,7 @@ def extract_text(file_path: str) -> str:
         # 消除 Copyleft 传染风险。EPUB 本质是 ZIP+xhtml,标准库即可解析。
         try:
             import zipfile
+
             from bs4 import BeautifulSoup
             texts = []
             with zipfile.ZipFile(file_path, 'r') as zf:
@@ -271,7 +272,7 @@ def extract_text(file_path: str) -> str:
         except Exception as e:
             log.error(f"提取 RTF 失败: {e}")
             return ""
-    
+
     else:
         log.warning(f"不支持的文件类型: {ext}")
         return ""
@@ -297,10 +298,10 @@ def _extract_query_keywords(text: str) -> list:
 def smart_extract(file_text: str, user_message: str, max_chars: int) -> str:
     """按段落相关性截取，优先保留和用户问题相关的内容"""
     paragraphs = [p.strip() for p in file_text.split('\n\n') if p.strip()]
-    
+
     if not paragraphs:
         return file_text[:max_chars]
-    
+
     # 2-gram 关键词匹配
     query_kws = _extract_query_keywords(user_message)
     if not query_kws:
@@ -308,16 +309,16 @@ def smart_extract(file_text: str, user_message: str, max_chars: int) -> str:
         head = file_text[:max_chars // 2]
         tail = file_text[-(max_chars // 2):]
         return f"{head}\n\n...(省略 {len(file_text) - max_chars} 字)...\n\n{tail}"
-    
+
     scored = []
     for para in paragraphs:
         para_lower = para.lower()
         score = sum(1 for kw in query_kws if kw in para_lower)
         scored.append((score, para))
-    
+
     # 按相关性排序
     scored.sort(key=lambda x: -x[0])
-    
+
     # 取前 N 个直到填满（只取有相关性的）
     result = []
     total = 0
@@ -328,20 +329,20 @@ def smart_extract(file_text: str, user_message: str, max_chars: int) -> str:
             break
         result.append(para)
         total += len(para)
-    
+
     # 如果全都不相关，取头尾
     if not result:
         head = file_text[:max_chars // 2]
         tail = file_text[-(max_chars // 2):]
         return f"{head}\n\n...(省略 {len(file_text) - max_chars} 字)...\n\n{tail}"
-    
+
     return '\n\n'.join(result)
 
 
 def calc_file_budget(history_chars: int = 0) -> int:
     """
     根据对话历史长度动态计算文件可注入的最大字数。
-    
+
     公式：可用 tokens = (32000 - 300 - 4096 - 历史 tokens) × 0.70
     保底 3000 字，上限 25000 字。
     """
@@ -356,10 +357,10 @@ def calc_file_budget(history_chars: int = 0) -> int:
 def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int = 0) -> dict:
     """
     处理上传文件，返回结构化结果。
-    
+
     Args:
         max_chars: 文件内容注入上限（动态预算），0 表示使用默认保底值
-    
+
     Returns:
         {
             "status": "ok" | "truncated" | "too_long" | "error",
@@ -409,9 +410,9 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "filename": filename,
             "message": f" 文件读取失败: {e}"
         }
-    
+
     total = len(text)
-    
+
     if total == 0:
         return {
             "status": "error",
@@ -421,7 +422,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "filename": filename,
             "message": f" {filename} 内容为空或无法提取文本"
         }
-    
+
     if total <= inline_limit:
         # 级别 1：短文件，直接注入
         return {
@@ -432,7 +433,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "filename": filename,
             "message": f" {filename}（{total}字）"
         }
-    
+
     elif total <= extract_limit:
         # 级别 2：中等文件，智能截取
         extracted = smart_extract(text, user_message, inline_limit)
@@ -444,7 +445,7 @@ def process_uploaded_file(file_path: str, user_message: str = "", max_chars: int
             "filename": filename,
             "message": f" {filename}（{total}字）→ 已提取与问题最相关的 {len(extracted)} 字\n️ 文件较长，查看完整内容请上传至文库"
         }
-    
+
     else:
         # 级别 3：超长文件，引导文库
         return {

@@ -27,7 +27,6 @@ import json
 import logging
 import os
 import re
-from typing import List, Optional
 
 log = logging.getLogger(__name__)
 

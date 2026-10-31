@@ -13,8 +13,8 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from routers.deps import get_mgr
 from common.security import check_local_origin, local_origin_error
+from routers.deps import get_mgr
 
 router = APIRouter()
 log = logging.getLogger("settings.cloud")
@@ -89,7 +89,8 @@ async def api_mode_switch(request: Request):
     log.info("[MODE] AI 模式切换为: %s", target)
 
     # 返回切换后的上下文信息
-    from config import get as _cfg_mode, MAX_OUTPUT_TOKENS, MAX_INPUT_TOKENS
+    from config import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS
+    from config import get as _cfg_mode
     context_window = MAX_INPUT_TOKENS
     max_output_tokens = MAX_OUTPUT_TOKENS
     max_history_chars = int(context_window * 0.75)
@@ -527,7 +528,7 @@ async def api_v2_fetch_models(request: Request):
     if not check_local_origin(request):
         return JSONResponse(local_origin_error(), status_code=403)
     body = await request.json()
-    from core.cloud_providers import fetch_remote_models, _find_provider, _decode
+    from core.cloud_providers import _decode, _find_provider, fetch_remote_models
     base = (body or {}).get("base_url") or ""
     key = (body or {}).get("api_key") or ""
     pid = (body or {}).get("provider") or ""

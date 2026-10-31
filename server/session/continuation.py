@@ -6,9 +6,9 @@ session/continuation.py — 续写检测
   - get_latest_chat       — 获取当天最新的对话文件
   - is_output_incomplete  — 检测输出是否被截断
 """
+import glob as _glob
 import os
 import re
-import glob as _glob
 
 from config import CHAT_DIR
 from session.chat_store import today_str

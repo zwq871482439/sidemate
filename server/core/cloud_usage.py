@@ -19,12 +19,12 @@ cloud_usage.py — 云端 AI 用量统计（SQLite 持久化）
                  reasoning_tokens=11, elapsed_ms=2500, token_accurate=True)
     data = query_usage(range_days=7, granularity="hour")
 """
-import os
-import time
-import sqlite3
 import logging
+import os
+import sqlite3
 import threading
-from typing import Optional, Dict, Any, List
+import time
+from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 

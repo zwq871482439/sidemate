@@ -21,10 +21,9 @@ extensions/registry.py — 扩展注册中心
   - "knowledge" : 文库扩展（embedding + reranker）
   - "llm"       : LLM 模型扩展（本地大语言模型）
 """
-import os
 import json
 import logging
-from typing import Dict, List, Optional
+import os
 
 log = logging.getLogger(__name__)
 
