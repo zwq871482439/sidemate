@@ -168,34 +168,42 @@ function render() {
       // 骨架屏过渡（经典版同款：切换期间聊天区鱼骨加载 + 输入区锁定）
       state.switching = true;
       render();
-      const r = await api.switchMode(m);
-      if (seq !== _modeSeq) return;  // 竞态守卫：旧响应丢弃
-      _modePending = null;
-      state.switching = false;
-      if (r && r.ok) {
-        state.mode = r.mode;
-        // 上限随模型/模式动态变化；注意 /api/mode/switch 回的是真实窗口 1048576，
-        // 而 /api/mode 回的是展示口径 1000000——与经典版一致，switch 后重拉 /api/mode
-        try {
-          const m2 = await api.getMode();
-          if (m2) {
-            state.contextNeedsConfirm = !!m2.context_needs_confirm;
-            state.contextWindow = m2.context_needs_confirm ? 0 : (m2.context_window || 0);
+      try {
+        const r = await api.switchMode(m);
+        if (seq !== _modeSeq) return;  // 竞态守卫：旧响应丢弃
+        if (r && r.ok) {
+          state.mode = r.mode;
+          // 上限随模型/模式动态变化；注意 /api/mode/switch 回的是真实窗口 1048576，
+          // 而 /api/mode 回的是展示口径 1000000——与经典版一致，switch 后重拉 /api/mode
+          try {
+            const m2 = await api.getMode();
+            if (m2) {
+              state.contextNeedsConfirm = !!m2.context_needs_confirm;
+              state.contextWindow = m2.context_needs_confirm ? 0 : (m2.context_window || 0);
+            }
+          } catch (e) {
+            if (r.context_needs_confirm) {
+              state.contextNeedsConfirm = true;
+              state.contextWindow = 0;
+            } else if (r.context_window) state.contextWindow = r.context_window;
           }
-        } catch (e) {
-          if (r.context_needs_confirm) {
-            state.contextNeedsConfirm = true;
-            state.contextWindow = 0;
-          } else if (r.context_window) state.contextWindow = r.context_window;
+          state.modelTag = await getModelTag(state.mode);
+          if (state.mode === 'cloud') await loadCloudProfiles();  // B1：顶栏档案快切
+          if (state.mode === 'local' && !state.localActions.length) {
+            state.localActions = await loadLocalActions();
+          }
         }
-        state.modelTag = await getModelTag(state.mode);
-        if (state.mode === 'cloud') await loadCloudProfiles();  // B1：顶栏档案快切
-        if (state.mode === 'local' && !state.localActions.length) {
-          state.localActions = await loadLocalActions();
+      } catch (e) {
+        if (seq !== _modeSeq) return;
+        // 网络/服务失败时撤掉骨架，避免永久鱼骨；后续点击可再切
+        try { uiAlert('模式切换失败：' + (e && e.message ? e.message : '请重试')); } catch (_) {}
+      } finally {
+        // 仅清本请求的标志；过期响应不碰新请求的 switching/_modePending
+        if (seq === _modeSeq) {
+          _modePending = null;
+          state.switching = false;
+          render();
         }
-        render();
-      } else {
-        render();  // 失败也要撤掉骨架屏
       }
     },
     onTab: (t) => {
@@ -211,15 +219,20 @@ function render() {
       state.actionMode = 'chat';
       state.switchingSess = true;  // 主区鱼骨（旧会话内容不再残留）
       renderChatArea();
-      await api.switchChat(c.path);
-      clearSessUnread(c.name);  // C1：点进会话清除未读 badge
-      state.sessions = await loadSessions();
-      state.tab = 'chat';
-      await loadCurrentMessages();
-      await loadWorkdir();
-      state.switchingSess = false;
-      if (_viewer) _viewer.onSessionChange();
-      render();
+      try {
+        await api.switchChat(c.path);
+        clearSessUnread(c.name);  // C1：点进会话清除未读 badge
+        state.sessions = await loadSessions();
+        state.tab = 'chat';
+        await loadCurrentMessages();
+        await loadWorkdir();
+      } catch (e) {
+        try { uiAlert('会话加载失败：' + (e && e.message ? e.message : '请重试')); } catch (_) {}
+      } finally {
+        state.switchingSess = false;
+        if (_viewer) _viewer.onSessionChange();
+        render();
+      }
     },
     onNewTask: async () => {
       // 新建任务：默认项目下建会话，空状态里可用项目选择器换项目（0 消息窗口）
@@ -371,15 +384,20 @@ function render() {
         state.actionMode = 'chat';
         state.switchingSess = true;  // 主区鱼骨（旧会话内容不再残留）
         renderChatArea();
-        await api.switchChat(c.path);
-      clearSessUnread(c.name);  // C1：点进会话清除未读 badge
-        state.sessions = await loadSessions();
-        state.tab = 'chat';
-        await loadCurrentMessages();
-        await loadWorkdir();
-        state.switchingSess = false;
-        if (_viewer) _viewer.onSessionChange();
-        render();
+        try {
+          await api.switchChat(c.path);
+          clearSessUnread(c.name);  // C1：点进会话清除未读 badge
+          state.sessions = await loadSessions();
+          state.tab = 'chat';
+          await loadCurrentMessages();
+          await loadWorkdir();
+        } catch (e) {
+          try { uiAlert('会话加载失败：' + (e && e.message ? e.message : '请重试')); } catch (_) {}
+        } finally {
+          state.switchingSess = false;
+          if (_viewer) _viewer.onSessionChange();
+          render();
+        }
       },
       onReferenceFile: async (name, btn) => {
         const cur = state.sessions.find(c => c.current);
