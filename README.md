@@ -13,7 +13,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/zwq871482439/sidemate/releases) 下载 `sidemate-setup-0.2.0.exe`，双击安装。安装包没有签名，Windows 弹出提示时，点「更多信息」，再点「仍要运行」。
+1. 从 [Releases](https://github.com/deskware-team/sidemate/releases) 下载 `sidemate-setup-0.2.0.exe`，双击安装。安装包没有签名，Windows 弹出提示时，点「更多信息」，再点「仍要运行」。
 2. 第一次打开时贴上你的 DeepSeek API key，点「测一下」，显示「通了」就可以用了。
 
 需要自己的 DeepSeek API key：在 [DeepSeek 开放平台](https://platform.deepseek.com/) 申请。

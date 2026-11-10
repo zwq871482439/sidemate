@@ -13,7 +13,7 @@ It sits at the top edge of the screen and shows nothing but a pair of eyes. Ther
 
 ## Installing
 
-1. Download `sidemate-setup-0.2.0.exe` from [Releases](https://github.com/zwq871482439/sidemate/releases) and run the installer. The installer is not signed, so when Windows warns you, click "More info" and then "Run anyway".
+1. Download `sidemate-setup-0.2.0.exe` from [Releases](https://github.com/deskware-team/sidemate/releases) and run the installer. The installer is not signed, so when Windows warns you, click "More info" and then "Run anyway".
 2. On first launch, paste your DeepSeek API key, click "Test it", and wait for the confirmation that it works.
 
 You need your own DeepSeek API key: get one from the [DeepSeek platform](https://platform.deepseek.com/).

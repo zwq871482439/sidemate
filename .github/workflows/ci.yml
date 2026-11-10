@@ -1,0 +1,53 @@
+# 公开仓的检查：密钥扫描 + 不依赖打包产物的测试。
+# 桌伴只跑在 Windows 上（比如路径不分大小写），测试也按 Windows 写，所以用 Windows 机器。
+# 省着跑：只有一个 job，10 分钟封顶；同一分支有新推送时，取消还没跑完的上一轮。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      # 跟本地开发一样按原样检出，不把换行改成 CRLF。
+      - run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # 公开仓一版一个提交，历史很短，每次都扫全部历史。规则和误报清单用仓根的 .gitleaks.toml、.gitleaksignore。
+      - name: 密钥扫描（gitleaks）
+        run: |
+          curl -sSfL -o gitleaks.zip https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_windows_x64.zip
+          echo "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e  gitleaks.zip" | sha256sum -c -
+          unzip -q gitleaks.zip gitleaks.exe -d "$RUNNER_TEMP"
+          rm gitleaks.zip
+          "$RUNNER_TEMP/gitleaks.exe" git . --redact --no-banner --exit-code 1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      # 测试不用装依赖。dsh、cite 和 workspace/escape 要先打出 payload（几百 MB），不在这里跑。
+      - name: 测试
+        run: |
+          find test -name '*.test.mjs' -not -path 'test/dsh/*' -not -path 'test/cite/*' -not -name escape.test.mjs -print0 \
+            | sort -z | xargs -0 node --test --test-reporter=dot
