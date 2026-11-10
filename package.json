@@ -1,0 +1,18 @@
+{
+  "name": "sidemate",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "app/main/main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "payload": "node build/payload.mjs",
+    "lines": "node build/lines.mjs",
+    "test": "node --test",
+    "dist": "node build/installer-assets.mjs && electron-builder --config build/builder.config.cjs"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  }
+}

@@ -1,0 +1,2 @@
+# Linux 脚本必须保持 LF，防止 Windows 检出后在 Linux 上无法执行
+*.sh text eol=lf

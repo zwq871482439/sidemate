@@ -1,0 +1,17 @@
+# gitleaks 配置：默认规则 + 已核实的误报白名单 + DeepSeek 钥匙规则。
+# 新增白名单条目必须在 PR 里说明核实过程，由总调度评审。
+# 为什么加 deepseek-api-key：gitleaks 8.30.1 的默认规则不抓「sk- 加 32 位小写十六进制」
+# 这种形状的 DeepSeek 钥匙（实测默认规则扫描 no leaks found），提交钩子和合并前扫描
+# 都用这份配置，所以此前拦不住 DeepSeek 钥匙。补一条专门规则。
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "已核实误报：文档里的占位符 base64('sk-test-key')"
+regexes = ['''c2stdGVzdC1rZXk=''']
+
+[[rules]]
+id = "deepseek-api-key"
+description = "DeepSeek API key：sk- 加 32 位小写十六进制"
+regex = '''\bsk-[0-9a-f]{32}\b'''
+keywords = ["sk-"]

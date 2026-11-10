@@ -1,0 +1,3 @@
+# 关掉标题那次额外调用，免得用量对不上。acp 配置里已经关了，这里再钉一次。
+- id: session-title-llm
+  disabled: true

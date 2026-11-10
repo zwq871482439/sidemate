@@ -1,0 +1,4 @@
+# 让 dsh 的 PowerShell 工具用系统自带的 Windows PowerShell 5.1（没装 PowerShell 7 的电脑就是这样）。
+- id: pwsh-sandbox
+  config:
+    pwshPath: !!js "process.getBuiltinModule('node:path').join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')"

@@ -1,0 +1,14 @@
+# 不许 dsh 申请更宽权限：审批策略固定为 never，申请直接拒，不发审批请求。
+- id: approval
+  config:
+    policy: never
+# 预设插件要求沙箱和审批的组合有名字。默认仍是工作区可写，越权照旧直接拒。
+- id: permission
+  config:
+    presets:
+      sidemate-workspace:
+        sandbox: workspace-write
+        approval: never
+        name: 桌伴工作区
+        description: 只允许写工作区，越权直接拒绝。
+    defaultPreset: sidemate-workspace

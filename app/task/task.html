@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+<title></title>
+<link rel="stylesheet" href="task.css">
+<div id="frame">
+<div id="panel">
+<header id="top">
+  <div id="where">
+    <button id="path" type="button"></button>
+    <button id="recent" type="button">▾</button>
+    <div id="menu" hidden></div>
+  </div>
+  <button id="newtask" type="button"></button>
+</header>
+<main id="flowwrap">
+  <div id="flow"></div>
+  <button id="latest" type="button" hidden></button>
+</main>
+<div id="tagrow" hidden>
+  <div id="tags"></div>
+  <button id="addfile" type="button" title="加文件">＋</button>
+</div>
+<div id="box">
+  <textarea id="input" rows="2"></textarea>
+  <button id="send" type="button"></button>
+</div>
+<div id="dropmask" hidden>
+  <div class="zone" data-cell="template"><b></b><span></span></div>
+  <div class="zone" data-cell="materials"><b></b><span></span></div>
+</div>
+<div id="tagmenu" hidden></div>
+<svg id="docicon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" hidden><path d="M3 1.5h5.5L11.5 4.5V12.5H3z" fill="none" stroke="currentColor"/><path d="M8.5 1.5v3h3" fill="none" stroke="currentColor"/></svg>
+</div>
+</div>
+<script type="module" src="task.js"></script>

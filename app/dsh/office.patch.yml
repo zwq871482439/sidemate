@@ -1,0 +1,6 @@
+# 把「随包 Python」接到 headless 上：挂 load_workspace_dependencies，位置取 DSH_PRIMARY_RUNTIME（照 dsh-sdk-app 的写法）。
+- insert:
+    - id: workspace-dependencies
+      name: '@deepseek-ai/dsh-tool-workspace-dependencies'
+      config:
+        source: !!js "process.getBuiltinModule('node:path').resolve(process.env.DSH_PRIMARY_RUNTIME)"

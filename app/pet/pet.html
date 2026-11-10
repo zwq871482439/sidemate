@@ -1,0 +1,201 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>小岛</title>
+<style>
+  :root {
+    --ink: #1f1d1a;
+    --eye: #f5f1e8;
+    --accent: #c53a22;
+    --text: #efe9df;
+    --muted: #8f8a81;
+    --curve-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --curve-in: cubic-bezier(0.4, 0, 0.2, 1);
+    --curve-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* 下面这几个由 pet.js 按字号算出来：没有写死的 30 / 56 */
+    --font-size: 13px;
+    --font-stack: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    --island-w: 112px;
+    --island-h: 30px;
+    --eye-zone: 56px;   /* 表情区宽：收着时是整条，冒一行时是左边这一段 */
+    --zone-gap: 8px;    /* 两区之间的空 */
+    --pad-right: 16px; /* 右边留 16 */
+    --text-pad: 8px;   /* 文字区里左右各留 8，字在中间 */
+    --dot-right: 13px; /* 红点：1:1 时中心 x=96 */
+    --dot-top: 5.7px;
+    --dot-size: 6px;
+    --eye-shift: 28;   /* 展开时眼睛往左挪（SVG 用户单位） */
+    --scan: 8;         /* 扫的幅度（SVG 用户单位） */
+    --scan-dur: 1800ms;
+    --eye-ms: 250ms;
+    --eye-curve: var(--curve-in);
+  }
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+  body {
+    position: relative;
+    font-family: var(--font-stack);
+    color: var(--text);
+    opacity: 1;
+  }
+  body.still * { transition: none !important; animation: none !important; }
+  /* 关了「显示动画」：不扫、不眨、不抬头，直接是往下看的静止帧 */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0s !important; animation: none !important; }
+  }
+
+  /* 小条 */
+  #strip {
+    position: absolute; inset: 0;
+    background: var(--ink);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  /* 被点那一下：缩到 0.96 再弹回（设计稿第三节②：80ms 缩 + 120ms 回） */
+  #strip.press { transform: scale(var(--press-scale, .96)); transition: transform 80ms var(--curve-out); }
+  #strip.press-back { transform: scale(1); transition: transform 120ms var(--curve-out); }
+  body[data-scene="line"] #strip { border-radius: 2px; }
+  body[data-scene="tray"] #strip { display: none; }
+
+  /* 眼睛：A 套。1:1 时两只眼睛中心在 x=46、x=66、y=15。
+     SVG 用 112×30 的用户坐标，缩放靠外层的宽高，字号变了眼睛跟着等比放大。 */
+  #eyes {
+    position: absolute; left: 0; top: 0;
+    width: var(--island-w); height: var(--island-h);
+    pointer-events: none;
+  }
+  #eyes svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  /* 展开时眼睛从整条正中滑到左边表情区的正中（左移 28） */
+  #eye-shift { transition: transform 240ms var(--curve-out); }
+  body[data-scene="expanded"] #eye-shift { transform: translateX(calc(var(--eye-shift) * -1px)); }
+  .sh {
+    opacity: 0; fill: var(--eye);
+    transition: opacity 180ms linear, transform var(--eye-ms) var(--eye-curve);
+  }
+  /* 笑眼和平线是线：2.3 宽、圆头、不填充 */
+  .sh-arc, .sh-line { fill: none; stroke: var(--eye); stroke-width: 2.3; stroke-linecap: round; }
+  #eyes.mode-open .sh-round,
+  #eyes.mode-wide .sh-wide,
+  #eyes.mode-down .sh-down,
+  #eyes.mode-smile .sh-arc,
+  #eyes.mode-flat .sh-line { opacity: 1; }
+  /* 往上：圆眼抬 2（出场滑下来那一下） */
+  #eyes.mode-up .sh-round { opacity: 1; }
+  #eyes.mode-up .eye { transform: translateY(-2px); }
+  /* 眨眼：压到 1/10，80ms 闭 + 140ms 睁 */
+  #eyes.blink .sh-round,
+  #eyes.blink .sh-wide,
+  #eyes.blink .sh-down { transform: scaleY(0.1); transform-box: fill-box; transform-origin: center; }
+  /* 做完了：弧线从下面 8px 升上来淡入（设计稿第三节③） */
+  .sh-arc { transform: translateY(8px); transition: opacity 180ms linear, transform 200ms var(--curve-out); }
+  #eyes.mode-smile .sh-arc { transform: translateY(0); }
+  /* 干活中：往左看 → 停 0.5 秒 → 0.4 秒滑到右 → 停 0.5 秒 → 滑回左 */
+  body[data-mode="work"] #eye-scan { animation: eyes-scan var(--scan-dur) linear infinite; }
+  @keyframes eyes-scan {
+    0% { transform: translateX(calc(var(--scan) * -1px)); animation-timing-function: linear; }
+    27.778% { transform: translateX(calc(var(--scan) * -1px)); animation-timing-function: ease-in-out; }
+    50% { transform: translateX(calc(var(--scan) * 1px)); animation-timing-function: linear; }
+    77.778% { transform: translateX(calc(var(--scan) * 1px)); animation-timing-function: ease-in-out; }
+    100% { transform: translateX(calc(var(--scan) * -1px)); }
+  }
+  /* 抬头想一下：圆眼、往上 2px，停 0.6 秒再低头接着扫 */
+  body[data-thinking="1"] #eye-scan { animation: none; transform: translateX(0); }
+  body[data-thinking="1"] #eyes .sh-down { opacity: 0; }
+  body[data-thinking="1"] #eyes .sh-round { opacity: 1; }
+  body[data-thinking="1"] #eyes .eye { transform: translateY(-2px); }
+  body[data-scene="line"] #eyes, body[data-scene="tray"] #strip #eyes { display: none; }
+
+  /* 冒的那一行：左边是表情区，右边是文字区，宽度跟着字走 */
+  #bubble {
+    position: absolute;
+    left: calc(var(--eye-zone) + var(--zone-gap));
+    right: var(--pad-right);
+    top: 0; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; overflow: hidden;
+    transition: opacity 100ms linear;
+  }
+  #bubble-inner {
+    display: inline-flex; align-items: center; gap: 8px;
+    white-space: nowrap; font-size: var(--font-size); line-height: 1;
+    max-width: 100%; min-width: 0;
+  }
+  /* 字太长就收成省略号，不裁掉半个字 */
+  #bubble-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #bubble-actions { flex: none; display: inline-flex; gap: 8px; }
+  /* 窗口没撑开之前不露字：免得字被裁掉半个 */
+  body[data-bubble="fit"] #bubble, body[data-bubble="tight"] #bubble { opacity: 1; transition: opacity 120ms linear 40ms; }
+  #measure {
+    position: absolute; left: -9999px; top: 0;
+    display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+    font-size: var(--font-size); line-height: 1; visibility: hidden;
+  }
+  .action {
+    font: inherit; color: var(--text); background: none; border: 0; padding: 0;
+    cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+  }
+
+  /* 要你看一眼：红点 */
+  #dot {
+    position: absolute; top: var(--dot-top); right: var(--dot-right);
+    width: var(--dot-size); height: var(--dot-size);
+    border-radius: 50%; background: var(--accent);
+    opacity: 0; transform: scale(0.3);
+    transition: opacity 150ms linear, transform 250ms var(--curve-bounce);
+  }
+  body[data-mode="look"] #dot { opacity: 1; transform: scale(1); }
+
+  /* 接文件：360×123 的接收托 */
+  #tray { position: absolute; inset: 0; display: none; }
+  body[data-scene="tray"] #tray { display: block; }
+  #tray-eyes {
+    position: absolute; top: 8px; left: 50%; margin-left: -16px;
+    width: 32px; height: 14px;
+    display: flex; gap: 8px; align-items: center;
+  }
+  #tray-eyes i { width: 12px; height: 10px; background: var(--eye); border-radius: 50%; }
+  #cells { position: absolute; left: 0; right: 0; top: 32px; bottom: 0; display: flex; gap: 12px; padding: 0 12px 12px; }
+  .cell {
+    flex: 1; border: 1px dashed rgba(239, 233, 223, 0.28); border-radius: 8px;
+    padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; gap: 2px;
+    background: rgba(31, 29, 26, 0.92);
+  }
+  .cell.hot { border-color: var(--eye); border-style: solid; }
+  .cell b { font-size: 12px; font-weight: 700; }
+  .cell span { font-size: 11px; color: var(--muted); }
+  .cell em { font-size: 10px; color: var(--muted); font-style: normal; }
+</style>
+<div id="strip">
+  <div id="eyes" aria-hidden="true">
+    <svg viewBox="0 0 112 30" width="112" height="30">
+      <g id="eye-shift">
+        <g id="eye-scan">
+          <g class="eye">
+            <circle class="sh sh-round" cx="46" cy="15" r="5.3"></circle>
+            <circle class="sh sh-wide" cx="46" cy="15" r="7"></circle>
+            <rect class="sh sh-down" x="41" y="16" width="10" height="6" rx="3"></rect>
+            <path class="sh sh-arc" d="M 41.3 17 Q 46 10.3 50.7 17"></path>
+            <path class="sh sh-line" d="M 41.3 15 L 50.7 15"></path>
+          </g>
+          <g class="eye">
+            <circle class="sh sh-round" cx="66" cy="15" r="5.3"></circle>
+            <circle class="sh sh-wide" cx="66" cy="15" r="7"></circle>
+            <rect class="sh sh-down" x="61" y="16" width="10" height="6" rx="3"></rect>
+            <path class="sh sh-arc" d="M 61.3 17 Q 66 10.3 70.7 17"></path>
+            <path class="sh sh-line" d="M 61.3 15 L 70.7 15"></path>
+          </g>
+        </g>
+      </g>
+    </svg>
+  </div>
+  <div id="bubble"><span id="bubble-inner"><span id="bubble-text"></span><span id="bubble-actions"></span></span></div>
+  <div id="dot"></div>
+</div>
+<div id="tray">
+  <div id="tray-eyes"><i></i><i></i></div>
+  <div id="cells">
+    <div class="cell" data-cell="template"><b>当范本</b><span>照它的格式写</span><em>只收 1 份</em></div>
+    <div class="cell" data-cell="materials"><b>当材料</b><span>从里面取内容</span><em>几份都行</em></div>
+  </div>
+</div>
+<span id="measure"></span>
+<script type="module" src="pet.js"></script>

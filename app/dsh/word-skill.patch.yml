@@ -1,0 +1,9 @@
+# 给 @deepseek-ai/dsh-skill-filesystem 指定技能目录，不用 <DSH_HOME>/skills：随包的 app/skills 和用户的 ~/桌伴/技能 都由 env 给绝对路径。
+# agentsHome 也钉死在桌伴自己的 DSH_AGENTS_HOME：dsh 默认扫的 ~/.agents（用户装给别的 AI 工具的技能）进不来。
+# 目录不存在是合法的空状态，不报错。
+- id: skill-filesystem
+  config:
+    agentsHome: !!js "process.env.DSH_AGENTS_HOME"
+    customSkillDirs:
+      - !!js "process.env.DSH_SKILL_DIR"
+      - !!js "process.env.DSH_USER_SKILL_DIR"

@@ -1,0 +1,4 @@
+# acp 配置不带 Office 技能（sdk 才带）。设计稿第八节要挂上，资源用包里自带的。
+- insert:
+    - id: skill-office
+      name: '@deepseek-ai/dsh-skill-office'

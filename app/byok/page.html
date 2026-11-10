@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+<title>桌伴</title>
+<link rel="stylesheet" href="page.css">
+<main>
+  <div id="wizard">
+    <section id="safety">
+      <h1>用之前先看这四句</h1>
+      <ol id="lines"></ol>
+      <button id="start" type="button">开始</button>
+    </section>
+    <section id="key" hidden>
+      <h1>贴上 DeepSeek 的钥匙</h1>
+      <label for="key-input">钥匙</label>
+      <input id="key-input" type="password" autocomplete="off" spellcheck="false">
+      <button id="test" type="button">测一下</button>
+      <p id="key-result"></p>
+      <button id="docs" class="link" type="button">还没有钥匙？看官方说明</button>
+    </section>
+    <section id="intro" hidden>
+      <p id="ok"></p>
+      <h1 id="hint"></h1>
+      <button id="done" type="button">好</button>
+    </section>
+  </div>
+  <div id="settings" hidden>
+    <h1>设置</h1>
+    <section id="key">
+      <p id="have"></p>
+      <label for="settings-key">换一把钥匙</label>
+      <input id="settings-key" type="password" autocomplete="off" spellcheck="false">
+      <button id="save-key" type="button">测一下</button>
+      <p id="settings-key-result"></p>
+      <button id="settings-docs" class="link" type="button">还没有钥匙？看官方说明</button>
+    </section>
+    <section id="usage">
+      <h2>用量</h2>
+      <p id="usage-heading"></p>
+      <p id="usage-total"></p>
+      <p class="fine">跟 DeepSeek 后台记的数对得上</p>
+      <h2>最近 10 个任务</h2>
+      <ul id="usage-recent"></ul>
+      <p id="usage-note" class="fine">只记这台电脑上跑的任务。</p>
+    </section>
+  </div>
+</main>
+<script type="module" src="page.js"></script>
