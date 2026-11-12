@@ -98,8 +98,11 @@ jobs:
           "$dest/bin/7za.exe" 2>&1 | head -1
 
       # 打安装包：先备 .installer-cache（payload.7z 和 7za），再让 electron-builder 打包。
+      # --publish never：打包机不用发版，Release 由下一步单独建。
       - name: 打安装包
-        run: npm run dist
+        run: |
+          node build/installer-assets.mjs
+          npx electron-builder --config build/builder.config.cjs --publish never
 
       # 核对第三方许可清单：payload 里实际带着的东西跟仓根的清单要对得上，对不上就失败。
       # 放在打包之后：打包第一步会把装不上的原生件和用不到的 inspector 从 payload 里去掉，
