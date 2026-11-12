@@ -45,7 +45,10 @@ jobs:
           node-version: 24
 
       - name: 装依赖
-        run: npm ci
+        run: |
+          node --version
+          npm --version
+          npm ci
 
       # 测试跟 ci.yml 跑的一样：不需要 payload 的那部分。
       - name: 测试
@@ -110,10 +113,12 @@ jobs:
       - name: 核对第三方许可清单
         run: node build/licenses.mjs
 
+      # sha256 文件里只写文件名，下载后在这个目录里 sha256sum -c 就能验。
       - name: 算 sha256
         run: |
           set -e
-          exe=$(ls dist/*.exe)
+          cd dist
+          exe=$(ls *.exe)
           if [ -z "$exe" ]; then
             echo "dist 里没有安装包" >&2
             exit 1
