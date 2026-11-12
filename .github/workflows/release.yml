@@ -44,11 +44,16 @@ jobs:
         with:
           node-version: 24
 
-      - name: 装依赖
+      # 钉住 npm 版本：随包依赖树是 npm 装的，npm 版本不一样，装出来的可选依赖就不一样。
+      - name: 钉 npm 版本
         run: |
           node --version
           npm --version
-          npm ci
+          npm install -g npm@11.19.1
+          npm --version
+
+      - name: 装依赖
+        run: npm ci
 
       # 测试跟 ci.yml 跑的一样：不需要 payload 的那部分。
       - name: 测试
