@@ -1,0 +1,140 @@
+# 发版流水线：推 v* tag 自动在 Windows 上打包并建 Release；手动触发只出产物（演练），不建 Release。
+# 桌伴只跑在 Windows 上（路径不分大小写这些），所以打包机固定 windows-latest。
+# 省着跑：只在 tag 和手动触发时跑；下载的每样东西都按脚本里的 sha256 校验；
+# 不配任何 secret，只用 GitHub 自带的 GITHUB_TOKEN。
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    # 临时：演练用，跑通就删
+    branches:
+      - 'ci-release-workflow'
+  # 手动触发 = 演练：打安装包，但只把安装包和 sha256 存成附件，不建 Release。
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  # 发版不打断已经在跑的那一轮。
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: windows-latest
+    # 备 payload + 下载打包工具 + 打安装包，留足时间再加余量。
+    timeout-minutes: 60
+    steps:
+      # 跟本地开发一样按原样检出，不把换行改成 CRLF。
+      - run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: 装依赖
+        run: npm ci
+
+      # 测试跟 ci.yml 跑的一样：不需要 payload 的那部分。
+      - name: 测试
+        run: |
+          find test -name '*.test.mjs' -not -path 'test/dsh/*' -not -path 'test/cite/*' -not -name escape.test.mjs -print0 \
+            | sort -z | xargs -0 node --test --test-reporter=dot
+
+      # tag 里的版本号必须跟 package.json 的 version 对上，对不上就别发。
+      - name: 核对版本号
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag_version="${{ github.ref_name }}"
+          tag_version="${tag_version#v}"
+          if [ "$tag_version" != "$version" ]; then
+            echo "tag 里的版本号 $tag_version 跟 package.json 的 version $version 对不上" >&2
+            exit 1
+          fi
+
+      # 备 payload：随包 Python、Node、dsh。脚本里每样下载都带 sha256 校验，对不上会自己失败。
+      - name: 备 payload
+        run: node build/payload.mjs win-x64
+
+      # 备 electron-builder 要用的 7z：自己下载并核对 sha256（校验值取自装好的 app-builder-lib），
+      # 放到 electron-builder 的缓存目录里，build/installer-assets.mjs 才找得到。
+      - name: 备 7z
+        run: |
+          url='https://github.com/electron-userland/electron-builder-binaries/releases/download/7zip@1.0.0/7zip-win-x64.tar.gz'
+          sha=$(grep -o '"7zip-win-x64.tar.gz": "[0-9a-f]\{64\}"' node_modules/app-builder-lib/out/toolsets/7zip.js | grep -o '[0-9a-f]\{64\}')
+          if [ -z "$sha" ]; then
+            echo "app-builder-lib 里没有 7zip 的校验值" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/7z"
+          curl -sSfL -o "$RUNNER_TEMP/7z/7zip-win-x64.tar.gz" "$url"
+          echo "$sha  7zip-win-x64.tar.gz" | (cd "$RUNNER_TEMP/7z" && sha256sum -c -)
+          tar -xzf "$RUNNER_TEMP/7z/7zip-win-x64.tar.gz" -C "$RUNNER_TEMP/7z"
+          # 目录名要跟 build/installer-assets.mjs 里写死的那一个一致。
+          dest="$LOCALAPPDATA/electron-builder/Cache/7zip@1.0.0/7zip-win-x64-a34pt"
+          mkdir -p "$dest"
+          cp -r "$RUNNER_TEMP/7z/7zip/." "$dest/"
+          # electron-builder 自己不再去下载这一份 7z。
+          echo "ELECTRON_BUILDER_7ZIP_PATH=$dest/bin/7za.exe" >> "$GITHUB_ENV"
+          "$dest/bin/7za.exe" | head -1
+
+      # 核对第三方许可清单：payload 里实际带着的东西跟仓根的清单要对得上，对不上就失败。
+      - name: 核对第三方许可清单
+        run: node build/licenses.mjs
+
+      # 打安装包：先备 .installer-cache（payload.7z 和 7za），再让 electron-builder 打包。
+      - name: 打安装包
+        run: npm run dist
+
+      - name: 算 sha256
+        run: |
+          set -e
+          exe=$(ls dist/*.exe)
+          if [ -z "$exe" ]; then
+            echo "dist 里没有安装包" >&2
+            exit 1
+          fi
+          sha256sum "$exe" > "$exe.sha256"
+          cat "$exe.sha256"
+
+      # 推 tag：拿仓库里的发布说明建 Release，把安装包和 sha256 传上去。
+      - name: 建 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          notes="docs/release-$version.md"
+          if [ ! -f "$notes" ]; then
+            echo "没有发布说明：$notes" >&2
+            exit 1
+          fi
+          gh release create "${{ github.ref_name }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "桌伴 $version" \
+            --notes-file "$notes" \
+            dist/*.exe dist/*.sha256
+
+      # 演练：只把安装包和 sha256 存成附件，不建 Release。
+      - name: 演练：把安装包存成附件
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sidemate-dry-run
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.sha256
