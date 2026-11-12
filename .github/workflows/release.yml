@@ -8,6 +8,9 @@ on:
   push:
     tags:
       - 'v*'
+    # 临时：演练用，跑通就删
+    branches:
+      - 'ci-release-workflow'
   # 手动触发 = 演练：打安装包，但只把安装包和 sha256 存成附件，不建 Release。
   workflow_dispatch:
 
@@ -104,10 +107,28 @@ jobs:
 
       # 打安装包：先备 .installer-cache（payload.7z 和 7za），再让 electron-builder 打包。
       # --publish never：打包机不用发版，Release 由下一步单独建。
+      # 桌伴没有自动更新：electron-builder 照着仓库地址会往 resources 里写一份 app-update.yml，
+      # 所以这里用一份临时配置把 publish 设成 null（严格的 null，--publish never 只是不发版，
+      # 挡不住这个文件），让它不写。仓里的 build/builder.config.cjs 不动，临时配置在打包机上现生成。
       - name: 打安装包
         run: |
           node build/installer-assets.mjs
-          npx electron-builder --config build/builder.config.cjs --publish never
+          cat > electron-builder.release.config.cjs <<'EOF'
+          // 桌伴不带自动更新：publish 设成 null，electron-builder 就不会写 resources/app-update.yml。
+          const base = require('./build/builder.config.cjs')
+          module.exports = { ...base, publish: null }
+          EOF
+          npx electron-builder --config electron-builder.release.config.cjs --publish never
+
+      # 桌伴没有自动更新：安装包里不该出现 app-update.yml，出现了就失败。
+      - name: 核对安装包里没有自动更新配置
+        run: |
+          found=$(find dist -name 'app-update.yml' -print -quit)
+          if [ -n "$found" ]; then
+            echo "安装包里出现了自动更新配置：$found" >&2
+            exit 1
+          fi
+          echo "安装包里没有 app-update.yml"
 
       # 核对第三方许可清单：payload 里实际带着的东西跟仓根的清单要对得上，对不上就失败。
       # 放在打包之后：打包第一步会把装不上的原生件和用不到的 inspector 从 payload 里去掉，
