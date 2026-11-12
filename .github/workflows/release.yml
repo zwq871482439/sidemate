@@ -83,17 +83,19 @@ jobs:
             echo "app-builder-lib 里没有 7zip 的校验值" >&2
             exit 1
           fi
-          mkdir -p "$RUNNER_TEMP/7z"
-          curl -sSfL -o "$RUNNER_TEMP/7z/7zip-win-x64.tar.gz" "$url"
-          echo "$sha  7zip-win-x64.tar.gz" | (cd "$RUNNER_TEMP/7z" && sha256sum -c -)
-          tar -xzf "$RUNNER_TEMP/7z/7zip-win-x64.tar.gz" -C "$RUNNER_TEMP/7z"
+          work="$RUNNER_TEMP/7z"
+          mkdir -p "$work"
+          curl -sSfL -o "$work/7zip-win-x64.tar.gz" "$url"
+          echo "$sha  7zip-win-x64.tar.gz" | (cd "$work" && sha256sum -c -)
+          # 解包用相对路径：GNU tar 会把 "D:\..." 当成远程主机。
+          (cd "$work" && tar -xzf 7zip-win-x64.tar.gz)
           # 目录名要跟 build/installer-assets.mjs 里写死的那一个一致。
-          dest="$LOCALAPPDATA/electron-builder/Cache/7zip@1.0.0/7zip-win-x64-a34pt"
+          dest="$(cygpath -u "$LOCALAPPDATA")/electron-builder/Cache/7zip@1.0.0/7zip-win-x64-a34pt"
           mkdir -p "$dest"
-          cp -r "$RUNNER_TEMP/7z/7zip/." "$dest/"
+          cp -r "$work/7zip/." "$dest/"
           # electron-builder 自己不再去下载这一份 7z。
-          echo "ELECTRON_BUILDER_7ZIP_PATH=$dest/bin/7za.exe" >> "$GITHUB_ENV"
-          "$dest/bin/7za.exe" | head -1
+          echo "ELECTRON_BUILDER_7ZIP_PATH=$LOCALAPPDATA/electron-builder/Cache/7zip@1.0.0/7zip-win-x64-a34pt/bin/7za.exe" >> "$GITHUB_ENV"
+          "$dest/bin/7za.exe" 2>&1 | head -1
 
       # 打安装包：先备 .installer-cache（payload.7z 和 7za），再让 electron-builder 打包。
       - name: 打安装包
