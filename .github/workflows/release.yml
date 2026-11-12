@@ -66,8 +66,12 @@ jobs:
           fi
 
       # 备 payload：随包 Python、Node、dsh。脚本里每样下载都带 sha256 校验，对不上会自己失败。
+      # GitHub 的 bash 里 tar 是 GNU tar，不认 "D:\..." 这种 Windows 路径；
+      # 把 Windows 自带的 bsdtar 放到前面，脚本里的 tar 才能解开 Python 的压缩包。
       - name: 备 payload
-        run: node build/payload.mjs win-x64
+        run: |
+          export PATH="/c/Windows/System32:$PATH"
+          node build/payload.mjs win-x64
 
       # 备 electron-builder 要用的 7z：自己下载并核对 sha256（校验值取自装好的 app-builder-lib），
       # 放到 electron-builder 的缓存目录里，build/installer-assets.mjs 才找得到。
@@ -91,13 +95,15 @@ jobs:
           echo "ELECTRON_BUILDER_7ZIP_PATH=$dest/bin/7za.exe" >> "$GITHUB_ENV"
           "$dest/bin/7za.exe" | head -1
 
-      # 核对第三方许可清单：payload 里实际带着的东西跟仓根的清单要对得上，对不上就失败。
-      - name: 核对第三方许可清单
-        run: node build/licenses.mjs
-
       # 打安装包：先备 .installer-cache（payload.7z 和 7za），再让 electron-builder 打包。
       - name: 打安装包
         run: npm run dist
+
+      # 核对第三方许可清单：payload 里实际带着的东西跟仓根的清单要对得上，对不上就失败。
+      # 放在打包之后：打包第一步会把装不上的原生件和用不到的 inspector 从 payload 里去掉，
+      # 清单是按去掉之后的 payload 对的。
+      - name: 核对第三方许可清单
+        run: node build/licenses.mjs
 
       - name: 算 sha256
         run: |
