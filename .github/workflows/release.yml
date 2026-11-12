@@ -8,9 +8,6 @@ on:
   push:
     tags:
       - 'v*'
-    # 临时：演练用，跑通就删
-    branches:
-      - 'ci-release-workflow'
   # 手动触发 = 演练：打安装包，但只把安装包和 sha256 存成附件，不建 Release。
   workflow_dispatch:
 
